@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 لایه دیتابیس بازی (SQLite).
-شامل توابع ساخت دیتابیس، مدیریت کشورها، تجهیزات، تراکنش‌ها و پنل ادمین.
+شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets)، خرید اتومیک، و پنل ادمین.
 """
 
 import sqlite3
@@ -19,6 +19,7 @@ def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
+    # جدول کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS countries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +44,6 @@ def init_db():
     )
     """)
 
-    # مهاجرت ساده: اگر دیتابیس قبلاً بدون این ستون یا ایندکس ساخته شده
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN country_key TEXT")
     except sqlite3.OperationalError:
@@ -54,6 +54,24 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # جدول دارایی‌های اختصاصی نظامی کشورها (Country Assets System)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS country_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        country_key TEXT NOT NULL,
+        category TEXT NOT NULL,
+        equipment_name TEXT NOT NULL,
+        equipment_key TEXT NOT NULL,
+        amount INTEGER DEFAULT 0,
+        buy_price INTEGER DEFAULT 0,
+        maintenance_cost INTEGER DEFAULT 0,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE,
+        UNIQUE(country_id, equipment_key)
+    )
+    """)
+
+    # جدول عمومی غیرنظامی/قدیمی تجهیزات
     cur.execute("""
     CREATE TABLE IF NOT EXISTS equipment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +83,7 @@ def init_db():
     )
     """)
 
+    # تراکنش‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +96,7 @@ def init_db():
     )
     """)
 
+    # لاگ‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,8 +131,13 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
         sv["grain"], sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
         None, now_str, country_key
     ))
+    country_id = cur.lastrowid
     conn.commit()
     conn.close()
+
+    # سیید کردن اولیه دارایی‌های تخصصی کشور
+    if country_id and country_key:
+        seed_country_assets(country_id, country_key)
 
 
 def get_country_by_id(country_id: int):
@@ -143,13 +168,14 @@ def get_taken_country_keys():
 
 
 def delete_country_by_id(country_id: int) -> bool:
-    """کشور را با country_id همراه تمامی تجهیزات و تراکنش‌هایش حذف می‌کند."""
+    """کشور را با country_id همراه تمامی دارایی‌ها و تراکنش‌هایش حذف می‌کند."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT id FROM countries WHERE id = ?", (country_id,))
     if not cur.fetchone():
         conn.close()
         return False
+    cur.execute("DELETE FROM country_assets WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM equipment WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM transactions WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM countries WHERE id = ?", (country_id,))
@@ -159,7 +185,6 @@ def delete_country_by_id(country_id: int) -> bool:
 
 
 def delete_country_by_player(player_id: int) -> bool:
-    """کشور یک بازیکن را با player_id حذف می‌کند."""
     country = get_country_by_player(player_id)
     if not country:
         return False
@@ -172,7 +197,13 @@ def get_country_by_player(player_id: int):
     cur.execute("SELECT * FROM countries WHERE player_id = ?", (player_id,))
     row = cur.fetchone()
     conn.close()
-    return dict(row) if row else None
+    if row:
+        c = dict(row)
+        # تضمین وجود دارایی‌های کشور (در صورت عدم وجود از قبل)
+        if c.get("country_key"):
+            seed_country_assets(c["id"], c["country_key"])
+        return c
+    return None
 
 
 def get_all_countries():
@@ -185,7 +216,6 @@ def get_all_countries():
 
 
 def update_country_field(country_id: int, field: str, value):
-    """به‌روزرسانی امن یک فیلد مشخص از جدول کشورهای یک کشور."""
     allowed = {
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
@@ -201,7 +231,6 @@ def update_country_field(country_id: int, field: str, value):
 
 
 def adjust_treasury(country_id: int, delta: int):
-    """مبلغ delta رو به خزانه اضافه می‌کنه (می‌تونه منفی باشه)."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (delta, country_id))
@@ -210,7 +239,6 @@ def adjust_treasury(country_id: int, delta: int):
 
 
 def adjust_gold(country_id: int, delta: int):
-    """مقدار delta رو به طلا اضافه می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET gold = gold + ? WHERE id = ?", (delta, country_id))
@@ -219,7 +247,6 @@ def adjust_gold(country_id: int, delta: int):
 
 
 def adjust_oil(country_id: int, delta: int):
-    """مقدار delta رو به ذخایر نفت اضافه می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET oil_reserves = oil_reserves + ? WHERE id = ?", (delta, country_id))
@@ -228,7 +255,6 @@ def adjust_oil(country_id: int, delta: int):
 
 
 def adjust_oil_production(country_id: int, delta: int):
-    """مقدار delta رو به نرخ تولید روزانه نفت اضافه می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET oil_production = oil_production + ? WHERE id = ?", (delta, country_id))
@@ -236,13 +262,114 @@ def adjust_oil_production(country_id: int, delta: int):
     conn.close()
 
 
-# ---------- خرید امن کالا (Atomic Transaction) ----------
+# ---------- سیستم دارایی‌های اختصاصی کشورها (Country Assets System) ----------
+
+def seed_country_assets(country_id: int, country_key: str):
+    """مقادیر اولیه تجهیزات اختصاصی هر کشور را در جدول country_assets وارد می‌کند."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(country_key, config.DEFAULT_COUNTRY_EQUIPMENT)
+
+    for item in catalog:
+        cur.execute("""
+            INSERT OR IGNORE INTO country_assets
+            (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            country_id, country_key, item["category"], item["name"], item["key"],
+            item["initial"], item["price"], item.get("maint", 0)
+        ))
+
+    conn.commit()
+    conn.close()
+
+
+def get_country_assets(country_id: int, category: str = None):
+    """دریافت تمام دارایی‌های نظامی یک کشور (با امکان فیلتر بر اساس دسته‌بندی)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    if category and category != "all":
+        cur.execute("SELECT * FROM country_assets WHERE country_id = ? AND category = ? ORDER BY id ASC", (country_id, category))
+    else:
+        cur.execute("SELECT * FROM country_assets WHERE country_id = ? ORDER BY category, id ASC", (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_asset_by_key(country_id: int, equipment_key: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM country_assets WHERE country_id = ? AND equipment_key = ?", (country_id, equipment_key))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity: int) -> tuple[bool, str, dict]:
+    """
+    خرید اتومیک تجهیزات نظامی اختصاصی کشور.
+    بررسی موجودی، کسر خزانه و افزایش تعداد تجهیز.
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+
+            # ۱. دریافت اطلاعات تجهیزات اختصاصی
+            cur.execute("SELECT * FROM country_assets WHERE country_id = ? AND equipment_key = ?", (country_id, equipment_key))
+            asset = cur.fetchone()
+            if not asset:
+                return False, "این تجهیز برای کشور شما تعریف نشده است.", {}
+
+            asset_dict = dict(asset)
+            total_cost = asset_dict["buy_price"] * quantity
+
+            # ۲. بررسی موجودی خزانه کشور
+            cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
+            c_row = cur.fetchone()
+            if not c_row:
+                return False, "کشور یافت نشد.", {}
+
+            if c_row["treasury"] < total_cost:
+                return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_cost:,} دلار\nموجودی خزانه: {c_row['treasury']:,} دلار", asset_dict
+
+            # ۳. کسر پول از خزانه
+            cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (total_cost, country_id))
+
+            # ۴. افزایش تعداد تجهیزات
+            cur.execute("UPDATE country_assets SET amount = amount + ? WHERE id = ?", (quantity, asset_dict["id"]))
+
+            # ۵. ثبت تراکنش
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (country_id, "asset_purchase", f"خرید {asset_dict['equipment_name']} x{quantity}", -total_cost, now_str))
+
+            asset_dict["amount"] += quantity
+            return True, "خرید با موفقیت انجام شد.", asset_dict
+
+    except Exception as e:
+        return False, f"خطا در دیتابیس: {e}", {}
+    finally:
+        conn.close()
+
+
+def set_asset_amount(country_id: int, equipment_key: str, new_amount: int):
+    """تنظیم دقیق تعداد دارایی نظامی توسط ادمین."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE country_assets SET amount = ? WHERE country_id = ? AND equipment_key = ?",
+                (max(0, new_amount), country_id, equipment_key))
+    conn.commit()
+    conn.close()
+
+
+# ---------- سیستم خریدهای غیرنظامی / معمولی ----------
 
 def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_price: int, item_name: str) -> tuple[bool, str]:
-    """
-    خرید امن و اتومیک با تراکنش یکپارچه SQLite برای جلوگیری از Race Condition و کسر پول بدون اعطای کالا.
-    خروجی: (موفقیت: bool, پیام: str)
-    """
     conn = get_connection()
     try:
         with conn:
@@ -264,7 +391,7 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                             (quantity, country_id, item_key))
             else:
                 cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
-                            (country_id, item_key, quantity))
+                            (quantity, country_id, item_key))
 
             now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cur.execute("""
@@ -278,8 +405,6 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
     finally:
         conn.close()
 
-
-# ---------- تجهیزات ----------
 
 def add_equipment(country_id: int, item_key: str, quantity: int):
     conn = get_connection()
@@ -298,27 +423,6 @@ def add_equipment(country_id: int, item_key: str, quantity: int):
     conn.close()
 
 
-def set_equipment_quantity(country_id: int, item_key: str, quantity: int):
-    """تنظیم دقیق تعداد تجهیزات (برای ادمین)."""
-    conn = get_connection()
-    cur = conn.cursor()
-    quantity = max(0, quantity)
-    cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
-    row = cur.fetchone()
-    if row:
-        if quantity == 0:
-            cur.execute("DELETE FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
-        else:
-            cur.execute("UPDATE equipment SET quantity = ? WHERE country_id=? AND item_key=?",
-                        (quantity, country_id, item_key))
-    else:
-        if quantity > 0:
-            cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
-                        (country_id, item_key, quantity))
-    conn.commit()
-    conn.close()
-
-
 def get_equipment(country_id: int):
     conn = get_connection()
     cur = conn.cursor()
@@ -328,37 +432,17 @@ def get_equipment(country_id: int):
     return {r["item_key"]: r["quantity"] for r in rows}
 
 
-def remove_equipment(country_id: int, item_key: str, quantity: int) -> bool:
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
-    row = cur.fetchone()
-    if not row or row["quantity"] < quantity:
-        conn.close()
-        return False
-    new_qty = row["quantity"] - quantity
-    if new_qty <= 0:
-        cur.execute("DELETE FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
-    else:
-        cur.execute("UPDATE equipment SET quantity = ? WHERE country_id=? AND item_key=?",
-                    (new_qty, country_id, item_key))
-    conn.commit()
-    conn.close()
-    return True
-
-
-# ---------- تراکنش‌ها، آمار و لاگ ----------
+# ---------- آمار کلی و لاگ‌ها ----------
 
 def get_game_stats():
-    """محاسبه آمار کلی بازی برای ادمین."""
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("SELECT COUNT(*) as count, SUM(treasury) as total_treasury, SUM(gold) as total_gold, SUM(oil_reserves) as total_oil FROM countries")
     row = cur.fetchone()
 
-    cur.execute("SELECT SUM(quantity) as total_equip FROM equipment")
-    eq_row = cur.fetchone()
+    cur.execute("SELECT SUM(amount) as total_assets FROM country_assets")
+    asset_row = cur.fetchone()
 
     conn.close()
 
@@ -367,7 +451,7 @@ def get_game_stats():
         "total_treasury": row["total_treasury"] or 0,
         "total_gold": row["total_gold"] or 0,
         "total_oil": row["total_oil"] or 0,
-        "total_equipment": eq_row["total_equip"] or 0,
+        "total_equipment": asset_row["total_assets"] or 0,
     }
 
 

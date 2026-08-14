@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 فایل اصلی اجرای بات «سیاست مدرن».
-پشتیبانی کامل از دکمه‌های ثابت پایین صفحه (Reply Keyboard) و پنل اختصاصی ادمین.
+پشتیبانی از دکمه‌های ثابت پایین صفحه، سیستم دارایی‌های اختصاصی نظامی (Country Assets) و پنل ادمین.
 اجرا: python main.py
 """
 
@@ -17,7 +17,12 @@ import config
 import database as db
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command
-from handlers.shop import shop, show_category, back_to_shop, confirm_purchase, execute_purchase
+from handlers.assets import show_assets_menu, get_assets_handlers
+from handlers.shop import (
+    shop, show_category, show_military_asset_category, back_to_shop,
+    confirm_asset_purchase, execute_asset_purchase,
+    confirm_civilian_purchase, execute_civilian_purchase
+)
 from handlers.admin import (
     admin_panel, admin_callback_handler, admin_input_text_handler,
     addmoney, removemoney, listcountries
@@ -31,10 +36,6 @@ logger = logging.getLogger(__name__)
 
 
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
-    """
-    هر کشور رو چک می‌کنه؛ اگه امروز درآمدش رو نگرفته، اضافه می‌کنه.
-    مانع گرفتن چندباره درآمد روزانه در یک روز می‌شود.
-    """
     today = datetime.date.today().isoformat()
     countries = db.get_all_countries()
 
@@ -49,7 +50,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
         db.add_transaction(c["id"], "daily_income", "درآمد روزانه", c["daily_income"])
         updated_count += 1
 
-    logger.info(f"درآمد روزانه برای {updated_count} کشور از مجموع {len(countries)} کشور واریز شد.")
+    logger.info(f"درآمد روزانه برای {updated_count} کشور واریز شد.")
 
 
 def main():
@@ -61,6 +62,10 @@ def main():
     for handler in get_start_handlers():
         app.add_handler(handler)
 
+    # سیستم دارایی‌های اختصاصی کشورها (/assets)
+    for handler in get_assets_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی نمایش وضعیت کشور
     app.add_handler(CommandHandler("country", country_profile))
     app.add_handler(CommandHandler("treasury", treasury))
@@ -70,6 +75,7 @@ def main():
 
     # دکمه‌های ثابت پایین صفحه (Reply Keyboard Text Handlers)
     app.add_handler(MessageHandler(filters.Regex("^🌐 وضعیت کشور$"), country_profile))
+    app.add_handler(MessageHandler(filters.Regex("^🎖️ دارایی‌های نظامی$"), show_assets_menu))
     app.add_handler(MessageHandler(filters.Regex("^🏦 خزانه و طلا$"), treasury))
     app.add_handler(MessageHandler(filters.Regex("^🛢️ وضعیت نفت$"), oil))
     app.add_handler(MessageHandler(filters.Regex("^🪖 وضعیت ارتش$"), army))
@@ -80,9 +86,12 @@ def main():
     # فروشگاه (دکمه‌های شیشه‌ای)
     app.add_handler(CommandHandler("shop", shop))
     app.add_handler(CallbackQueryHandler(show_category, pattern=r"^shopcat:"))
+    app.add_handler(CallbackQueryHandler(show_military_asset_category, pattern=r"^shop_asset_cat:"))
     app.add_handler(CallbackQueryHandler(back_to_shop, pattern=r"^shopback$"))
-    app.add_handler(CallbackQueryHandler(confirm_purchase, pattern=r"^buyitem:"))
-    app.add_handler(CallbackQueryHandler(execute_purchase, pattern=r"^confirmbuy:"))
+    app.add_handler(CallbackQueryHandler(confirm_asset_purchase, pattern=r"^confirm_asset_buy:"))
+    app.add_handler(CallbackQueryHandler(execute_asset_purchase, pattern=r"^do_asset_buy:"))
+    app.add_handler(CallbackQueryHandler(confirm_civilian_purchase, pattern=r"^buyciv:"))
+    app.add_handler(CallbackQueryHandler(execute_civilian_purchase, pattern=r"^docivbuy:"))
 
     # پنل پیشرفته ادمین (مخصوص آیدی 8052987465)
     app.add_handler(CommandHandler(["admin", "panel"], admin_panel))
@@ -96,7 +105,7 @@ def main():
     # دریافت ورودی‌های متنی (تایپی) مخصوص پنل ادمین
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_input_text_handler))
 
-    # درآمد روزانه: هر روز ساعت 00:05 به وقت سرور اجرا می‌شود
+    # درآمد روزانه: هر روز ساعت 00:05 به وقت سرور
     job_queue = app.job_queue
     if job_queue:
         job_queue.run_daily(daily_income_job, time=datetime.time(hour=0, minute=5))

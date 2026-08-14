@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 پنل ادمین پیشرفته و تعاملی با دکمه‌های شیشه‌ای (Inline Buttons).
-مدیریت کامل کشورها، خزانه، طلا، نفت، تجهیزات، آمار کلی، حذف کشور و پیام همگانی.
+مدیریت کامل کشورها، خزانه، طلا، نفت، تجهیزات و دارایی‌های اختصاصی نظامی (Country Assets).
 """
 
 import math
@@ -22,7 +22,7 @@ def is_admin(user_id: int) -> bool:
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
-        await update.message.reply_text("⛔ این دستور فقط مخصوص ادمین‌های بازی است.")
+        await update.message.reply_text("⛔ این بخش فقط برای ادمین اصلی بازی مجاز است.")
         return
 
     text = "👑 **پنل مدیریت بازی «سیاست مدرن»**\n\nلطفاً یک گزینه را انتخاب کنید:"
@@ -84,13 +84,20 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
                                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:list:0")]]))
         return
 
-    equipments = db.get_equipment(country_id)
-    eq_summary = []
-    for k, v in equipments.items():
-        item_info = config.ALL_SHOP_ITEMS.get(k)
-        name = item_info["name"] if item_info else k
-        eq_summary.append(f"  • {name}: {v} عدد")
-    eq_text = "\n".join(eq_summary) if eq_summary else "  • بدون تجهیزات"
+    # تضمین وجود دارایی‌های نظامی کشور
+    if c.get("country_key"):
+        db.seed_country_assets(c["id"], c["country_key"])
+
+    assets = db.get_country_assets(country_id)
+    asset_summary = []
+    for a in assets[:5]: # ۵ دارایی اول
+        unit = config.ASSET_CATEGORIES.get(a['category'], ("", "عدد"))[1]
+        asset_summary.append(f"  • {a['equipment_name']}: {format_number(a['amount'])} {unit}")
+
+    if len(assets) > 5:
+        asset_summary.append(f"  • ... و {len(assets) - 5} تجهیز دیگر")
+
+    eq_text = "\n".join(asset_summary) if asset_summary else "  • بدون دارایی نظامی"
 
     text = (
         f"{notice}\n\n" if notice else ""
@@ -104,8 +111,7 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
         f"📈 درآمد روزانه: {format_money(c['daily_income'])}\n\n"
         f"🛢️ ذخایر نفت: {format_oil(c['oil_reserves'])}\n"
         f"🛢️ نرخ تولید نفت: {format_oil(c['oil_production'])}/روز\n\n"
-        f"👤 ارتش فعال: {format_number(c['active_personnel'])} نفر\n"
-        f"🪖 تجهیزات و املاک:\n{eq_text}"
+        f"🎖️ خلاصه دارایی‌های نظامی اختصاصی:\n{eq_text}"
     )
 
     keyboard = [
@@ -115,7 +121,7 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
         ],
         [
             InlineKeyboardButton("🛢️ ویرایش نفت", callback_data=f"admin:menu_oil:{c['id']}"),
-            InlineKeyboardButton("🪖 ویرایش تجهیزات", callback_data=f"admin:menu_equip:{c['id']}"),
+            InlineKeyboardButton("🎖️ مدیریت دارایی‌های نظامی", callback_data=f"admin:menu_assets:{c['id']}"),
         ],
         [
             InlineKeyboardButton("✉️ ارسال پیام مستقیم به بازیکن", callback_data=f"admin:msg_prompt:{c['id']}"),
@@ -131,7 +137,7 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-# ==================== زیرمنوهای تغییر خزانه، طلا، نفت ====================
+# ==================== زیرمنوهای تغییر خزانه، طلا، نفت و دارایی‌های نظامی ====================
 
 async def menu_treasury(query, country_id: int):
     c = db.get_country_by_id(country_id)
@@ -217,48 +223,55 @@ async def menu_oil(query, country_id: int):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-async def menu_equipment(query, country_id: int):
+async def menu_assets(query, country_id: int):
     c = db.get_country_by_id(country_id)
     if not c:
         return
 
-    eq = db.get_equipment(country_id)
-    text = f"🪖 **مدیریت تجهیزات و اقلام {c['flag']} {c['name']}**\n\nبرای افزودن/کاهش تجهیزات، آیتم مورد نظر را انتخاب کنید:"
+    assets = db.get_country_assets(country_id)
+    text = f"🎖️ **مدیریت دارایی‌های نظامی اختصاصی {c['flag']} {c['name']}**\n\nیک سلاح/تجهیز را برای تغییر تعداد انتخاب کنید:"
 
     keyboard = []
-    for item_key, item in config.ALL_SHOP_ITEMS.items():
-        qty = eq.get(item_key, 0)
-        btn_label = f"{item['name']} (موجودی: {qty})"
-        keyboard.append([InlineKeyboardButton(btn_label, callback_data=f"admin:item:{c['id']}:{item_key}")])
+    for a in assets:
+        unit = config.ASSET_CATEGORIES.get(a['category'], ("", "عدد"))[1]
+        btn_label = f"{a['equipment_name']} ({format_number(a['amount'])} {unit})"
+        keyboard.append([InlineKeyboardButton(btn_label, callback_data=f"admin:asset_item:{c['id']}:{a['equipment_key']}")])
 
     keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin:c:{c['id']}")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-async def menu_single_item(query, country_id: int, item_key: str):
+async def menu_single_asset_item(query, country_id: int, equipment_key: str):
     c = db.get_country_by_id(country_id)
-    item = config.ALL_SHOP_ITEMS.get(item_key)
-    if not c or not item:
+    asset = db.get_asset_by_key(country_id, equipment_key)
+    if not c or not asset:
         return
 
-    eq = db.get_equipment(country_id)
-    qty = eq.get(item_key, 0)
-
-    text = f"⚙️ **ویرایش آیتم:** {item['name']}\nکشور: {c['flag']} {c['name']}\nتعداد فعلی: `{qty}`"
+    unit = config.ASSET_CATEGORIES.get(asset['category'], ("", "عدد"))[1]
+    text = (
+        f"⚙️ **ویرایش دارایی نظامی:** {asset['equipment_name']}\n"
+        f"کشور: {c['flag']} {c['name']}\n"
+        f"تعداد فعلی: `{format_number(asset['amount'])} {unit}`\n"
+        f"قیمت خرید واحد: {format_money(asset['buy_price'])}"
+    )
 
     keyboard = [
         [
-            InlineKeyboardButton("➕ ۱", callback_data=f"admin:adjeq:{country_id}:{item_key}:1"),
-            InlineKeyboardButton("➕ ۵", callback_data=f"admin:adjeq:{country_id}:{item_key}:5"),
-            InlineKeyboardButton("➕ ۱۰", callback_data=f"admin:adjeq:{country_id}:{item_key}:10"),
+            InlineKeyboardButton("➕ ۱۰", callback_data=f"admin:adj_asset:{country_id}:{equipment_key}:10"),
+            InlineKeyboardButton("➕ ۱۰۰", callback_data=f"admin:adj_asset:{country_id}:{equipment_key}:100"),
+            InlineKeyboardButton("➕ ۱,۰۰۰", callback_data=f"admin:adj_asset:{country_id}:{equipment_key}:1000"),
         ],
         [
-            InlineKeyboardButton("➖ ۱", callback_data=f"admin:adjeq:{country_id}:{item_key}:-1"),
-            InlineKeyboardButton("➖ ۵", callback_data=f"admin:adjeq:{country_id}:{item_key}:-5"),
-            InlineKeyboardButton("🗑️ صفر کردن", callback_data=f"admin:seteq:{country_id}:{item_key}:0"),
+            InlineKeyboardButton("➖ ۱۰", callback_data=f"admin:adj_asset:{country_id}:{equipment_key}:-10"),
+            InlineKeyboardButton("➖ ۱۰۰", callback_data=f"admin:adj_asset:{country_id}:{equipment_key}:-100"),
+            InlineKeyboardButton("➖ ۱,۰۰۰", callback_data=f"admin:adj_asset:{country_id}:{equipment_key}:-1000"),
         ],
         [
-            InlineKeyboardButton("🔙 بازگشت به لیست تجهیزات", callback_data=f"admin:menu_equip:{country_id}"),
+            InlineKeyboardButton("✏️ تنظیم عدد دقیق (تایپی)", callback_data=f"admin:prompt_asset:{country_id}:{equipment_key}"),
+            InlineKeyboardButton("🗑️ صفر کردن", callback_data=f"admin:set_asset:{country_id}:{equipment_key}:0"),
+        ],
+        [
+            InlineKeyboardButton("🔙 بازگشت به لیست دارایی‌ها", callback_data=f"admin:menu_assets:{country_id}"),
         ]
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -302,7 +315,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"🏦 مجموع کل ثروت خزانه کشورها: {format_money(stats['total_treasury'])}\n"
             f"🪙 مجموع طلا در گردش: {format_number(stats['total_gold'])}\n"
             f"🛢️ مجموع ذخایر نفت: {format_oil(stats['total_oil'])}\n"
-            f"🪖 مجموع کل تجهیزات خریداری شده: {format_number(stats['total_equipment'])} عدد"
+            f"🪖 مجموع کل تجهیزات و تسلیحات نظامی: {format_number(stats['total_equipment'])} عدد"
         )
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -328,19 +341,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         c_id = int(data.split(":")[2])
         await menu_oil(query, c_id)
 
-    elif data.startswith("admin:menu_equip:"):
+    elif data.startswith("admin:menu_assets:"):
         c_id = int(data.split(":")[2])
-        await menu_equipment(query, c_id)
+        await menu_assets(query, c_id)
 
-    elif data.startswith("admin:item:"):
-        _, _, c_id, item_key = data.split(":", 3)
-        await menu_single_item(query, int(c_id), item_key)
+    elif data.startswith("admin:asset_item:"):
+        _, _, c_id, equipment_key = data.split(":", 3)
+        await menu_single_asset_item(query, int(c_id), equipment_key)
 
-    # تغییر نسبی فیلدها (افزایش / کاهش با دکمه‌های آماده)
+    # تغییر نسبی فیلدها
     elif data.startswith("admin:adj:"):
         _, _, c_id_str, field, delta_str = data.split(":")
-        c_id = int(c_id_str)
-        delta = int(delta_str)
+        c_id, delta = int(c_id_str), int(delta_str)
 
         if field == "treasury":
             db.adjust_treasury(c_id, delta)
@@ -354,19 +366,21 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         notice = f"✅ {field_names.get(field, field)} کشور {c['name']} تغییر یافت."
         await show_country_dashboard(query, context, c_id, notice=notice)
 
-    elif data.startswith("admin:adjeq:"):
-        _, _, c_id_str, item_key, delta_str = data.split(":")
+    elif data.startswith("admin:adj_asset:"):
+        _, _, c_id_str, equipment_key, delta_str = data.split(":")
         c_id, delta = int(c_id_str), int(delta_str)
-        db.add_equipment(c_id, item_key, delta)
-        await menu_single_item(query, c_id, item_key)
+        asset = db.get_asset_by_key(c_id, equipment_key)
+        if asset:
+            db.set_asset_amount(c_id, equipment_key, asset["amount"] + delta)
+        await menu_single_asset_item(query, c_id, equipment_key)
 
-    elif data.startswith("admin:seteq:"):
-        _, _, c_id_str, item_key, qty_str = data.split(":")
+    elif data.startswith("admin:set_asset:"):
+        _, _, c_id_str, equipment_key, qty_str = data.split(":")
         c_id, qty = int(c_id_str), int(qty_str)
-        db.set_equipment_quantity(c_id, item_key, qty)
-        await menu_single_item(query, c_id, item_key)
+        db.set_asset_amount(c_id, equipment_key, qty)
+        await menu_single_asset_item(query, c_id, equipment_key)
 
-    # درخواست ورودی متنی / تایپی از ادمین
+    # درخواست ورودی متنی
     elif data.startswith("admin:prompt:"):
         _, _, c_id_str, field = data.split(":")
         c_id = int(c_id_str)
@@ -384,6 +398,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"✏️ **تنظیم سفارشی {field_names.get(field, field)} برای کشور {c['name']}**\n\n"
             f"لطفاً عدد جدید مورد نظر را در یک پیام بفرستید (مثلاً `250000000`):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c:{c_id}")]])
+        )
+
+    elif data.startswith("admin:prompt_asset:"):
+        _, _, c_id_str, equipment_key = data.split(":")
+        c_id = int(c_id_str)
+        c = db.get_country_by_id(c_id)
+        asset = db.get_asset_by_key(c_id, equipment_key)
+        context.user_data["admin_awaiting_input"] = {"type": "asset_amount", "country_id": c_id, "equipment_key": equipment_key}
+
+        await query.edit_message_text(
+            f"✏️ **تنظیم تعداد {asset['equipment_name']} برای کشور {c['name']}**\n\n"
+            f"لطفاً تعداد جدید مورد نظر را ارسال کنید:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:asset_item:{c_id}:{equipment_key}")]])
         )
 
     elif data.startswith("admin:msg_prompt:"):
@@ -447,16 +474,13 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
     text = update.message.text.strip()
     input_type = input_state.get("type")
 
-    # پاک کردن وضعیت انتظار
     del context.user_data["admin_awaiting_input"]
+
+    clean_text = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١۲٣٤٥٦٧٨٩", "01234567890123456789")).replace(",", "").replace("_", "")
 
     if input_type == "field":
         c_id = input_state["country_id"]
         field = input_state["field"]
-
-        # تبدیل اعداد فارسی/عربی به انگلیسی و حذف فاصله
-        clean_text = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١۲٣٤٥٦٧٨٩", "01234567890123456789")).replace(",", "").replace("_", "")
-
         try:
             val = int(clean_text)
             db.update_country_field(c_id, field, val)
@@ -465,11 +489,22 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         except ValueError:
             await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد. برای مدیریت /admin را بزنید.")
 
+    elif input_type == "asset_amount":
+        c_id = input_state["country_id"]
+        eq_key = input_state["equipment_key"]
+        try:
+            val = int(clean_text)
+            db.set_asset_amount(c_id, eq_key, val)
+            c = db.get_country_by_id(c_id)
+            asset = db.get_asset_by_key(c_id, eq_key)
+            await update.message.reply_text(f"✅ تعداد {asset['equipment_name']} برای کشور {c['name']} به {format_number(val)} تغییر یافت.\nبرای ادامه /admin را بزنید.")
+        except ValueError:
+            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد. برای مدیریت /admin را بزنید.")
+
     elif input_type == "direct_msg":
         player_id = input_state["player_id"]
         c_id = input_state["country_id"]
         c = db.get_country_by_id(c_id)
-
         try:
             await context.bot.send_message(
                 chat_id=player_id,
@@ -484,7 +519,6 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         countries = db.get_all_countries()
         success_count = 0
         fail_count = 0
-
         msg_text = f"📢 **اطلاعیه همگانی ادمین بازی:**\n\n{text}"
 
         for c in countries:
