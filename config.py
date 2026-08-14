@@ -56,6 +56,20 @@ STARTING_VALUES = {
 
 # ===== مقادیر اختصاصی برای کشورهای خاص =====
 COUNTRY_STARTING_OVERRIDES = {
+    "china": {
+        "population": 1_400_000_000,
+        "treasury": 120_000_000,
+        "tax_income": 18_000_000,
+        "daily_income": 25_000_000,
+        "gold": 700,
+        "gold_daily": 80,
+        "oil_reserves": 250_000_000,
+        "oil_production": 4_500_000,
+        "grain": 60,
+        "electricity": 155,
+        "active_personnel": 2_000_000,
+        "reserve_personnel": 1_000_000,
+    },
     "germany": {
         "population": 84_000_000,
         "treasury": 55_000_000,
@@ -127,6 +141,85 @@ ASSET_CATEGORIES = {
 
 # ===== کاتالوگ دارایی‌های اختصاصی کشورها (Country Assets Catalog) =====
 COUNTRY_EQUIPMENT_CATALOG = {
+    "china": [
+        # نیروی هوایی و پشتیبانی (Aircraft)
+        {"key": "j20",             "name": "J-20 Stealth Fighter", "category": "Aircraft",     "price": 25_000_000, "initial": 250,  "maint": 70_000},
+        {"key": "j16",             "name": "J-16 Multirole",       "category": "Aircraft",     "price": 15_000_000, "initial": 350,  "maint": 40_000},
+        {"key": "j10c",            "name": "J-10C Fighter",        "category": "Aircraft",     "price": 10_000_000, "initial": 500,  "maint": 25_000},
+        {"key": "j11",             "name": "J-11 Fighter",         "category": "Aircraft",     "price": 12_000_000, "initial": 200,  "maint": 30_000},
+        {"key": "j15",             "name": "J-15 Flying Shark",    "category": "Aircraft",     "price": 15_000_000, "initial": 100,  "maint": 35_000},
+        {"key": "jh7",             "name": "JH-7 Flounder",        "category": "Aircraft",     "price": 8_000_000,  "initial": 100,  "maint": 20_000},
+        {"key": "h6k",             "name": "H-6K / H-6N Bomber",   "category": "Aircraft",     "price": 30_000_000, "initial": 120,  "maint": 80_000},
+        {"key": "y20",             "name": "Y-20 Kunpeng Transporter","category": "Aircraft", "price": 25_000_000, "initial": 80,   "maint": 50_000},
+        {"key": "y9",              "name": "Y-9 Transport",        "category": "Aircraft",     "price": 10_000_000, "initial": 100,  "maint": 20_000},
+        {"key": "il76_china",      "name": "Il-76 Transporter",    "category": "Aircraft",     "price": 15_000_000, "initial": 20,   "maint": 35_000},
+        {"key": "yy20_tanker",     "name": "YY-20 Aerial Tanker",  "category": "Aircraft",     "price": 25_000_000, "initial": 30,   "maint": 50_000},
+        {"key": "kj500",           "name": "KJ-500 AWACS",         "category": "Aircraft",     "price": 20_000_000, "initial": 50,   "maint": 45_000},
+        {"key": "kj200",           "name": "KJ-200 AWACS",         "category": "Aircraft",     "price": 15_000_000, "initial": 20,   "maint": 30_000},
+        {"key": "y8_y9_recon",     "name": "Y-8/Y-9 Reconnaissance","category": "Aircraft",    "price": 12_000_000, "initial": 40,   "maint": 25_000},
+        {"key": "z10_heli",        "name": "Z-10 Attack Heli",     "category": "Aircraft",     "price": 5_000_000,  "initial": 150,  "maint": 12_000},
+        {"key": "z19_heli",        "name": "Z-19 Recon Heli",      "category": "Aircraft",     "price": 3_000_000,  "initial": 100,  "maint": 8_000},
+        {"key": "z20_heli",        "name": "Z-20 Transport Heli",  "category": "Aircraft",     "price": 4_000_000,  "initial": 150,  "maint": 10_000},
+        {"key": "mi17_china",      "name": "Mi-17 Helicopter",     "category": "Aircraft",     "price": 3_000_000,  "initial": 100,  "maint": 8_000},
+        {"key": "z8_z18_heli",     "name": "Z-8 / Z-18 Heli",      "category": "Aircraft",     "price": 5_000_000,  "initial": 150,  "maint": 12_000},
+
+        # پهپادها (UAV)
+        {"key": "gj11",            "name": "GJ-11 Stealth UAV",    "category": "UAV",          "price": 5_000_000,  "initial": 30,   "maint": 12_000},
+        {"key": "wing_loong2",     "name": "Wing Loong II",        "category": "UAV",          "price": 2_000_000,  "initial": 100,  "maint": 5_000},
+        {"key": "ch4_uav",         "name": "CH-4 UAV",             "category": "UAV",          "price": 1_500_000,  "initial": 80,   "maint": 3_500},
+        {"key": "tactical_drones_c","name": "Tactical Recon UAVs", "category": "UAV",          "price": 300_000,    "initial": 500,  "maint": 800},
+
+        # نیروی زمینی (Ground Forces)
+        {"key": "type_99a",        "name": "Type 99A Tank",        "category": "Ground Forces","price": 3_500_000,  "initial": 1200, "maint": 8_000},
+        {"key": "type_96ab",       "name": "Type 96A/B Tank",      "category": "Ground Forces","price": 2_000_000,  "initial": 2500, "maint": 4_500},
+        {"key": "type_15",         "name": "Type 15 Light Tank",   "category": "Ground Forces","price": 1_800_000,  "initial": 800,  "maint": 4_000},
+        {"key": "zbd_04a",         "name": "ZBD-04A IFV",          "category": "Ground Forces","price": 1_200_000,  "initial": 1000, "maint": 3_000},
+        {"key": "zbl_08",          "name": "ZBL-08 Wheeled IFV",   "category": "Ground Forces","price": 1_000_000,  "initial": 2000, "maint": 2_500},
+        {"key": "zbd_05",          "name": "ZBD-05 Amphibious IFV","category": "Ground Forces","price": 1_500_000,  "initial": 600,  "maint": 3_500},
+        {"key": "light_armored_c", "name": "Light Armored Vehicles","category": "Ground Forces","price": 300_000,   "initial": 6000, "maint": 800},
+
+        # توپخانه و راکت‌اندازها (Artillery)
+        {"key": "plz_05",          "name": "PLZ-05 Howitzer",      "category": "Artillery",    "price": 1_800_000,  "initial": 400,  "maint": 4_000},
+        {"key": "pcl_181",         "name": "PCL-181 Wheeled Howitzer","category": "Artillery", "price": 1_200_000,  "initial": 500,  "maint": 3_000},
+        {"key": "phl_16",          "name": "PHL-16 Heavy MLRS",    "category": "Artillery",    "price": 3_500_000,  "initial": 300,  "maint": 8_000},
+        {"key": "phl_03",          "name": "PHL-03 MLRS",          "category": "Artillery",    "price": 2_000_000,  "initial": 200,  "maint": 5_000},
+        {"key": "sr5_mlrs",        "name": "SR-5 Modular MLRS",    "category": "Artillery",    "price": 1_500_000,  "initial": 150,  "maint": 3_500},
+
+        # نیروی دریایی و آبی‌خاکی (Navy)
+        {"key": "fujian_carrier",  "name": "Fujian Class Carrier", "category": "Navy",         "price": 100_000_000,"initial": 1,    "maint": 500_000},
+        {"key": "shandong_carrier","name": "Shandong Class Carrier","category": "Navy",        "price": 80_000_000, "initial": 1,    "maint": 400_000},
+        {"key": "liaoning_carrier","name": "Liaoning Class Carrier","category": "Navy",        "price": 70_000_000, "initial": 1,    "maint": 350_000},
+        {"key": "type_055",        "name": "Type 055 Stealth Destroyer","category": "Navy",   "price": 30_000_000, "initial": 8,    "maint": 120_000},
+        {"key": "type_052d",       "name": "Type 052D Destroyer",  "category": "Navy",         "price": 20_000_000, "initial": 30,   "maint": 80_000},
+        {"key": "type_052c",       "name": "Type 052C Destroyer",  "category": "Navy",         "price": 15_000_000, "initial": 6,    "maint": 60_000},
+        {"key": "type_054a",       "name": "Type 054A Frigate",    "category": "Navy",         "price": 10_000_000, "initial": 30,   "maint": 40_000},
+        {"key": "patrol_combat_c", "name": "Patrol / Coastal Ships","category": "Navy",        "price": 800_000,    "initial": 100,  "maint": 2_000},
+        {"key": "type_075",        "name": "Type 075 LHD Ship",    "category": "Navy",         "price": 35_000_000, "initial": 3,    "maint": 120_000},
+        {"key": "type_071",        "name": "Type 071 LPD Ship",    "category": "Navy",         "price": 20_000_000, "initial": 8,    "maint": 70_000},
+        {"key": "type_093_sub",    "name": "Type 093 Attack Sub",  "category": "Navy",         "price": 30_000_000, "initial": 6,    "maint": 120_000},
+        {"key": "type_039ab_sub",  "name": "Type 039A/B Submarine","category": "Navy",        "price": 12_000_000, "initial": 20,   "maint": 45_000},
+        {"key": "type_039_sub",    "name": "Type 039 Submarine",   "category": "Navy",         "price": 8_000_000,  "initial": 10,   "maint": 30_000},
+        {"key": "type_094_ssbn",   "name": "Type 094 SSBN Sub",    "category": "Navy",         "price": 45_000_000, "initial": 6,    "maint": 200_000},
+
+        # توان موشکی و مهمات (Missiles)
+        {"key": "df21",            "name": "DF-21 Anti-Ship",      "category": "Missiles",     "price": 5_000_000,  "initial": 100,  "maint": 10_000},
+        {"key": "df26",            "name": "DF-26 Guam Killer",    "category": "Missiles",     "price": 8_000_000,  "initial": 80,   "maint": 15_000},
+        {"key": "df17",            "name": "DF-17 Hypersonic",     "category": "Missiles",     "price": 10_000_000, "initial": 50,   "maint": 20_000},
+        {"key": "df41",            "name": "DF-41 ICBM",           "category": "Missiles",     "price": 20_000_000, "initial": 40,   "maint": 50_000},
+        {"key": "cj10",            "name": "CJ-10 Cruise Missile", "category": "Missiles",     "price": 2_000_000,  "initial": 300,  "maint": 3_000},
+        {"key": "yj12",            "name": "YJ-12 Anti-Ship",      "category": "Missiles",     "price": 2_500_000,  "initial": 200,  "maint": 4_000},
+        {"key": "yj18",            "name": "YJ-18 Anti-Ship",      "category": "Missiles",     "price": 3_000_000,  "initial": 300,  "maint": 5_000},
+        {"key": "pl15",            "name": "PL-15 Air-to-Air",     "category": "Missiles",     "price": 1_000_000,  "initial": 800,  "maint": 1_500},
+        {"key": "pl10",            "name": "PL-10 Air-to-Air",     "category": "Missiles",     "price": 500_000,    "initial": 600,  "maint": 800},
+
+        # پدافند هوایی (Air Defense)
+        {"key": "hq9_hq9b",        "name": "HQ-9 / HQ-9B",         "category": "Air Defense",  "price": 12_000_000, "initial": 40,   "maint": 35_000},
+        {"key": "hq22",            "name": "HQ-22 Air Defense",    "category": "Air Defense",  "price": 8_000_000,  "initial": 30,   "maint": 25_000},
+        {"key": "hq16",            "name": "HQ-16 Medium Range",   "category": "Air Defense",  "price": 5_000_000,  "initial": 40,   "maint": 15_000},
+        {"key": "hq17",            "name": "HQ-17 Short Range",    "category": "Air Defense",  "price": 4_000_000,  "initial": 30,   "maint": 12_000},
+        {"key": "ld2000",          "name": "LD-2000 SPAAG/CIWS",   "category": "Air Defense",  "price": 1_500_000,  "initial": 100,  "maint": 4_000},
+        {"key": "radars_china",    "name": "Military Radar Systems","category": "Air Defense", "price": 4_000_000,  "initial": 250,  "maint": 12_000},
+    ],
     "germany": [
         # نیروی هوایی و بالگردها (Aircraft)
         {"key": "eurofighter",     "name": "Eurofighter Typhoon",  "category": "Aircraft",     "price": 18_000_000, "initial": 138,  "maint": 50_000},
