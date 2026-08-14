@@ -547,4 +547,3 @@ def add_log(actor: str, action: str, details: str = ""):
     """, (actor, action, details, now_str))
     conn.commit()
     conn.close()
-EOF
