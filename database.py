@@ -128,6 +128,24 @@ def get_taken_country_keys():
     return {r["country_key"] for r in rows}
 
 
+def delete_country_by_player(player_id: int) -> bool:
+    """کشور یه بازیکن رو کامل پاک می‌کنه (برای تست/ریست). True/False برمی‌گردونه که پیدا شد یا نه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False
+    country_id = row["id"]
+    cur.execute("DELETE FROM equipment WHERE country_id = ?", (country_id,))
+    cur.execute("DELETE FROM transactions WHERE country_id = ?", (country_id,))
+    cur.execute("DELETE FROM countries WHERE id = ?", (country_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
 def get_country_by_player(player_id: int):
     conn = get_connection()
     cur = conn.cursor()
@@ -242,137 +260,4 @@ def add_log(actor: str, action: str, details: str = ""):
         VALUES (?,?,?,?)
     """, (actor, action, details, datetime.datetime.utcnow().isoformat()))
     conn.commit()
-    conn.close()￼Enter# -*- coding: utf-8 -*-
-"""
-لایه دیتابیس بازی.
-از SQLite استفاده می‌کنیم چون فایلیه و نیاز به سرور جدا نداره.
-"""
-
-import sqlite3
-import json
-import datetime
-import config
-
-def get_connection():
-    conn = sqlite3.connect(config.DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def init_db():
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS countries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-        player_id INTEGER UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        flag TEXT DEFAULT '🏳️',
-        population INTEGER DEFAULT 0,
-        treasury INTEGER DEFAULT 0,
-        tax_income INTEGER DEFAULT 0,
-        daily_income INTEGER DEFAULT 0,
-        gold INTEGER DEFAULT 0,
-        gold_daily INTEGER DEFAULT 0,
-        oil_reserves INTEGER DEFAULT 0,
-        oil_production INTEGER DEFAULT 0,
-        grain INTEGER DEFAULT 0,
-        electricity INTEGER DEFAULT 0,
-        active_personnel INTEGER DEFAULT 0,
-        reserve_personnel INTEGER DEFAULT 0,
-        last_income_date TEXT,
-        created_at TEXT,
-        country_key TEXT
-    )
-    """)
-
-    # مهاجرت ساده: اگه دیتابیس قبلاً بدون این ستون ساخته شده، اضافه‌اش کن
-    try:
-        cur.execute("ALTER TABLE countries ADD COLUMN country_key TEXT")
-    except sqlite3.OperationalError:
-        pass
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS equipment (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        country_id INTEGER NOT NULL,
-        item_key TEXT NOT NULL,
-        quantity INTEGER DEFAULT 0,
-        UNIQUE(country_id, item_key),
-        FOREIGN KEY(country_id) REFERENCES countries(id)
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        country_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        description TEXT,
-        amount INTEGER,
-        created_at TEXT,
-        FOREIGN KEY(country_id) REFERENCES countries(id)
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        actor TEXT,
-        action TEXT,
-        details TEXT,
-        created_at TEXT
-    )
-    """)
-
-    conn.commit()
     conn.close()
-
-
-# ---------- کشورها ----------
-
-def create_country(player_id: int, name: str, flag: str = "🏳️", country_key: str = None):
-    conn = get_connection()
-    cur = conn.cursor()
-    sv = config.STARTING_VALUES
-    cur.execute("""
-        INSERT INTO countries
-        (player_id, name, flag, population, treasury, tax_income, daily_income,
-         gold, gold_daily, oil_reserves, oil_production, grain, electricity,
-         active_personnel, reserve_personnel, last_income_date, created_at, country_key)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        player_id, name, flag,
-        sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
-        sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
-        sv["grain"], sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
-        None, datetime.datetime.utcnow().isoformat(), country_key
-    ))
-    conn.commit()
-    conn.close()
-
-
-def get_country_by_key(country_key: str):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM countries WHERE country_key = ?", (country_key,))
-    row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def get_taken_country_keys():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT country_key FROM countries WHERE country_key IS NOT NULL")
-    rows = cur.fetchall()
-    conn.close()
-    return {r["country_key"] for r in rows}
-
-
-def get_country_by_player(player_id: int):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM countries WHERE player_id = ?", (player_id,))
