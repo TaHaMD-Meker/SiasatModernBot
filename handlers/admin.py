@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 پنل ادمین پیشرفته و تعاملی با دکمه‌های شیشه‌ای (Inline Buttons).
-مدیریت کامل کشورها، خزانه، طلا، نفت، تجهیزات و دارایی‌های اختصاصی نظامی (Country Assets).
+مدیریت کامل کشورها، خزانه، طلا، نفت، تجهیزات، دارایی‌های اختصاصی نظامی (Country Assets) و همگام‌سازی کاتالوگ.
 """
 
 import math
@@ -29,6 +29,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
+        [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
         [InlineKeyboardButton("📢 ارسال پیام همگانی (Broadcast)", callback_data="admin:broadcast_prompt")],
         [InlineKeyboardButton("❌ بستن پنل", callback_data="admin:close")],
@@ -84,13 +85,12 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
                                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:list:0")]]))
         return
 
-    # تضمین وجود دارایی‌های نظامی کشور
     if c.get("country_key"):
         db.seed_country_assets(c["id"], c["country_key"])
 
     assets = db.get_country_assets(country_id)
     asset_summary = []
-    for a in assets[:5]: # ۵ دارایی اول
+    for a in assets[:5]:
         unit = config.ASSET_CATEGORIES.get(a['category'], ("", "عدد"))[1]
         asset_summary.append(f"  • {a['equipment_name']}: {format_number(a['amount'])} {unit}")
 
@@ -234,7 +234,8 @@ async def menu_assets(query, country_id: int):
     keyboard = []
     for a in assets:
         unit = config.ASSET_CATEGORIES.get(a['category'], ("", "عدد"))[1]
-        btn_label = f"{a['equipment_name']} ({format_number(a['amount'])} {unit})"
+        prod_mark = "✅" if a.get("producible", 1) == 1 else "🌐وارداتی"
+        btn_label = f"{a['equipment_name']} ({format_number(a['amount'])} {unit}) [{prod_mark}]"
         keyboard.append([InlineKeyboardButton(btn_label, callback_data=f"admin:asset_item:{c['id']}:{a['equipment_key']}")])
 
     keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin:c:{c['id']}")])
@@ -248,11 +249,14 @@ async def menu_single_asset_item(query, country_id: int, equipment_key: str):
         return
 
     unit = config.ASSET_CATEGORIES.get(asset['category'], ("", "عدد"))[1]
+    prod_str = "بومی (قابل خرید در فروشگاه)" if asset.get("producible", 1) == 1 else "وارداتی (غیرقابل خرید در فروشگاه)"
+
     text = (
         f"⚙️ **ویرایش دارایی نظامی:** {asset['equipment_name']}\n"
         f"کشور: {c['flag']} {c['name']}\n"
+        f"نوع: `{prod_str}`\n"
         f"تعداد فعلی: `{format_number(asset['amount'])} {unit}`\n"
-        f"قیمت خرید واحد: {format_money(asset['buy_price'])}"
+        f"قیمت واحد: {format_money(asset['buy_price'])}"
     )
 
     keyboard = [
@@ -318,6 +322,12 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"🪖 مجموع کل تجهیزات و تسلیحات نظامی: {format_number(stats['total_equipment'])} عدد"
         )
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:sync_catalog":
+        db.sync_all_country_assets_to_catalog()
+        text = "⚡ **همگام‌سازی کامل انجام شد!**\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:daily_income":

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 لایه دیتابیس بازی (SQLite).
-شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets System)، خرید اتومیک با شرط خط تولید بومی (producible)، و پنل ادمین.
+شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets System)، همگام‌سازی دیتابیس و خرید اتومیک.
 """
 
 import sqlite3
@@ -19,7 +19,6 @@ def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
-    # جدول کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS countries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +53,6 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
-    # جدول دارایی‌های اختصاصی نظامی کشورها (Country Assets System)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS country_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +75,6 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
-    # جدول عمومی غیرنظامی
     cur.execute("""
     CREATE TABLE IF NOT EXISTS equipment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +86,6 @@ def init_db():
     )
     """)
 
-    # تراکنش‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,7 +98,6 @@ def init_db():
     )
     """)
 
-    # لاگ‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -267,10 +262,60 @@ def adjust_oil_production(country_id: int, delta: int):
     conn.close()
 
 
-# ---------- سیستم دارایی‌های اختصاصی کشورها (Country Assets System) ----------
+# ---------- همگام‌سازی و به‌روزرسانی کلی کشورها ----------
+
+def sync_all_country_assets_to_catalog():
+    """به‌روزرسانی تمام کشورهای ساخته‌شده قبلی با آمار و آمار تجهیزات جدید کاتالوگ."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM countries")
+    rows = cur.fetchall()
+
+    for r in rows:
+        c = dict(r)
+        c_id = c["id"]
+        c_key = c["country_key"]
+        if not c_key:
+            continue
+
+        sv = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
+        cur.execute("""
+            UPDATE countries SET
+            population = ?, treasury = ?, tax_income = ?, daily_income = ?,
+            gold = ?, gold_daily = ?, oil_reserves = ?, oil_production = ?,
+            active_personnel = ?, reserve_personnel = ?
+            WHERE id = ?
+        """, (
+            sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
+            sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
+            sv["active_personnel"], sv["reserve_personnel"], c_id
+        ))
+
+        catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(c_key, config.DEFAULT_COUNTRY_EQUIPMENT)
+        for item in catalog:
+            producible_val = 1 if item.get("producible", True) else 0
+            cur.execute("""
+                INSERT INTO country_assets
+                (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(country_id, equipment_key) DO UPDATE SET
+                category = excluded.category,
+                equipment_name = excluded.equipment_name,
+                amount = excluded.amount,
+                buy_price = excluded.buy_price,
+                maintenance_cost = excluded.maintenance_cost,
+                producible = excluded.producible
+            """, (
+                c_id, c_key, item["category"], item["name"], item["key"],
+                item["initial"], item["price"], item.get("maint", 0), producible_val
+            ))
+
+    conn.commit()
+    conn.close()
+
 
 def seed_country_assets(country_id: int, country_key: str):
-    """مقادیر اولیه تجهیزات اختصاصی هر کشور را در جدول country_assets وارد یا به‌روزرسانی می‌کند."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -298,7 +343,6 @@ def seed_country_assets(country_id: int, country_key: str):
 
 
 def get_country_assets(country_id: int, category: str = None, producible_only: bool = False):
-    """دریافت تمام دارایی‌های نظامی یک کشور (با امکان فیلتر دسته‌بندی و داشتن خط تولید)."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -330,9 +374,6 @@ def get_asset_by_key(country_id: int, equipment_key: str):
 
 
 def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity: int) -> tuple[bool, str, dict]:
-    """
-    خرید اتومیک تجهیزات نظامی اختصاصی کشور با شرط داشتن خط تولید بومی (producible == 1).
-    """
     conn = get_connection()
     try:
         with conn:
@@ -345,7 +386,6 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
 
             asset_dict = dict(asset)
 
-            # بررسی خط تولید بومی
             if asset_dict.get("producible", 1) != 1:
                 return False, f"⚠️ تجهیز **{asset_dict['equipment_name']}** یک سلاح وارداتی است و کشور شما خط تولید بومی آن را ندارد. امکان خرید مجدد در فروشگاه وجود ندارد.", asset_dict
 
