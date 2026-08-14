@@ -116,7 +116,10 @@ def init_db():
 def create_country(player_id: int, name: str, flag: str = "🏳️", country_key: str = None):
     conn = get_connection()
     cur = conn.cursor()
-    sv = config.STARTING_VALUES
+
+    # بررسی مقادیر اولیه اختصاصی کشور یا مقادیر پیش‌فرض
+    sv = config.COUNTRY_STARTING_OVERRIDES.get(country_key, config.STARTING_VALUES)
+
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     cur.execute("""
         INSERT INTO countries
@@ -168,7 +171,6 @@ def get_taken_country_keys():
 
 
 def delete_country_by_id(country_id: int) -> bool:
-    """کشور را با country_id همراه تمامی دارایی‌ها و تراکنش‌هایش حذف می‌کند."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT id FROM countries WHERE id = ?", (country_id,))
@@ -199,7 +201,6 @@ def get_country_by_player(player_id: int):
     conn.close()
     if row:
         c = dict(row)
-        # تضمین وجود دارایی‌های کشور (در صورت عدم وجود از قبل)
         if c.get("country_key"):
             seed_country_assets(c["id"], c["country_key"])
         return c
@@ -265,7 +266,6 @@ def adjust_oil_production(country_id: int, delta: int):
 # ---------- سیستم دارایی‌های اختصاصی کشورها (Country Assets System) ----------
 
 def seed_country_assets(country_id: int, country_key: str):
-    """مقادیر اولیه تجهیزات اختصاصی هر کشور را در جدول country_assets وارد می‌کند."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -286,7 +286,6 @@ def seed_country_assets(country_id: int, country_key: str):
 
 
 def get_country_assets(country_id: int, category: str = None):
-    """دریافت تمام دارایی‌های نظامی یک کشور (با امکان فیلتر بر اساس دسته‌بندی)."""
     conn = get_connection()
     cur = conn.cursor()
     if category and category != "all":
@@ -308,16 +307,11 @@ def get_asset_by_key(country_id: int, equipment_key: str):
 
 
 def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity: int) -> tuple[bool, str, dict]:
-    """
-    خرید اتومیک تجهیزات نظامی اختصاصی کشور.
-    بررسی موجودی، کسر خزانه و افزایش تعداد تجهیز.
-    """
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
 
-            # ۱. دریافت اطلاعات تجهیزات اختصاصی
             cur.execute("SELECT * FROM country_assets WHERE country_id = ? AND equipment_key = ?", (country_id, equipment_key))
             asset = cur.fetchone()
             if not asset:
@@ -326,7 +320,6 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
             asset_dict = dict(asset)
             total_cost = asset_dict["buy_price"] * quantity
 
-            # ۲. بررسی موجودی خزانه کشور
             cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
             c_row = cur.fetchone()
             if not c_row:
@@ -335,13 +328,9 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
             if c_row["treasury"] < total_cost:
                 return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_cost:,} دلار\nموجودی خزانه: {c_row['treasury']:,} دلار", asset_dict
 
-            # ۳. کسر پول از خزانه
             cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (total_cost, country_id))
-
-            # ۴. افزایش تعداد تجهیزات
             cur.execute("UPDATE country_assets SET amount = amount + ? WHERE id = ?", (quantity, asset_dict["id"]))
 
-            # ۵. ثبت تراکنش
             now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
@@ -358,7 +347,6 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
 
 
 def set_asset_amount(country_id: int, equipment_key: str, new_amount: int):
-    """تنظیم دقیق تعداد دارایی نظامی توسط ادمین."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE country_assets SET amount = ? WHERE country_id = ? AND equipment_key = ?",
@@ -367,7 +355,7 @@ def set_asset_amount(country_id: int, equipment_key: str, new_amount: int):
     conn.close()
 
 
-# ---------- سیستم خریدهای غیرنظامی / معمولی ----------
+# ---------- سیستم خریدهای غیرنظامی ----------
 
 def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_price: int, item_name: str) -> tuple[bool, str]:
     conn = get_connection()
@@ -418,7 +406,7 @@ def add_equipment(country_id: int, item_key: str, quantity: int):
     else:
         if quantity > 0:
             cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
-                        (country_id, item_key, quantity))
+                        (quantity, country_id, item_key))
     conn.commit()
     conn.close()
 
