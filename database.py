@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 لایه دیتابیس بازی (SQLite).
-شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets System)، همگام‌سازی دیتابیس و خرید اتومیک.
+شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets System)، همگام‌سازی اتوماتیک دیتابیس با آخرین کاتالوگ و خرید اتومیک.
 """
 
 import sqlite3
@@ -19,6 +19,7 @@ def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
+    # جدول کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS countries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +54,7 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # جدول دارایی‌های اختصاصی نظامی کشورها (Country Assets System)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS country_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,6 +77,7 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # جدول عمومی غیرنظامی
     cur.execute("""
     CREATE TABLE IF NOT EXISTS equipment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +89,7 @@ def init_db():
     )
     """)
 
+    # تراکنش‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,6 +102,7 @@ def init_db():
     )
     """)
 
+    # لاگ‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +115,12 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+    # همگام‌سازی خودکار دیتابیس با جدیدترین کاتالوگ در زمان راه‌اندازی
+    try:
+        sync_all_country_assets_to_catalog()
+    except Exception:
+        pass
 
 
 # ---------- کشورها ----------
@@ -536,3 +547,4 @@ def add_log(actor: str, action: str, details: str = ""):
     """, (actor, action, details, now_str))
     conn.commit()
     conn.close()
+EOF
