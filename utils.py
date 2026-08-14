@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-توابع کمکی، مهم‌ترینش فرمت کردن اعداد پول طبق قانون سند:
-اعداد باید گرد و خوانا نمایش داده بشن، نه اعداد طولانی.
+توابع کمکی، فرمت‌دهی اعداد و کیبورد اصلی بازی.
 """
+
+from telegram import ReplyKeyboardMarkup
+import config
+
 
 def format_money(amount: int) -> str:
     """
@@ -26,7 +29,6 @@ def format_money(amount: int) -> str:
     else:
         return f"{sign}{amount} دلار"
 
-    # اگر عدد رنده، بدون اعشار نشون بده
     if value == int(value):
         value_str = str(int(value))
     else:
@@ -46,3 +48,17 @@ def format_oil(barrels: int) -> str:
         value_str = str(int(value)) if value == int(value) else f"{value:.1f}"
         return f"{value_str} میلیون بشکه"
     return f"{format_number(barrels)} بشکه"
+
+
+def get_main_keyboard(user_id: int):
+    """ایجاد کیبورد اصلی دکمه‌های پایین صفحه (ReplyKeyboardMarkup)"""
+    buttons = [
+        ["🌐 وضعیت کشور", "🏪 فروشگاه"],
+        ["🏦 خزانه و طلا", "🛢️ وضعیت نفت"],
+        ["🪖 وضعیت ارتش", "📜 راهنما"],
+    ]
+    # فقط برای ادمین مشخص شده دکمه پنل مدیریت اضافه می‌شود
+    if user_id in config.ADMIN_IDS:
+        buttons.append(["👑 پنل مدیریت"])
+
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)

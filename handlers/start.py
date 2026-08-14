@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 دستور /start : انتخاب کشور از بین لیست، با دکمه شیشه‌ای.
-هر کشور فقط یک‌بار قابل انتخابه؛ وقتی گرفته شد از لیست حذف میشه.
+پس از انتخاب کشور، کیبورد اصلی دکمه‌های پایین صفحه (Reply Keyboard) برای کاربر فعال می‌شود.
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 import database as db
 import config
+from utils import get_main_keyboard
 
 
 def build_country_keyboard():
@@ -35,7 +36,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if existing:
         await update.message.reply_text(
             f"{existing['flag']} کشور {existing['name']} تو از قبل ثبت شده.\n"
-            "برای دیدن وضعیت از /country استفاده کن."
+            "از دکمه‌های پایین صفحه برای مدیریت کشورت استفاده کن 👇",
+            reply_markup=get_main_keyboard(player_id)
         )
         return
 
@@ -45,7 +47,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "🎮 به «سیاست مدرن» خوش اومدی!\n\nکشورت رو از بین گزینه‌های زیر انتخاب کن:",
+        "🎮 به بازی «سیاست مدرن» خوش اومدی!\n\nلطفاً کشورت رو از بین گزینه‌های زیر انتخاب کن:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -58,6 +60,11 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing = db.get_country_by_player(player_id)
     if existing:
         await query.edit_message_text(f"تو از قبل کشور {existing['flag']} {existing['name']} رو داری!")
+        await context.bot.send_message(
+            chat_id=player_id,
+            text="از دکمه‌های پایین صفحه استفاده کن 👇",
+            reply_markup=get_main_keyboard(player_id)
+        )
         return
 
     key = query.data.split(":", 1)[1]
@@ -66,7 +73,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("این کشور دیگه در دسترس نیست.")
         return
 
-    # ===== جلوگیری از تقلب: بررسی نهایی که کشور توسط بازیکن دیگه گرفته نشده باشه =====
+    # جلوگیری از انتخاب همزمان کشور توسط دو کاربر
     if db.get_country_by_key(key):
         buttons = build_country_keyboard()
         if not buttons:
@@ -82,9 +89,15 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.add_log(actor=str(player_id), action="create_country", details=key)
 
     await query.edit_message_text(
-        f"✅ کشور {info['flag']} {info['name']} با موفقیت انتخاب شد!\n\n"
-        "برای دیدن وضعیت کشورت از /country استفاده کن.\n"
-        "برای دیدن راهنما /help رو بزن."
+        f"✅ کشور {info['flag']} {info['name']} با موفقیت برای شما ثبت شد!\n\n"
+        "منوی اصلی بازی در پایین صفحه قرار گرفت 👇"
+    )
+
+    # ارسال کیبورد دکمه‌های اصلی پایین صفحه
+    await context.bot.send_message(
+        chat_id=player_id,
+        text=f"👑 رهبر عزیز کشور {info['name']}، خوش آمدید!\nبرای مدیریت کشور از دکمه‌های زیر استفاده کنید:",
+        reply_markup=get_main_keyboard(player_id)
     )
 
 

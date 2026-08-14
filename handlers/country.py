@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 دستورات نمایش وضعیت کشور: /country /treasury /oil /army /help
+پشتیبانی از دکمه‌های پایین صفحه (ReplyKeyboard)
 """
 
 from telegram import Update
@@ -8,12 +9,13 @@ from telegram.ext import ContextTypes
 
 import database as db
 import config
-from utils import format_money, format_number, format_oil
+from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
 async def require_country(update: Update):
     """اگر بازیکن کشور نداشت پیام مناسب می‌دهد و None برمی‌گرداند."""
-    country = db.get_country_by_player(update.effective_user.id)
+    user_id = update.effective_user.id
+    country = db.get_country_by_player(user_id)
     if not country:
         await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
         return None
@@ -39,7 +41,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
         f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}"
     )
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, reply_markup=get_main_keyboard(update.effective_user.id))
 
 
 async def treasury(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,7 +50,8 @@ async def treasury(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(
         f"🏦 خزانه {c['name']}: {format_money(c['treasury'])}\n"
-        f"🪙 طلا: {format_number(c['gold'])}"
+        f"🪙 طلا: {format_number(c['gold'])}",
+        reply_markup=get_main_keyboard(update.effective_user.id)
     )
 
 
@@ -58,7 +61,8 @@ async def oil(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(
         f"🛢️ ذخیره نفت {c['name']}: {format_oil(c['oil_reserves'])}\n"
-        f"🛢️ تولید روزانه: {format_oil(c['oil_production'])}"
+        f"🛢️ تولید روزانه: {format_oil(c['oil_production'])}",
+        reply_markup=get_main_keyboard(update.effective_user.id)
     )
 
 
@@ -82,7 +86,7 @@ async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = item["name"] if item else key
             lines.append(f"{name}: {qty}")
 
-    await update.message.reply_text("\n".join(lines))
+    await update.message.reply_text("\n".join(lines), reply_markup=get_main_keyboard(update.effective_user.id))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,17 +94,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_adm = user_id in config.ADMIN_IDS
 
     text = (
-        "📜 راهنمای دستورات بازی «سیاست مدرن»\n\n"
-        "/start — شروع بازی و ساخت کشور\n"
-        "/country — نمایش وضعیت کامل کشور\n"
-        "/treasury — نمایش خزانه و طلا\n"
-        "/oil — نمایش وضعیت نفت\n"
-        "/army — نمایش وضعیت نظامی\n"
-        "/shop — فروشگاه (خرید تجهیزات و ساختمان)\n"
-        "/help — همین راهنما"
+        "📜 راهنمای بازی «سیاست مدرن»\n\n"
+        "شما می‌توانید از دکمه‌های ثابت پایین صفحه یا دستورات زیر استفاده کنید:\n\n"
+        "🌐 **وضعیت کشور** (`/country`)\n"
+        "🏦 **خزانه و طلا** (`/treasury`)\n"
+        "🛢️ **وضعیت نفت** (`/oil`)\n"
+        "🪖 **وضعیت ارتش** (`/army`)\n"
+        "🏪 **فروشگاه** (`/shop`)\n"
+        "📜 **راهنما** (`/help`)"
     )
 
     if is_adm:
-        text += "\n\n👑 **دستورات ادمین:**\n/admin یا /panel — پنل دکمه‌ای و پیشرفته مدیریت"
+        text += "\n\n👑 **پنل مدیریت:** فقط برای ادمین اصلی بازی فعال است."
 
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))

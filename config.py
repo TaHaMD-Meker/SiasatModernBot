@@ -10,8 +10,8 @@ import os
 # ===== توکن بات =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_ATO_EINJA_BEZAR")
 
-# ===== آیدی عددی ادمین‌ها (آیدی تلگرام خودت) =====
-# از متغیر محیطی ADMIN_IDS (به صورت 123456,789012) یا لیست پیش‌فرض خوانده می‌شود
+# ===== آیدی عددی ادمین اصلی =====
+# آیدی اختصاصی شما: 8052987465
 admin_env = os.environ.get("ADMIN_IDS", "")
 if admin_env:
     ADMIN_IDS = [int(x.strip()) for x in admin_env.split(",") if x.strip().isdigit()]
@@ -101,7 +101,7 @@ MILITARY_EQUIPMENT = {
     "boat":           {"name": "🛥️ قایق",           "price": 400_000,   "category": "navy"},
 }
 
-# ===== ادغام همه‌ی اقلام فروشگاه در یک دیکشنری =====
+# ===== ادغام همه‌ی اقلام فروشگاه =====
 ALL_SHOP_ITEMS = {}
 for group in (BUILDINGS, FACTORIES, POWER_PLANTS, MILITARY_EQUIPMENT):
     ALL_SHOP_ITEMS.update(group)

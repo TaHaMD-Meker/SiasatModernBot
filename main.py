@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 فایل اصلی اجرای بات «سیاست مدرن».
+پشتیبانی کامل از دکمه‌های ثابت پایین صفحه (Reply Keyboard) و پنل اختصاصی ادمین.
 اجرا: python main.py
 """
 
@@ -40,7 +41,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
     updated_count = 0
     for c in countries:
         if c["last_income_date"] == today:
-            continue  # امروز قبلاً گرفته
+            continue
 
         db.adjust_treasury(c["id"], c["daily_income"])
         db.adjust_gold(c["id"], c["gold_daily"])
@@ -56,25 +57,34 @@ def main():
 
     app = Application.builder().token(config.BOT_TOKEN).build()
 
-    # ثبت‌نام و انتخاب کشور با دکمه شیشه‌ای
+    # هاندرهای ثبت‌نام و انتخاب کشور
     for handler in get_start_handlers():
         app.add_handler(handler)
 
-    # دستورات نمایش وضعیت کشور
+    # دستورات متنی نمایش وضعیت کشور
     app.add_handler(CommandHandler("country", country_profile))
     app.add_handler(CommandHandler("treasury", treasury))
     app.add_handler(CommandHandler("oil", oil))
     app.add_handler(CommandHandler("army", army))
     app.add_handler(CommandHandler("help", help_command))
 
-    # فروشگاه
+    # دکمه‌های ثابت پایین صفحه (Reply Keyboard Text Handlers)
+    app.add_handler(MessageHandler(filters.Regex("^🌐 وضعیت کشور$"), country_profile))
+    app.add_handler(MessageHandler(filters.Regex("^🏦 خزانه و طلا$"), treasury))
+    app.add_handler(MessageHandler(filters.Regex("^🛢️ وضعیت نفت$"), oil))
+    app.add_handler(MessageHandler(filters.Regex("^🪖 وضعیت ارتش$"), army))
+    app.add_handler(MessageHandler(filters.Regex("^🏪 فروشگاه$"), shop))
+    app.add_handler(MessageHandler(filters.Regex("^📜 راهنما$"), help_command))
+    app.add_handler(MessageHandler(filters.Regex("^👑 پنل مدیریت$"), admin_panel))
+
+    # فروشگاه (دکمه‌های شیشه‌ای)
     app.add_handler(CommandHandler("shop", shop))
     app.add_handler(CallbackQueryHandler(show_category, pattern=r"^shopcat:"))
     app.add_handler(CallbackQueryHandler(back_to_shop, pattern=r"^shopback$"))
     app.add_handler(CallbackQueryHandler(confirm_purchase, pattern=r"^buyitem:"))
     app.add_handler(CallbackQueryHandler(execute_purchase, pattern=r"^confirmbuy:"))
 
-    # پنل پیشرفته ادمین
+    # پنل پیشرفته ادمین (مخصوص آیدی 8052987465)
     app.add_handler(CommandHandler(["admin", "panel"], admin_panel))
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern=r"^admin:"))
 
@@ -83,7 +93,7 @@ def main():
     app.add_handler(CommandHandler("removemoney", removemoney))
     app.add_handler(CommandHandler("listcountries", listcountries))
 
-    # دریافت ورودی‌های متنی (تایپی) برای پنل ادمین
+    # دریافت ورودی‌های متنی (تایپی) مخصوص پنل ادمین
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_input_text_handler))
 
     # درآمد روزانه: هر روز ساعت 00:05 به وقت سرور اجرا می‌شود
