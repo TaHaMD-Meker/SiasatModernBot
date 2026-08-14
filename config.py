@@ -56,6 +56,20 @@ STARTING_VALUES = {
 
 # ===== مقادیر اختصاصی برای کشورهای خاص =====
 COUNTRY_STARTING_OVERRIDES = {
+    "uk": {
+        "population": 69_000_000,
+        "treasury": 50_000_000,
+        "tax_income": 10_000_000,
+        "daily_income": 17_000_000,
+        "gold": 350,
+        "gold_daily": 50,
+        "oil_reserves": 25_000_000,
+        "oil_production": 1_000_000,
+        "grain": 40,
+        "electricity": 150,
+        "active_personnel": 185_000,
+        "reserve_personnel": 900_000,
+    },
     "russia": {
         "population": 144_000_000,
         "treasury": 55_000_000,
@@ -155,6 +169,68 @@ ASSET_CATEGORIES = {
 
 # ===== کاتالوگ دارایی‌های اختصاصی کشورها (Country Assets Catalog) =====
 COUNTRY_EQUIPMENT_CATALOG = {
+    "uk": [
+        # نیروی هوایی سلطنتی (RAF) و بالگردها (Aircraft)
+        {"key": "f35b_uk",         "name": "F-35B Lightning II",   "category": "Aircraft",     "price": 16_000_000, "initial": 70,   "maint": 55_000},
+        {"key": "typhoon_uk",      "name": "Eurofighter Typhoon",  "category": "Aircraft",     "price": 18_000_000, "initial": 140,  "maint": 50_000},
+        {"key": "f15_uk",          "name": "F-15 Eagle",           "category": "Aircraft",     "price": 12_000_000, "initial": 30,   "maint": 35_000},
+        {"key": "f16_uk",          "name": "F-16 Fighting Falcon", "category": "Aircraft",     "price": 8_000_000,  "initial": 20,   "maint": 20_000},
+        {"key": "strike_aircraft_uk","name": "Strike Aircraft Fleet","category": "Aircraft",  "price": 15_000_000, "initial": 100,  "maint": 40_000},
+        {"key": "a400m_uk",        "name": "A400M Atlas",          "category": "Aircraft",     "price": 20_000_000, "initial": 25,   "maint": 40_000},
+        {"key": "c17_uk",          "name": "C-17 Globemaster III", "category": "Aircraft",     "price": 20_000_000, "initial": 8,    "maint": 45_000},
+        {"key": "c130j_uk",        "name": "C-130J Hercules",      "category": "Aircraft",     "price": 8_000_000,  "initial": 14,   "maint": 18_000},
+        {"key": "voyager_kc",      "name": "Voyager KC2/KC3",      "category": "Aircraft",     "price": 25_000_000, "initial": 10,   "maint": 50_000},
+        {"key": "e7_wedgetail_uk", "name": "E-7 Wedgetail AWACS",  "category": "Aircraft",     "price": 30_000_000, "initial": 5,    "maint": 60_000},
+        {"key": "rc135w_uk",       "name": "RC-135W Rivet Joint",  "category": "Aircraft",     "price": 20_000_000, "initial": 3,    "maint": 40_000},
+        {"key": "ah64e_uk",        "name": "AH-64E Apache",        "category": "Aircraft",     "price": 5_000_000,  "initial": 50,   "maint": 15_000},
+        {"key": "merlin_heli",     "name": "AgustaWestland Merlin","category": "Aircraft",     "price": 6_000_000,  "initial": 60,   "maint": 15_000},
+        {"key": "wildcat_heli",    "name": "AW159 Wildcat",        "category": "Aircraft",     "price": 4_000_000,  "initial": 30,   "maint": 10_000},
+        {"key": "chinook_uk",      "name": "CH-47 Chinook",        "category": "Aircraft",     "price": 6_000_000,  "initial": 60,   "maint": 15_000},
+        {"key": "puma_hc2",        "name": "Puma HC2 Helicopter",  "category": "Aircraft",     "price": 3_000_000,  "initial": 20,   "maint": 8_000},
+
+        # پهپادها (UAV)
+        {"key": "protector_rg",    "name": "Protector RG Mk1",     "category": "UAV",          "price": 3_000_000,  "initial": 16,   "maint": 8_000},
+        {"key": "watchkeeper",     "name": "Watchkeeper WK450",    "category": "UAV",          "price": 1_000_000,  "initial": 50,   "maint": 3_000},
+        {"key": "tactical_drones_uk","name": "Tactical Recon UAVs","category": "UAV",         "price": 400_000,    "initial": 150,  "maint": 1_000},
+
+        # نیروی زمینی بریتانیا (Ground Forces)
+        {"key": "challenger2",     "name": "Challenger 2 Tank",    "category": "Ground Forces","price": 3_500_000,  "initial": 220,  "maint": 8_000},
+        {"key": "challenger3",     "name": "Challenger 3 Tank",    "category": "Ground Forces","price": 5_000_000,  "initial": 14,   "maint": 12_000},
+        {"key": "ajax_armored",    "name": "Ajax Armored Vehicle", "category": "Ground Forces","price": 2_000_000,  "initial": 100,  "maint": 5_000},
+        {"key": "warrior_ifv",     "name": "Warrior IFV",          "category": "Ground Forces","price": 1_000_000,  "initial": 300,  "maint": 2_500},
+        {"key": "boxer_uk",        "name": "Boxer Armored Vehicle","category": "Ground Forces","price": 1_500_000,  "initial": 200,  "maint": 3_500},
+        {"key": "jackal_vehicle",  "name": "Jackal High Mobility", "category": "Ground Forces","price": 500_000,    "initial": 500,  "maint": 1_200},
+        {"key": "light_armored_uk","name": "Light Armored Vehicles","category": "Ground Forces","price": 400_000,  "initial": 1500, "maint": 1_000},
+
+        # توپخانه و راکت‌اندازها (Artillery)
+        {"key": "as90_howitzer",   "name": "AS90 Howitzer",        "category": "Artillery",    "price": 2_000_000,  "initial": 60,   "maint": 5_000},
+        {"key": "l118_lightgun",   "name": "L118 Light Gun",       "category": "Artillery",    "price": 500_000,    "initial": 100,  "maint": 1_200},
+        {"key": "m270_mlrs_uk",    "name": "M270 MLRS",            "category": "Artillery",    "price": 2_500_000,  "initial": 40,   "maint": 6_000},
+
+        # نیروی دریایی سلطنتی و زیردریایی‌ها (Navy)
+        {"key": "queen_elizabeth_carrier","name": "Queen Elizabeth Carrier","category": "Navy","price": 90_000_000, "initial": 2,    "maint": 450_000},
+        {"key": "type_45_destroyer","name": "Type 45 Daring Destroyer","category": "Navy",    "price": 25_000_000, "initial": 6,    "maint": 100_000},
+        {"key": "type_23_frigate", "name": "Type 23 Duke Frigate",  "category": "Navy",         "price": 15_000_000, "initial": 11,   "maint": 50_000},
+        {"key": "river_class_patrol","name": "River Class Patrol Ship","category": "Navy",     "price": 2_000_000,  "initial": 8,    "maint": 5_000},
+        {"key": "astute_sub",      "name": "Astute Class Submarine","category": "Navy",        "price": 35_000_000, "initial": 5,    "maint": 150_000},
+        {"key": "vanguard_ssbn",   "name": "Vanguard Class SSBN",  "category": "Navy",         "price": 50_000_000, "initial": 4,    "maint": 220_000},
+
+        # توان موشکی و مهمات (Missiles)
+        {"key": "storm_shadow",    "name": "Storm Shadow Cruise",  "category": "Missiles",     "price": 2_000_000,  "initial": 300,  "maint": 3_000},
+        {"key": "spear_missile",   "name": "Spear 3 Missile",      "category": "Missiles",     "price": 800_000,    "initial": 500,  "maint": 1_200},
+        {"key": "meteor_uk",       "name": "Meteor BVR Missile",   "category": "Missiles",     "price": 1_500_000,  "initial": 300,  "maint": 2_000},
+        {"key": "aim120_uk",       "name": "AIM-120 AMRAAM",       "category": "Missiles",     "price": 1_000_000,  "initial": 500,  "maint": 1_000},
+        {"key": "asraam_missile",  "name": "ASRAAM Air-to-Air",    "category": "Missiles",     "price": 500_000,    "initial": 400,  "maint": 800},
+        {"key": "brimstone_missile","name": "Brimstone Precision", "category": "Missiles",     "price": 300_000,    "initial": 1000, "maint": 500},
+        {"key": "sea_viper",       "name": "Sea Viper Defense",    "category": "Missiles",     "price": 2_000_000,  "initial": 300,  "maint": 3_000},
+        {"key": "antiship_uk",     "name": "Anti-Ship Missiles",   "category": "Missiles",     "price": 1_000_000,  "initial": 300,  "maint": 1_500},
+
+        # پدافند هوایی (Air Defense)
+        {"key": "sky_sabre",       "name": "Sky Sabre Air Defense","category": "Air Defense",  "price": 8_000_000,  "initial": 12,   "maint": 25_000},
+        {"key": "starstreak",      "name": "Starstreak System",    "category": "Air Defense",  "price": 1_000_000,  "initial": 100,  "maint": 2_500},
+        {"key": "stormer_hvm",     "name": "Stormer HVM Vehicle",  "category": "Air Defense",  "price": 1_500_000,  "initial": 60,   "maint": 3_500},
+        {"key": "radars_uk",       "name": "Military Radar Systems","category": "Air Defense", "price": 4_000_000,  "initial": 120,  "maint": 12_000},
+    ],
     "russia": [
         # نیروی هوایی و پشتیبانی (Aircraft)
         {"key": "su57",           "name": "Su-57 Felon",          "category": "Aircraft",     "price": 20_000_000, "initial": 24,   "maint": 70_000},
