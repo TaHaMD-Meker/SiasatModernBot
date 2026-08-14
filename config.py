@@ -56,6 +56,20 @@ STARTING_VALUES = {
 
 # ===== مقادیر اختصاصی برای کشورهای خاص =====
 COUNTRY_STARTING_OVERRIDES = {
+    "germany": {
+        "population": 84_000_000,
+        "treasury": 55_000_000,
+        "tax_income": 10_000_000,
+        "daily_income": 18_000_000,
+        "gold": 350,
+        "gold_daily": 50,
+        "oil_reserves": 40_000_000,
+        "oil_production": 1_000_000,
+        "grain": 45,
+        "electricity": 155,
+        "active_personnel": 185_000,
+        "reserve_personnel": 800_000,
+    },
     "iran": {
         "population": 90_000_000,
         "treasury": 45_000_000,
@@ -113,6 +127,65 @@ ASSET_CATEGORIES = {
 
 # ===== کاتالوگ دارایی‌های اختصاصی کشورها (Country Assets Catalog) =====
 COUNTRY_EQUIPMENT_CATALOG = {
+    "germany": [
+        # نیروی هوایی و بالگردها (Aircraft)
+        {"key": "eurofighter",     "name": "Eurofighter Typhoon",  "category": "Aircraft",     "price": 18_000_000, "initial": 138,  "maint": 50_000},
+        {"key": "tornado_ecr",    "name": "Tornado IDS/ECR",      "category": "Aircraft",     "price": 10_000_000, "initial": 85,   "maint": 30_000},
+        {"key": "f35a_germany",   "name": "F-35A Lightning II",   "category": "Aircraft",     "price": 15_000_000, "initial": 35,   "maint": 50_000},
+        {"key": "a400m",          "name": "A400M Atlas",          "category": "Aircraft",     "price": 20_000_000, "initial": 45,   "maint": 40_000},
+        {"key": "c130j_germany",  "name": "C-130J Hercules",      "category": "Aircraft",     "price": 8_000_000,  "initial": 7,    "maint": 18_000},
+        {"key": "a330_mrtt",      "name": "A330 MRTT Tanker",     "category": "Aircraft",     "price": 25_000_000, "initial": 8,    "maint": 50_000},
+        {"key": "a321_isr",       "name": "A321LR / ISR Recon",   "category": "Aircraft",     "price": 15_000_000, "initial": 10,   "maint": 30_000},
+        {"key": "recon_trainers", "name": "Recon & Trainer Aircraft","category": "Aircraft", "price": 3_000_000,  "initial": 30,   "maint": 8_000},
+        {"key": "tiger_heli",     "name": "Eurocopter Tiger",     "category": "Aircraft",     "price": 8_000_000,  "initial": 50,   "maint": 20_000},
+        {"key": "nh90_heli",      "name": "NH90 Helicopter",      "category": "Aircraft",     "price": 6_000_000,  "initial": 80,   "maint": 15_000},
+        {"key": "ch53g_heli",     "name": "CH-53G Transport",     "category": "Aircraft",     "price": 7_000_000,  "initial": 60,   "maint": 18_000},
+        {"key": "h145m_heli",     "name": "H145M Light Attack",   "category": "Aircraft",     "price": 3_000_000,  "initial": 30,   "maint": 8_000},
+
+        # پهپادها (UAV)
+        {"key": "heron1",          "name": "Heron 1 UAV",          "category": "UAV",          "price": 1_000_000,  "initial": 20,   "maint": 3_000},
+        {"key": "heron_tp_germany","name": "Heron TP UAV",         "category": "UAV",          "price": 3_000_000,  "initial": 10,   "maint": 8_000},
+        {"key": "recon_drones",   "name": "Tactical Recon UAVs",  "category": "UAV",          "price": 400_000,    "initial": 100,  "maint": 1_000},
+
+        # نیروی زمینی (Ground Forces)
+        {"key": "leopard_2a6",    "name": "Leopard 2A6 Tank",     "category": "Ground Forces","price": 3_500_000,  "initial": 150,  "maint": 8_000},
+        {"key": "leopard_2a7",    "name": "Leopard 2A7 Tank",     "category": "Ground Forces","price": 4_500_000,  "initial": 100,  "maint": 10_000},
+        {"key": "leopard_2a8",    "name": "Leopard 2A8 Tank",     "category": "Ground Forces","price": 5_500_000,  "initial": 20,   "maint": 12_000},
+        {"key": "puma_ifv",       "name": "Puma IFV",             "category": "Ground Forces","price": 2_000_000,  "initial": 300,  "maint": 5_000},
+        {"key": "boxer_apc",      "name": "Boxer Armored Vehicle","category": "Ground Forces","price": 1_500_000,  "initial": 400,  "maint": 3_500},
+        {"key": "marder_ifv",     "name": "Marder 1A5 IFV",       "category": "Ground Forces","price": 1_000_000,  "initial": 300,  "maint": 2_500},
+        {"key": "fuchs_apc",      "name": "Fuchs Vehicle",        "category": "Ground Forces","price": 600_000,    "initial": 600,  "maint": 1_500},
+        {"key": "light_armored_g","name": "Light Armored Vehicles","category": "Ground Forces","price": 400_000,  "initial": 1000, "maint": 1_000},
+
+        # توپخانه و راکت‌اندازها (Artillery)
+        {"key": "pzh_2000",       "name": "PzH 2000 Howitzer",    "category": "Artillery",    "price": 2_500_000,  "initial": 100,  "maint": 6_000},
+        {"key": "m109_germany",   "name": "M109 Howitzer",        "category": "Artillery",    "price": 1_200_000,  "initial": 20,   "maint": 3_000},
+        {"key": "mars_2",         "name": "MARS II Rocket System","category": "Artillery",    "price": 3_000_000,  "initial": 35,   "maint": 8_000},
+        {"key": "himars_germany", "name": "HIMARS System",        "category": "Artillery",    "price": 3_000_000,  "initial": 30,   "maint": 8_000},
+
+        # توان موشکی و مهمات (Missiles)
+        {"key": "taurus_kepd",    "name": "Taurus KEPD 350",      "category": "Missiles",     "price": 2_000_000,  "initial": 150,  "maint": 3_000},
+        {"key": "iris_t_missile", "name": "IRIS-T Air-to-Air",    "category": "Missiles",     "price": 500_000,    "initial": 300,  "maint": 800},
+        {"key": "iris_t_sl",      "name": "IRIS-T SL Surface-to-Air","category": "Missiles", "price": 800_000,    "initial": 200,  "maint": 1_200},
+        {"key": "aim120_germany", "name": "AIM-120 AMRAAM",       "category": "Missiles",     "price": 1_000_000,  "initial": 500,  "maint": 1_000},
+        {"key": "meteor_missile", "name": "Meteor BVR Missile",   "category": "Missiles",     "price": 1_500_000,  "initial": 300,  "maint": 2_000},
+        {"key": "air_ground_mun", "name": "Air-to-Ground Munitions","category": "Missiles",  "price": 400_000,    "initial": 500,  "maint": 500},
+
+        # نیروی دریایی و زیردریایی (Navy)
+        {"key": "f125_frigate",   "name": "F125 Baden-Württemberg","category": "Navy",        "price": 25_000_000, "initial": 4,    "maint": 80_000},
+        {"key": "f124_frigate",   "name": "F124 Sachsen Class",   "category": "Navy",         "price": 20_000_000, "initial": 3,    "maint": 70_000},
+        {"key": "f123_frigate",   "name": "F123 Brandenburg Class","category": "Navy",        "price": 15_000_000, "initial": 4,    "maint": 50_000},
+        {"key": "k130_corvette",  "name": "K130 Braunschweig",    "category": "Navy",         "price": 10_000_000, "initial": 5,    "maint": 30_000},
+        {"key": "support_fleet_g","name": "Support & Logistics Fleet","category": "Navy",    "price": 3_000_000,  "initial": 20,   "maint": 10_000},
+        {"key": "type_212a_sub",  "name": "Type 212A Submarine",  "category": "Navy",         "price": 30_000_000, "initial": 6,    "maint": 120_000},
+
+        # پدافند هوایی (Air Defense)
+        {"key": "patriot_germany","name": "Patriot PAC-3 Battery","category": "Air Defense",  "price": 10_000_000, "initial": 12,   "maint": 30_000},
+        {"key": "iris_t_slm",     "name": "IRIS-T SLM System",    "category": "Air Defense",  "price": 8_000_000,  "initial": 6,    "maint": 25_000},
+        {"key": "iris_t_sls",     "name": "IRIS-T SLS System",    "category": "Air Defense",  "price": 5_000_000,  "initial": 6,    "maint": 15_000},
+        {"key": "ozelot_sys",     "name": "Ozelot Air Defense",   "category": "Air Defense",  "price": 2_000_000,  "initial": 40,   "maint": 5_000},
+        {"key": "radars_germany", "name": "Military Radar Systems","category": "Air Defense", "price": 4_000_000,  "initial": 100,  "maint": 12_000},
+    ],
     "iran": [
         # نیروی هوایی و بالگردها (Aircraft)
         {"key": "f14_tomcat",     "name": "F-14 Tomcat",          "category": "Aircraft",     "price": 15_000_000, "initial": 40,   "maint": 40_000},
