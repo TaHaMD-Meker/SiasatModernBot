@@ -88,8 +88,19 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def reset_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور تست: کشور خودتو پاک می‌کنه تا بتونی دوباره از /start شروع کنی."""
+    player_id = update.effective_user.id
+    deleted = db.delete_country_by_player(player_id)
+    if deleted:
+        await update.message.reply_text("✅ کشورت پاک شد. حالا می‌تونی دوباره /start رو بزنی.")
+    else:
+        await update.message.reply_text("کشوری برای پاک کردن نداری.")
+
+
 def get_start_handlers():
     return [
         CommandHandler("start", start),
+        CommandHandler("resetme", reset_me),
         CallbackQueryHandler(pick_country, pattern=r"^pickcountry:"),
-    ]
+    ]￼Enter
