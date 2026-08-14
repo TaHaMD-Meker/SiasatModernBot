@@ -1,15 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-دستور /start : ثبت‌نام کشور تازه.
-از یک ConversationHandler ساده استفاده می‌کنیم که اسم کشور رو از بازیکن بپرسه.
+دستور /start : انتخاب کشور از بین لیست، با دکمه شیشه‌ای.
+هر کشور فقط یک‌بار قابل انتخابه؛ وقتی گرفته شد از لیست حذف میشه.
 """
 
-from telegram import Update, ReplyKeyboardRemove
-from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters, CommandHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 import database as db
+import config
 
-ASK_NAME = 1
+
+def build_country_keyboard():
+    """دکمه‌های کشورهایی که هنوز کسی انتخابشون نکرده رو می‌سازه."""
+    taken = db.get_taken_country_keys()
+    buttons = []
+    row = []
+    for key, info in config.COUNTRIES.items():
+        if key in taken:
+            continue
+        row.append(InlineKeyboardButton(f"{info['flag']} {info['name']}", callback_data=f"pickcountry:{key}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return buttons
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -21,45 +37,59 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{existing['flag']} کشور {existing['name']} تو از قبل ثبت شده.\n"
             "برای دیدن وضعیت از /country استفاده کن."
         )
-        return ConversationHandler.END
+        return
+
+    buttons = build_country_keyboard()
+    if not buttons:
+        await update.message.reply_text("متأسفانه همه‌ی کشورها قبلاً انتخاب شدن!")
+        return
 
     await update.message.reply_text(
-        "🎮 به «سیاست مدرن» خوش اومدی!\n\n"
-        "اول از همه، اسم کشورت رو بفرست (مثلاً: ایران، آلمان و ...)"
+        "🎮 به «سیاست مدرن» خوش اومدی!\n\nکشورت رو از بین گزینه‌های زیر انتخاب کن:",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
-    return ASK_NAME
 
 
-async def receive_country_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
     player_id = update.effective_user.id
-    name = update.message.text.strip()
+    existing = db.get_country_by_player(player_id)
+    if existing:
+        await query.edit_message_text(f"تو از قبل کشور {existing['flag']} {existing['name']} رو داری!")
+        return
 
-    if len(name) < 2 or len(name) > 30:
-        await update.message.reply_text("اسم باید بین ۲ تا ۳۰ کاراکتر باشه. دوباره بفرست:")
-        return ASK_NAME
+    key = query.data.split(":", 1)[1]
+    info = config.COUNTRIES.get(key)
+    if not info:
+        await query.edit_message_text("این کشور دیگه در دسترس نیست.")
+        return
 
-    db.create_country(player_id, name)
-    db.add_log(actor=str(player_id), action="create_country", details=name)
+    # ===== جلوگیری از تقلب: بررسی نهایی که کشور توسط بازیکن دیگه گرفته نشده باشه =====
+    if db.get_country_by_key(key):
+        buttons = build_country_keyboard()
+        if not buttons:
+            await query.edit_message_text("این کشور همین الان گرفته شد و دیگه کشوری باقی نمونده!")
+            return
+        await query.edit_message_text(
+            "این کشور همین الان توسط یه بازیکن دیگه انتخاب شد! یکی دیگه رو انتخاب کن:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
 
-    await update.message.reply_text(
-        f"✅ کشور «{name}» با موفقیت ثبت شد!\n\n"
+    db.create_country(player_id, info["name"], info["flag"], key)
+    db.add_log(actor=str(player_id), action="create_country", details=key)
+
+    await query.edit_message_text(
+        f"✅ کشور {info['flag']} {info['name']} با موفقیت انتخاب شد!\n\n"
         "برای دیدن وضعیت کشورت از /country استفاده کن.\n"
-        "برای دیدن راهنما /help رو بزن.",
-        reply_markup=ReplyKeyboardRemove()
+        "برای دیدن راهنما /help رو بزن."
     )
-    return ConversationHandler.END
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ثبت‌نام لغو شد.")
-    return ConversationHandler.END
-
-
-def get_start_handler():
-    return ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_country_name)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
+def get_start_handlers():
+    return [
+        CommandHandler("start", start),
+        CallbackQueryHandler(pick_country, pattern=r"^pickcountry:"),
+    ]
