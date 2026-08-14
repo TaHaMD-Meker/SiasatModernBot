@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-فروشگاه بازی (Shop): خرید غیرنظامی (ساختمان، صنعت، نیروگاه) و خرید اختصاصی تجهیزات نظامی هر کشور (Country Assets).
-بررسی موجودی خزانه و خرید اتومیک جهت پیشگیری از منفی شدن خزانه.
+فروشگاه بازی (Shop): خرید غیرنظامی (ساختمان، صنعت، نیروگاه) و خرید اختصاصی تجهیزات نظامی بومی هر کشور (Country Assets).
+فقط تجهیزاتی که دارای خط تولید بومی (producible=1) هستند در فروشگاه نمایش داده می‌شوند.
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -29,7 +29,7 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.seed_country_assets(country["id"], country["country_key"])
 
     buttons = [
-        [InlineKeyboardButton("🪖 تجهیزات و تسلیحات نظامی اختصاصی", callback_data="shopcat:military_assets")],
+        [InlineKeyboardButton("🪖 ساخت/خرید تسلیحات نظامی بومی", callback_data="shopcat:military_assets")],
         [InlineKeyboardButton("🏠 ساختمان‌ها", callback_data="shopcat:buildings")],
         [InlineKeyboardButton("🏭 صنعت و کارخانجات", callback_data="shopcat:factories")],
         [InlineKeyboardButton("⚡ نیروگاه‌های انرژی", callback_data="shopcat:power")],
@@ -58,7 +58,6 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("کشور یافت نشد.")
         return
 
-    # اگر انتخاب تجهیزات نظامی اختصاصی کشور باشد
     if cat_key == "military_assets":
         buttons = [
             [
@@ -78,11 +77,10 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             [InlineKeyboardButton("🔙 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")],
         ]
-        text = f"🪖 **تجهیزات و تسلیحات نظامی اختصاصی کشور {country['flag']} {country['name']}**\n\nیک دسته‌بندی نظامی را انتخاب کنید:"
+        text = f"🪖 **خط تولید تسلیحات نظامی بومی کشور {country['flag']} {country['name']}**\n\nیک دسته‌بندی نظامی را انتخاب کنید (فقط سلاح‌های دارای خط تولید بومی قابل خرید هستند):"
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
         return
 
-    # خریدهای غیرنظامی (ساختمان، صنعت، نیروگاه)
     if cat_key in CIVILIAN_CATEGORIES:
         label, items = CIVILIAN_CATEGORIES[cat_key]
         buttons = []
@@ -107,17 +105,20 @@ async def show_military_asset_category(update: Update, context: ContextTypes.DEF
         await query.edit_message_text("کشور یافت نشد.")
         return
 
-    assets = db.get_country_assets(country["id"], category)
+    # فقط سلاح‌های دارای خط تولید بومی (producible_only=True)
+    assets = db.get_country_assets(country["id"], category, producible_only=True)
     cat_info = config.ASSET_CATEGORIES.get(category, (category, "عدد"))
 
     buttons = []
-    for item in assets:
-        btn_label = f"{item['equipment_name']} — {format_money(item['buy_price'])} (موجود: {format_number(item['amount'])})"
-        buttons.append([InlineKeyboardButton(btn_label, callback_data=f"confirm_asset_buy:{item['equipment_key']}")])
+    if not assets:
+        text = f"{country['flag']} **تسلیحات {cat_info[0]} بومی {country['name']}**\n\n❌ کشور شما خط تولید بومی برای تسلیحات این دسته ندارد (تجهیزات موجود شما وارداتی هستند)."
+    else:
+        for item in assets:
+            btn_label = f"{item['equipment_name']} — {format_money(item['buy_price'])} (موجود: {format_number(item['amount'])})"
+            buttons.append([InlineKeyboardButton(btn_label, callback_data=f"confirm_asset_buy:{item['equipment_key']}")])
+        text = f"{country['flag']} **خط تولید تسلیحات {cat_info[0]} بومی {country['name']}**\n\nبرای سفارش و ساخت، روی سلاح مورد نظر کلیک کنید:"
 
     buttons.append([InlineKeyboardButton("🔙 بازگشت به دسته‌های نظامی", callback_data="shopcat:military_assets")])
-
-    text = f"{country['flag']} **تسلیحات {cat_info[0]} اختصاصی {country['name']}**\n\nبرای خرید، روی سلاح مورد نظر کلیک کنید:"
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
@@ -143,21 +144,25 @@ async def confirm_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("این تجهیز برای کشور شما تعریف نشده است.")
         return
 
+    if asset.get("producible", 1) != 1:
+        await query.edit_message_text("⚠️ این تجهیز وارداتی است و کشور شما خط تولید بومی برای ساخت مجدد آن را ندارد.")
+        return
+
     unit = config.ASSET_CATEGORIES.get(asset["category"], ("", "عدد"))[1]
 
     text = (
-        f"🛒 **خرید تجهیز نظامی:** {asset['equipment_name']}\n"
-        f"💰 **قیمت هر واحد:** {format_money(asset['buy_price'])}\n"
+        f"🛒 **سفارش ساخت تجهیز نظامی بومی:** {asset['equipment_name']}\n"
+        f"💰 **هزینه تولید هر واحد:** {format_money(asset['buy_price'])}\n"
         f"📦 **موجودی فعلی کشور شما:** {format_number(asset['amount'])} {unit}\n"
         f"🏦 **موجودی خزانه:** {format_money(country['treasury'])}\n\n"
-        "تعداد مورد نظر برای خرید را انتخاب کنید:"
+        "تعداد مورد نظر برای تولید را انتخاب کنید:"
     )
 
     buttons = [
         [
-            InlineKeyboardButton("خرید ۱ عدد", callback_data=f"do_asset_buy:{equipment_key}:1"),
-            InlineKeyboardButton("خرید ۵ عدد", callback_data=f"do_asset_buy:{equipment_key}:5"),
-            InlineKeyboardButton("خرید ۱۰ عدد", callback_data=f"do_asset_buy:{equipment_key}:10"),
+            InlineKeyboardButton("تولید ۱ عدد", callback_data=f"do_asset_buy:{equipment_key}:1"),
+            InlineKeyboardButton("تولید ۵ عدد", callback_data=f"do_asset_buy:{equipment_key}:5"),
+            InlineKeyboardButton("تولید ۱۰ عدد", callback_data=f"do_asset_buy:{equipment_key}:10"),
         ],
         [
             InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="shopcat:military_assets"),
@@ -184,12 +189,11 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("کشور یافت نشد.")
         return
 
-    # اجرای خرید اتومیک
     success, msg, updated_asset = db.buy_country_asset_transaction(country["id"], equipment_key, quantity)
 
     if not success:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopcat:military_assets")]]
-        await query.edit_message_text(f"❌ **خرید انجام نشد:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"❌ **تولید انجام نشد:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
     db.add_log(actor=str(user_id), action="asset_purchase", details=f"{equipment_key} x{quantity}")
@@ -199,15 +203,15 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     total_cost = updated_asset["buy_price"] * quantity
 
     text = (
-        f"✅ **خرید با موفقیت انجام شد!**\n\n"
-        f"🛒 **تجهیز:** {updated_asset['equipment_name']} (تعداد: {quantity} {unit})\n"
-        f"💰 **مبلغ کسر شده:** {format_money(total_cost)}\n"
-        f"📦 **موجودی جدید شما:** {format_number(updated_asset['amount'])} {unit}\n"
+        f"✅ **تولید با موفقیت انجام شد!**\n\n"
+        f"🛒 **تجهیز بومی:** {updated_asset['equipment_name']} (تعداد: {quantity} {unit})\n"
+        f"💰 **مبلغ کسر شده از خزانه:** {format_money(total_cost)}\n"
+        f"📦 **موجودی جدید کشور شما:** {format_number(updated_asset['amount'])} {unit}\n"
         f"🏦 **موجودی جدید خزانه:** {format_money(updated_country['treasury'])}"
     )
 
     keyboard = [
-        [InlineKeyboardButton("🛍️ ادامه خرید نظامی", callback_data="shopcat:military_assets")],
+        [InlineKeyboardButton("🛍️ ادامه تولید نظامی", callback_data="shopcat:military_assets")],
         [InlineKeyboardButton("🏪 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")],
     ]
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 لایه دیتابیس بازی (SQLite).
-شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets)، خرید اتومیک، و پنل ادمین.
+شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets System)، خرید اتومیک با شرط خط تولید بومی (producible)، و پنل ادمین.
 """
 
 import sqlite3
@@ -66,12 +66,18 @@ def init_db():
         amount INTEGER DEFAULT 0,
         buy_price INTEGER DEFAULT 0,
         maintenance_cost INTEGER DEFAULT 0,
+        producible INTEGER DEFAULT 1,
         FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE,
         UNIQUE(country_id, equipment_key)
     )
     """)
 
-    # جدول عمومی غیرنظامی/قدیمی تجهیزات
+    try:
+        cur.execute("ALTER TABLE country_assets ADD COLUMN producible INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    # جدول عمومی غیرنظامی
     cur.execute("""
     CREATE TABLE IF NOT EXISTS equipment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +123,6 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     conn = get_connection()
     cur = conn.cursor()
 
-    # بررسی مقادیر اولیه اختصاصی کشور یا مقادیر پیش‌فرض
     sv = config.COUNTRY_STARTING_OVERRIDES.get(country_key, config.STARTING_VALUES)
 
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -138,7 +143,6 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     conn.commit()
     conn.close()
 
-    # سیید کردن اولیه دارایی‌های تخصصی کشور
     if country_id and country_key:
         seed_country_assets(country_id, country_key)
 
@@ -266,32 +270,51 @@ def adjust_oil_production(country_id: int, delta: int):
 # ---------- سیستم دارایی‌های اختصاصی کشورها (Country Assets System) ----------
 
 def seed_country_assets(country_id: int, country_key: str):
+    """مقادیر اولیه تجهیزات اختصاصی هر کشور را در جدول country_assets وارد یا به‌روزرسانی می‌کند."""
     conn = get_connection()
     cur = conn.cursor()
 
     catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(country_key, config.DEFAULT_COUNTRY_EQUIPMENT)
 
     for item in catalog:
+        producible_val = 1 if item.get("producible", True) else 0
         cur.execute("""
-            INSERT OR IGNORE INTO country_assets
-            (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO country_assets
+            (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(country_id, equipment_key) DO UPDATE SET
+            category = excluded.category,
+            equipment_name = excluded.equipment_name,
+            buy_price = excluded.buy_price,
+            maintenance_cost = excluded.maintenance_cost,
+            producible = excluded.producible
         """, (
             country_id, country_key, item["category"], item["name"], item["key"],
-            item["initial"], item["price"], item.get("maint", 0)
+            item["initial"], item["price"], item.get("maint", 0), producible_val
         ))
 
     conn.commit()
     conn.close()
 
 
-def get_country_assets(country_id: int, category: str = None):
+def get_country_assets(country_id: int, category: str = None, producible_only: bool = False):
+    """دریافت تمام دارایی‌های نظامی یک کشور (با امکان فیلتر دسته‌بندی و داشتن خط تولید)."""
     conn = get_connection()
     cur = conn.cursor()
+
+    query = "SELECT * FROM country_assets WHERE country_id = ?"
+    params = [country_id]
+
     if category and category != "all":
-        cur.execute("SELECT * FROM country_assets WHERE country_id = ? AND category = ? ORDER BY id ASC", (country_id, category))
-    else:
-        cur.execute("SELECT * FROM country_assets WHERE country_id = ? ORDER BY category, id ASC", (country_id,))
+        query += " AND category = ?"
+        params.append(category)
+
+    if producible_only:
+        query += " AND producible = 1"
+
+    query += " ORDER BY category, id ASC"
+
+    cur.execute(query, params)
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -307,6 +330,9 @@ def get_asset_by_key(country_id: int, equipment_key: str):
 
 
 def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity: int) -> tuple[bool, str, dict]:
+    """
+    خرید اتومیک تجهیزات نظامی اختصاصی کشور با شرط داشتن خط تولید بومی (producible == 1).
+    """
     conn = get_connection()
     try:
         with conn:
@@ -318,6 +344,11 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
                 return False, "این تجهیز برای کشور شما تعریف نشده است.", {}
 
             asset_dict = dict(asset)
+
+            # بررسی خط تولید بومی
+            if asset_dict.get("producible", 1) != 1:
+                return False, f"⚠️ تجهیز **{asset_dict['equipment_name']}** یک سلاح وارداتی است و کشور شما خط تولید بومی آن را ندارد. امکان خرید مجدد در فروشگاه وجود ندارد.", asset_dict
+
             total_cost = asset_dict["buy_price"] * quantity
 
             cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
