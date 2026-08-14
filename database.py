@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-لایه دیتابیس بازی.
-از SQLite استفاده می‌کنیم چون فایلیه و نیاز به سرور جدا نداره.
+لایه دیتابیس بازی (SQLite).
+شامل توابع ساخت دیتابیس، مدیریت کشورها، تجهیزات، تراکنش‌ها و پنل ادمین.
 """
 
 import sqlite3
-import json
 import datetime
 import config
 
@@ -40,13 +39,18 @@ def init_db():
         reserve_personnel INTEGER DEFAULT 0,
         last_income_date TEXT,
         created_at TEXT,
-        country_key TEXT
+        country_key TEXT UNIQUE
     )
     """)
 
-    # مهاجرت ساده: اگه دیتابیس قبلاً بدون این ستون ساخته شده، اضافه‌اش کن
+    # مهاجرت ساده: اگر دیتابیس قبلاً بدون این ستون یا ایندکس ساخته شده
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN country_key TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
 
@@ -57,7 +61,7 @@ def init_db():
         item_key TEXT NOT NULL,
         quantity INTEGER DEFAULT 0,
         UNIQUE(country_id, item_key),
-        FOREIGN KEY(country_id) REFERENCES countries(id)
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
 
@@ -69,7 +73,7 @@ def init_db():
         description TEXT,
         amount INTEGER,
         created_at TEXT,
-        FOREIGN KEY(country_id) REFERENCES countries(id)
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
 
@@ -93,6 +97,7 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     conn = get_connection()
     cur = conn.cursor()
     sv = config.STARTING_VALUES
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     cur.execute("""
         INSERT INTO countries
         (player_id, name, flag, population, treasury, tax_income, daily_income,
@@ -104,10 +109,19 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
         sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
         sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
         sv["grain"], sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
-        None, datetime.datetime.utcnow().isoformat(), country_key
+        None, now_str, country_key
     ))
     conn.commit()
     conn.close()
+
+
+def get_country_by_id(country_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def get_country_by_key(country_key: str):
@@ -128,22 +142,28 @@ def get_taken_country_keys():
     return {r["country_key"] for r in rows}
 
 
-def delete_country_by_player(player_id: int) -> bool:
-    """کشور یه بازیکن رو کامل پاک می‌کنه (برای تست/ریست). True/False برمی‌گردونه که پیدا شد یا نه."""
+def delete_country_by_id(country_id: int) -> bool:
+    """کشور را با country_id همراه تمامی تجهیزات و تراکنش‌هایش حذف می‌کند."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
-    row = cur.fetchone()
-    if not row:
+    cur.execute("SELECT id FROM countries WHERE id = ?", (country_id,))
+    if not cur.fetchone():
         conn.close()
         return False
-    country_id = row["id"]
     cur.execute("DELETE FROM equipment WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM transactions WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM countries WHERE id = ?", (country_id,))
     conn.commit()
     conn.close()
     return True
+
+
+def delete_country_by_player(player_id: int) -> bool:
+    """کشور یک بازیکن را با player_id حذف می‌کند."""
+    country = get_country_by_player(player_id)
+    if not country:
+        return False
+    return delete_country_by_id(country["id"])
 
 
 def get_country_by_player(player_id: int):
@@ -158,14 +178,14 @@ def get_country_by_player(player_id: int):
 def get_all_countries():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM countries")
+    cur.execute("SELECT * FROM countries ORDER BY id ASC")
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
 def update_country_field(country_id: int, field: str, value):
-    # لیست سفید فیلدهای مجاز، برای جلوگیری از SQL injection
+    """به‌روزرسانی امن یک فیلد مشخص از جدول کشورهای یک کشور."""
     allowed = {
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
@@ -181,7 +201,7 @@ def update_country_field(country_id: int, field: str, value):
 
 
 def adjust_treasury(country_id: int, delta: int):
-    """مبلغ delta رو به خزانه اضافه می‌کنه (می‌تونه منفی باشه برای کسر)."""
+    """مبلغ delta رو به خزانه اضافه می‌کنه (می‌تونه منفی باشه)."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (delta, country_id))
@@ -189,12 +209,74 @@ def adjust_treasury(country_id: int, delta: int):
     conn.close()
 
 
+def adjust_gold(country_id: int, delta: int):
+    """مقدار delta رو به طلا اضافه می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET gold = gold + ? WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
 def adjust_oil(country_id: int, delta: int):
+    """مقدار delta رو به ذخایر نفت اضافه می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET oil_reserves = oil_reserves + ? WHERE id = ?", (delta, country_id))
     conn.commit()
     conn.close()
+
+
+def adjust_oil_production(country_id: int, delta: int):
+    """مقدار delta رو به نرخ تولید روزانه نفت اضافه می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET oil_production = oil_production + ? WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+# ---------- خرید امن کالا (Atomic Transaction) ----------
+
+def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_price: int, item_name: str) -> tuple[bool, str]:
+    """
+    خرید امن و اتومیک با تراکنش یکپارچه SQLite برای جلوگیری از Race Condition و کسر پول بدون اعطای کالا.
+    خروجی: (موفقیت: bool, پیام: str)
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "کشور پیدا نشد."
+
+            if row["treasury"] < total_price:
+                return False, f"موجودی کافی نیست! قیمت: {total_price} | خزانه: {row['treasury']}"
+
+            cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (total_price, country_id))
+
+            cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
+            eq_row = cur.fetchone()
+            if eq_row:
+                cur.execute("UPDATE equipment SET quantity = quantity + ? WHERE country_id=? AND item_key=?",
+                            (quantity, country_id, item_key))
+            else:
+                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
+                            (country_id, item_key, quantity))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?,?,?,?,?)
+            """, (country_id, "purchase", f"خرید {item_name} x{quantity}", -total_price, now_str))
+
+        return True, "خرید با موفقیت انجام شد."
+    except Exception as e:
+        return False, f"خطا در دیتابیس: {e}"
+    finally:
+        conn.close()
 
 
 # ---------- تجهیزات ----------
@@ -205,11 +287,34 @@ def add_equipment(country_id: int, item_key: str, quantity: int):
     cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
     row = cur.fetchone()
     if row:
-        cur.execute("UPDATE equipment SET quantity = quantity + ? WHERE country_id=? AND item_key=?",
-                    (quantity, country_id, item_key))
+        new_qty = max(0, row["quantity"] + quantity)
+        cur.execute("UPDATE equipment SET quantity = ? WHERE country_id=? AND item_key=?",
+                    (new_qty, country_id, item_key))
     else:
-        cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
-                    (country_id, item_key, quantity))
+        if quantity > 0:
+            cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
+                        (country_id, item_key, quantity))
+    conn.commit()
+    conn.close()
+
+
+def set_equipment_quantity(country_id: int, item_key: str, quantity: int):
+    """تنظیم دقیق تعداد تجهیزات (برای ادمین)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    quantity = max(0, quantity)
+    cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
+    row = cur.fetchone()
+    if row:
+        if quantity == 0:
+            cur.execute("DELETE FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
+        else:
+            cur.execute("UPDATE equipment SET quantity = ? WHERE country_id=? AND item_key=?",
+                        (quantity, country_id, item_key))
+    else:
+        if quantity > 0:
+            cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
+                        (country_id, item_key, quantity))
     conn.commit()
     conn.close()
 
@@ -224,7 +329,6 @@ def get_equipment(country_id: int):
 
 
 def remove_equipment(country_id: int, item_key: str, quantity: int) -> bool:
-    """اگر موجودی کافی نبود False برمی‌گردونه و چیزی کم نمی‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
@@ -232,22 +336,49 @@ def remove_equipment(country_id: int, item_key: str, quantity: int) -> bool:
     if not row or row["quantity"] < quantity:
         conn.close()
         return False
-    cur.execute("UPDATE equipment SET quantity = quantity - ? WHERE country_id=? AND item_key=?",
-                (quantity, country_id, item_key))
+    new_qty = row["quantity"] - quantity
+    if new_qty <= 0:
+        cur.execute("DELETE FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
+    else:
+        cur.execute("UPDATE equipment SET quantity = ? WHERE country_id=? AND item_key=?",
+                    (new_qty, country_id, item_key))
     conn.commit()
     conn.close()
     return True
 
 
-# ---------- تراکنش‌ها و لاگ ----------
+# ---------- تراکنش‌ها، آمار و لاگ ----------
+
+def get_game_stats():
+    """محاسبه آمار کلی بازی برای ادمین."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) as count, SUM(treasury) as total_treasury, SUM(gold) as total_gold, SUM(oil_reserves) as total_oil FROM countries")
+    row = cur.fetchone()
+
+    cur.execute("SELECT SUM(quantity) as total_equip FROM equipment")
+    eq_row = cur.fetchone()
+
+    conn.close()
+
+    return {
+        "countries_count": row["count"] or 0,
+        "total_treasury": row["total_treasury"] or 0,
+        "total_gold": row["total_gold"] or 0,
+        "total_oil": row["total_oil"] or 0,
+        "total_equipment": eq_row["total_equip"] or 0,
+    }
+
 
 def add_transaction(country_id: int, type_: str, description: str, amount: int):
     conn = get_connection()
     cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     cur.execute("""
         INSERT INTO transactions (country_id, type, description, amount, created_at)
         VALUES (?,?,?,?,?)
-    """, (country_id, type_, description, amount, datetime.datetime.utcnow().isoformat()))
+    """, (country_id, type_, description, amount, now_str))
     conn.commit()
     conn.close()
 
@@ -255,9 +386,10 @@ def add_transaction(country_id: int, type_: str, description: str, amount: int):
 def add_log(actor: str, action: str, details: str = ""):
     conn = get_connection()
     cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     cur.execute("""
         INSERT INTO logs (actor, action, details, created_at)
         VALUES (?,?,?,?)
-    """, (actor, action, details, datetime.datetime.utcnow().isoformat()))
+    """, (actor, action, details, now_str))
     conn.commit()
     conn.close()

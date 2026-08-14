@@ -8,18 +8,19 @@
 import os
 
 # ===== توکن بات =====
-# توکن رو از @BotFather می‌گیری و اینجا می‌ذاری
-# بهتره به‌جای نوشتن مستقیم توکن، اون رو در Environment Variable هاست بذاری
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_ATO_EINJA_BEZAR")
 
 # ===== آیدی عددی ادمین‌ها (آیدی تلگرام خودت) =====
-# آیدی عددی خودت رو می‌تونی از بات @userinfobot بگیری
-ADMIN_IDS = [
-    8052987465,
-]
+# از متغیر محیطی ADMIN_IDS (به صورت 123456,789012) یا لیست پیش‌فرض خوانده می‌شود
+admin_env = os.environ.get("ADMIN_IDS", "")
+if admin_env:
+    ADMIN_IDS = [int(x.strip()) for x in admin_env.split(",") if x.strip().isdigit()]
+else:
+    ADMIN_IDS = [
+        8052987465,
+    ]
 
 # ===== لیست کشورهای قابل انتخاب در بازی =====
-# برای اضافه/کم کردن کشور از لیست بازی، فقط همینجا رو ویرایش کن.
 COUNTRIES = {
     "iran":    {"name": "ایران",    "flag": "🇮🇷"},
     "germany": {"name": "آلمان",    "flag": "🇩🇪"},
@@ -55,7 +56,7 @@ STARTING_VALUES = {
     "reserve_personnel": 100_000,
 }
 
-# ===== قیمت هر بشکه نفت (برای فروش پیش‌فرض) =====
+# ===== قیمت هر بشکه نفت =====
 OIL_PRICE_PER_BARREL = 1
 
 # ===== فروشگاه: ساختمان‌ها =====
@@ -100,7 +101,7 @@ MILITARY_EQUIPMENT = {
     "boat":           {"name": "🛥️ قایق",           "price": 400_000,   "category": "navy"},
 }
 
-# ===== ادغام همه‌ی اقلام فروشگاه در یک دیکشنری برای دسترسی راحت =====
+# ===== ادغام همه‌ی اقلام فروشگاه در یک دیکشنری =====
 ALL_SHOP_ITEMS = {}
 for group in (BUILDINGS, FACTORIES, POWER_PLANTS, MILITARY_EQUIPMENT):
     ALL_SHOP_ITEMS.update(group)

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-دستورات نمایش وضعیت کشور: /country /treasury /oil /army
+دستورات نمایش وضعیت کشور: /country /treasury /oil /army /help
 """
 
 from telegram import Update
@@ -12,7 +12,7 @@ from utils import format_money, format_number, format_oil
 
 
 async def require_country(update: Update):
-    """اگه بازیکن کشور نداشت پیام مناسب میده و None برمی‌گردونه."""
+    """اگر بازیکن کشور نداشت پیام مناسب می‌دهد و None برمی‌گرداند."""
     country = db.get_country_by_player(update.effective_user.id)
     if not country:
         await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
@@ -86,8 +86,11 @@ async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    is_adm = user_id in config.ADMIN_IDS
+
     text = (
-        "📜 راهنمای دستورات\n\n"
+        "📜 راهنمای دستورات بازی «سیاست مدرن»\n\n"
         "/start — شروع بازی و ساخت کشور\n"
         "/country — نمایش وضعیت کامل کشور\n"
         "/treasury — نمایش خزانه و طلا\n"
@@ -96,4 +99,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/shop — فروشگاه (خرید تجهیزات و ساختمان)\n"
         "/help — همین راهنما"
     )
+
+    if is_adm:
+        text += "\n\n👑 **دستورات ادمین:**\n/admin یا /panel — پنل دکمه‌ای و پیشرفته مدیریت"
+
     await update.message.reply_text(text)

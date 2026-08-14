@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 فروشگاه: نمایش دسته‌ها با دکمه شیشه‌ای، انتخاب کالا، تأیید خرید، اجرای تراکنش.
-طبق سند: قبل از خرید موجودی چک میشه و برای خرید تأییدیه گرفته میشه.
+استفاده از buy_item_transaction برای پیشگیری از Race Condition و خرید منفی.
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -67,7 +67,7 @@ async def back_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """وقتی کاربر رو یه کالا کلیک می‌کنه، تعداد ۱ پیشنهاد میشه و تأیید نهایی گرفته میشه."""
+    """وقتی کاربر روی یک کالا کلیک می‌کنه، تأیید نهایی گرفته میشه."""
     query = update.callback_query
     await query.answer()
     item_key = query.data.split(":", 1)[1]
@@ -82,7 +82,7 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await query.edit_message_text(
         f"خرید: {item['name']}\n💰 قیمت واحد: {format_money(item['price'])}\n\n"
-        "برای خرید ۱ عدد تأیید کن (برای تعداد بیشتر، این نسخه اولیه رو بعداً توسعه می‌دیم).",
+        "برای خرید ۱ عدد تأیید کن:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -90,8 +90,13 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def execute_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    _, item_key, qty_str = query.data.split(":")
-    quantity = int(qty_str)
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await query.edit_message_text("داده‌های درخواست نامعتبر است.")
+        return
+
+    item_key = parts[1]
+    quantity = int(parts[2])
 
     country = db.get_country_by_player(update.effective_user.id)
     item = config.ALL_SHOP_ITEMS.get(item_key)
@@ -101,23 +106,21 @@ async def execute_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total_price = item["price"] * quantity
 
-    # ===== جلوگیری از تقلب: بررسی موجودی کافی =====
-    if country["treasury"] < total_price:
-        await query.edit_message_text(
-            f"❌ موجودی کافی نیست.\n"
-            f"قیمت: {format_money(total_price)}\n"
-            f"موجودی خزانه: {format_money(country['treasury'])}"
-        )
+    # اجرای تراکنش اتومیک در دیتابیس
+    success, msg = db.buy_item_transaction(country["id"], item_key, quantity, total_price, item["name"])
+
+    if not success:
+        await query.edit_message_text(f"❌ خرید انجام نشد:\n{msg}")
         return
 
-    db.adjust_treasury(country["id"], -total_price)
-    db.add_equipment(country["id"], item_key, quantity)
-    db.add_transaction(country["id"], "purchase", f"خرید {item['name']} x{quantity}", -total_price)
     db.add_log(actor=str(update.effective_user.id), action="purchase", details=f"{item_key} x{quantity}")
 
+    # دریافت اطلاعات به‌روز کشور پس از خرید
+    updated_country = db.get_country_by_player(update.effective_user.id)
+
     await query.edit_message_text(
-        f"✅ خرید موفق!\n\n"
+        f"✅ خرید با موفقیت انجام شد!\n\n"
         f"🛒 {item['name']} x{quantity}\n"
         f"💰 مبلغ کسر شده: {format_money(total_price)}\n"
-        f"🏦 موجودی جدید: {format_money(country['treasury'] - total_price)}"
-  )
+        f"🏦 موجودی جدید خزانه: {format_money(updated_country['treasury'])}"
+    )
