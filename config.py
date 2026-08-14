@@ -56,6 +56,20 @@ STARTING_VALUES = {
 
 # ===== مقادیر اختصاصی برای کشورهای خاص =====
 COUNTRY_STARTING_OVERRIDES = {
+    "iran": {
+        "population": 90_000_000,
+        "treasury": 45_000_000,
+        "tax_income": 7_000_000,
+        "daily_income": 14_000_000,
+        "gold": 250,
+        "gold_daily": 50,
+        "oil_reserves": 250_000_000,
+        "oil_production": 4_000_000,
+        "grain": 35,
+        "electricity": 130,
+        "active_personnel": 610_000,
+        "reserve_personnel": 1_200_000,
+    },
     "usa": {
         "population": 340_000_000,
         "treasury": 80_000_000,
@@ -99,6 +113,97 @@ ASSET_CATEGORIES = {
 
 # ===== کاتالوگ دارایی‌های اختصاصی کشورها (Country Assets Catalog) =====
 COUNTRY_EQUIPMENT_CATALOG = {
+    "iran": [
+        # نیروی هوایی و بالگردها (Aircraft)
+        {"key": "f14_tomcat",     "name": "F-14 Tomcat",          "category": "Aircraft",     "price": 15_000_000, "initial": 40,   "maint": 40_000},
+        {"key": "mig29",          "name": "MiG-29",               "category": "Aircraft",     "price": 10_000_000, "initial": 35,   "maint": 30_000},
+        {"key": "f4_phantom",     "name": "F-4 Phantom II",       "category": "Aircraft",     "price": 6_000_000,  "initial": 60,   "maint": 20_000},
+        {"key": "f5_tiger",       "name": "F-5 Tiger",            "category": "Aircraft",     "price": 4_000_000,  "initial": 60,   "maint": 10_000},
+        {"key": "su24",           "name": "Su-24 Fencer",         "category": "Aircraft",     "price": 10_000_000, "initial": 30,   "maint": 30_000},
+        {"key": "su35_iran",      "name": "Su-35 Flanker-E",      "category": "Aircraft",     "price": 15_000_000, "initial": 24,   "maint": 45_000},
+        {"key": "mirage_f1",      "name": "Mirage F1",            "category": "Aircraft",     "price": 5_000_000,  "initial": 20,   "maint": 15_000},
+        {"key": "su22",           "name": "Su-22",                "category": "Aircraft",     "price": 4_000_000,  "initial": 10,   "maint": 10_000},
+        {"key": "c130_iran",      "name": "C-130 Hercules",       "category": "Aircraft",     "price": 6_000_000,  "initial": 20,   "maint": 15_000},
+        {"key": "il76_iran",      "name": "Il-76 Transporter",    "category": "Aircraft",     "price": 15_000_000, "initial": 10,   "maint": 35_000},
+        {"key": "recon_planes",   "name": "Recon & Trainer Aircraft","category": "Aircraft", "price": 2_000_000,  "initial": 30,   "maint": 5_000},
+        {"key": "mi8_mi17",       "name": "Mi-8 / Mi-17",         "category": "Aircraft",     "price": 3_000_000,  "initial": 100,  "maint": 8_000},
+        {"key": "ah1j_cobra",     "name": "AH-1J Cobra",          "category": "Aircraft",     "price": 4_000_000,  "initial": 30,   "maint": 10_000},
+        {"key": "ch47_iran",      "name": "CH-47 Chinook",        "category": "Aircraft",     "price": 6_000_000,  "initial": 20,   "maint": 15_000},
+        {"key": "bell_214",       "name": "Bell 214 Helicopter",  "category": "Aircraft",     "price": 2_000_000,  "initial": 30,   "maint": 5_000},
+        {"key": "light_helis",    "name": "Light Helicopters",    "category": "Aircraft",     "price": 1_500_000,  "initial": 100,  "maint": 3_000},
+
+        # پهپادها (UAV)
+        {"key": "shahed136",      "name": "Shahed-136",           "category": "UAV",          "price": 100_000,    "initial": 2500, "maint": 500},
+        {"key": "shahed129",      "name": "Shahed-129",           "category": "UAV",          "price": 800_000,    "initial": 200,  "maint": 3_000},
+        {"key": "shahed191",      "name": "Shahed-191",           "category": "UAV",          "price": 1_000_000,  "initial": 100,  "maint": 4_000},
+        {"key": "mohajer6",       "name": "Mohajer-6",            "category": "UAV",          "price": 500_000,    "initial": 300,  "maint": 2_000},
+        {"key": "ababil_drone",   "name": "Ababil UAV",           "category": "UAV",          "price": 300_000,    "initial": 500,  "maint": 1_000},
+        {"key": "kaman22",        "name": "Kaman-22",             "category": "UAV",          "price": 1_500_000,  "initial": 50,   "maint": 5_000},
+
+        # نیروی زمینی (Ground Forces)
+        {"key": "t72_tank",       "name": "T-72 Tank",            "category": "Ground Forces","price": 1_500_000,  "initial": 600,  "maint": 4_000},
+        {"key": "t62_tank",       "name": "T-62 Tank",            "category": "Ground Forces","price": 800_000,    "initial": 400,  "maint": 2_000},
+        {"key": "t55_tank",       "name": "T-55 Tank",            "category": "Ground Forces","price": 500_000,    "initial": 300,  "maint": 1_000},
+        {"key": "zulfiqar_tank",  "name": "Zulfiqar Tank",        "category": "Ground Forces","price": 2_000_000,  "initial": 200,  "maint": 5_000},
+        {"key": "karrar_tank",    "name": "Karrar Tank",          "category": "Ground Forces","price": 2_500_000,  "initial": 100,  "maint": 6_000},
+        {"key": "bmp1_bmp2",      "name": "BMP-1 / BMP-2",        "category": "Ground Forces","price": 600_000,    "initial": 800,  "maint": 1_500},
+        {"key": "apc_iran",       "name": "Armored Personnel Carriers","category": "Ground Forces","price": 400_000,"initial": 1500, "maint": 1_000},
+        {"key": "tactical_veh",   "name": "Light Tactical Vehicles","category": "Ground Forces","price": 100_000,  "initial": 3000, "maint": 300},
+
+        # توپخانه و راکت‌اندازها (Artillery)
+        {"key": "sp_artillery",   "name": "Self-Propelled Artillery","category": "Artillery", "price": 1_000_000,  "initial": 250,  "maint": 3_000},
+        {"key": "towed_artillery","name": "Towed Artillery",       "category": "Artillery",    "price": 300_000,    "initial": 1500, "maint": 800},
+        {"key": "bm21_grad",      "name": "BM-21 Grad",           "category": "Artillery",    "price": 500_000,    "initial": 300,  "maint": 1_200},
+        {"key": "fajr_rocket",    "name": "Fajr Rocket System",   "category": "Artillery",    "price": 800_000,    "initial": 500,  "maint": 2_000},
+        {"key": "zelzal_rocket",  "name": "Zelzal Heavy Rocket",  "category": "Artillery",    "price": 1_200_000,  "initial": 200,  "maint": 3_000},
+
+        # توان موشکی (Missiles)
+        {"key": "fateh110",       "name": "Fateh-110",            "category": "Missiles",     "price": 1_000_000,  "initial": 500,  "maint": 1_500},
+        {"key": "fateh313",       "name": "Fateh-313",            "category": "Missiles",     "price": 1_200_000,  "initial": 300,  "maint": 2_000},
+        {"key": "zolfaghar_m",    "name": "Zolfaghar Ballistic",  "category": "Missiles",     "price": 2_000_000,  "initial": 200,  "maint": 3_000},
+        {"key": "dezful_m",       "name": "Dezful Ballistic",     "category": "Missiles",     "price": 2_500_000,  "initial": 200,  "maint": 4_000},
+        {"key": "qiam_m",         "name": "Qiam Ballistic",       "category": "Missiles",     "price": 2_000_000,  "initial": 200,  "maint": 3_000},
+        {"key": "ghadr_m",        "name": "Ghadr-110",            "category": "Missiles",     "price": 3_000_000,  "initial": 150,  "maint": 5_000},
+        {"key": "emad_m",         "name": "Emad Ballistic",       "category": "Missiles",     "price": 3_500_000,  "initial": 100,  "maint": 6_000},
+        {"key": "haj_qasem",      "name": "Haj Qasem Missile",    "category": "Missiles",     "price": 4_000_000,  "initial": 100,  "maint": 7_000},
+        {"key": "kheybar_shekan", "name": "Kheybar Shekan",       "category": "Missiles",     "price": 3_000_000,  "initial": 100,  "maint": 5_000},
+        {"key": "khorramshahr",   "name": "Khorramshahr-4",       "category": "Missiles",     "price": 5_000_000,  "initial": 100,  "maint": 8_000},
+        {"key": "sejjil",         "name": "Sejjil ICBM",          "category": "Missiles",     "price": 6_000_000,  "initial": 50,   "maint": 10_000},
+        {"key": "fattah1",        "name": "Fattah-1 Hypersonic",  "category": "Missiles",     "price": 5_000_000,  "initial": 40,   "maint": 8_000},
+        {"key": "fattah2",        "name": "Fattah-2 Hypersonic",  "category": "Missiles",     "price": 7_000_000,  "initial": 30,   "maint": 10_000},
+        {"key": "qasem_basir",    "name": "Qasem Basir",          "category": "Missiles",     "price": 4_000_000,  "initial": 30,   "maint": 6_000},
+        {"key": "soumar_cruise",  "name": "Soumar Cruise",        "category": "Missiles",     "price": 1_500_000,  "initial": 100,  "maint": 2_500},
+        {"key": "hoveyzeh_c",     "name": "Hoveyzeh Cruise",      "category": "Missiles",     "price": 1_800_000,  "initial": 100,  "maint": 3_000},
+        {"key": "paveh_c",        "name": "Paveh Cruise",         "category": "Missiles",     "price": 2_000_000,  "initial": 50,   "maint": 3_500},
+        {"key": "noor_antiship",  "name": "Noor Anti-Ship",       "category": "Missiles",     "price": 800_000,    "initial": 500,  "maint": 1_200},
+        {"key": "qader_antiship", "name": "Qader Anti-Ship",      "category": "Missiles",     "price": 1_200_000,  "initial": 200,  "maint": 2_000},
+        {"key": "qadir_antiship", "name": "Qadir Anti-Ship",      "category": "Missiles",     "price": 1_500_000,  "initial": 100,  "maint": 2_500},
+        {"key": "khalij_fars",    "name": "Khalij Fars Anti-Ship","category": "Missiles",     "price": 1_500_000,  "initial": 200,  "maint": 2_500},
+        {"key": "zolfaghar_nav",  "name": "Naval Zolfaghar",      "category": "Missiles",     "price": 2_000_000,  "initial": 100,  "maint": 3_000},
+
+        # نیروی دریایی (Navy)
+        {"key": "moudge_frigate", "name": "Moudge Class Frigate", "category": "Navy",         "price": 15_000_000, "initial": 4,    "maint": 50_000},
+        {"key": "alvand_frigate", "name": "Alvand Class Frigate", "category": "Navy",         "price": 10_000_000, "initial": 3,    "maint": 30_000},
+        {"key": "fast_attack",    "name": "Fast Attack Missile Boats","category": "Navy",     "price": 200_000,    "initial": 1500, "maint": 500},
+        {"key": "missile_corv",   "name": "Missile Vessels",      "category": "Navy",         "price": 1_000_000,  "initial": 200,  "maint": 3_000},
+        {"key": "patrol_iran",    "name": "Patrol Boats",         "category": "Navy",         "price": 300_000,    "initial": 300,  "maint": 800},
+        {"key": "usv_drones",     "name": "Unmanned Surface Vessels","category": "Navy",      "price": 200_000,    "initial": 150,  "maint": 500},
+        {"key": "kilo_sub",       "name": "Kilo Class Submarine", "category": "Navy",         "price": 25_000_000, "initial": 3,    "maint": 90_000},
+        {"key": "fateh_sub",      "name": "Fateh Class Submarine","category": "Navy",         "price": 15_000_000, "initial": 2,    "maint": 50_000},
+        {"key": "ghadir_sub",     "name": "Ghadir Midget Sub",    "category": "Navy",         "price": 3_000_000,  "initial": 20,   "maint": 10_000},
+        {"key": "midget_subs",    "name": "Midget Submarines",    "category": "Navy",         "price": 1_000_000,  "initial": 30,   "maint": 3_000},
+
+        # پدافند هوایی (Air Defense)
+        {"key": "s300_iran",      "name": "S-300PMU-2",           "category": "Air Defense",  "price": 12_000_000, "initial": 10,   "maint": 35_000},
+        {"key": "bavar373",       "name": "Bavar-373",            "category": "Air Defense",  "price": 10_000_000, "initial": 10,   "maint": 30_000},
+        {"key": "khordad_3",      "name": "3rd Khordad",          "category": "Air Defense",  "price": 5_000_000,  "initial": 20,   "maint": 15_000},
+        {"key": "khordad_15",     "name": "15th Khordad",         "category": "Air Defense",  "price": 6_000_000,  "initial": 20,   "maint": 18_000},
+        {"key": "talash_sys",     "name": "Talash Defense",       "category": "Air Defense",  "price": 5_000_000,  "initial": 20,   "maint": 15_000},
+        {"key": "tabas_sys",      "name": "Tabas Defense",        "category": "Air Defense",  "price": 4_000_000,  "initial": 20,   "maint": 12_000},
+        {"key": "tor_m1",         "name": "Tor-M1",               "category": "Air Defense",  "price": 6_000_000,  "initial": 30,   "maint": 18_000},
+        {"key": "short_range_def","name": "Short Range Air Defense","category": "Air Defense", "price": 1_000_000,  "initial": 300,  "maint": 3_000},
+        {"key": "radars_iran",    "name": "Military Radars",      "category": "Air Defense",  "price": 3_000_000,  "initial": 200,  "maint": 10_000},
+    ],
     "usa": [
         # نیروی هوایی و پشتیبانی (Aircraft)
         {"key": "f35a",           "name": "F-35A Lightning II",    "category": "Aircraft",     "price": 15_000_000, "initial": 400,  "maint": 50_000},
@@ -251,18 +356,6 @@ COUNTRY_EQUIPMENT_CATALOG = {
         {"key": "pantsir",        "name": "Pantsir-S1",           "category": "Air Defense",  "price": 5_000_000,  "initial": 110,  "maint": 15_000},
         {"key": "borei",          "name": "Borei Class Submarine","category": "Navy",         "price": 40_000_000, "initial": 7,    "maint": 200_000},
         {"key": "t90m",           "name": "T-90M Proryv",         "category": "Ground Forces","price": 2_500_000,  "initial": 1200, "maint": 6_000},
-    ],
-    "iran": [
-        {"key": "fattah",         "name": "Fattah Hypersonic",    "category": "Missiles",     "price": 2_500_000,  "initial": 100,  "maint": 3_000},
-        {"key": "kheybar_shekan", "name": "Kheybar Shekan",       "category": "Missiles",     "price": 2_000_000,  "initial": 350,  "maint": 2_000},
-        {"key": "sejjil",         "name": "Sejjil Ballistic",     "category": "Missiles",     "price": 4_000_000,  "initial": 150,  "maint": 5_000},
-        {"key": "khorramshahr",   "name": "Khorramshahr-4",       "category": "Missiles",     "price": 5_000_000,  "initial": 80,   "maint": 6_000},
-        {"key": "s300",           "name": "S-300PMU2",            "category": "Air Defense",  "price": 12_000_000, "initial": 32,   "maint": 35_000},
-        {"key": "bavar373",       "name": "Bavar-373",            "category": "Air Defense",  "price": 10_000_000, "initial": 20,   "maint": 30_000},
-        {"key": "shahed136",      "name": "Shahed 136",           "category": "UAV",          "price": 100_000,    "initial": 2500, "maint": 500},
-        {"key": "mohajer6",       "name": "Mohajer-6",            "category": "UAV",          "price": 500_000,    "initial": 300,  "maint": 2_000},
-        {"key": "jamaran",        "name": "Jamaran Class Frigate","category": "Navy",         "price": 15_000_000, "initial": 5,    "maint": 50_000},
-        {"key": "karrar_tank",    "name": "Karrar Tank",          "category": "Ground Forces","price": 1_500_000,  "initial": 800,  "maint": 4_000},
     ],
 }
 
