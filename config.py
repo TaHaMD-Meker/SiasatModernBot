@@ -56,6 +56,20 @@ STARTING_VALUES = {
 
 # ===== مقادیر اختصاصی برای کشورهای خاص =====
 COUNTRY_STARTING_OVERRIDES = {
+    "russia": {
+        "population": 144_000_000,
+        "treasury": 55_000_000,
+        "tax_income": 12_000_000,
+        "daily_income": 16_000_000,
+        "gold": 400,
+        "gold_daily": 60,
+        "oil_reserves": 375_000_000,
+        "oil_production": 4_000_000,
+        "grain": 40,
+        "electricity": 145,
+        "active_personnel": 1_320_000,
+        "reserve_personnel": 2_000_000,
+    },
     "china": {
         "population": 1_400_000_000,
         "treasury": 120_000_000,
@@ -141,6 +155,76 @@ ASSET_CATEGORIES = {
 
 # ===== کاتالوگ دارایی‌های اختصاصی کشورها (Country Assets Catalog) =====
 COUNTRY_EQUIPMENT_CATALOG = {
+    "russia": [
+        # نیروی هوایی و پشتیبانی (Aircraft)
+        {"key": "su57",           "name": "Su-57 Felon",          "category": "Aircraft",     "price": 20_000_000, "initial": 24,   "maint": 70_000},
+        {"key": "su35",           "name": "Su-35S Flanker-E",     "category": "Aircraft",     "price": 12_000_000, "initial": 100,  "maint": 40_000},
+        {"key": "su30sm",         "name": "Su-30SM",              "category": "Aircraft",     "price": 11_000_000, "initial": 130,  "maint": 35_000},
+        {"key": "mig35",          "name": "MiG-35",               "category": "Aircraft",     "price": 9_000_000,  "initial": 30,   "maint": 25_000},
+        {"key": "mig29_russia",   "name": "MiG-29",               "category": "Aircraft",     "price": 7_000_000,  "initial": 200,  "maint": 20_000},
+        {"key": "su27",           "name": "Su-27 Flanker",        "category": "Aircraft",     "price": 8_000_000,  "initial": 100,  "maint": 22_000},
+        {"key": "tu160",          "name": "Tu-160 Blackjack Bomber","category": "Aircraft",   "price": 40_000_000, "initial": 16,   "maint": 120_000},
+        {"key": "tu95ms",         "name": "Tu-95MS Bear Bomber",  "category": "Aircraft",     "price": 25_000_000, "initial": 60,   "maint": 80_000},
+        {"key": "tu22m3",         "name": "Tu-22M3 Backfire Bomber","category": "Aircraft",   "price": 20_000_000, "initial": 60,   "maint": 70_000},
+        {"key": "il76_russia",    "name": "Il-76 Transporter",    "category": "Aircraft",     "price": 15_000_000, "initial": 120,  "maint": 35_000},
+        {"key": "il78_tanker",    "name": "Il-78 Aerial Tanker",  "category": "Aircraft",     "price": 18_000_000, "initial": 20,   "maint": 40_000},
+        {"key": "a50_awacs",      "name": "A-50 Mainstay AWACS",  "category": "Aircraft",     "price": 20_000_000, "initial": 15,   "maint": 45_000},
+        {"key": "ka52_heli",      "name": "Ka-52 Alligator",      "category": "Aircraft",     "price": 6_000_000,  "initial": 150,  "maint": 15_000},
+        {"key": "mi28_heli",      "name": "Mi-28 Havoc",          "category": "Aircraft",     "price": 5_000_000,  "initial": 100,  "maint": 12_000},
+        {"key": "mi8_mi17_russia","name": "Mi-8 / Mi-17",         "category": "Aircraft",     "price": 3_000_000,  "initial": 500,  "maint": 8_000},
+        {"key": "mi26_heli",      "name": "Mi-26 Heavy Transport","category": "Aircraft",     "price": 8_000_000,  "initial": 30,   "maint": 20_000},
+
+        # پهپادها (UAV)
+        {"key": "orion_uav",      "name": "Orion Recon UAV",      "category": "UAV",          "price": 1_500_000,  "initial": 50,   "maint": 4_000},
+        {"key": "forpost_uav",    "name": "Forpost UAV",          "category": "UAV",          "price": 1_000_000,  "initial": 100,  "maint": 3_000},
+        {"key": "geran2_drone",   "name": "Geran-2 Drone",        "category": "UAV",          "price": 100_000,    "initial": 500,  "maint": 500},
+        {"key": "tactical_drones_r","name": "Tactical Recon UAVs","category": "UAV",          "price": 300_000,    "initial": 500,  "maint": 800},
+
+        # نیروی زمینی (Ground Forces)
+        {"key": "t90m",           "name": "T-90M Proryv Tank",    "category": "Ground Forces","price": 2_500_000,  "initial": 800,  "maint": 6_000},
+        {"key": "t72b3",          "name": "T-72B3 Tank",          "category": "Ground Forces","price": 1_500_000,  "initial": 3000, "maint": 4_000},
+        {"key": "t80bvm",         "name": "T-80BVM Tank",         "category": "Ground Forces","price": 2_000_000,  "initial": 1000, "maint": 5_000},
+        {"key": "t14_armata",     "name": "T-14 Armata Tank",     "category": "Ground Forces","price": 5_000_000,  "initial": 100,  "maint": 12_000},
+        {"key": "bmp3_ifv",       "name": "BMP-3 IFV",            "category": "Ground Forces","price": 1_200_000,  "initial": 2000, "maint": 3_000},
+        {"key": "bmp2_ifv",       "name": "BMP-2 IFV",            "category": "Ground Forces","price": 800_000,    "initial": 3000, "maint": 2_000},
+        {"key": "btr82a",         "name": "BTR-82A APC",          "category": "Ground Forces","price": 600_000,    "initial": 1500, "maint": 1_500},
+        {"key": "light_armored_r","name": "Light Armored Vehicles","category": "Ground Forces","price": 300_000,   "initial": 5000, "maint": 800},
+
+        # توپخانه و راکت‌اندازها (Artillery)
+        {"key": "msta_s",          "name": "2S19 Msta-S Howitzer", "category": "Artillery",    "price": 1_800_000,  "initial": 800,  "maint": 4_000},
+        {"key": "towed_artillery_r","name": "Towed Artillery",     "category": "Artillery",    "price": 300_000,    "initial": 2000, "maint": 800},
+        {"key": "bm21_grad_r",    "name": "BM-21 Grad MLRS",      "category": "Artillery",    "price": 500_000,    "initial": 2000, "maint": 1_200},
+        {"key": "bm30_smerch",    "name": "BM-30 Smerch MLRS",    "category": "Artillery",    "price": 2_500_000,  "initial": 300,  "maint": 6_000},
+        {"key": "iskander_system","name": "9K720 Iskander System","category": "Artillery",    "price": 3_000_000,  "initial": 150,  "maint": 8_000},
+
+        # نیروی دریایی و زیردریایی (Navy)
+        {"key": "admiral_gorshkov","name": "Admiral Gorshkov Frigate","category": "Navy",     "price": 20_000_000, "initial": 4,    "maint": 70_000},
+        {"key": "admiral_grigorovich","name": "Admiral Grigorovich Frigate","category": "Navy","price": 15_000_000, "initial": 6,   "maint": 50_000},
+        {"key": "kirov_cruiser",  "name": "Kirov Class Cruiser",  "category": "Navy",         "price": 60_000_000, "initial": 1,    "maint": 250_000},
+        {"key": "borei",          "name": "Borei Class Submarine","category": "Navy",         "price": 40_000_000, "initial": 6,    "maint": 200_000},
+        {"key": "yasen_sub",      "name": "Yasen Class Submarine","category": "Navy",         "price": 35_000_000, "initial": 4,    "maint": 180_000},
+        {"key": "akula_sub",      "name": "Akula Class Submarine","category": "Navy",         "price": 25_000_000, "initial": 10,   "maint": 100_000},
+        {"key": "kilo_russia",    "name": "Kilo Class Submarine", "category": "Navy",         "price": 15_000_000, "initial": 20,   "maint": 50_000},
+        {"key": "corvettes_russia","name": "Frigates & Corvettes", "category": "Navy",        "price": 10_000_000, "initial": 70,   "maint": 30_000},
+        {"key": "patrol_ships_r", "name": "Patrol Ships",         "category": "Navy",         "price": 1_000_000,  "initial": 200,  "maint": 3_000},
+
+        # توان موشکی و مهمات (Missiles)
+        {"key": "iskander_m_m",   "name": "Iskander-M Missile",   "category": "Missiles",     "price": 3_000_000,  "initial": 150,  "maint": 5_000},
+        {"key": "kalibr",         "name": "Kalibr Cruise Missile","category": "Missiles",     "price": 1_500_000,  "initial": 2000, "maint": 1_500},
+        {"key": "kinzhal_hypersonic","name": "Kinzhal Hypersonic", "category": "Missiles",     "price": 5_000_000,  "initial": 100,  "maint": 10_000},
+        {"key": "zircon_hypersonic","name": "Zircon Hypersonic",   "category": "Missiles",     "price": 6_000_000,  "initial": 50,   "maint": 12_000},
+        {"key": "kh101_cruise",   "name": "Kh-101 Cruise Missile","category": "Missiles",     "price": 2_000_000,  "initial": 500,  "maint": 3_000},
+        {"key": "antiship_russia","name": "Anti-Ship Missiles",   "category": "Missiles",     "price": 1_000_000,  "initial": 1000, "maint": 1_500},
+
+        # پدافند هوایی (Air Defense)
+        {"key": "s400",           "name": "S-400 Triumf",         "category": "Air Defense",  "price": 15_000_000, "initial": 50,   "maint": 40_000},
+        {"key": "s300_russia",    "name": "S-300 System",         "category": "Air Defense",  "price": 10_000_000, "initial": 100,  "maint": 25_000},
+        {"key": "s350_vityaz",    "name": "S-350 Vityaz",         "category": "Air Defense",  "price": 8_000_000,  "initial": 20,   "maint": 20_000},
+        {"key": "pantsir",        "name": "Pantsir-S1",           "category": "Air Defense",  "price": 5_000_000,  "initial": 100,  "maint": 15_000},
+        {"key": "tor_m2",         "name": "Tor-M2",               "category": "Air Defense",  "price": 6_000_000,  "initial": 150,  "maint": 18_000},
+        {"key": "buk_m3",         "name": "Buk-M3",               "category": "Air Defense",  "price": 7_000_000,  "initial": 70,   "maint": 20_000},
+        {"key": "radars_russia",  "name": "Military Radar Systems","category": "Air Defense", "price": 4_000_000,  "initial": 300,  "maint": 12_000},
+    ],
     "china": [
         # نیروی هوایی و پشتیبانی (Aircraft)
         {"key": "j20",             "name": "J-20 Stealth Fighter", "category": "Aircraft",     "price": 25_000_000, "initial": 250,  "maint": 70_000},
@@ -512,16 +596,6 @@ COUNTRY_EQUIPMENT_CATALOG = {
         {"key": "davids_sling",   "name": "David's Sling",        "category": "Air Defense",  "price": 20_000_000, "initial": 5,    "maint": 50_000},
         {"key": "arrow_3",        "name": "Arrow-2 / Arrow-3",    "category": "Air Defense",  "price": 30_000_000, "initial": 6,    "maint": 80_000},
         {"key": "patriot_israel", "name": "Patriot Battery",      "category": "Air Defense",  "price": 8_000_000,  "initial": 8,    "maint": 20_000},
-    ],
-    "russia": [
-        {"key": "su57",           "name": "Su-57 Felon",          "category": "Aircraft",     "price": 20_000_000, "initial": 22,   "maint": 70_000},
-        {"key": "su35",           "name": "Su-35S Flanker-E",     "category": "Aircraft",     "price": 12_000_000, "initial": 110,  "maint": 40_000},
-        {"key": "kalibr",         "name": "Kalibr Cruise Missile","category": "Missiles",     "price": 1_500_000,  "initial": 2000, "maint": 1_500},
-        {"key": "iskander",       "name": "Iskander-M",           "category": "Missiles",     "price": 3_000_000,  "initial": 500,  "maint": 5_000},
-        {"key": "s400",           "name": "S-400 Triumf",         "category": "Air Defense",  "price": 15_000_000, "initial": 56,   "maint": 40_000},
-        {"key": "pantsir",        "name": "Pantsir-S1",           "category": "Air Defense",  "price": 5_000_000,  "initial": 110,  "maint": 15_000},
-        {"key": "borei",          "name": "Borei Class Submarine","category": "Navy",         "price": 40_000_000, "initial": 7,    "maint": 200_000},
-        {"key": "t90m",           "name": "T-90M Proryv",         "category": "Ground Forces","price": 2_500_000,  "initial": 1200, "maint": 6_000},
     ],
 }
 
