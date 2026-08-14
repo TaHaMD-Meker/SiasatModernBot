@@ -103,4 +103,4 @@ def get_start_handlers():
         CommandHandler("start", start),
         CommandHandler("resetme", reset_me),
         CallbackQueryHandler(pick_country, pattern=r"^pickcountry:"),
-    ]￼Enter
+    ]
