@@ -14,7 +14,7 @@ from telegram.ext import (
 
 import config
 import database as db
-from handlers.start import get_start_handler
+from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command
 from handlers.shop import shop, show_category, back_to_shop, confirm_purchase, execute_purchase
 from handlers.admin import addmoney, removemoney, listcountries
@@ -51,8 +51,9 @@ def main():
 
     app = Application.builder().token(config.BOT_TOKEN).build()
 
-    # ثبت‌نام کشور (مکالمه‌ای)
-    app.add_handler(get_start_handler())
+    # انتخاب کشور با دکمه شیشه‌ای
+    for handler in get_start_handlers():
+        app.add_handler(handler)
 
     # دستورات نمایش وضعیت
     app.add_handler(CommandHandler("country", country_profile))
