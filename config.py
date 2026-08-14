@@ -57,6 +57,20 @@ STARTING_VALUES = {
 
 # ===== مقادیر اختصاصی و دقیق اقتصادی و انسانی تمام کشورها =====
 COUNTRY_STARTING_OVERRIDES = {
+    "france": {
+        "population": 68_000_000,
+        "treasury": 60_000_000,
+        "tax_income": 10_000_000,
+        "daily_income": 18_000_000,
+        "gold": 350,
+        "gold_daily": 50,
+        "oil_reserves": 20_000_000,
+        "oil_production": 500_000,
+        "grain": 45,
+        "electricity": 150,
+        "active_personnel": 200_000,
+        "reserve_personnel": 700_000,
+    },
     "qatar": {
         "population": 3_000_000,
         "treasury": 35_000_000,
@@ -184,6 +198,54 @@ ASSET_CATEGORIES = {
 
 # ===== کاتالوگ دقیق و جامع تجهیزات نظامی تمام کشورها =====
 COUNTRY_EQUIPMENT_CATALOG = {
+
+    # 🇫🇷 جمهوری فرانسه (FRANCE)
+    "france": [
+        # بومی (producible=True)
+        {"key": "rafale",         "name": "Dassault Rafale",      "category": "Aircraft",     "price": 18_000_000, "initial": 180,  "maint": 50_000, "producible": True},
+        {"key": "mirage_2000",   "name": "Mirage 2000",          "category": "Aircraft",     "price": 10_000_000, "initial": 90,   "maint": 30_000, "producible": True},
+        {"key": "a400m_fr",      "name": "A400M Atlas",          "category": "Aircraft",     "price": 20_000_000, "initial": 20,   "maint": 40_000, "producible": True},
+        {"key": "a330_mrtt_fr",  "name": "A330 MRTT Phénix",     "category": "Aircraft",     "price": 25_000_000, "initial": 12,   "maint": 50_000, "producible": True},
+        {"key": "tiger_heli_fr", "name": "Eurocopter Tiger",     "category": "Aircraft",     "price": 8_000_000,  "initial": 70,   "maint": 20_000, "producible": True},
+        {"key": "nh90_fr",       "name": "NH90 Caïman",          "category": "Aircraft",     "price": 6_000_000,  "initial": 70,   "maint": 15_000, "producible": True},
+        {"key": "caracal_heli",  "name": "H225M Caracal",        "category": "Aircraft",     "price": 5_000_000,  "initial": 20,   "maint": 12_000, "producible": True},
+        {"key": "puma_cougar_heli","name":"SA330 Puma / Cougar",  "category": "Aircraft",     "price": 3_000_000,  "initial": 50,   "maint": 8_000,  "producible": True},
+        {"key": "patroller_uav", "name": "Safran Patroller UAV", "category": "UAV",          "price": 2_000_000,  "initial": 15,   "maint": 5_000,  "producible": True},
+        {"key": "tactical_drones_fr","name":"پهپادهای شناسایی تاکتیکی","category":"UAV",      "price": 400_000,    "initial": 150,  "maint": 1_000,  "producible": True},
+        {"key": "leclerc_tank",  "name": "Leclerc Tank",         "category": "Ground Forces","price": 4_000_000,  "initial": 220,  "maint": 9_000,  "producible": True},
+        {"key": "vbci_ifv",      "name": "VBCI Armored Vehicle", "category": "Ground Forces","price": 1_500_000,  "initial": 600,  "maint": 3_500,  "producible": True},
+        {"key": "griffon_apc",   "name": "Griffon VBMR",         "category": "Ground Forces","price": 1_000_000,  "initial": 500,  "maint": 2_500,  "producible": True},
+        {"key": "serval_apc",    "name": "Serval VBMR-L",        "category": "Ground Forces","price": 800_000,    "initial": 200,  "maint": 2_000,  "producible": True},
+        {"key": "amx10rc",       "name": "AMX-10RC Armored",     "category": "Ground Forces","price": 1_000_000,  "initial": 200,  "maint": 2_500,  "producible": True},
+        {"key": "vab_apc_fr",    "name": "VAB APC",              "category": "Ground Forces","price": 500_000,    "initial": 1500, "maint": 1_200,  "producible": True},
+        {"key": "caesar_art",    "name": "CAESAR 155mm Howitzer","category": "Artillery",    "price": 2_000_000,  "initial": 80,   "maint": 5_000,  "producible": True},
+        {"key": "trf1_howitzer", "name": "TRF1 Towed Howitzer",  "category": "Artillery",    "price": 500_000,    "initial": 30,   "maint": 1_200,  "producible": True},
+        {"key": "charles_de_gaulle","name":"Charles de Gaulle Carrier","category": "Navy",   "price": 95_000_000, "initial": 1,    "maint": 500_000,"producible": True},
+        {"key": "mistral_lhd_fr","name": "Mistral Class LHD",     "category": "Navy",         "price": 50_000_000, "initial": 3,    "maint": 250_000,"producible": True},
+        {"key": "horizon_destroyer","name":"Horizon Class Destroyer","category": "Navy",     "price": 30_000_000, "initial": 2,    "maint": 100_000,"producible": True},
+        {"key": "fremm_frigate", "name": "FREMM Aquitaine Class","category": "Navy",         "price": 25_000_000, "initial": 8,    "maint": 90_000, "producible": True},
+        {"key": "lafayette_frigate","name":"La Fayette Frigate",  "category": "Navy",         "price": 15_000_000, "initial": 5,    "maint": 50_000, "producible": True},
+        {"key": "patrol_ships_fr","name":"شناورهای گشتی و رزمی", "category": "Navy",         "price": 1_000_000,  "initial": 40,   "maint": 3_000,  "producible": True},
+        {"key": "suffren_sub",   "name": "Suffren SSN Submarine", "category": "Navy",         "price": 35_000_000, "initial": 2,    "maint": 150_000,"producible": True},
+        {"key": "rubis_sub",     "name": "Rubis / Améthyste Sub", "category": "Navy",         "price": 25_000_000, "initial": 4,    "maint": 100_000,"producible": True},
+        {"key": "triomphant_sub","name": "Triomphant SSBN Sub",  "category": "Navy",         "price": 50_000_000, "initial": 4,    "maint": 220_000,"producible": True},
+        {"key": "m51_slbm",      "name": "M51 SLBM Nuclear",     "category": "Missiles",     "price": 15_000_000, "initial": 48,   "maint": 35_000, "producible": True},
+        {"key": "scalp_eg",      "name": "SCALP EG Cruise",      "category": "Missiles",     "price": 2_000_000,  "initial": 300,  "maint": 3_000,  "producible": True},
+        {"key": "exocet",        "name": "Exocet MM40 Anti-Ship","category": "Missiles",     "price": 1_200_000,  "initial": 300,  "maint": 2_000,  "producible": True},
+        {"key": "meteor_fr",     "name": "Meteor BVR Air-to-Air","category": "Missiles",     "price": 1_500_000,  "initial": 300,  "maint": 2_000,  "producible": True},
+        {"key": "mica_fr",       "name": "MICA Air-to-Air",      "category": "Missiles",     "price": 800_000,    "initial": 500,  "maint": 1_200,  "producible": True},
+        {"key": "aster_missiles","name": "Aster 15 / Aster 30",  "category": "Missiles",     "price": 2_000_000,  "initial": 400,  "maint": 3_000,  "producible": True},
+        {"key": "samp_t",        "name": "SAMP/T Air Defense",   "category": "Air Defense",  "price": 12_000_000, "initial": 10,   "maint": 35_000, "producible": True},
+        {"key": "crotale_ng",    "name": "Crotale NG System",    "category": "Air Defense",  "price": 4_000_000,  "initial": 12,   "maint": 12_000, "producible": True},
+        {"key": "mistral_manpads","name":"Mistral MANPADS",       "category": "Air Defense",  "price": 500_000,    "initial": 100,  "maint": 1_000,  "producible": True},
+        {"key": "radars_fr",     "name": "رادارهای نظامی",       "category": "Air Defense",  "price": 4_000_000,  "initial": 100,  "maint": 12_000, "producible": True},
+
+        # وارداتی (producible=False)
+        {"key": "c130j_fr",      "name": "C-130J (وارداتی)",     "category": "Aircraft",     "price": 8_000_000,  "initial": 8,    "maint": 18_000, "producible": False},
+        {"key": "e3f_awacs",     "name": "E-3F AWACS (وارداتی)",  "category": "Aircraft",     "price": 25_000_000, "initial": 4,    "maint": 50_000, "producible": False},
+        {"key": "reaper_fr",     "name": "MQ-9 Reaper (وارداتی)","category": "UAV",          "price": 3_000_000,  "initial": 12,   "maint": 10_000, "producible": False},
+        {"key": "lrm_mlrs",      "name": "LRM MLRS (وارداتی)",    "category": "Artillery",    "price": 2_500_000,  "initial": 13,   "maint": 6_000,  "producible": False},
+    ],
 
     # 🇶🇦 دولت قطر (QATAR)
     "qatar": [
