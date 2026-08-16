@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-ماژول اختصاصی سیستم رضایت عمومی و گزارش روزانه کشور (Approval & Daily Report System)
-محاسبه روزانه نیازهای حیاتی برق، نفت و غلات بر اساس جمعیت، افت تدریجی رضایت،
-مهاجرت جمعیت در رضایت زیر ۴۰٪ و تولید گزارش روزانه عددی و روایی.
+ماژول اختصاصی سیستم رضایت عمومی و گزارش روزانه کشور (Approval & Daily Report System v2.1)
+فاصله‌گذاری مرتب، خطوط مجزا و بدون ایموجی‌های اضافی.
 """
 
 import math
@@ -12,19 +11,19 @@ import daily_narratives
 from utils import format_money, format_number, format_oil
 
 def get_approval_badge(rating: int):
-    """ایجاد نوار بصری درصد و آیکون وضعیت رضایت عمومی."""
+    """ایجاد نوار بصری درصد و وضعیت رضایت عمومی."""
     rating = max(0, min(100, rating))
     filled = int(round(rating / 10))
     bar = "█" * filled + "░" * (10 - filled)
     
     if rating >= 75:
-        return f"🟢 **رضایت عالی ({rating}٪)**\n`[{bar}]` {rating}٪ — پایداری و ثبات کامل اجتماعی"
+        return f"**رضایت عالی ({rating}٪)**\n`[{bar}]` {rating}٪ — پایداری و ثبات کامل اجتماعی"
     elif rating >= 50:
-        return f"🟡 **رضایت متوسط ({rating}٪)**\n`[{bar}]` {rating}٪ — ثبات شکننده / نیاز به بهبود خدمات"
+        return f"**رضایت متوسط ({rating}٪)**\n`[{bar}]` {rating}٪ — ثبات شکننده / نیاز به بهبود خدمات"
     elif rating >= 40:
-        return f"🟠 **رضایت پایین ({rating}٪)**\n`[{bar}]` {rating}٪ — هشدار نارضایتی عمومی / آستانه بحران"
+        return f"**رضایت پایین ({rating}٪)**\n`[{bar}]` {rating}٪ — هشدار نارضایتی عمومی / آستانه بحران"
     else:
-        return f"🔴 **رضایت بحرانی ({rating}٪)**\n`[{bar}]` {rating}٪ — بحران شدید اجتماعی و مهاجرت گسترده"
+        return f"**رضایت بحرانی ({rating}٪)**\n`[{bar}]` {rating}٪ — بحران شدید اجتماعی و مهاجرت گسترده"
 
 
 def calculate_country_requirements(c: dict):
@@ -32,13 +31,8 @@ def calculate_country_requirements(c: dict):
     pop = c.get("population", 10_000_000)
     pop_millions = max(0.1, pop / 1_000_000)
 
-    # 1. Elec need (% balance needed)
     elec_need = max(10, int(pop_millions * 1.5))
-    
-    # 2. Oil daily fuel need (barrels / day)
     oil_need_daily = max(1_000, int(pop_millions * 15_000))
-
-    # 3. Grain daily food need (tons / day)
     grain_need_daily = max(10, int(pop_millions * 100))
 
     return {
@@ -96,7 +90,7 @@ def process_daily_approval_and_emigration(c: dict):
 
     if available_grain < grain_need:
         grain_deficit_pct = (grain_need - available_grain) / max(1, grain_need)
-        grain_penalty = -max(3, int(grain_deficit_pct * 12)) # SEVERE PENALTY
+        grain_penalty = -max(3, int(grain_deficit_pct * 12))
         db.update_country_field(cid, "grain", 0)
         grain_ok = False
     else:
@@ -155,9 +149,9 @@ def process_daily_approval_and_emigration(c: dict):
 
 
 def get_approval_status_message(c: dict):
-    """تولید پیام کامل گزارش وضعیت رضایت عمومی و تحلیل منابع کشور با بلوک‌های اقتباسی (Quote)."""
+    """تولید پیام وضعیت رضایت عمومی با فاصله‌گذاری مرتب و بدون ایموجی اضافی."""
     
-    flag = c.get("flag", "🌐")
+    flag = c.get("flag", "")
     name = c.get("name", "کشور")
     pop = c.get("population", 10_000_000)
     approval = c.get("approval_rating", 80)
@@ -170,45 +164,45 @@ def get_approval_status_message(c: dict):
     badge = get_approval_badge(approval)
 
     lines = []
-    lines.append(f"📊 **شاخص رضایت عمومی و پایداری کشور {flag} {name}**\n")
+    lines.append(f"**شاخص رضایت عمومی و پایداری کشور {flag} {name}**\n")
     lines.append(badge)
-    lines.append("\n━━━━━━━━━━━━━━━━━━")
-    lines.append("📋 **ارزیابی روزانه منابع و مصرف حیاتی کشور:**\n")
+    lines.append("\n━━━━━━━━━━━━━━━━━━\n")
+    lines.append("**ارزیابی روزانه منابع و مصرف حیاتی کشور:**\n")
 
     # Electricity Status
     current_elec = c.get("electricity", 100)
     if current_elec >= elec_need:
-        elec_status = f"🟢 تامین کامل (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)"
+        elec_status = f"تامین کامل (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)"
     else:
-        elec_status = f"🔴 کسری برق (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)"
-    lines.append(f"> ⚡ **انرژی و برق:** {elec_status}")
+        elec_status = f"کسری برق (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)"
+    lines.append(f"• **انرژی و برق:** {elec_status}\n")
 
     # Oil Status
     res_oil = c.get("oil_reserves", 0)
     prod_oil = c.get("oil_production", 0)
     avail_oil = res_oil + prod_oil
     if avail_oil >= oil_need:
-        oil_status = f"🟢 تامین کامل (نیاز روزانه: {format_oil(oil_need)})"
+        oil_status = f"تامین کامل (نیاز روزانه: {format_oil(oil_need)})"
     else:
-        oil_status = f"🔴 کمبود سوخت و نفت (کسری: {format_oil(oil_need - avail_oil)})"
-    lines.append(f"> 🛢️ **سوخت و نفت:** {oil_status}")
+        oil_status = f"کمبود سوخت و نفت (کسری: {format_oil(oil_need - avail_oil)})"
+    lines.append(f"• **سوخت و نفت:** {oil_status}\n")
 
     # Grain Status
     current_grain = c.get("grain", 0)
     grain_daily = c.get("grain_daily", 0)
     avail_grain = current_grain + grain_daily
     if avail_grain >= grain_need:
-        grain_status = f"🟢 تامین کامل (ذخیره: {format_number(current_grain)} تن | تولید: +{format_number(grain_daily)} تن/روز | نیاز: {format_number(grain_need)} تن)"
+        grain_status = f"تامین کامل (ذخیره: {format_number(current_grain)} تن | تولید: +{format_number(grain_daily)} تن/روز | نیاز: {format_number(grain_need)} تن)"
     else:
-        grain_status = f"🔴 گرسنگی و کمبود غلات (کسری: {format_number(grain_need - avail_grain)} تن)"
-    lines.append(f"> 🌾 **تامین غذا و غلات:** {grain_status}")
+        grain_status = f"گرسنگی و کمبود غلات (کسری: {format_number(grain_need - avail_grain)} تن)"
+    lines.append(f"• **تامین غذا و غلات:** {grain_status}\n")
 
-    lines.append("\n━━━━━━━━━━━━━━━━━━")
-    lines.append("👥 **وضعیت جمعیت و مهاجرت:**\n")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+    lines.append("**وضعیت جمعیت و مهاجرت:**\n")
 
     if approval >= 40:
-        lines.append(f"> 🟢 **وضعیت پایدار:** نرخ مهاجرت ۰٪ (جمعیت فعلی: {format_number(pop)} نفر).")
-        lines.append("> _(در صورت افت رضایت عمومی به زیر ۴۰٪، روند خروج و مهاجرت جمعیت و کاهش ارتش آغاز می‌گردد)._")
+        lines.append(f"• **وضعیت پایدار:** نرخ مهاجرت ۰٪ (جمعیت فعلی: {format_number(pop)} نفر).\n")
+        lines.append("_(در صورت افت رضایت عمومی به زیر ۴۰٪، روند خروج و مهاجرت جمعیت و کاهش ارتش آغاز می‌گردد)._")
     else:
         if approval >= 30:
             emig_rate_str = "۰.۵٪"
@@ -221,17 +215,17 @@ def get_approval_status_message(c: dict):
 
         emig_est = int(pop * float(emig_rate_str.replace("٪", "").replace("۰", "0").replace("۱", "1").replace("۲", "2").replace("۳", "3").replace("۵", "5").replace(".", ".")) / 100)
 
-        lines.append(f"> ⚠️ **هشدار بحران اجتماعی و خروج جمعیت:**")
-        lines.append(f"> 🔴 به دلیل افت رضایت عمومی به {approval}٪، روزانه **{emig_rate_str}** از جمعیت (حدود **{format_number(emig_est)} نفر در روز**) در حال مهاجرت و خروج از کشور هستند!")
-        lines.append("> 📉 این امر مستقیم موجب کاهش نیروی انسانی ارتش و افت پایه درآمد مالیاتی کشور می‌گردد.")
+        lines.append("**هشدار بحران اجتماعی و خروج جمعیت:**\n")
+        lines.append(f"• به دلیل افت رضایت عمومی به {approval}٪، روزانه **{emig_rate_str}** از جمعیت (حدود **{format_number(emig_est)} نفر در روز**) در حال مهاجرت و خروج از کشور هستند.\n")
+        lines.append("• این امر مستقیم موجب کاهش نیروی انسانی ارتش و افت پایه درآمد مالیاتی کشور می‌گردد.")
 
     return "\n".join(lines)
 
 
 def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
-    """تولید گزارش روزانه شفاف اقتصادی، اجتماعی و روایی کشور با نقل‌قول (Quote Block)."""
+    """تولید گزارش روزانه با فاصله‌گذاری مرتب، خطوط مجزا و بدون ایموجی‌های اضافی."""
     
-    flag = c.get("flag", "🌐")
+    flag = c.get("flag", "")
     name = c.get("name", "کشور")
     pop = c.get("population", 10_000_000)
     approval = c.get("approval_rating", 80)
@@ -251,44 +245,46 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     narrative = daily_narratives.get_daily_narrative(approval, grain_ok=app_res["grain_ok"], oil_ok=app_res["oil_ok"])
 
     lines = []
-    lines.append(f"📋 **گزارش روزانه وضعیت کشور {flag} {name}**")
+    lines.append(f"**گزارش روزانه وضعیت کشور {flag} {name}**")
     lines.append(f"تاریخ گزارش: {today_str}\n")
-    lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append("📊 **خلاصه مالی و تغییرات اقتصادی روزانه:**\n")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+    lines.append("**خلاصه مالی و تغییرات اقتصادی روزانه:**\n")
 
-    lines.append(f"> 💰 **درآمد پایه و مالیاتی:** +{format_money(daily_income)}/روز (واریز شد)")
+    lines.append(f"• **درآمد پایه و مالیاتی:** +{format_money(daily_income)}/روز (واریز شد)\n")
+
     if gold_daily > 0:
-        lines.append(f"> 🪙 **تولید روزانه طلا:** +{gold_daily:,} شمش طلا")
-    lines.append(f"> 🛢️ **تولید روزانه نفت:** +{format_oil(oil_prod)}")
+        lines.append(f"• **تولید روزانه طلا:** +{gold_daily:,} شمش طلا\n")
+
+    lines.append(f"• **تولید روزانه نفت:** +{format_oil(oil_prod)}\n")
 
     # Grain
     grain_str = f"+{grain_prod:,} تن تولید / -{grain_need:,} تن مصرف" if grain_prod > 0 else f"-{grain_need:,} تن مصرف روزانه"
     if app_res["grain_ok"]:
-        lines.append(f"> 🌾 **تامین غلات:** {grain_str} (🟢 تامین کامل)")
+        lines.append(f"• **تامین غلات:** {grain_str} (تامین کامل)\n")
     else:
-        lines.append(f"> 🌾 **تامین غلات:** 🔴 کسری غذایی و گرسنگی (نیاز: {grain_need:,} تن)")
+        lines.append(f"• **تامین غلات:** کسری غذایی و گرسنگی (نیاز روزانه: {grain_need:,} تن)\n")
 
     # Elec
     current_elec = c.get("electricity", 100)
     if app_res["elec_ok"]:
-        lines.append(f"> ⚡ **تراز انرژی:** {current_elec}٪ (🟢 تامین کامل نیاز {elec_need}٪)")
+        lines.append(f"• **تراز انرژی:** {current_elec}٪ (تامین کامل نیاز {elec_need}٪)\n")
     else:
-        lines.append(f"> ⚡ **تراز انرژی:** 🔴 کسری برق (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)")
+        lines.append(f"• **تراز انرژی:** کسری برق (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)\n")
 
     # Change in approval
     net_chg = app_res["net_change"]
     sign_chg = f"+{net_chg}" if net_chg >= 0 else f"{net_chg}"
-    lines.append(f"> 📊 **تغییر رضایت عمومی:** {sign_chg}٪ (شاخص فعلی: {app_res['new_approval']}٪)")
+    lines.append(f"• **تغییر رضایت عمومی:** {sign_chg}٪ (شاخص فعلی: {app_res['new_approval']}٪)\n")
 
     # Emigration
     emig = app_res["emig_count"]
     if emig > 0:
-        lines.append(f"> 👥 **مهاجرت روزانه:** 🔴 -{emig:,} نفر خروج از کشور (به دلیل افت رضایت عمومی به زیر ۴۰٪)")
+        lines.append(f"• **مهاجرت روزانه:** -{emig:,} نفر خروج از کشور (افت رضایت زیر ۴۰٪)\n")
 
-    lines.append(f"> 🏦 **موجودی نهایی خزانه:** {format_money(treasury)}")
+    lines.append(f"• **موجودی نهایی خزانه:** {format_money(treasury)}\n")
 
-    lines.append("\n━━━━━━━━━━━━━━━━━━")
-    lines.append("📜 **روایت روزانه کشور:**\n")
-    lines.append(f'> _"{narrative}"_')
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+    lines.append("**روایت روزانه کشور:**\n")
+    lines.append(f'"{narrative}"')
 
     return "\n".join(lines)
