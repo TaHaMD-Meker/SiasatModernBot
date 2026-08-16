@@ -384,7 +384,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
             return
 
-        await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...")
+        await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
 
@@ -741,7 +741,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         context.user_data["war_analysis"]["defender_role"] = def_role
 
-        await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...")
+        await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
 

@@ -449,7 +449,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         succ, msg = db.execute_trade_contract_transaction(contract_id)
 
         if not succ:
-            await query.edit_message_text(f"❌ **اجرای قرارداد ناموفق بود:**\n\n{msg}")
+            await query.edit_message_text(f"❌ **اجرای قرارداد ناموفق بود:**\n\n{msg}", parse_mode="Markdown")
             return
 
         c_data = db.get_trade_contract(contract_id)
@@ -484,7 +484,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             p_c = db.get_country_by_id(c_data["proposer_id"])
             if p_c and p_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ **پیشنهاد قرارداد تجاری شما توسط کشور {country['name']} رد شد.**")
+                    await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ **پیشنهاد قرارداد تجاری شما توسط کشور {country['name']} رد شد.**", parse_mode="Markdown")
                 except Exception:
                     pass
         await query.edit_message_text("❌ قرارداد تجاری رد شد.")
@@ -548,28 +548,28 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             db.set_diplomatic_relation(country["id"], target_id, "normal", 0)
             if target_c and target_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"💔 **کشور {country['name']} پیمان اتحاد را لغو نمود.**")
+                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"💔 **کشور {country['name']} پیمان اتحاد را لغو نمود.**", parse_mode="Markdown")
                 except Exception:
                     pass
-            await query.edit_message_text("💔 پیمان اتحاد لغو گردید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
+            await query.edit_message_text("💔 **پیمان اتحاد لغو گردید.**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
 
         elif act == "sanction":
             db.set_diplomatic_relation(country["id"], target_id, "sanctioned", country["id"])
             if target_c and target_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🚫 **کشور {country['name']} کشور شما را زیر تحریم‌های یک‌طرفه قرار داد.**")
+                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🚫 **کشور {country['name']} کشور شما را زیر تحریم‌های یک‌طرفه قرار داد.**", parse_mode="Markdown")
                 except Exception:
                     pass
-            await query.edit_message_text("🚫 تحریم یک‌طرفه علیه کشور مخاطب اعمال شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
+            await query.edit_message_text("🚫 **تحریم یک‌طرفه علیه کشور مخاطب اعمال شد.**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
 
         elif act == "unsanction":
             db.set_diplomatic_relation(country["id"], target_id, "normal", 0)
             if target_c and target_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🔓 **کشور {country['name']} تحریم‌های یک‌طرفه علیه شما را لغو کرد.**")
+                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🔓 **کشور {country['name']} تحریم‌های یک‌طرفه علیه شما را لغو کرد.**", parse_mode="Markdown")
                 except Exception:
                     pass
-            await query.edit_message_text("🔓 تحریم یک‌طرفه لغو گردید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
+            await query.edit_message_text("🔓 **تحریم یک‌طرفه لغو گردید.**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
 
     elif data.startswith("dip:alliance_accept:"):
         proposer_id = int(data.split(":")[2])
@@ -577,20 +577,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         p_c = db.get_country_by_id(proposer_id)
         if p_c and p_c.get("player_id"):
             try:
-                await context.bot.send_message(chat_id=p_c["player_id"], text=f"🤝 **کشور {country['name']} پیشنهاد اتحاد شما را پذیرفت! هم‌اکنون دو کشور متحد رسمی هستند.**")
+                await context.bot.send_message(chat_id=p_c["player_id"], text=f"🤝 **کشور {country['name']} پیشنهاد اتحاد شما را پذیرفت! هم‌اکنون دو کشور متحد رسمی هستند.**", parse_mode="Markdown")
             except Exception:
                 pass
-        await query.edit_message_text("🤝 **پیمان اتحاد رسمی به امضا رسید.**")
+        await query.edit_message_text("🤝 **پیمان اتحاد رسمی به امضا رسید.**", parse_mode="Markdown")
 
     elif data.startswith("dip:alliance_reject:"):
         proposer_id = int(data.split(":")[2])
         p_c = db.get_country_by_id(proposer_id)
         if p_c and p_c.get("player_id"):
             try:
-                await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ **کشور {country['name']} پیشنهاد اتحاد شما را رد کرد.**")
+                await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ **کشور {country['name']} پیشنهاد اتحاد شما را رد کرد.**", parse_mode="Markdown")
             except Exception:
                 pass
-        await query.edit_message_text("❌ پیشنهاد اتحاد رد شد.")
+        await query.edit_message_text("❌ **پیشنهاد اتحاد رد شد.**", parse_mode="Markdown")
 
 
 # ==================== Text Input Handler برای دیپلماسی ====================
@@ -708,7 +708,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt)
 
             if not succ:
-                await update.message.reply_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}")
+                await update.message.reply_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", parse_mode="Markdown")
                 return
 
             target_c = db.get_country_by_id(target_id)
