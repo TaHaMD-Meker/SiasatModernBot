@@ -26,9 +26,13 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ این بخش فقط برای ادمین اصلی بازی مجاز است.", parse_mode="Markdown")
         return
 
+    locked = db.get_setting("country_creation_locked") == "1"
+    lock_btn_label = "🔓 باز کردن ثبت‌نام کشورها (وضعیت: 🔒 قفل)" if locked else "🔒 قفل کردن ثبت‌نام کشورها (وضعیت: 🔓 باز)"
+
     text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
+        [InlineKeyboardButton(lock_btn_label, callback_data="admin:toggle_country_lock")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
         [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
@@ -312,6 +316,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:close":
         await query.delete_message()
+
+    elif data == "admin:toggle_country_lock":
+        curr_locked = db.get_setting("country_creation_locked") == "1"
+        new_status = "0" if curr_locked else "1"
+        db.set_setting("country_creation_locked", new_status)
+        status_msg = "🔒 ثبت‌نام کشورها قفل شد." if new_status == "1" else "🔓 ثبت‌نام کشورها باز شد."
+        await query.answer(status_msg, show_alert=True)
+        await admin_panel(update, context)
 
     elif data.startswith("admin:list:"):
         page = int(data.split(":")[2])

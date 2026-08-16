@@ -52,6 +52,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Check lock status
+    is_adm = player_id in config.ADMIN_IDS
+    if not is_adm and db.get_setting("country_creation_locked") == "1":
+        await update.message.reply_text(
+            f"🔒 **ثبت‌نام و انتخاب کشورها موقتاً قفل است!**\n\n"
+            "بازی «سیاست مدرن» در حال حاضر در فاز آماده‌سازی نهایی قبل از افتتاحیه قرار دارد.\n"
+            "زمان شروع رسمی به‌زودی در کانال تلگرام اعلام خواهد شد.\n\n"
+            f"📢 **کانال رسمی بازی:** {config.get_channel_id()}",
+            parse_mode="Markdown"
+        )
+        return
+
     buttons = build_country_keyboard()
     if not buttons:
         await update.message.reply_text("متأسفانه همه‌ی کشورها قبلاً انتخاب شدن!", parse_mode="Markdown")
@@ -73,6 +85,17 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user.username:
         await query.edit_message_text(
             "⛔ *حساب تلگرام شما فاقد یوزرنیم (@username) است.*\nلطفاً ابتدا در تنظیمات تلگرام آیدی ست کرده و سپس /start بزنید.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Check lock status
+    is_adm = player_id in config.ADMIN_IDS
+    if not is_adm and db.get_setting("country_creation_locked") == "1":
+        await query.edit_message_text(
+            f"🔒 **ثبت‌نام و انتخاب کشورها موقتاً قفل است!**\n\n"
+            "زمان شروع رسمی به‌زودی در کانال تلگرام اعلام خواهد شد.\n\n"
+            f"📢 **کانال رسمی بازی:** {config.get_channel_id()}",
             parse_mode="Markdown"
         )
         return
