@@ -13,6 +13,28 @@ import config
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
+async def check_and_alert_anti_cheat(context, proposer_c, recipient_c, amount_val, tx_type_label):
+    """ارسال هوشمند هشدار احتمال تقلب/مولتی‌اکانت به ادمین."""
+    for admin_id in config.ADMIN_IDS:
+        try:
+            p_user = f"@{proposer_c.get('username')}" if proposer_c.get('username') else "بدون_آیدی"
+            r_user = f"@{recipient_c.get('username')}" if recipient_c.get('username') else "بدون_آیدی"
+
+            alert_text = (
+                "🚨 **هشدار هوشمند آنتی‌چیت (احتمال مولتی‌اکانت / تقلب)**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **فرستنده:** {proposer_c['flag']} {proposer_c['name']} (کاربر: {p_user} | ID: `{proposer_c['player_id']}`)\n"
+                f"• **گیرنده:** {recipient_c['flag']} {recipient_c['name']} (کاربر: {r_user} | ID: `{recipient_c['player_id']}`)\n\n"
+                f"• **نوع تراکنش:** {tx_type_label}\n"
+                f"• **حجم/ارزش:** {amount_val}\n\n"
+                "⚠️ **توضیحات:** حجم جابه‌جایی منابع/تسلیحات از آستانه هشدار گذشته است."
+            )
+            kb = [[InlineKeyboardButton(f"🔍 بررسی کشور فرستنده ({proposer_c['name']})", callback_data=f"admin:c:{proposer_c['id']}")]]
+            await context.bot.send_message(chat_id=admin_id, text=alert_text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        except Exception:
+            pass
+
+
 async def require_country(update: Update):
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
@@ -456,7 +478,12 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         p_c = db.get_country_by_id(c_data["proposer_id"])
         r_c = db.get_country_by_id(c_data["recipient_id"])
 
-        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
+        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "military_asset": "واحد تجهیزات نظامی"}
+
+        # Anti-cheat trigger
+        amt_str = f"{c_data['offered_amount']:,} {type_map.get(c_data['offered_type'], 'واحد')}"
+        if c_data.get("offered_amount", 0) >= 10_000_000 or c_data.get("offered_type") == "military_asset":
+            await check_and_alert_anti_cheat(context, p_c, r_c, amt_str, "قرارداد تجاری / انتقال تسلیحات")
 
         # Send Financial Receipt to both sides
         receipt_text = (
@@ -713,6 +740,10 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
 
             target_c = db.get_country_by_id(target_id)
             type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
+
+            # Trigger Anti-cheat Alert
+            if amt >= 5_000_000 or res_type in ["gold", "oil"]:
+                await check_and_alert_anti_cheat(context, country, target_c, f"{amt:,} {type_labels.get(res_type, res_type)}", "کمک خارجی اهدایی")
 
             # Send receipt to recipient
             aid_receipt = (

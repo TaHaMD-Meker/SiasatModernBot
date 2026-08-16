@@ -46,7 +46,8 @@ def init_db():
         created_at TEXT,
         country_key TEXT UNIQUE,
         approval_rating INTEGER DEFAULT 80,
-        grain_daily INTEGER DEFAULT 0
+        grain_daily INTEGER DEFAULT 0,
+        username TEXT
     )
     """)
 
@@ -62,6 +63,11 @@ def init_db():
 
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN grain_daily INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN username TEXT")
     except sqlite3.OperationalError:
         pass
 
@@ -181,7 +187,7 @@ def init_db():
 
 # ---------- کشورها ----------
 
-def create_country(player_id: int, name: str, flag: str = "🏳️", country_key: str = None):
+def create_country(player_id: int, name: str, flag: str = "🏳️", country_key: str = None, username: str = None):
     conn = get_connection()
     cur = conn.cursor()
 
@@ -192,14 +198,14 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
         INSERT INTO countries
         (player_id, name, flag, population, treasury, tax_income, daily_income,
          gold, gold_daily, oil_reserves, oil_production, grain, electricity,
-         active_personnel, reserve_personnel, last_income_date, created_at, country_key)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         active_personnel, reserve_personnel, last_income_date, created_at, country_key, username)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         player_id, name, flag,
         sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
         sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
         sv["grain"], sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
-        None, now_str, country_key
+        None, now_str, country_key, username
     ))
     country_id = cur.lastrowid
     conn.commit()

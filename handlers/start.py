@@ -30,7 +30,18 @@ def build_country_keyboard():
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    player_id = update.effective_user.id
+    user = update.effective_user
+    player_id = user.id
+
+    if not user.username:
+        await update.message.reply_text(
+            "⛔ **خطا در ساخت کشور (احراز هویت تلگرام):**\n\n"
+            "جهت حفظ امنیت بازی و جلوگیری از حساب‌های ناشناس و فیک، حساب تلگرام شما باید دارای **آیدی / یوزرنیم (@username)** باشد.\n\n"
+            "لطفاً در تنظیمات تلگرام خود یک آیدی (Username) تنظیم فرموده و سپس مجدداً دستور /start را ارسال کنید.",
+            parse_mode="Markdown"
+        )
+        return
+
     existing = db.get_country_by_player(player_id)
 
     if existing:
@@ -56,7 +67,16 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    player_id = update.effective_user.id
+    user = update.effective_user
+    player_id = user.id
+
+    if not user.username:
+        await query.edit_message_text(
+            "⛔ **حساب تلگرام شما فاقد یوزرنیم (@username) است.**\nلطفاً ابتدا در تنظیمات تلگرام آیدی ست کرده و سپس /start بزنید.",
+            parse_mode="Markdown"
+        )
+        return
+
     existing = db.get_country_by_player(player_id)
     if existing:
         await query.edit_message_text(f"تو از قبل کشور {existing['flag']} {existing['name']} رو داری!")
@@ -85,7 +105,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    db.create_country(player_id, info["name"], info["flag"], key)
+    db.create_country(player_id, info["name"], info["flag"], key, user.username)
     db.add_log(actor=str(player_id), action="create_country", details=key)
 
     await query.edit_message_text(
