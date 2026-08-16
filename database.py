@@ -1098,6 +1098,27 @@ def get_country_rankings() -> list:
     return [dict(r) for r in rows]
 
 
+def has_active_oil_import_contract(country_id: int) -> bool:
+    """بررسی وجود قرارداد فعال واردات نفت خام برای کشورهای صنعتی فاقد نفت."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) as count FROM trade_contracts WHERE recipient_id = ? AND offered_type = 'oil' AND status = 'accepted'", (country_id,))
+    row = cur.fetchone()
+    conn.close()
+    return bool(row and row["count"] > 0)
+
+
+def get_industrial_oil_consumption(country_id: int) -> int:
+    """محاسبه مصرف روزانه سوخت صنعتی نیروگاه‌ها و کارخانجات کشور."""
+    equipment = get_equipment(country_id)
+    fossil_count = equipment.get("fossil_plant", 0)
+    factories_count = equipment.get("small_factory", 0) + equipment.get("medium_factory", 0) + equipment.get("large_factory", 0) + equipment.get("industrial_complex", 0)
+    refinery_count = equipment.get("oil_refinery", 0)
+
+    ind_oil_need = (fossil_count * 200_000) + (factories_count * 50_000) + (refinery_count * 300_000)
+    return ind_oil_need
+
+
 def calculate_country_maintenance_cost(country_id: int) -> dict:
     """محاسبه دقیق هزینه نگهداری روزانه تسلیحات و ارتش با تخفیف سطح فناوری (Tech Level)."""
     conn = get_connection()

@@ -27,19 +27,30 @@ def get_approval_badge(rating: int):
 
 
 def calculate_country_requirements(c: dict):
-    """محاسبه دقیق میزان نیازهای روزانه کشور بر اساس جمعیت."""
+    """محاسبه دقیق میزان نیازهای روزانه کشور بر اساس جمعیت و صنایع سنگین."""
     pop = c.get("population", 10_000_000)
     pop_millions = max(0.1, pop / 1_000_000)
 
     elec_need = max(10, int(pop_millions * 1.5))
-    oil_need_daily = max(1_000, int(pop_millions * 15_000))
+
+    # Base population oil need
+    pop_oil_need = max(1_000, int(pop_millions * 15_000))
+
+    # Industrial oil need from power plants, factories & refineries
+    cid = c.get("id")
+    ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
+
+    total_oil_need_daily = pop_oil_need + ind_oil_need
+
     grain_need_daily = max(10, int(pop_millions * 100))
 
     return {
         "pop": pop,
         "pop_millions": pop_millions,
         "elec_need": elec_need,
-        "oil_need_daily": oil_need_daily,
+        "oil_need_daily": total_oil_need_daily,
+        "pop_oil_need": pop_oil_need,
+        "ind_oil_need": ind_oil_need,
         "grain_need_daily": grain_need_daily,
     }
 
