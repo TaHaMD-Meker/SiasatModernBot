@@ -954,3 +954,41 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             return True, "کمک خارجی با موفقیت ارسال شد."
     except Exception as e:
         return False, f"خطا در ارسال کمک: {e}"
+
+
+# ---------- ابزارهای رصد و نظارت ادمین ----------
+
+def get_country_transactions(country_id: int, limit: int = 20) -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM transactions WHERE country_id = ? ORDER BY id DESC LIMIT ?", (country_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_recent_diplomatic_logs(limit: int = 20) -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM transactions WHERE type IN ('trade', 'aid_out', 'aid_in', 'asset_transfer_out', 'asset_transfer_in') ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_recent_logs(limit: int = 20) -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_country_rankings() -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM countries ORDER BY treasury DESC")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

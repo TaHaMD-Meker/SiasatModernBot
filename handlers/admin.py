@@ -30,6 +30,9 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
+        [InlineKeyboardButton("✉️ رصد معاهدات و پیام‌های دیپلماتیک", callback_data="admin:dip_logs")],
+        [InlineKeyboardButton("📜 رصد فعالیت‌ها و لاگ‌های سیستم", callback_data="admin:activity_logs")],
+        [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
@@ -124,6 +127,9 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
         [
             InlineKeyboardButton("🛢️ ویرایش نفت", callback_data=f"admin:menu_oil:{c['id']}"),
             InlineKeyboardButton("🎖️ مدیریت دارایی‌های نظامی", callback_data=f"admin:menu_assets:{c['id']}"),
+        ],
+        [
+            InlineKeyboardButton("📜 تراکنش‌ها و فعالیت‌های اخیر این کشور", callback_data=f"admin:c_tx_logs:{c['id']}"),
         ],
         [
             InlineKeyboardButton("✉️ ارسال پیام مستقیم به بازیکن", callback_data=f"admin:msg_prompt:{c['id']}"),
@@ -325,6 +331,57 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:activity_logs":
+        logs = db.get_recent_logs(20)
+        lines = ["📜 **رصد آخرین فعالیت‌ها و لاگ‌های سیستم**\n━━━━━━━━━━━━━━━━━━\n"]
+        if not logs:
+            lines.append("هیچ لاگی در سیستم ثبت نشده است.")
+        else:
+            for lg in logs:
+                dt_str = lg.get("created_at", "")[:19].replace("T", " ")
+                lines.append(f"• `{dt_str}` | **کاربر:** `{lg.get('actor')}` | **عملیات:** `{lg.get('action')}` | {lg.get('details')}\n")
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:dip_logs":
+        txs = db.get_recent_diplomatic_logs(20)
+        lines = ["✉️ **رصد آخرین معاهدات و تراکنش‌های دیپلماتیک**\n━━━━━━━━━━━━━━━━━━\n"]
+        if not txs:
+            lines.append("هیچ معاهده یا تراکنش دیپلماتیکی ثبت نشده است.")
+        else:
+            for tx in txs:
+                dt_str = tx.get("created_at", "")[:19].replace("T", " ")
+                c = db.get_country_by_id(tx["country_id"])
+                c_name = f"{c['flag']} {c['name']}" if c else "نامشخص"
+                lines.append(f"• `{dt_str}` | **{c_name}:** {tx.get('description')} | **مبلغ/حجم:** {tx.get('amount')}\n")
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:rankings":
+        rankings = db.get_country_rankings()
+        lines = ["🏆 **رتبه‌بندی ثروت و قدرتمندترین کشورها**\n━━━━━━━━━━━━━━━━━━\n"]
+        if not rankings:
+            lines.append("هیچ کشوری ساخته نشده است.")
+        else:
+            for idx, c in enumerate(rankings, 1):
+                lines.append(f"{idx}. {c['flag']} **{c['name']}** | 🏦 خزانه: {format_money(c['treasury'])} | 🪙 طلا: {c['gold']} | 🛢️ نفت: {format_oil(c['oil_reserves'])}\n")
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:c_tx_logs:"):
+        c_id = int(data.split(":")[2])
+        c = db.get_country_by_id(c_id)
+        txs = db.get_country_transactions(c_id, 20)
+        lines = [f"📜 **تراکنش‌ها و فعالیت‌های اخیر کشور {c['flag']} {c['name']}**\n━━━━━━━━━━━━━━━━━━\n"]
+        if not txs:
+            lines.append("هیچ تراکنشی برای این کشور ثبت نشده است.")
+        else:
+            for tx in txs:
+                dt_str = tx.get("created_at", "")[:19].replace("T", " ")
+                lines.append(f"• `{dt_str}` | **شرح:** {tx.get('description')} | **نوع:** `{tx.get('type')}`\n")
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{c['id']}")]]
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_start":
         text = "🧠 **بخش تحلیل هوشمند نبرد و سناریو (AI War Analysis)**\n\nلطفاً **کشور مهاجم** را انتخاب کنید:"
