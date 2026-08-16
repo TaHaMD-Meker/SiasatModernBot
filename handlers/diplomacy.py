@@ -485,6 +485,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_text("❌ تجهیز مورد نظر موجود نیست.", parse_mode="Markdown")
             return
 
+        if "mil_draft" not in context.user_data:
+            context.user_data["mil_draft"] = {}
         context.user_data["mil_draft"]["equipment_key"] = eq_key
         context.user_data["mil_draft"]["equipment_name"] = asset["equipment_name"]
         context.user_data["mil_draft"]["max_amount"] = asset["amount"]
@@ -573,24 +575,30 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data.startswith("dip:trade_off:"):
         off_type = data.split(":")[2]
+        if "trade_draft" not in context.user_data:
+            context.user_data["trade_draft"] = {}
         context.user_data["trade_draft"]["offered_type"] = off_type
         context.user_data["diplomacy_input"] = {"type": "trade_off_amount"}
         
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
         await query.edit_message_text(
             f"💰 **مقدار پیشنهادی ({type_labels.get(off_type, off_type)})** را به عدد وارد فرمایید:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]], parse_mode="Markdown")
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
         )
 
     elif data.startswith("dip:trade_req:"):
         req_type = data.split(":")[2]
+        if "trade_draft" not in context.user_data:
+            context.user_data["trade_draft"] = {}
         context.user_data["trade_draft"]["requested_type"] = req_type
         context.user_data["diplomacy_input"] = {"type": "trade_req_amount"}
         
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
         await query.edit_message_text(
             f"🎯 **مقدار درخواستی مابه‌ازا ({type_labels.get(req_type, req_type)})** را به عدد وارد فرمایید:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]], parse_mode="Markdown")
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
         )
 
     elif data.startswith("dip:trade_payer:"):
@@ -716,6 +724,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data.startswith("dip:aid_type:"):
         res_type = data.split(":")[2]
+        if "aid_draft" not in context.user_data:
+            context.user_data["aid_draft"] = {}
         context.user_data["aid_draft"]["resource_type"] = res_type
         context.user_data["diplomacy_input"] = {"type": "aid_amount"}
 
