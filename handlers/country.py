@@ -50,7 +50,10 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}"
     )
 
-    inline_keyboard = [[InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")]]
+    inline_keyboard = [
+        [InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")],
+        [InlineKeyboardButton("🔬 مرکز تحقیق و توسعه فناوری (R&D)", callback_data="research:menu")],
+    ]
 
     if update.message:
         await update.message.reply_text(
