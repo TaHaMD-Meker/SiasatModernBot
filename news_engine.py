@@ -58,7 +58,7 @@ async def trigger_unblockade_news(bot, blockader_c: dict, target_c: dict, is_bro
             f"دولت {blockader_c['flag']} {blockader_c['name']} رسماً لغو محاصره دریایی بنادر کشور {target_c['name']} "
             "و بازگشایی مسیرهای ترانزیت دریایی را اعلام کرد."
         )
-    await post_post_news(bot, title, body, "تحرکات ژئوپلیتیک")
+    await post_breaking_news(bot, title, body, "تحرکات ژئوپلیتیک")
 
 
 async def trigger_trade_news(bot, prop_c: dict, recip_c: dict, details_str: str):

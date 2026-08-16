@@ -338,16 +338,26 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        active_blks = db.get_active_blockades_for_country(country["id"])
+        blockader_c = None
+        for b in active_blks:
+            if b["target_id"] == country["id"]:
+                blockader_c = db.get_country_by_id(b["blockader_id"])
+                break
+
         db.break_naval_blockade(country["id"])
         new_app = min(100, country.get("approval_rating", 80) + 10)
         db.update_country_field(country["id"], "approval_rating", new_app)
 
-        await news_engine.post_breaking_news(
-            context.bot,
-            f"شکستن محاصره دریایی بنادر {country['name']}",
-            f"نیروهای مدافع کشور {country['flag']} {country['name']} با شلیک موشک‌های ضدکشتی و یگان‌های دریایی، محاصره دریایی تحمیل‌شده را با موفقیت درهم شکستند.",
-            "نبرد و اقتدار دریایی"
-        )
+        if blockader_c:
+            await news_engine.trigger_unblockade_news(context.bot, blockader_c, country, is_broken=True)
+        else:
+            await news_engine.post_breaking_news(
+                context.bot,
+                f"شکستن محاصره دریایی بنادر {country['name']}",
+                f"نیروهای مدافع کشور {country['flag']} {country['name']} با شلیک موشک‌های ضدکشتی و یگان‌های دریایی، محاصره دریایی تحمیل‌شده را با موفقیت درهم شکستند.",
+                "نبرد و اقتدار دریایی"
+            )
 
         await query.edit_message_text(
             f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n\n📈 شاخص رضایت عمومی به میزان ۱۰٪ افزایش یافت.",
@@ -685,6 +695,11 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"• **مابه‌ازای دریافتی:** {requested_str}\n"
             f"• **وضعیت معاهده:** 🟢 ثبت و امضا شد (تراکنش اتمیک موفق)"
         )
+
+        try:
+            await news_engine.trigger_trade_news(context.bot, p_c, r_c, f"{offered_str} در برابر {requested_str}")
+        except Exception:
+            pass
 
         await query.edit_message_text(receipt_text, parse_mode="Markdown")
         if p_c and p_c.get("player_id"):
