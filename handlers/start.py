@@ -13,8 +13,8 @@ from utils import get_main_keyboard
 
 
 def build_country_keyboard():
-    """دکمه‌های کشورهایی که هنوز کسی انتخابشون نکرده رو می‌سازه."""
-    taken = db.get_taken_country_keys()
+    """دکمه‌های کشورهایی که هنوز کسی انتخاب یا درخواست نداده رو می‌سازه."""
+    taken = db.get_taken_and_pending_country_keys()
     buttons = []
     row = []
     for key, info in config.COUNTRIES.items():
@@ -87,6 +87,15 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Check if user already has a pending request
+    pending_req = db.get_pending_request_by_player(player_id)
+    if pending_req:
+        await query.edit_message_text(
+            "⏳ **شما یک درخواست معلق فعال دارید.**\nلطفاً منتظر بررسی و تایید ادمین اصلی بازی بمانید.",
+            parse_mode="Markdown"
+        )
+        return
+
     key = query.data.split(":", 1)[1]
     info = config.COUNTRIES.get(key)
     if not info:
@@ -94,30 +103,61 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # جلوگیری از انتخاب همزمان کشور توسط دو کاربر
-    if db.get_country_by_key(key):
+    if key in db.get_taken_and_pending_country_keys():
         buttons = build_country_keyboard()
         if not buttons:
-            await query.edit_message_text("این کشور همین الان گرفته شد و دیگه کشوری باقی نمونده!")
+            await query.edit_message_text("این کشور همین الان توسط کاربر دیگری درخواست شد!")
             return
         await query.edit_message_text(
-            "این کشور همین الان توسط یه بازیکن دیگه انتخاب شد! یکی دیگه رو انتخاب کن:",
+            "این کشور همین الان توسط یه بازیکن دیگه درخواست شد! یکی دیگه رو انتخاب کن:",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
         return
 
-    db.create_country(player_id, info["name"], info["flag"], key, user.username)
-    db.add_log(actor=str(player_id), action="create_country", details=key)
-
-    await query.edit_message_text(
-        f"✅ کشور {info['flag']} {info['name']} با موفقیت برای شما ثبت شد!\n\n"
-        "منوی اصلی بازی در پایین صفحه قرار گرفت 👇"
+    # Save pending request
+    req_id = db.create_pending_country_request(
+        player_id=player_id,
+        first_name=user.first_name or "",
+        last_name=user.last_name or "",
+        username=user.username,
+        country_key=key
     )
 
-    # ارسال کیبورد دکمه‌های اصلی پایین صفحه
-    await context.bot.send_message(
-        chat_id=player_id,
-        text=f"👑 رهبر عزیز کشور {info['name']}، خوش آمدید!\nبرای مدیریت کشور از دکمه‌های زیر استفاده کنید:",
-        reply_markup=get_main_keyboard(player_id)
+    db.add_log(actor=str(player_id), action="request_country", details=key)
+
+    # Send approval request to Admin
+    admin_msg = (
+        "📥 **درخواست جدید انتخاب کشور**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"• **کشور درخواستی:** {info['flag']} {info['name']} (`{key}`)\n"
+        f"• **نام کاربر:** {user.first_name or ''} {user.last_name or ''}\n"
+        f"• **یوزرنیم تلگرام:** @{user.username}\n"
+        f"• **شناسه عددی (ID):** `{player_id}`\n"
+        f"• **لینک پیوی کاربر:** [پیوی کاربر](tg://user?id={player_id})\n\n"
+        f"آیا با واگذاری کشور {info['flag']} {info['name']} به این کاربر موافقید؟"
+    )
+
+    admin_kb = [
+        [InlineKeyboardButton("✅ تایید و واگذاری کشور", callback_data=f"admin:approve_country:{req_id}")],
+        [InlineKeyboardButton("❌ رد درخواست", callback_data=f"admin:reject_country:{req_id}")],
+    ]
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=admin_msg,
+                reply_markup=InlineKeyboardMarkup(admin_kb),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    await query.edit_message_text(
+        f"⏳ **درخواست انتخاب کشور ثبت گردید!**\n\n"
+        f"درخواست شما برای دریافت کشور {info['flag']} {info['name']} جهت تایید برای ادمین اصلی بازی ارسال شد.\n"
+        "پس از بررسی و تایید ادمین، کشور شما فعال گردیده و اطلاع‌رسانی خواهد شد.",
+        parse_mode="Markdown"
     )
 
 

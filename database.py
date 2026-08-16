@@ -111,6 +111,20 @@ def init_db():
     )
     """)
 
+    # درخواست‌های معلق انتخاب کشور جهت تایید ادمین
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pending_country_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL,
+        first_name TEXT,
+        last_name TEXT,
+        username TEXT,
+        country_key TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT
+    )
+    """)
+
     # تراکنش‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
@@ -621,6 +635,66 @@ def add_log(actor: str, action: str, details: str = ""):
     """, (actor, action, details, now_str))
     conn.commit()
     conn.close()
+
+
+# ---------- درخواست‌های انتخاب کشور جهت تایید ادمین ----------
+
+def create_pending_country_request(player_id: int, first_name: str, last_name: str, username: str, country_key: str) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    cur.execute("DELETE FROM pending_country_requests WHERE player_id = ?", (player_id,))
+
+    cur.execute("""
+        INSERT INTO pending_country_requests (player_id, first_name, last_name, username, country_key, status, created_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?)
+    """, (player_id, first_name, last_name, username, country_key, now_str))
+    req_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return req_id
+
+
+def get_pending_country_request(request_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_country_requests WHERE id = ?", (request_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_pending_request_by_player(player_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_country_requests WHERE player_id = ? AND status = 'pending'", (player_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_pending_country_request(request_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pending_country_requests WHERE id = ?", (request_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_taken_and_pending_country_keys():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT country_key FROM countries WHERE country_key IS NOT NULL")
+    taken_rows = cur.fetchall()
+
+    cur.execute("SELECT country_key FROM pending_country_requests WHERE status = 'pending'")
+    pending_rows = cur.fetchall()
+    conn.close()
+
+    keys = {r["country_key"] for r in taken_rows}
+    keys.update({r["country_key"] for r in pending_rows})
+    return keys
 
 
 # ---------- سیستم دیپلماسی و معاهدات بین‌المللی ----------

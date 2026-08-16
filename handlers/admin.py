@@ -509,6 +509,82 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="Markdown"
         )
 
+    elif data.startswith("admin:approve_country:"):
+        req_id = int(data.split(":")[2])
+        req = db.get_pending_country_request(req_id)
+        if not req:
+            await query.edit_message_text("❌ این درخواست قبلاً تعیین تکلیف یا لغو شده است.", parse_mode="Markdown")
+            return
+
+        c_key = req["country_key"]
+        c_info = config.COUNTRIES.get(c_key, {})
+
+        if db.get_country_by_key(c_key):
+            db.delete_pending_country_request(req_id)
+            await query.edit_message_text(f"❌ کشور {c_info.get('name', c_key)} قبلاً به کاربر دیگری واگذار شده است.", parse_mode="Markdown")
+            return
+
+        c_id = db.create_country(
+            player_id=req["player_id"],
+            name=c_info["name"],
+            flag=c_info["flag"],
+            country_key=c_key,
+            username=req["username"]
+        )
+        db.delete_pending_country_request(req_id)
+        db.add_log(actor=str(user_id), action="approve_country", details=f"{c_key} to {req['player_id']}")
+
+        await query.edit_message_text(
+            f"✅ **کشور {c_info['flag']} {c_info['name']} با موفقیت به کاربر @{req['username']} (ID: `{req['player_id']}`) واگذار گردید.**",
+            parse_mode="Markdown"
+        )
+
+        p_id = req["player_id"]
+        try:
+            await context.bot.send_message(
+                chat_id=p_id,
+                text=(
+                    f"🎉 **تبریک! درخواست شما توسط ادمین تایید شد.**\n\n"
+                    f"👑 **کشور {c_info['flag']} {c_info['name']} با موفقیت به شما واگذار گردید.**\n"
+                    "از دکمه‌های زیر برای مدیریت کشور استفاده کنید 👇"
+                ),
+                reply_markup=get_main_keyboard(p_id),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    elif data.startswith("admin:reject_country:"):
+        req_id = int(data.split(":")[2])
+        req = db.get_pending_country_request(req_id)
+        if not req:
+            await query.edit_message_text("❌ این درخواست قبلاً تعیین تکلیف شده است.", parse_mode="Markdown")
+            return
+
+        c_key = req["country_key"]
+        c_info = config.COUNTRIES.get(c_key, {})
+        p_id = req["player_id"]
+
+        db.delete_pending_country_request(req_id)
+        db.add_log(actor=str(user_id), action="reject_country", details=f"{c_key} for {p_id}")
+
+        await query.edit_message_text(
+            f"❌ **درخواست کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} برای کاربر @{req['username']} رد شد.**",
+            parse_mode="Markdown"
+        )
+
+        try:
+            await context.bot.send_message(
+                chat_id=p_id,
+                text=(
+                    f"❌ **درخواست شما برای انتخاب کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} توسط ادمین بازی رد شد.**\n\n"
+                    "می‌توانید با ارسال دستور /start کشور دیگری را انتخاب نمایید."
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
     # منوهای ویرایش
     elif data.startswith("admin:menu_treasury:"):
         c_id = int(data.split(":")[2])
