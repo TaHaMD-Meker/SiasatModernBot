@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 import database as db
 import config
 import war_analyzer
-from utils import format_money, format_number, format_oil
+from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
 def is_admin(user_id: int) -> bool:
@@ -597,19 +597,21 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
 
         p_id = req["player_id"]
+        congratulations_msg = (
+            f"🎉 **تبریک! درخواست انتخاب کشور شما توسط مدیریت عالی بازی تایید گردید.**\n\n"
+            f"👑 **رهبر گرامی، کشور {c_info['flag']} {c_info['name']} با موفقیت به شما واگذار شد.**\n\n"
+            "آرزوی موفقیت، اقتدار و سربلندی برای دولت و ملت شما در عرصه بین‌المللی داریم.\n"
+            "هم‌اکنون کیبورد مدیریت کشور در پایین صفحه برای شما فعال گردید 👇"
+        )
         try:
             await context.bot.send_message(
                 chat_id=p_id,
-                text=(
-                    f"🎉 **تبریک! درخواست شما توسط ادمین تایید شد.**\n\n"
-                    f"👑 **کشور {c_info['flag']} {c_info['name']} با موفقیت به شما واگذار گردید.**\n"
-                    "از دکمه‌های زیر برای مدیریت کشور استفاده کنید 👇"
-                ),
+                text=congratulations_msg,
                 reply_markup=get_main_keyboard(p_id),
                 parse_mode="Markdown"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error sending approval message to player {p_id}: {e}")
 
     elif data.startswith("admin:reject_country:"):
         req_id = int(data.split(":")[2])

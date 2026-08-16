@@ -478,12 +478,21 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         p_c = db.get_country_by_id(c_data["proposer_id"])
         r_c = db.get_country_by_id(c_data["recipient_id"])
 
-        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "military_asset": "واحد تجهیزات نظامی"}
+        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
 
-        # Anti-cheat trigger
-        amt_str = f"{c_data['offered_amount']:,} {type_map.get(c_data['offered_type'], 'واحد')}"
-        if c_data.get("offered_amount", 0) >= 10_000_000 or c_data.get("offered_type") == "military_asset":
-            await check_and_alert_anti_cheat(context, p_c, r_c, amt_str, "قرارداد تجاری / انتقال تسلیحات")
+        if c_data["offered_type"] == "military_asset":
+            off_asset = db.get_asset_by_key(p_c["id"], c_data.get("offered_key"))
+            off_name = off_asset["equipment_name"] if off_asset else c_data.get("offered_key", "تجهیز نظامی")
+            offered_str = f"{off_name} (تعداد: {c_data['offered_amount']:,} واحد)"
+        else:
+            offered_str = f"{c_data['offered_amount']:,} {type_map.get(c_data['offered_type'], c_data['offered_type'])}"
+
+        if c_data["requested_type"] == "military_asset":
+            req_asset = db.get_asset_by_key(r_c["id"], c_data.get("requested_key"))
+            req_name = req_asset["equipment_name"] if req_asset else c_data.get("requested_key", "تجهیز نظامی")
+            requested_str = f"{req_name} (تعداد: {c_data['requested_amount']:,} واحد)"
+        else:
+            requested_str = f"{c_data['requested_amount']:,} {type_map.get(c_data['requested_type'], c_data['requested_type'])}"
 
         # Send Financial Receipt to both sides
         receipt_text = (
@@ -491,8 +500,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"• **طرف اول:** {p_c['flag']} {p_c['name']}\n"
             f"• **طرف دوم:** {r_c['flag']} {r_c['name']}\n\n"
-            f"• **کالای مبادله‌شده:** {c_data['offered_amount']:,} {type_map.get(c_data['offered_type'])}\n"
-            f"• **مابه‌ازای دریافتی:** {c_data['requested_amount']:,} {type_map.get(c_data['requested_type'])}\n"
+            f"• **کالای مبادله‌شده:** {offered_str}\n"
+            f"• **مابه‌ازای دریافتی:** {requested_str}\n"
             f"• **وضعیت معاهده:** 🟢 ثبت و امضا شد (تراکنش اتمیک موفق)"
         )
 
