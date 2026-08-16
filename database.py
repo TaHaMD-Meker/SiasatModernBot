@@ -129,6 +129,40 @@ def init_db():
     )
     """)
 
+    # روابط دیپلماتیک بین کشورها
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS diplomatic_relations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country1_id INTEGER NOT NULL,
+        country2_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'normal',
+        sanctioned_by INTEGER DEFAULT 0,
+        created_at TEXT,
+        UNIQUE(country1_id, country2_id),
+        FOREIGN KEY(country1_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(country2_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    # قراردادهای تجاری
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trade_contracts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proposer_id INTEGER NOT NULL,
+        recipient_id INTEGER NOT NULL,
+        offered_type TEXT NOT NULL,
+        offered_amount INTEGER NOT NULL,
+        requested_type TEXT NOT NULL,
+        requested_amount INTEGER NOT NULL,
+        transport_payer TEXT DEFAULT 'seller',
+        transport_cost INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        FOREIGN KEY(proposer_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(recipient_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -575,3 +609,208 @@ def add_log(actor: str, action: str, details: str = ""):
     """, (actor, action, details, now_str))
     conn.commit()
     conn.close()
+
+
+# ---------- سیستم دیپلماسی و معاهدات بین‌المللی ----------
+
+def _ordered_pair(c1_id: int, c2_id: int):
+    return (min(c1_id, c2_id), max(c1_id, c2_id))
+
+
+def get_diplomatic_relation(c1_id: int, c2_id: int) -> dict:
+    if c1_id == c2_id:
+        return {"status": "self", "sanctioned_by": 0}
+    c_min, c_max = _ordered_pair(c1_id, c2_id)
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
+    row = cur.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return {"status": "normal", "sanctioned_by": 0}
+
+
+def set_diplomatic_relation(c1_id: int, c2_id: int, status: str, sanctioned_by: int = 0):
+    c_min, c_max = _ordered_pair(c1_id, c2_id)
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cur.execute("""
+        INSERT INTO diplomatic_relations (country1_id, country2_id, status, sanctioned_by, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(country1_id, country2_id) DO UPDATE SET
+        status = excluded.status,
+        sanctioned_by = excluded.sanctioned_by
+    """, (c_min, c_max, status, sanctioned_by, now_str))
+    conn.commit()
+    conn.close()
+
+
+def are_sanctioned(c1_id: int, c2_id: int) -> bool:
+    rel = get_diplomatic_relation(c1_id, c2_id)
+    return rel.get("status") == "sanctioned"
+
+
+def create_trade_contract(proposer_id: int, recipient_id: int, offered_type: str, offered_amount: int, requested_type: str, requested_amount: int, transport_payer: str = "seller", transport_cost: int = 0) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cur.execute("""
+        INSERT INTO trade_contracts
+        (proposer_id, recipient_id, offered_type, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    """, (proposer_id, recipient_id, offered_type, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, now_str))
+    contract_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return contract_id
+
+
+def get_trade_contract(contract_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM trade_contracts WHERE id = ?", (contract_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_contract_status(contract_id: int, status: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE trade_contracts SET status = ? WHERE id = ?", (status, contract_id))
+    conn.commit()
+    conn.close()
+
+
+def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM trade_contracts WHERE id = ?", (contract_id,))
+            contract = cur.fetchone()
+            if not contract:
+                return False, "قرارداد یافت نشد."
+
+            c = dict(contract)
+            if c["status"] != "pending":
+                return False, "این قرارداد قبلاً تعیین تکلیف شده است."
+
+            p_id = c["proposer_id"]
+            r_id = c["recipient_id"]
+
+            c_min, c_max = _ordered_pair(p_id, r_id)
+            cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
+            rel_row = cur.fetchone()
+            if rel_row and rel_row["status"] == "sanctioned":
+                return False, "امکان انعقاد قرارداد با کشور تحریم‌شده وجود ندارد."
+
+            cur.execute("SELECT * FROM countries WHERE id = ?", (p_id,))
+            prop_c = cur.fetchone()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (r_id,))
+            recip_c = cur.fetchone()
+
+            if not prop_c or not recip_c:
+                return False, "یکی از طرفین قرارداد یافت نشد."
+
+            p_c = dict(prop_c)
+            r_c = dict(recip_c)
+
+            off_type = c["offered_type"]
+            off_amt = c["offered_amount"]
+            req_type = c["requested_type"]
+            req_amt = c["requested_amount"]
+            t_payer = c["transport_payer"]
+            t_cost = c["transport_cost"]
+
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain"}
+
+            p_off_col = col_map.get(off_type, "treasury")
+            r_req_col = col_map.get(req_type, "treasury")
+
+            p_extra_cost = t_cost if t_payer == "seller" else 0
+            r_extra_cost = t_cost if t_payer == "buyer" else 0
+
+            p_avail = p_c[p_off_col] - (p_extra_cost if p_off_col == "treasury" else 0)
+            if p_avail < off_amt:
+                return False, f"طرف پیشنهاددهنده ({p_c['name']}) موجودی کافی برای اجرای قرارداد ندارد."
+
+            r_avail = r_c[r_req_col] - (r_extra_cost if r_req_col == "treasury" else 0)
+            if r_avail < req_amt:
+                return False, f"طرف قبول‌کننده ({r_c['name']}) موجودی کافی برای اجرای قرارداد ندارد."
+
+            # Deduct & Add for proposer
+            cur.execute(f"UPDATE countries SET {p_off_col} = {p_off_col} - ? WHERE id = ?", (off_amt, p_id))
+            cur.execute(f"UPDATE countries SET {r_req_col} = {r_req_col} + ? WHERE id = ?", (req_amt, p_id))
+            if p_extra_cost > 0:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (p_extra_cost, p_id))
+
+            # Deduct & Add for recipient
+            cur.execute(f"UPDATE countries SET {r_req_col} = {r_req_col} - ? WHERE id = ?", (req_amt, r_id))
+            cur.execute(f"UPDATE countries SET {p_off_col} = {p_off_col} + ? WHERE id = ?", (off_amt, r_id))
+            if r_extra_cost > 0:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (r_extra_cost, r_id))
+
+            cur.execute("UPDATE trade_contracts SET status = 'accepted' WHERE id = ?", (contract_id,))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'trade', ?, ?, ?)
+            """, (p_id, f"قرارداد تجاری با {r_c['name']}", -off_amt if off_type == "treasury" else 0, now_str))
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'trade', ?, ?, ?)
+            """, (r_id, f"قرارداد تجاری با {p_c['name']}", req_amt if req_type == "treasury" else 0, now_str))
+
+            return True, "قرارداد تجاری با موفقیت اجرا شد."
+    except Exception as e:
+        return False, f"خطا در اجرای قرارداد: {e}"
+
+
+def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int) -> tuple[bool, str]:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+
+            cur.execute("SELECT * FROM countries WHERE id = ?", (donor_id,))
+            donor_c = cur.fetchone()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (recipient_id,))
+            recip_c = cur.fetchone()
+
+            if not donor_c or not recip_c:
+                return False, "کشور اهداکننده یا دریافت‌کننده یافت نشد."
+
+            d_c = dict(donor_c)
+            r_c = dict(recip_c)
+
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain"}
+            col_name = col_map.get(resource_type, "treasury")
+
+            if d_c[col_name] < amount:
+                return False, f"موجودی {resource_type} کشور شما برای ارسال این کمک کافی نیست."
+
+            cur.execute(f"UPDATE countries SET {col_name} = {col_name} - ? WHERE id = ?", (amount, donor_id))
+            cur.execute(f"UPDATE countries SET {col_name} = {col_name} + ? WHERE id = ?", (amount, recipient_id))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'aid_out', ?, ?, ?)
+            """, (donor_id, f"ارسال کمک خارجی به {r_c['name']}", -amount if resource_type == "treasury" else 0, now_str))
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'aid_in', ?, ?, ?)
+            """, (recipient_id, f"دریافت کمک خارجی از {d_c['name']}", amount if resource_type == "treasury" else 0, now_str))
+
+            cur.execute("""
+                INSERT INTO logs (actor, action, details, created_at)
+                VALUES (?, 'foreign_aid', ?, ?)
+            """, (str(donor_id), f"Aid {resource_type} x{amount} to {recipient_id}", now_str))
+
+            return True, "کمک خارجی با موفقیت ارسال شد."
+    except Exception as e:
+        return False, f"خطا در ارسال کمک: {e}"

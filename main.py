@@ -18,6 +18,7 @@ import database as db
 import approval_system
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
+from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
 from handlers.assets import show_assets_menu, get_assets_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
@@ -115,6 +116,15 @@ def main():
     app.add_handler(CallbackQueryHandler(confirm_civilian_purchase, pattern=r"^buyciv:"))
     app.add_handler(CallbackQueryHandler(execute_civilian_purchase, pattern=r"^docivbuy:"))
 
+    # سیستم دیپلماسی و معاهدات بین‌المللی
+    app.add_handler(CommandHandler("diplomacy", diplomacy_menu))
+    app.add_handler(CommandHandler("message", diplomacy_menu))
+    app.add_handler(CommandHandler("trade", diplomacy_menu))
+    app.add_handler(CommandHandler("aid", diplomacy_menu))
+    app.add_handler(CommandHandler("relations", diplomacy_menu))
+    app.add_handler(CallbackQueryHandler(diplomacy_callback_handler, pattern=r"^dip:"))
+    app.add_handler(MessageHandler(filters.Regex("^🤝 دیپلماسی و روابط$"), diplomacy_menu))
+
     # پنل پیشرفته ادمین (مخصوص آیدی 8052987465)
     app.add_handler(CommandHandler(["admin", "panel"], admin_panel))
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern=r"^admin:"))
@@ -124,8 +134,14 @@ def main():
     app.add_handler(CommandHandler("removemoney", removemoney))
     app.add_handler(CommandHandler("listcountries", listcountries))
 
-    # دریافت ورودی‌های متنی (تایپی) مخصوص پنل ادمین
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_input_text_handler))
+    # دریافت ورودی‌های متنی (تایپی) ادمین و دیپلماسی
+    async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.user_data.get("admin_awaiting_input"):
+            await admin_input_text_handler(update, context)
+        elif context.user_data.get("diplomacy_input"):
+            await diplomacy_text_input_handler(update, context)
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, combined_text_input_handler))
 
     # درآمد روزانه: هر روز ساعت 00:05 به وقت سرور
     job_queue = app.job_queue
