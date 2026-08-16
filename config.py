@@ -1680,6 +1680,9 @@ ALL_SHOP_ITEMS = {}
 for group in (BUILDINGS, FACTORIES, POWER_PLANTS, TRANSPORTATION, MINES_AND_RESOURCES, AGRICULTURE):
     ALL_SHOP_ITEMS.update(group)
 
+# ===== کانال تلگرام جهت انتشار بیانیه‌ها و توییت‌ها =====
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ModernWarFarChannel")
+
 # ===== مسیر فایل دیتابیس =====
 # ===== مسیر دیتابیس =====
 # پشتیبانی از Volume دائمی Railway (در صورت وجود /data یا تنظیم متغیر DB_PATH)
