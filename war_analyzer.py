@@ -359,8 +359,8 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
     lines.append("■ **تلفات انسانی:**")
-    lines.append(f"• پرسنل نظامی: {military_loss:,} نفر")
-    lines.append(f"• تلفات غیرنظامی: {civilian_loss:,} نفر\n")
+    lines.append(f"> • پرسنل نظامی: {military_loss:,} نفر")
+    lines.append(f"> • تلفات غیرنظامی: {civilian_loss:,} نفر\n")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
     grouped = {}
@@ -414,10 +414,10 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
         for item in items:
             sub_sum += item["loss"]
             sub_unit = item["unit"]
-            lines.append(f"**{item['name']}**")
-            lines.append(f"قبل: {item['before']:,} {item['unit']}")
-            lines.append(f"{loss_word} {item['loss']:,} {item['unit']}")
-            lines.append(f"بعد: {item['after']:,} {item['unit']}\n")
+            lines.append(f"> **{item['name']}**")
+            lines.append(f"> قبل: {item['before']:,} {item['unit']}")
+            lines.append(f"> {loss_word} {item['loss']:,} {item['unit']}")
+            lines.append(f"> بعد: {item['after']:,} {item['unit']}\n")
 
         lines.append("---\n")
 
@@ -429,10 +429,10 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     lines.append(f"■ **{sum_title}**\n")
 
     for s_row in summary_rows:
-        lines.append(f"• {s_row}")
+        lines.append(f"> • {s_row}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-    lines.append("■ **ارزیابی مالی و استراتژیک:**")
+    lines.append("■ **ارزیابی مالی و استراتژیک:**\n")
     
     if total_usd_damage >= 1_000_000_000:
         damage_str = f"{total_usd_damage / 1_000_000_000:.2f} میلیارد دلار"
@@ -441,20 +441,20 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     else:
         damage_str = f"{total_usd_damage:,} دلار"
 
-    lines.append(f"• ارزش کل تجهیزات و خسارات: {damage_str}")
+    lines.append(f"> • ارزش کل تجهیزات و خسارات: {damage_str}")
     if is_attacker:
-        lines.append("• تغییر روحیه ملی: +۱۰٪ (حماسه و اقتدار ملی)")
-        lines.append("• زمان آمادگی برای موج بعدی: ۱۲ ساعت")
+        lines.append("> • تغییر روحیه ملی: +۱۰٪ (حماسه و اقتدار ملی)")
+        lines.append("> • زمان آمادگی برای موج بعدی: ۱۲ ساعت")
     else:
-        lines.append("• تغییر روحیه ملی: -۵٪ (اضطراب عمومی و پناهگاه)")
-        lines.append("• زمان بازسازی و ترمیم زیرساخت‌ها: ۳ تا ۵ روز")
+        lines.append("> • تغییر روحیه ملی: -۵٪ (اضطراب عمومی و پناهگاه)")
+        lines.append("> • زمان بازسازی و ترمیم زیرساخت‌ها: ۳ تا ۵ روز")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-    lines.append("■ **ارزیابی نهایی:**")
+    lines.append("■ **ارزیابی نهایی:**\n")
     if is_attacker and op_type == "air_missile":
-        lines.append("عملیات شلیک با موفقیت کامل بدون تلفات انسانی نیروهای خودی اجرا گردید و پرتابه‌های شلیک‌شده طبق برنامه از دیتابیس کسر شدند.")
+        lines.append("> _عملیات شلیک با موفقیت کامل بدون تلفات انسانی نیروهای خودی اجرا گردید و پرتابه‌های شلیک‌شده طبق برنامه از دیتابیس کسر شدند._")
     else:
-        lines.append("خسارت اصلی روی پایگاه‌های هوایی، سامانه‌های پدافندی و تجهیزات کلیدی متمرکز شده و بخش قابل‌توجهی از توان عملیاتی برای مدتی نیازمند بازسازی و جایگزینی است.")
+        lines.append("> _خسارت اصلی روی پایگاه‌های هوایی، سامانه‌های پدافندی و تجهیزات کلیدی متمرکز شده و بخش قابل‌توجهی از توان عملیاتی برای مدتی نیازمند بازسازی و جایگزینی است._")
 
     return "\n".join(lines)
 
