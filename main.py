@@ -75,6 +75,42 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
         updated_count += 1
 
+    # 4. Process Daily Naval Blockade Costs & Auto-Lifting
+    active_blockades = db.get_all_active_blockades()
+    for blk in active_blockades:
+        b_id = blk["blockader_id"]
+        t_id = blk["target_id"]
+        b_c = db.get_country_by_id(b_id)
+        t_c = db.get_country_by_id(t_id)
+
+        if not b_c or not t_c:
+            continue
+
+        oil_cost = 100_000
+        money_cost = 2_000_000
+        avail_oil = b_c.get("oil_reserves", 0) + b_c.get("oil_production", 0)
+
+        if b_c["treasury"] < money_cost or avail_oil < oil_cost:
+            db.lift_naval_blockade(b_id, t_id)
+            lift_msg = (
+                f"⚓ **لغو خودکار محاصره دریایی!**\n\n"
+                f"کشور {b_c['flag']} {b_c['name']} به دلیل عدم تامین سوخت روزانه (۱۰۰,۰۰۰ بشکه) و هزینه‌های نگهداری ناوگان ({format_money(money_cost)})، "
+                f"مجبور به لغو محاصره دریایی کشور {t_c['flag']} {t_c['name']} گردید."
+            )
+            if b_c.get("player_id"):
+                try: await context.bot.send_message(chat_id=b_c["player_id"], text=lift_msg, parse_mode="Markdown")
+                except Exception: pass
+            if t_c.get("player_id"):
+                try: await context.bot.send_message(chat_id=t_c["player_id"], text=lift_msg, parse_mode="Markdown")
+                except Exception: pass
+            await news_engine.trigger_unblockade_news(context.bot, b_c, t_c, is_broken=False)
+        else:
+            db.adjust_treasury(b_id, -money_cost)
+            deficit_oil = max(0, oil_cost - b_c.get("oil_production", 0))
+            if deficit_oil > 0:
+                db.adjust_oil(b_id, -deficit_oil)
+            db.add_transaction(b_id, "blockade_cost", f"هزینه روزانه محاصره بنادر {t_c['name']}", -money_cost)
+
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
     return updated_count
 

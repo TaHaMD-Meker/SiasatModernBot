@@ -1038,6 +1038,15 @@ def is_country_blockaded(country_id: int) -> bool:
     return bool(row)
 
 
+def get_all_active_blockades() -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM naval_blockades WHERE status = 'active'")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def get_active_blockades_for_country(country_id: int) -> list:
     conn = get_connection()
     cur = conn.cursor()

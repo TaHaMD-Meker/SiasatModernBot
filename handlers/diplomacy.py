@@ -85,6 +85,10 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== 1. یادداشت دیپلماتیک ====================
 
 async def dip_message_start(query, context, country):
+    if db.get_setting("diplomatic_notes_locked") == "1":
+        await query.edit_message_text("🔒 **ارسال پیام‌های دیپلماتیک موقتاً قفل است.**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
+        return
+
     countries = db.get_all_countries()
     other_countries = [c for c in countries if c["id"] != country["id"]]
 
@@ -111,6 +115,10 @@ async def dip_message_start(query, context, country):
 # ==================== 2. قراردادهای تجاری ====================
 
 async def dip_trade_start(query, context, country):
+    if db.get_setting("trade_contracts_locked") == "1":
+        await query.edit_message_text("🔒 **انعقاد قراردادهای تجاری موقتاً قفل است.**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
+        return
+
     countries = db.get_all_countries()
     other_countries = [c for c in countries if c["id"] != country["id"]]
 
@@ -172,10 +180,30 @@ async def dip_military_start(query, context, country):
 # ==================== 2.7. محاصره دریایی بین‌المللی ====================
 
 async def dip_blockade_start(query, context, country):
+    if db.get_setting("naval_blockade_locked") == "1":
+        await query.edit_message_text("🔒 **اجرای محاصره دریایی موقتاً قفل است.**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
+        return
+
     assets = db.get_country_assets(country["id"], category="Navy")
     naval_count = sum(a["amount"] for a in assets)
 
-    if naval_count < 1:
+    active_blks = db.get_active_blockades_for_country(country["id"])
+    im_blockaded = db.is_country_blockaded(country["id"])
+
+    keyboard = []
+
+    # If currently under blockade by another country
+    if im_blockaded:
+        keyboard.append([InlineKeyboardButton("💥 شکستن محاصره دریایی (نبرد موشکی/دریایی)", callback_data="dip:break_blk")])
+
+    # If I am blockading other countries
+    my_blockades = [b for b in active_blks if b["blockader_id"] == country["id"]]
+    for b in my_blockades:
+        t_c = db.get_country_by_id(b["target_id"])
+        if t_c:
+            keyboard.append([InlineKeyboardButton(f"🔓 لغو محاصره دریایی کشور {t_c['name']}", callback_data=f"dip:lift_blk:{t_c['id']}")])
+
+    if naval_count < 1 and not im_blockaded and not my_blockades:
         await query.edit_message_text(
             "⚓ **عدم توانایی عملیاتی:** کشور شما در حال حاضر فاقد یگان‌های ناوشکن، ناوچه یا ناوهای رزمی در دیتابیس برای اجرای محاصره دریایی است.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
@@ -188,7 +216,6 @@ async def dip_blockade_start(query, context, country):
 
     text = f"⚓ **عملیات محاصره دریایی بین‌المللی — ناوگان {country['flag']} {country['name']}**\n\nلطفاً کشور هدف جهت مسدودسازی بنادر و خطوط دریایی را انتخاب کنید:"
 
-    keyboard = []
     row = []
     for c in other_countries:
         is_blk = db.is_country_blockaded(c["id"])
@@ -292,6 +319,55 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data == "dip:blockade_start":
         await dip_blockade_start(query, context, country)
+
+    elif data == "dip:break_blk":
+        msl_assets = db.get_country_assets(country["id"], category="Missiles")
+        navy_assets = db.get_country_assets(country["id"], category="Navy")
+
+        has_antiship = any(
+            "antiship" in a["equipment_key"] or "cruise" in a["equipment_key"] or "harpoon" in a["equipment_key"] or "exocet" in a["equipment_key"] or "noor" in a["equipment_key"] or "qader" in a["equipment_key"] or "yakhont" in a["equipment_key"]
+            for a in msl_assets if a["amount"] > 0
+        )
+        has_navy = any(n["amount"] > 0 for n in navy_assets)
+
+        if not has_antiship and not has_navy:
+            await query.edit_message_text(
+                "💥 **شکستن محاصره ناموفق بود!**\n\nکشور شما فاقد موشک‌های کروز ضدکشتی یا یگان‌های دریایی آماده به رزم در دیتابیس برای عقب راندن ناوگان محاصره‌کننده است.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        db.break_naval_blockade(country["id"])
+        new_app = min(100, country.get("approval_rating", 80) + 10)
+        db.update_country_field(country["id"], "approval_rating", new_app)
+
+        await news_engine.post_breaking_news(
+            context.bot,
+            f"شکستن محاصره دریایی بنادر {country['name']}",
+            f"نیروهای مدافع کشور {country['flag']} {country['name']} با شلیک موشک‌های ضدکشتی و یگان‌های دریایی، محاصره دریایی تحمیل‌شده را با موفقیت درهم شکستند.",
+            "نبرد و اقتدار دریایی"
+        )
+
+        await query.edit_message_text(
+            f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n\n📈 شاخص رضایت عمومی به میزان ۱۰٪ افزایش یافت.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("dip:lift_blk:"):
+        target_id = int(data.split(":")[2])
+        target_c = db.get_country_by_id(target_id)
+        db.lift_naval_blockade(country["id"], target_id)
+
+        if target_c:
+            await news_engine.trigger_unblockade_news(context.bot, country, target_c, is_broken=False)
+
+        await query.edit_message_text(
+            f"🔓 **محاصره دریایی علیه کشور {target_c['name'] if target_c else 'هدف'} با موفقیت لغو گردید.**",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
 
     elif data.startswith("dip:blk_target:"):
         target_id = int(data.split(":")[2])

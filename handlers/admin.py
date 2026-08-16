@@ -26,13 +26,10 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ این بخش فقط برای ادمین اصلی بازی مجاز است.", parse_mode="Markdown")
         return
 
-    locked = db.get_setting("country_creation_locked") == "1"
-    lock_btn_label = "🔓 باز کردن ثبت‌نام کشورها (وضعیت: 🔒 قفل)" if locked else "🔒 قفل کردن ثبت‌نام کشورها (وضعیت: 🔓 باز)"
-
     text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
-        [InlineKeyboardButton(lock_btn_label, callback_data="admin:toggle_country_lock")],
+        [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
         [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
@@ -50,6 +47,29 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def admin_locks_menu(query, context):
+    country_lock = db.get_setting("country_creation_locked") == "1"
+    blockade_lock = db.get_setting("naval_blockade_locked") == "1"
+    trade_lock = db.get_setting("trade_contracts_locked") == "1"
+    notes_lock = db.get_setting("diplomatic_notes_locked") == "1"
+
+    text = (
+        "🔐 **سیستم قفل‌ها و کنترل محدودیت‌های بازی**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "از این بخش می‌توانید بخش‌های مختلف بازی را به‌صورت لحظه‌ای قفل یا آزاد فرمایید:\n"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🔓 باز کردن ثبت‌نام کشورها" if country_lock else "🔒 قفل کردن ثبت‌نام کشورها", callback_data="admin:toggle_lock:country_creation_locked")],
+        [InlineKeyboardButton("🔓 باز کردن محاصره دریایی" if blockade_lock else "🔒 قفل کردن محاصره دریایی", callback_data="admin:toggle_lock:naval_blockade_locked")],
+        [InlineKeyboardButton("🔓 باز کردن قراردادهای تجاری" if trade_lock else "🔒 قفل کردن قراردادهای تجاری", callback_data="admin:toggle_lock:trade_contracts_locked")],
+        [InlineKeyboardButton("🔓 باز کردن پیام‌های دیپلماتیک" if notes_lock else "🔒 قفل کردن پیام‌های دیپلماتیک", callback_data="admin:toggle_lock:diplomatic_notes_locked")],
+        [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
+    ]
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 # ==================== لیست کشورها با صفحه‌بندی ====================
@@ -317,13 +337,16 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:close":
         await query.delete_message()
 
-    elif data == "admin:toggle_country_lock":
-        curr_locked = db.get_setting("country_creation_locked") == "1"
-        new_status = "0" if curr_locked else "1"
-        db.set_setting("country_creation_locked", new_status)
-        status_msg = "🔒 ثبت‌نام کشورها قفل شد." if new_status == "1" else "🔓 ثبت‌نام کشورها باز شد."
-        await query.answer(status_msg, show_alert=True)
-        await admin_panel(update, context)
+    elif data == "admin:locks_menu":
+        await admin_locks_menu(query, context)
+
+    elif data.startswith("admin:toggle_lock:"):
+        lock_key = data.split(":")[2]
+        curr_val = db.get_setting(lock_key) == "1"
+        new_val = "0" if curr_val else "1"
+        db.set_setting(lock_key, new_val)
+        await query.answer("وضعیت قفل با موفقیت تغییر یافت!", show_alert=True)
+        await admin_locks_menu(query, context)
 
     elif data.startswith("admin:list:"):
         page = int(data.split(":")[2])
