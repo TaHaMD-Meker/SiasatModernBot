@@ -6,6 +6,32 @@
 
 import os
 
+# ===== دسته‌بندی‌های تجهیزات و واحدها =====
+ASSET_CATEGORIES = {
+    "Aircraft":      ("✈️ جنگنده‌ها و هوانوردی", "فروند"),
+    "UAV":           ("🛩️ پهپادها", "فروند"),
+    "Ground Forces": ("🚛 نیروی زمینی", "دستگاه"),
+    "Artillery":     ("🎯 توپخانه و راکت‌انداز", "قبضه"),
+    "Navy":          ("🚢 نیروی دریایی", "فروند"),
+    "Missiles":      ("🚀 توان موشکی", "فروند"),
+    "Air Defense":   ("🛡️ پدافند هوایی", "آتشبار"),
+}
+
+STARTING_VALUES = {
+    "population":       50_000_000,
+    "treasury":         40_000_000,
+    "tax_income":        6_000_000,
+    "daily_income":     10_000_000,
+    "gold":                    200,
+    "gold_daily":               30,
+    "oil_reserves":     50_000_000,
+    "oil_production":    1_000_000,
+    "grain":                    30,
+    "electricity":             100,
+    "active_personnel":    200_000,
+    "reserve_personnel":   400_000,
+}
+
 # ===== توکن بات =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_ATO_EINJA_BEZAR")
 
