@@ -2,6 +2,7 @@
 """
 فروشگاه بازی (Shop): خرید غیرنظامی (ساختمان، صنعت، نیروگاه) و خرید اختصاصی تجهیزات نظامی بومی هر کشور (Country Assets).
 فقط تجهیزاتی که دارای خط تولید بومی (producible=1) هستند در فروشگاه نمایش داده می‌شوند.
+شامل بخش ساخت‌وسازهای من و پیام تایید خرید.
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,7 +10,7 @@ from telegram.ext import ContextTypes
 
 import database as db
 import config
-from utils import format_money, format_number
+from utils import format_money, format_number, format_oil
 
 CIVILIAN_CATEGORIES = {
     "buildings":   ("🏠 ساختمان‌ها", config.BUILDINGS),
@@ -29,9 +30,11 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # تضمین وجود دارایی‌های نظامی اختصاصی کشور
-    db.seed_country_assets(country["id"], country["country_key"])
+    if country.get("country_key"):
+        db.seed_country_assets(country["id"], country["country_key"])
 
     buttons = [
+        [InlineKeyboardButton("🏗️ ساخت‌وسازها و پروژه‌های من", callback_data="shopcat:my_constructions")],
         [InlineKeyboardButton("🪖 ساخت/خرید تسلیحات نظامی بومی", callback_data="shopcat:military_assets")],
         [InlineKeyboardButton("🏠 ساختمان‌ها", callback_data="shopcat:buildings"), InlineKeyboardButton("🏭 صنعت و کارخانجات", callback_data="shopcat:factories")],
         [InlineKeyboardButton("⚡ نیروگاه‌های انرژی", callback_data="shopcat:power"), InlineKeyboardButton("🚢 حمل‌ونقل و ترابری", callback_data="shopcat:transport")],
@@ -51,15 +54,67 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
+async def show_my_constructions(query, country):
+    """نمایش لیست پروژه‌ها و زیرساخت‌های غیرنظامی احداث‌شده کشور."""
+    equipment = db.get_equipment(country["id"])
+
+    lines = [
+        f"🏗️ **ساخت‌وسازها و زیرساخت‌های کشور {country['flag']} {country['name']}**\n",
+        "━━━━━━━━━━━━━━━━━━\n"
+    ]
+
+    civilian_items = {}
+    for item_key, qty in equipment.items():
+        if qty > 0 and item_key in config.ALL_SHOP_ITEMS:
+            civilian_items[item_key] = qty
+
+    if not civilian_items:
+        lines.append("❌ هنوز هیچ پروژه زیرساختی یا ساخت‌وسازی احداث نکرده‌اید.\n")
+        lines.append("💡 می‌توانید از بخش‌های مختلف فروشگاه اقدام به احداث کارخانجات، نیروگاه‌ها، بنادر، فرودگاه‌ها و معادن فرمایید.")
+    else:
+        lines.append("📋 **لیست پروژه‌ها و زیرساخت‌های فعال شما:**\n")
+        total_income_add = 0
+        total_elec_add = 0
+
+        for item_key, qty in civilian_items.items():
+            item_data = config.ALL_SHOP_ITEMS[item_key]
+            name = item_data["name"]
+            inc = item_data.get("income_add", 0) * qty
+            elec = item_data.get("elec_add", 0) * qty
+
+            total_income_add += inc
+            total_elec_add += elec
+
+            extra_info = []
+            if inc > 0: extra_info.append(f"+{format_money(inc)}/روز")
+            if elec > 0: extra_info.append(f"+{elec}٪ برق")
+            info_str = f" ({' | '.join(extra_info)})" if extra_info else ""
+
+            lines.append(f"• **{name}:** {qty:,} واحد{info_str}")
+
+        lines.append("\n━━━━━━━━━━━━━━━━━━\n")
+        lines.append("📊 **مجموع عواید پروژه‌های احداث‌شده:**")
+        lines.append(f"• **درآمد روزانه زیرساخت‌ها:** +{format_money(total_income_add)}/روز")
+        lines.append(f"• **تولید برق کل نیروگاه‌ها:** +{total_elec_add}٪")
+
+    keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")]]
+    await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
 async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     cat_key = query.data.split(":", 1)[1]
 
     user_id = query.from_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await query.edit_message_text("کشور یافت نشد.", parse_mode="Markdown")
+        await query.answer("کشور یافت نشد.", show_alert=True)
+        return
+
+    await query.answer()
+
+    if cat_key == "my_constructions":
+        await show_my_constructions(query, country)
         return
 
     if cat_key == "military_assets":
@@ -118,7 +173,7 @@ async def show_military_asset_category(update: Update, context: ContextTypes.DEF
         text = f"{country['flag']} *تسلیحات {cat_info[0]} بومی {country['name']}*\n\n❌ کشور شما خط تولید بومی برای تسلیحات این دسته ندارد (تجهیزات موجود شما وارداتی هستند)."
     else:
         for item in assets:
-            btn_label = f"{item['equipment_name']} — {format_money(item['buy_price'])} (موجود: {format_number(item['amount'])})"
+            btn_label = f"{item['equipment_name']} — {format_money(item['buy_price'])} (موجودی: {format_number(item['amount'])})"
             buttons.append([InlineKeyboardButton(btn_label, callback_data=f"confirm_asset_buy:{item['equipment_key']}")])
         text = f"{country['flag']} *خط تولید تسلیحات {cat_info[0]} بومی {country['name']}*\n\nبرای سفارش و ساخت، روی سلاح مورد نظر کلیک کنید:"
 
@@ -178,10 +233,9 @@ async def confirm_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
 
 async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     parts = query.data.split(":")
     if len(parts) != 3:
-        await query.edit_message_text("درخواست نامعتبر است.", parse_mode="Markdown")
+        await query.answer("درخواست نامعتبر است.", show_alert=True)
         return
 
     equipment_key = parts[1]
@@ -190,15 +244,19 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await query.edit_message_text("کشور یافت نشد.", parse_mode="Markdown")
+        await query.answer("کشور یافت نشد.", show_alert=True)
         return
 
     success, msg, updated_asset = db.buy_country_asset_transaction(country["id"], equipment_key, quantity)
 
     if not success:
+        await query.answer("❌ تولید انجام نشد!", show_alert=True)
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopcat:military_assets")]]
         await query.edit_message_text(f"❌ **تولید انجام نشد:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
+
+    # Popup Alert Banner Notification
+    await query.answer("✅ ساخت و تولید بومی با موفقیت انجام شد!", show_alert=True)
 
     db.add_log(actor=str(user_id), action="asset_purchase", details=f"{equipment_key} x{quantity}")
 
@@ -249,10 +307,9 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
 
 async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     parts = query.data.split(":")
     if len(parts) != 3:
-        await query.edit_message_text("داده‌های درخواست نامعتبر است.", parse_mode="Markdown")
+        await query.answer("داده‌های درخواست نامعتبر است.", show_alert=True)
         return
 
     item_key = parts[1]
@@ -261,13 +318,14 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     country = db.get_country_by_player(update.effective_user.id)
     item = config.ALL_SHOP_ITEMS.get(item_key)
     if not country or not item:
-        await query.edit_message_text("خطا در انجام عملیات.", parse_mode="Markdown")
+        await query.answer("خطا در انجام عملیات.", show_alert=True)
         return
 
     total_price = item["price"] * quantity
     success, msg = db.buy_item_transaction(country["id"], item_key, quantity, total_price, item["name"])
 
     if not success:
+        await query.answer("❌ عملیات احداث انجام نشد!", show_alert=True)
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")]]
         await query.edit_message_text(
             f"❌ *عملیات احداث انجام نشد:*\n\n{msg}",
@@ -275,6 +333,9 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
             parse_mode="Markdown"
         )
         return
+
+    # Popup Alert Banner Notification
+    await query.answer("✅ پروژه با موفقیت احداث و خریداری گردید!", show_alert=True)
 
     db.add_log(actor=str(update.effective_user.id), action="civilian_purchase", details=f"{item_key} x{quantity}")
     updated_country = db.get_country_by_player(update.effective_user.id)
@@ -304,6 +365,7 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     )
 
     keyboard = [
+        [InlineKeyboardButton("🏗️ مشاهده ساخت‌وسازهای من", callback_data="shopcat:my_constructions")],
         [InlineKeyboardButton("🏪 بازگشت به فروشگاه", callback_data="shopback")],
     ]
 
