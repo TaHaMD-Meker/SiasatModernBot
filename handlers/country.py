@@ -121,27 +121,11 @@ async def oil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+from handlers.assets import show_assets_menu
+
 async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    c = await require_country(update)
-    if not c:
-        return
-
-    equipment = db.get_equipment(c["id"])
-    lines = [
-        f"🪖 {c['name']} — وضعیت نظامی\n",
-        f"👤 نیروی فعال: {format_number(c['active_personnel'])}",
-        f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}\n",
-    ]
-
-    if not equipment:
-        lines.append("هنوز تجهیزاتی خریداری نکردی. از /shop استفاده کن.")
-    else:
-        for key, qty in equipment.items():
-            item = config.ALL_SHOP_ITEMS.get(key)
-            name = item["name"] if item else key
-            lines.append(f"{name}: {qty}")
-
-    await update.message.reply_text("\n".join(lines), reply_markup=get_main_keyboard(update.effective_user.id), parse_mode="Markdown")
+    """هدایت دستور وضعیت ارتش به کاتالوگ دارایی‌های نظامی (/assets)."""
+    await show_assets_menu(update, context)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -154,7 +138,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌐 *وضعیت کشور* (`/country`)\n"
         "🏦 *خزانه و طلا* (`/treasury`)\n"
         "🛢️ *وضعیت نفت* (`/oil`)\n"
-        "🪖 *وضعیت ارتش* (`/army`)\n"
+        "🎖️ *دارایی‌های نظامی* (`/assets`)\n"
         "🏪 *فروشگاه* (`/shop`)\n"
         "📜 *راهنما* (`/help`)"
     )
