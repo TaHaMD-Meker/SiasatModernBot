@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ماژول تحلیل هوشمند سناریوی نبرد و محاسبه تلفات (AI War Analysis Module)
-پشتیبانی از API هوش مصنوعی (OpenAI / OpenRouter) و موتور هوشمند داخلی.
+پشتیبانی از API هوش مصنوعی (OpenAI / OpenRouter)، موتور هوشمند داخلی و صدور فاکتور دقیق تلفات (Loss Receipt).
 """
 
 import os
@@ -90,7 +90,7 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country)
     att_losses = []
     def_losses = []
 
-    # Select random assets from attacker to sustain losses (5% to 15%)
+    # Select random assets from attacker to sustain losses
     for a in att_assets:
         if a["amount"] > 0 and random.random() < 0.35:
             loss_qty = max(1, int(a["amount"] * random.uniform(0.03, 0.12)))
@@ -101,7 +101,7 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country)
                 "category": a["category"]
             })
 
-    # Select random assets from defender to sustain losses (8% to 20%)
+    # Select random assets from defender to sustain losses
     for d in def_assets:
         if d["amount"] > 0 and random.random() < 0.45:
             loss_qty = max(1, int(d["amount"] * random.uniform(0.05, 0.18)))
@@ -127,9 +127,6 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country)
 def build_structured_report_text(att_flag, att_name, def_flag, def_name, attacker_role, losses, att_assets, def_assets):
     """ساخت گزارش قالب‌بندی شده دقیق مطابق نمونه درخواستی کاربر."""
     
-    # Extract keywords or summary from roleplay text
-    role_summary = attacker_role.strip() if len(attacker_role.strip()) < 120 else attacker_role.strip()[:120] + "..."
-
     lines = []
     lines.append(f"📄 **نتیجه سناریوی جنگی — ارزیابی عملیات {att_name} در برابر دفاع {def_name}**")
     lines.append(f"📁 **پرونده:** عملیات تهاجمی {att_flag} {att_name} / واکنش دفاعی {def_flag} {def_name}")
@@ -238,6 +235,86 @@ def build_structured_report_text(att_flag, att_name, def_flag, def_name, attacke
     return "\n".join(lines)
 
 
+def build_detailed_loss_receipt(country_key: str, item_losses: list, personnel_loss: int, operation_name: str = "عملیات اخیر"):
+    """تولید فاکتور دقیق تلفات تجهیزاتی قبل/تلفات/بعد برای کشور مشخص."""
+    
+    c_info = config.COUNTRIES.get(country_key, {})
+    c_flag = c_info.get("flag", "")
+    c_name = c_info.get("name", country_key)
+
+    country = db.get_country_by_key(country_key)
+    cid = country["id"] if country else None
+    current_assets = {a["equipment_key"]: a for a in db.get_country_assets(cid)} if cid else {}
+
+    cat_icons = {
+        "Aircraft": ("✈️", "نیروی هوایی و هوانوردی", "فروند"),
+        "UAV": ("🛩️", "پهپادها", "فروند"),
+        "Ground Forces": ("🚛", "نیروی زمینی و زرهی", "دستگاه"),
+        "Artillery": ("🎯", "توپخانه و راکت‌اندازها", "قبضه"),
+        "Navy": ("🚢", "نیروی دریایی", "فروند"),
+        "Missiles": ("🚀", "توان موشکی", "فروند"),
+        "Air Defense": ("🛡️", "پدافند هوایی", "آتشبار"),
+    }
+
+    lines = []
+    lines.append(f"📄 **تلفات تجهیزات {c_flag} {c_name} — {operation_name}**")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    grouped = {}
+    cat_totals = {}
+
+    for loss in item_losses:
+        eq_key = loss["equipment_key"]
+        cat_key = loss.get("category", "Ground Forces")
+        loss_amt = loss["amount"]
+
+        asset_info = current_assets.get(eq_key, {})
+        after_qty = asset_info.get("amount", 0)
+        before_qty = after_qty + loss_amt
+
+        icon, cat_label, unit = cat_icons.get(cat_key, ("⚔️", cat_key, "واحد"))
+
+        grouped.setdefault(cat_key, []).append({
+            "name": loss["equipment_name"],
+            "before": before_qty,
+            "loss": loss_amt,
+            "after": after_qty,
+            "unit": unit,
+            "icon": icon
+        })
+
+        cat_totals[cat_key] = cat_totals.get(cat_key, 0) + loss_amt
+
+    cats_order = ["Aircraft", "UAV", "Ground Forces", "Artillery", "Navy", "Missiles", "Air Defense"]
+
+    for cat_key in cats_order:
+        items = grouped.get(cat_key, [])
+        if not items:
+            continue
+
+        icon, cat_label, unit = cat_icons.get(cat_key, ("⚔️", cat_key, "واحد"))
+        lines.append(f"{icon} **{cat_label}**\n")
+
+        for item in items:
+            lines.append(f"{item['icon']} **{item['name']}**")
+            lines.append(f"قبل: {item['before']:,} {item['unit']}")
+            lines.append(f"تلفات: {item['loss']:,} {item['unit']}")
+            lines.append(f"بعد: {item['after']:,} {item['unit']}\n")
+
+        lines.append("---\n")
+
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+    lines.append("📌 **جمع کاهش تجهیزات ثبت‌شده:**\n")
+    lines.append(f"• 🪖 پرسنل نظامی: {personnel_loss:,} نفر")
+
+    for cat_key in cats_order:
+        if cat_key in cat_totals:
+            icon, cat_label, unit = cat_icons.get(cat_key, ("⚔️", cat_key, "واحد"))
+            lines.append(f"• {icon} {cat_label}: {cat_totals[cat_key]:,} {unit}")
+
+    return "\n".join(lines)
+
+
 def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
     """اعمال کسر تلفات و خسارات از دیتابیس هر دو کشور."""
     conn = db.get_connection()
@@ -248,11 +325,9 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
 
     if att_country:
         att_cid = att_country["id"]
-        # Reduce personnel
         new_att_p = max(0, att_country["active_personnel"] - losses.get("att_personnel_loss", 0))
         cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_att_p, att_cid))
 
-        # Reduce equipment
         for item in losses.get("att_losses", []):
             cur.execute("""
                 UPDATE country_assets SET amount = MAX(0, amount - ?)
@@ -261,11 +336,9 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
 
     if def_country:
         def_cid = def_country["id"]
-        # Reduce personnel
         new_def_p = max(0, def_country["active_personnel"] - losses.get("def_personnel_loss", 0))
         cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_def_p, def_cid))
 
-        # Reduce equipment
         for item in losses.get("def_losses", []):
             cur.execute("""
                 UPDATE country_assets SET amount = MAX(0, amount - ?)
@@ -275,3 +348,4 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
     conn.commit()
     conn.close()
     return True
+

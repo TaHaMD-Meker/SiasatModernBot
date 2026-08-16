@@ -396,15 +396,61 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         losses = war_data.get("losses")
 
         if att_key and def_key and losses:
+            # 1. Deduct losses from DB
             war_analyzer.apply_war_losses_to_db(att_key, def_key, losses)
-            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+
+            # 2. Build detailed loss receipts
+            receipt_att = war_analyzer.build_detailed_loss_receipt(
+                att_key, losses.get("att_losses", []), losses.get("att_personnel_loss", 0), "عملیات تهاجمی اخیر"
+            )
+            receipt_def = war_analyzer.build_detailed_loss_receipt(
+                def_key, losses.get("def_losses", []), losses.get("def_personnel_loss", 0), "عملیات دفاعی اخیر"
+            )
+
+            context.user_data["war_analysis"]["receipt_att"] = receipt_att
+            context.user_data["war_analysis"]["receipt_def"] = receipt_def
+
+            keyboard = [
+                [InlineKeyboardButton("📢 برودکست فاکتور تلفات به بازیکنان", callback_data="admin:war_broadcast_receipts")],
+                [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+            ]
+
             await query.edit_message_text(
-                f"{war_data.get('report_text', '')}\n\n━━━━━━━━━━━━━━━━━━\n✅ **تلفات و خسارات فوق با موفقیت در دیتابیس هر دو کشور ثبت و کسر گردید.**",
+                "✅ **تلفات و خسارات فوق با موفقیت در دیتابیس کسر و بروزرسانی شد.**\n\n"
+                "📋 **فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:**",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
+
+            # Send receipt messages
+            await query.message.reply_text(receipt_att, parse_mode="Markdown")
+            await query.message.reply_text(receipt_def, parse_mode="Markdown")
         else:
             await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
+
+    elif data == "admin:war_broadcast_receipts":
+        war_data = context.user_data.get("war_analysis", {})
+        receipt_att = war_data.get("receipt_att")
+        receipt_def = war_data.get("receipt_def")
+
+        if receipt_att and receipt_def:
+            users = db.get_all_countries()
+            sent_count = 0
+            for u in users:
+                p_id = u.get("player_id")
+                if p_id:
+                    try:
+                        await context.bot.send_message(chat_id=p_id, text=receipt_att, parse_mode="Markdown")
+                        await context.bot.send_message(chat_id=p_id, text=receipt_def, parse_mode="Markdown")
+                        sent_count += 1
+                    except Exception:
+                        pass
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+            await query.message.reply_text(
+                f"📢 **فاکتورهای دقیق تلفات با موفقیت به {sent_count} بازیکن ارسال شد.**",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
     elif data == "admin:war_broadcast":
         war_data = context.user_data.get("war_analysis", {})
