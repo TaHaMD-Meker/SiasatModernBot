@@ -924,8 +924,16 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             return
 
         c_data = db.get_trade_contract(contract_id)
+        if not c_data:
+            await query.edit_message_text("❌ قرارداد یافت نشد.", parse_mode="Markdown")
+            return
+
         p_c = db.get_country_by_id(c_data["proposer_id"])
         r_c = db.get_country_by_id(c_data["recipient_id"])
+
+        if not p_c or not r_c:
+            await query.edit_message_text("❌ اطلاعات طرفین قرارداد یافت نشد.", parse_mode="Markdown")
+            return
 
         type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
 

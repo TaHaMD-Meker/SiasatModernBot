@@ -824,6 +824,23 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             p_id = c["proposer_id"]
             r_id = c["recipient_id"]
 
+            cur.execute("SELECT * FROM countries WHERE id = ?", (p_id,))
+            prop_c = cur.fetchone()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (r_id,))
+            recip_c = cur.fetchone()
+
+            if not prop_c or not recip_c:
+                return False, "یکی از طرفین قرارداد یافت نشد."
+
+            p_c = dict(prop_c)
+            r_c = dict(recip_c)
+
+            c_min, c_max = _ordered_pair(p_id, r_id)
+            cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
+            rel_row = cur.fetchone()
+            if rel_row and rel_row["status"] == "sanctioned":
+                return False, "امکان انعقاد قرارداد یا انتقال تجهیزات با کشور تحریم‌شده وجود ندارد."
+
             t_mode = c.get("transport_mode", "sea") or "sea"
             if t_mode == "sea":
                 if is_country_blockaded(p_id) or is_country_blockaded(r_id):
@@ -853,23 +870,6 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                                     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (st_toll, owner_c["id"]))
                                     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
                                     cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)", (owner_c["id"], f"دریافت عوارض ترانزیت {strait_info['name']} از معاهده {p_c['name']} و {r_c['name']}", st_toll, now_str))
-
-            c_min, c_max = _ordered_pair(p_id, r_id)
-            cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
-            rel_row = cur.fetchone()
-            if rel_row and rel_row["status"] == "sanctioned":
-                return False, "امکان انعقاد قرارداد یا انتقال تجهیزات با کشور تحریم‌شده وجود ندارد."
-
-            cur.execute("SELECT * FROM countries WHERE id = ?", (p_id,))
-            prop_c = cur.fetchone()
-            cur.execute("SELECT * FROM countries WHERE id = ?", (r_id,))
-            recip_c = cur.fetchone()
-
-            if not prop_c or not recip_c:
-                return False, "یکی از طرفین قرارداد یافت نشد."
-
-            p_c = dict(prop_c)
-            r_c = dict(recip_c)
 
             off_type = c["offered_type"]
             off_key = c.get("offered_key")
