@@ -45,7 +45,8 @@ def init_db():
         last_income_date TEXT,
         created_at TEXT,
         country_key TEXT UNIQUE,
-        approval_rating INTEGER DEFAULT 80
+        approval_rating INTEGER DEFAULT 80,
+        grain_daily INTEGER DEFAULT 0
     )
     """)
 
@@ -56,6 +57,11 @@ def init_db():
 
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN approval_rating INTEGER DEFAULT 80")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN grain_daily INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
 
@@ -243,7 +249,7 @@ def update_country_field(country_id: int, field: str, value):
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
         "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
-        "approval_rating"
+        "approval_rating", "grain_daily"
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
@@ -449,6 +455,8 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             elec_add = item.get("elec_add", 0) * quantity
             gold_daily_add = item.get("gold_daily_add", 0) * quantity
             oil_prod_add = item.get("oil_prod_add", 0) * quantity
+            grain_daily_add = item.get("grain_daily_add", 0) * quantity
+            grain_bonus = item.get("grain_bonus", 0) * quantity
 
             cur.execute("SELECT treasury, oil_reserves FROM countries WHERE id = ?", (country_id,))
             row = cur.fetchone()
@@ -468,9 +476,11 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                 daily_income = daily_income + ?,
                 electricity = electricity + ?,
                 gold_daily = gold_daily + ?,
-                oil_production = oil_production + ?
+                oil_production = oil_production + ?,
+                grain_daily = grain_daily + ?,
+                grain = grain + ?
                 WHERE id = ?
-            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, country_id))
+            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, grain_daily_add, grain_bonus, country_id))
 
             cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
             eq_row = cur.fetchone()

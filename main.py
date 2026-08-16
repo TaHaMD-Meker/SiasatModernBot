@@ -45,17 +45,30 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
         if c["last_income_date"] == today:
             continue
 
+        # 1. Deposit income & gold
         db.adjust_treasury(c["id"], c["daily_income"])
         db.adjust_gold(c["id"], c["gold_daily"])
 
-        # Process Approval Rating, Consumption & Emigration
+        # 2. Process Approval Rating, Consumption & Emigration
         app_res = approval_system.process_daily_approval_and_emigration(c)
 
         db.update_country_field(c["id"], "last_income_date", today)
         db.add_transaction(c["id"], "daily_income", "درآمد روزانه و واریز منابع", c["daily_income"])
+
+        # 3. Send Daily Country Report Message to player
+        updated_c = db.get_country_by_id(c["id"])
+        report_msg = approval_system.build_daily_country_report_message(updated_c, app_res, today)
+
+        p_id = c.get("player_id")
+        if p_id:
+            try:
+                await context.bot.send_message(chat_id=p_id, text=report_msg, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"Could not send daily report to player {p_id}: {e}")
+
         updated_count += 1
 
-    logger.info(f"درآمد روزانه و محاسبه رضایت عمومی برای {updated_count} کشور انجام شد.")
+    logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
 
 
 def main():
