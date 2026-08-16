@@ -348,11 +348,28 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         name = c_info.get("name", att_key)
 
         context.user_data["war_analysis"] = {"attacker_key": att_key}
-        context.user_data["admin_awaiting_input"] = {"type": "war_role", "attacker_key": att_key}
+        context.user_data["admin_awaiting_input"] = {"type": "war_role_att", "attacker_key": att_key}
 
         text = (
             f"📝 **رول و برنامه عملیاتی کشور مهاجم ({flag} {name})**\n\n"
-            "لطفاً **رول / نقشه عملیاتی و توضیحات تهاجمی** ارسال‌شده توسط بازیکن را در پیام بعدی ارسال فرمایید:"
+            "لطفاً **رول / نقشه عملیاتی و توضیحات تهاجمی** ارسال‌شده توسط بازیکن مهاجم را ارسال فرمایید:"
+        )
+        keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:war_def_select:"):
+        def_key = data.split(":")[2]
+        c_info = config.COUNTRIES.get(def_key, {})
+        flag = c_info.get("flag", "")
+        name = c_info.get("name", def_key)
+
+        context.user_data["war_analysis"]["defender_key"] = def_key
+        context.user_data["admin_awaiting_input"] = {"type": "war_role_def", "defender_key": def_key}
+
+        text = (
+            f"🛡️ **طرح و رول دفاعی / پدافندی کشور مدافع ({flag} {name})**\n\n"
+            "لطفاً **رول یا طرح دفاع هوایی / پدافندی** ارسال‌شده توسط بازیکن مدافع را ارسال فرمایید:\n"
+            "*(در صورت عدم ارسال رول توسط بازیکن مدافع، عدد ۰ یا کلمه 'هیچ' را بفرستید)*"
         )
         keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -674,7 +691,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         except Exception as e:
             await update.message.reply_text(f"❌ ارسال پیام به بازیکن ناموفق بود:\n{e}")
 
-    elif input_type == "war_role":
+    elif input_type == "war_role_att":
         att_key = input_state["attacker_key"]
         role_text = update.message.text.strip()
 
@@ -688,7 +705,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         name = c_info.get("name", att_key)
 
         text_msg = (
-            f"🎯 **رول و برنامه عملیاتی کشور {flag} {name} با موفقیت ثبت شد.**\n\n"
+            f"🎯 **رول و برنامه عملیاتی کشور {flag} {name} دریافت گردید.**\n\n"
             "اکنون **کشور مدافع** را جهت ارزیابی و شبیه‌سازی نبرد انتخاب فرمایید:"
         )
 
@@ -697,7 +714,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         for k, c in config.COUNTRIES.items():
             if k == att_key:
                 continue
-            btn = InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"admin:war_def:{k}")
+            btn = InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"admin:war_def_select:{k}")
             row.append(btn)
             if len(row) == 2:
                 keyboard.append(row)
@@ -707,6 +724,39 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         keyboard.append([InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin:menu")])
 
         await update.message.reply_text(text_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif input_type == "war_role_def":
+        def_key = input_state["defender_key"]
+        def_role_raw = update.message.text.strip()
+        def_role = "" if def_role_raw in ["0", "۰", "هیچ", "ندارد"] else def_role_raw
+
+        war_data = context.user_data.get("war_analysis", {})
+        att_key = war_data.get("attacker_key")
+        att_role = war_data.get("attacker_role", "")
+
+        context.user_data["war_analysis"]["defender_role"] = def_role
+
+        await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...")
+
+        report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
+
+        context.user_data["war_analysis"]["defender_key"] = def_key
+        context.user_data["war_analysis"]["losses"] = losses
+        context.user_data["war_analysis"]["report_text"] = report_text
+
+        keyboard = [
+            [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
+            [InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")],
+            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+        ]
+
+        if len(report_text) > 4000:
+            part1 = report_text[:3800]
+            part2 = report_text[3800:]
+            await update.message.reply_text(part1, parse_mode="Markdown")
+            await update.message.reply_text(part2, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            await update.message.reply_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif input_type == "broadcast":
         countries = db.get_all_countries()
