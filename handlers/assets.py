@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 سیستم دارایی‌های اختصاصی کشورها (Country Assets System)
-دستور /assets و مدیریت نمایش تجهیزات نظامی به صورت تفکیک‌شده با دکمه‌های شیشه‌ای.
+دستور /assets و مدیریت نمایش تجهیزات نظامی به صورت تفکیک‌شده به زیرگروه‌های تخصصی.
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -12,6 +12,62 @@ import config
 from utils import format_number, get_main_keyboard
 
 
+def subcategorize_assets(category, assets):
+    """دسته‌بندی و مرتب‌سازی هوشمند تجهیزات نظامی هر بخش به زیرگروه‌های تخصصی."""
+    grouped = {}
+
+    for item in assets:
+        eq_name = item["equipment_name"].lower()
+        eq_cat = item["category"]
+
+        if eq_cat == "Aircraft":
+            if any(h in eq_name for h in ["heli", "apache", "black hawk", "blackhawk", "chinook", "viper", "osprey", "seahawk", "بالگرد", "شینوک", "طوفان", "شاهد-۲۸۵", "بل ", "میل ", "ka-52", "mi-28", "mi-35", "mi-171", "t129", "atak", "gokbey", "tiger", "caracal", "panther"]):
+                sub_title = "🚁 **بالگردها (هجومی و ترابری)**"
+                sort_order = 4
+            elif any(b in eq_name for b in ["bomber", "بمب‌افکن", "b-1b", "b-2", "b-52", "b-21", "tu-160", "tu-95", "tu-22", "h-6", "h-20"]):
+                sub_title = "💣 **بمب‌افکن‌های استراتژیک**"
+                sort_order = 2
+            elif any(s in eq_name for s in ["awacs", "آواکس", "tanker", "سوخت‌رسان", "c-130", "c-17", "c-5", "c-2", "c-390", "a400m", "e-3", "e-2", "e-7", "rc-135", "u-2", "poseidon", "p-8", "p-3", "p-1", "ترابری", "گشت دریایی"]):
+                sub_title = "✈️ **هواپیماهای پشتیبانی، آواکس و ترابری**"
+                sort_order = 3
+            else:
+                sub_title = "✈️ **جنگنده‌ها و رهگیرهای رزمی**"
+                sort_order = 1
+
+        elif eq_cat == "Ground Forces":
+            if any(t in eq_name for t in ["tank", "تانک", "abrams", "armata", "leopard", "challenger", "leclerc", "merkava", "karrar", "zulfiqar", "altay", "t-90", "t-80", "t-72", "type 99", "type 10", "type 90"]):
+                sub_title = "🛡️ **تانک‌های اصلی میدان نبرد**"
+                sort_order = 1
+            elif any(i in eq_name for i in ["ifv", "apc", "نفربر", "bradley", "bmp", "btr", "stryker", "puma", "marder", "boxer", "guarani", "rabdan", "pars", "boragh"]):
+                sub_title = "🚛 **خودروهای رزمی پیاده‌نظام و نفربرها**"
+                sort_order = 2
+            else:
+                sub_title = "🚙 **خودروهای زرهی تاکتیکی و ضدکمین (MRAP)**"
+                sort_order = 3
+
+        elif eq_cat == "Navy":
+            if any(c in eq_name for c in ["carrier", "ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "anadolu", "lha", "lhd", "هواپیمابر", "بالگردبر"]):
+                sub_title = "⚓ **ناوهای هواپیمابر و تهاجمی**"
+                sort_order = 1
+            elif any(d in eq_name for d in ["destroyer", "burke", "zumwalt", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "maya", "atago", "kongo", "ناوشکن"]):
+                sub_title = "🚀 **ناوشکن‌ها و رزم‌پناوها**"
+                sort_order = 2
+            elif any(s in eq_name for s in ["sub", "ssn", "ssbn", "virginia", "ohio", "yasen", "borei", "type 094", "astute", "vanguard", "suffren", "type 212", "dolphin", "kilo", "fateh", "ghadir", "زیردریایی"]):
+                sub_title = "🌊 **زیردریایی‌های تهاجمی و استراتژیک**"
+                sort_order = 4
+            else:
+                sub_title = "🚢 **ناوچه‌ها، ناوچه‌های سبک و شناورها**"
+                sort_order = 3
+
+        else:
+            sub_title = config.ASSET_CATEGORIES.get(eq_cat, (eq_cat, ""))[0]
+            sort_order = 1
+
+        grouped.setdefault(sort_order, {"title": sub_title, "items": []})["items"].append(item)
+
+    return grouped
+
+
 async def show_assets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
@@ -20,7 +76,6 @@ async def show_assets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
         return
 
-    # تضمین وجود دارایی‌های اولیه
     db.seed_country_assets(country["id"], country["country_key"])
 
     text = f"{country['flag']} **{country['name']} — دارایی‌های نظامی اختصاصی**\n\nبرای مشاهده تجهیزات موجود، دسته مورد نظر را انتخاب کنید:"
@@ -73,7 +128,7 @@ async def assets_category_callback(update: Update, context: ContextTypes.DEFAULT
     assets = db.get_country_assets(country["id"], category)
 
     if category == "all":
-        cat_title = "📊 آمار کلی دارایی‌های نظامی"
+        cat_title = "آمار کلی دارایی‌های نظامی"
     else:
         cat_info = config.ASSET_CATEGORIES.get(category, (category, "عدد"))
         cat_title = cat_info[0]
@@ -83,17 +138,19 @@ async def assets_category_callback(update: Update, context: ContextTypes.DEFAULT
     if not assets:
         lines.append("هیچ تجهیزی در این دسته یافت نشد.")
     else:
-        current_cat = ""
-        for item in assets:
-            cat_code = item["category"]
-            unit = config.ASSET_CATEGORIES.get(cat_code, ("", "عدد"))[1]
+        grouped = subcategorize_assets(category, assets)
+        for sort_key in sorted(grouped.keys()):
+            sub_group = grouped[sort_key]
+            sub_title = sub_group["title"]
+            sub_items = sub_group["items"]
 
-            if category == "all" and cat_code != current_cat:
-                current_cat = cat_code
-                cat_label = config.ASSET_CATEGORIES.get(cat_code, (cat_code, ""))[0]
-                lines.append(f"\n{cat_label}:")
+            lines.append(f"{sub_title}:\n")
 
-            lines.append(f"• **{item['equipment_name']}**: {format_number(item['amount'])} {unit}")
+            for item in sub_items:
+                unit = config.ASSET_CATEGORIES.get(item["category"], ("", "عدد"))[1]
+                lines.append(f"• **{item['equipment_name']}**: {format_number(item['amount'])} {unit}")
+
+            lines.append("") # Blank line spacing between subcategories
 
     keyboard = [[InlineKeyboardButton("🔙 بازگشت به دسته‌بندی‌ها", callback_data="assets_back")]]
 
