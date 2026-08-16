@@ -151,6 +151,7 @@ def init_db():
         proposer_id INTEGER NOT NULL,
         recipient_id INTEGER NOT NULL,
         offered_type TEXT NOT NULL,
+        offered_key TEXT,
         offered_amount INTEGER NOT NULL,
         requested_type TEXT NOT NULL,
         requested_amount INTEGER NOT NULL,
@@ -162,6 +163,11 @@ def init_db():
         FOREIGN KEY(recipient_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
+
+    try:
+        cur.execute("ALTER TABLE trade_contracts ADD COLUMN offered_key TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
@@ -652,15 +658,15 @@ def are_sanctioned(c1_id: int, c2_id: int) -> bool:
     return rel.get("status") == "sanctioned"
 
 
-def create_trade_contract(proposer_id: int, recipient_id: int, offered_type: str, offered_amount: int, requested_type: str, requested_amount: int, transport_payer: str = "seller", transport_cost: int = 0) -> int:
+def create_trade_contract(proposer_id: int, recipient_id: int, offered_type: str, offered_amount: int, requested_type: str, requested_amount: int, transport_payer: str = "seller", transport_cost: int = 0, offered_key: str = None) -> int:
     conn = get_connection()
     cur = conn.cursor()
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     cur.execute("""
         INSERT INTO trade_contracts
-        (proposer_id, recipient_id, offered_type, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    """, (proposer_id, recipient_id, offered_type, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, now_str))
+        (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, now_str))
     contract_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -705,7 +711,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
             rel_row = cur.fetchone()
             if rel_row and rel_row["status"] == "sanctioned":
-                return False, "امکان انعقاد قرارداد با کشور تحریم‌شده وجود ندارد."
+                return False, "امکان انعقاد قرارداد یا انتقال تجهیزات با کشور تحریم‌شده وجود ندارد."
 
             cur.execute("SELECT * FROM countries WHERE id = ?", (p_id,))
             prop_c = cur.fetchone()
@@ -719,19 +725,72 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             r_c = dict(recip_c)
 
             off_type = c["offered_type"]
+            off_key = c.get("offered_key")
             off_amt = c["offered_amount"]
             req_type = c["requested_type"]
             req_amt = c["requested_amount"]
             t_payer = c["transport_payer"]
             t_cost = c["transport_cost"]
 
+            p_extra_cost = t_cost if t_payer == "seller" else 0
+            r_extra_cost = t_cost if t_payer == "buyer" else 0
+
             col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain"}
+
+            # Handle Military Asset Transfer
+            if off_type == "military_asset":
+                cur.execute("SELECT * FROM country_assets WHERE country_id = ? AND equipment_key = ?", (p_id, off_key))
+                asset_row = cur.fetchone()
+                if not asset_row or asset_row["amount"] < off_amt:
+                    return False, f"کشور پیشنهاددهنده ({p_c['name']}) موجودی کافی از این تجهیز برای انتقال ندارد."
+
+                asset_dict = dict(asset_row)
+
+                r_total_needed = req_amt + r_extra_cost
+                if r_c["treasury"] < r_total_needed:
+                    return False, f"کشور خریدار ({r_c['name']}) موجودی کافی در خزانه برای پرداخت قیمت و ترانزیت ندارد."
+
+                if p_extra_cost > 0 and p_c["treasury"] < p_extra_cost:
+                    return False, f"کشور فروشنده ({p_c['name']}) موجودی کافی برای پرداخت ترانزیت ندارد."
+
+                # 1. Deduct asset from proposer
+                cur.execute("UPDATE country_assets SET amount = amount - ? WHERE id = ?", (off_amt, asset_dict["id"]))
+
+                # 2. Add asset to recipient (producible=0)
+                cur.execute("""
+                    INSERT INTO country_assets
+                    (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    ON CONFLICT(country_id, equipment_key) DO UPDATE SET amount = amount + ?
+                """, (r_id, r_c["country_key"], asset_dict["category"], asset_dict["equipment_name"], off_key, off_amt, asset_dict["buy_price"], asset_dict["maintenance_cost"], off_amt))
+
+                # 3. Transfer price from recipient to proposer
+                if req_amt > 0:
+                    cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (req_amt, p_id))
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (req_amt, r_id))
+
+                # 4. Deduct transport costs
+                if p_extra_cost > 0:
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (p_extra_cost, p_id))
+                if r_extra_cost > 0:
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (r_extra_cost, r_id))
+
+                cur.execute("UPDATE trade_contracts SET status = 'accepted' WHERE id = ?", (contract_id,))
+
+                now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cur.execute("""
+                    INSERT INTO transactions (country_id, type, description, amount, created_at)
+                    VALUES (?, 'asset_transfer_out', ?, ?, ?)
+                """, (p_id, f"انتقال نظامی {asset_dict['equipment_name']} x{off_amt} به {r_c['name']}", req_amt, now_str))
+                cur.execute("""
+                    INSERT INTO transactions (country_id, type, description, amount, created_at)
+                    VALUES (?, 'asset_transfer_in', ?, ?, ?)
+                """, (r_id, f"دریافت تسلیحات نظامی {asset_dict['equipment_name']} x{off_amt} از {p_c['name']}", -req_amt, now_str))
+
+                return True, "معاهده انتقال تسلیحات نظامی با موفقیت اجرا شد."
 
             p_off_col = col_map.get(off_type, "treasury")
             r_req_col = col_map.get(req_type, "treasury")
-
-            p_extra_cost = t_cost if t_payer == "seller" else 0
-            r_extra_cost = t_cost if t_payer == "buyer" else 0
 
             p_avail = p_c[p_off_col] - (p_extra_cost if p_off_col == "treasury" else 0)
             if p_avail < off_amt:
@@ -741,13 +800,11 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             if r_avail < req_amt:
                 return False, f"طرف قبول‌کننده ({r_c['name']}) موجودی کافی برای اجرای قرارداد ندارد."
 
-            # Deduct & Add for proposer
             cur.execute(f"UPDATE countries SET {p_off_col} = {p_off_col} - ? WHERE id = ?", (off_amt, p_id))
             cur.execute(f"UPDATE countries SET {r_req_col} = {r_req_col} + ? WHERE id = ?", (req_amt, p_id))
             if p_extra_cost > 0:
                 cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (p_extra_cost, p_id))
 
-            # Deduct & Add for recipient
             cur.execute(f"UPDATE countries SET {r_req_col} = {r_req_col} - ? WHERE id = ?", (req_amt, r_id))
             cur.execute(f"UPDATE countries SET {p_off_col} = {p_off_col} + ? WHERE id = ?", (off_amt, r_id))
             if r_extra_cost > 0:
@@ -775,6 +832,9 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
     try:
         with conn:
             cur = conn.cursor()
+
+            if are_sanctioned(donor_id, recipient_id):
+                return False, "امکان ارسال کمک به کشور تحریم‌شده یا کشوری که شما را تحریم کرده وجود ندارد."
 
             cur.execute("SELECT * FROM countries WHERE id = ?", (donor_id,))
             donor_c = cur.fetchone()
