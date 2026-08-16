@@ -36,13 +36,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
+async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     today = datetime.date.today().isoformat()
     countries = db.get_all_countries()
 
     updated_count = 0
     for c in countries:
-        if c["last_income_date"] == today:
+        if not force and c["last_income_date"] == today:
             continue
 
         # 1. Deposit income & gold
@@ -69,6 +69,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
         updated_count += 1
 
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
+    return updated_count
 
 
 def main():

@@ -502,10 +502,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:daily_income":
         from main import daily_income_job
-        await daily_income_job(context)
+        count = await daily_income_job(context, force=True)
         await query.edit_message_text(
-            "⚡ **درآمد روزانه تمام کشورها به صورت دستی واریز شد!**",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]])
+            f"⚡ **درآمد روزانه و گزارش کشورها با موفقیت برای {count} کشور واریز و ارسال شد!**",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]),
+            parse_mode="Markdown"
         )
 
     # منوهای ویرایش
