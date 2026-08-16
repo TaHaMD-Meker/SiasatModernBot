@@ -20,142 +20,47 @@ else:
 
 # ===== لیست کامل کشورهای قابل انتخاب در بازی (۱۷ کشور) =====
 COUNTRIES = {
-    "iran":    {"name": "ایران",    "flag": "🇮🇷"},
-    "germany": {"name": "آلمان",    "flag": "🇩🇪"},
-    "qatar":   {"name": "قطر",      "flag": "🇶🇦"},
-    "usa":     {"name": "آمریکا",   "flag": "🇺🇸"},
-    "russia":  {"name": "روسیه",    "flag": "🇷🇺"},
-    "china":   {"name": "چین",      "flag": "🇨🇳"},
-    "france":  {"name": "فرانسه",   "flag": "🇫🇷"},
-    "uk":      {"name": "انگلیس",   "flag": "🇬🇧"},
-    "japan":   {"name": "ژاپن",     "flag": "🇯🇵"},
-    "turkey":  {"name": "ترکیه",    "flag": "🇹🇷"},
-    "saudi":   {"name": "عربستان",  "flag": "🇸🇦"},
-    "ukraine": {"name": "اوکراین",  "flag": "🇺🇦"},
-    "india":   {"name": "هند",      "flag": "🇮🇳"},
-    "brazil":  {"name": "برزیل",    "flag": "🇧🇷"},
-    "egypt":   {"name": "مصر",      "flag": "🇪🇬"},
-    "uae":     {"name": "امارات",   "flag": "🇦🇪"},
-    "israel":  {"name": "اسرائیل",  "flag": "🇮🇱"},
+    "iran": {'name': 'ایران', 'flag': '🇮🇷'},
+    "germany": {'name': 'آلمان', 'flag': '🇩🇪'},
+    "qatar": {'name': 'قطر', 'flag': '🇶🇦'},
+    "usa": {'name': 'آمریکا', 'flag': '🇺🇸'},
+    "russia": {'name': 'روسیه', 'flag': '🇷🇺'},
+    "china": {'name': 'چین', 'flag': '🇨🇳'},
+    "france": {'name': 'فرانسه', 'flag': '🇫🇷'},
+    "uk": {'name': 'انگلیس', 'flag': '🇬🇧'},
+    "japan": {'name': 'ژاپن', 'flag': '🇯🇵'},
+    "turkey": {'name': 'ترکیه', 'flag': '🇹🇷'},
+    "saudi": {'name': 'عربستان', 'flag': '🇸🇦'},
+    "ukraine": {'name': 'اوکراین', 'flag': '🇺🇦'},
+    "india": {'name': 'هند', 'flag': '🇮🇳'},
+    "brazil": {'name': 'برزیل', 'flag': '🇧🇷'},
+    "egypt": {'name': 'مصر', 'flag': '🇪🇬'},
+    "uae": {'name': 'امارات', 'flag': '🇦🇪'},
+    "israel": {'name': 'اسرائیل', 'flag': '🇮🇱'},
+    "venezuela": {'name': 'ونزوئلا', 'flag': '🇻🇪'},
 }
 
-# ===== مقادیر اولیه عمومی کشورها =====
-STARTING_VALUES = {
-    "population": 20_000_000,
-    "treasury": 40_000_000,
-    "tax_income": 8_000_000,
-    "daily_income": 15_000_000,
-    "gold": 300,
-    "gold_daily": 40,
-    "oil_reserves": 100_000_000,
-    "oil_production": 1_500_000,
-    "grain": 100,
-    "electricity": 130,
-    "active_personnel": 200_000,
-    "reserve_personnel": 500_000,
-}
-
-# ===== مقادیر اختصاصی و دقیق اقتصادی و انسانی تمام ۱۷ کشور =====
 COUNTRY_STARTING_OVERRIDES = {
-    "france": {
-        "population": 68_000_000, "treasury": 60_000_000, "tax_income": 10_000_000, "daily_income": 18_000_000,
-        "gold": 350, "gold_daily": 50, "oil_reserves": 20_000_000, "oil_production": 500_000,
-        "grain": 45, "electricity": 150, "active_personnel": 200_000, "reserve_personnel": 700_000,
-    },
-    "ukraine": {
-        "population": 38_000_000, "treasury": 25_000_000, "tax_income": 4_000_000, "daily_income": 8_000_000,
-        "gold": 150, "gold_daily": 25, "oil_reserves": 10_000_000, "oil_production": 100_000,
-        "grain": 50, "electricity": 130, "active_personnel": 800_000, "reserve_personnel": 900_000,
-    },
-    "qatar": {
-        "population": 3_000_000, "treasury": 35_000_000, "tax_income": 4_000_000, "daily_income": 12_000_000,
-        "gold": 200, "gold_daily": 40, "oil_reserves": 25_000_000, "oil_production": 2_500_000,
-        "grain": 15, "electricity": 140, "active_personnel": 12_000, "reserve_personnel": 20_000,
-    },
-    "usa": {
-        "population": 340_000_000, "treasury": 80_000_000, "tax_income": 12_000_000, "daily_income": 8_000_000,
-        "gold": 500, "gold_daily": 60, "oil_reserves": 250_000_000, "oil_production": 5_000_000,
-        "grain": 50, "electricity": 145, "active_personnel": 1_300_000, "reserve_personnel": 800_000,
-    },
-    "israel": {
-        "population": 10_000_000, "treasury": 18_000_000, "tax_income": 7_000_000, "daily_income": 4_000_000,
-        "gold": 200, "gold_daily": 40, "oil_reserves": 12_000_000, "oil_production": 1_000,
-        "grain": 100, "electricity": 120, "active_personnel": 170_000, "reserve_personnel": 450_000,
-    },
-    "iran": {
-        "population": 90_000_000, "treasury": 45_000_000, "tax_income": 7_000_000, "daily_income": 14_000_000,
-        "gold": 250, "gold_daily": 50, "oil_reserves": 250_000_000, "oil_production": 4_000_000,
-        "grain": 35, "electricity": 130, "active_personnel": 610_000, "reserve_personnel": 1_200_000,
-    },
-    "germany": {
-        "population": 84_000_000, "treasury": 55_000_000, "tax_income": 10_000_000, "daily_income": 18_000_000,
-        "gold": 350, "gold_daily": 50, "oil_reserves": 40_000_000, "oil_production": 1_000_000,
-        "grain": 45, "electricity": 155, "active_personnel": 185_000, "reserve_personnel": 800_000,
-    },
-    "china": {
-        "population": 1_400_000_000, "treasury": 120_000_000, "tax_income": 18_000_000, "daily_income": 25_000_000,
-        "gold": 700, "gold_daily": 80, "oil_reserves": 250_000_000, "oil_production": 4_500_000,
-        "grain": 60, "electricity": 155, "active_personnel": 2_000_000, "reserve_personnel": 1_000_000,
-    },
-    "russia": {
-        "population": 144_000_000, "treasury": 55_000_000, "tax_income": 12_000_000, "daily_income": 16_000_000,
-        "gold": 400, "gold_daily": 60, "oil_reserves": 375_000_000, "oil_production": 4_000_000,
-        "grain": 40, "electricity": 145, "active_personnel": 1_320_000, "reserve_personnel": 2_000_000,
-    },
-    "uk": {
-        "population": 69_000_000, "treasury": 50_000_000, "tax_income": 10_000_000, "daily_income": 17_000_000,
-        "gold": 350, "gold_daily": 50, "oil_reserves": 25_000_000, "oil_production": 1_000_000,
-        "grain": 40, "electricity": 150, "active_personnel": 185_000, "reserve_personnel": 900_000,
-    },
-    "japan": {
-        "population": 124_000_000, "treasury": 70_000_000, "tax_income": 12_000_000, "daily_income": 20_000_000,
-        "gold": 400, "gold_daily": 60, "oil_reserves": 10_000_000, "oil_production": 100_000,
-        "grain": 30, "electricity": 160, "active_personnel": 240_000, "reserve_personnel": 600_000,
-    },
-    "turkey": {
-        "population": 85_000_000, "treasury": 40_000_000, "tax_income": 6_000_000, "daily_income": 12_000_000,
-        "gold": 300, "gold_daily": 40, "oil_reserves": 30_000_000, "oil_production": 500_000,
-        "grain": 40, "electricity": 130, "active_personnel": 355_000, "reserve_personnel": 800_000,
-    },
-    "saudi": {
-        "population": 36_000_000, "treasury": 65_000_000, "tax_income": 8_000_000, "daily_income": 22_000_000,
-        "gold": 300, "gold_daily": 50, "oil_reserves": 260_000_000, "oil_production": 10_000_000,
-        "grain": 20, "electricity": 140, "active_personnel": 250_000, "reserve_personnel": 300_000,
-    },
-    "india": {
-        "population": 1_420_000_000, "treasury": 75_000_000, "tax_income": 12_000_000, "daily_income": 20_000_000,
-        "gold": 500, "gold_daily": 60, "oil_reserves": 50_000_000, "oil_production": 800_000,
-        "grain": 55, "electricity": 140, "active_personnel": 1_450_000, "reserve_personnel": 1_150_000,
-    },
-    "uae": {
-        "population": 10_000_000, "treasury": 50_000_000, "tax_income": 6_000_000, "daily_income": 15_000_000,
-        "gold": 250, "gold_daily": 40, "oil_reserves": 100_000_000, "oil_production": 3_200_000,
-        "grain": 15, "electricity": 135, "active_personnel": 65_000, "reserve_personnel": 75_000,
-    },
-    "egypt": {
-        "population": 105_000_000, "treasury": 30_000_000, "tax_income": 5_000_000, "daily_income": 10_000_000,
-        "gold": 200, "gold_daily": 30, "oil_reserves": 15_000_000, "oil_production": 600_000,
-        "grain": 30, "electricity": 125, "active_personnel": 440_000, "reserve_personnel": 480_000,
-    },
-    "brazil": {
-        "population": 215_000_000, "treasury": 40_000_000, "tax_income": 7_000_000, "daily_income": 12_000_000,
-        "gold": 250, "gold_daily": 35, "oil_reserves": 150_000_000, "oil_production": 3_000_000,
-        "grain": 60, "electricity": 140, "active_personnel": 360_000, "reserve_personnel": 1_300_000,
-    }
+    "france": {'population': 68000000, 'treasury': 60000000, 'tax_income': 10000000, 'daily_income': 18000000, 'gold': 350, 'gold_daily': 50, 'oil_reserves': 20000000, 'oil_production': 500000, 'grain': 45, 'electricity': 150, 'active_personnel': 200000, 'reserve_personnel': 700000},
+    "ukraine": {'population': 38000000, 'treasury': 25000000, 'tax_income': 4000000, 'daily_income': 8000000, 'gold': 150, 'gold_daily': 25, 'oil_reserves': 10000000, 'oil_production': 100000, 'grain': 50, 'electricity': 130, 'active_personnel': 800000, 'reserve_personnel': 900000},
+    "qatar": {'population': 3000000, 'treasury': 35000000, 'tax_income': 4000000, 'daily_income': 12000000, 'gold': 200, 'gold_daily': 40, 'oil_reserves': 50000000, 'oil_production': 2000000, 'grain': 15, 'electricity': 140, 'active_personnel': 12000, 'reserve_personnel': 20000},
+    "usa": {'population': 340000000, 'treasury': 80000000, 'tax_income': 12000000, 'daily_income': 8000000, 'gold': 500, 'gold_daily': 60, 'oil_reserves': 100000000, 'oil_production': 12500000, 'grain': 50, 'electricity': 145, 'active_personnel': 1300000, 'reserve_personnel': 800000},
+    "israel": {'population': 10000000, 'treasury': 48000000, 'tax_income': 8000000, 'daily_income': 12000000, 'gold': 250, 'gold_daily': 45, 'oil_reserves': 12000000, 'oil_production': 1000, 'grain': 100, 'electricity': 120, 'active_personnel': 170000, 'reserve_personnel': 450000},
+    "iran": {'population': 90000000, 'treasury': 45000000, 'tax_income': 7000000, 'daily_income': 14000000, 'gold': 250, 'gold_daily': 50, 'oil_reserves': 260000000, 'oil_production': 4200000, 'grain': 35, 'electricity': 130, 'active_personnel': 610000, 'reserve_personnel': 1200000},
+    "germany": {'population': 84000000, 'treasury': 55000000, 'tax_income': 10000000, 'daily_income': 18000000, 'gold': 350, 'gold_daily': 50, 'oil_reserves': 40000000, 'oil_production': 1000000, 'grain': 45, 'electricity': 155, 'active_personnel': 185000, 'reserve_personnel': 800000},
+    "china": {'population': 1400000000, 'treasury': 120000000, 'tax_income': 18000000, 'daily_income': 25000000, 'gold': 700, 'gold_daily': 80, 'oil_reserves': 250000000, 'oil_production': 4500000, 'grain': 60, 'electricity': 155, 'active_personnel': 2000000, 'reserve_personnel': 1000000},
+    "russia": {'population': 144000000, 'treasury': 55000000, 'tax_income': 12000000, 'daily_income': 16000000, 'gold': 400, 'gold_daily': 60, 'oil_reserves': 280000000, 'oil_production': 9500000, 'grain': 40, 'electricity': 145, 'active_personnel': 1320000, 'reserve_personnel': 2000000},
+    "uk": {'population': 69000000, 'treasury': 50000000, 'tax_income': 10000000, 'daily_income': 17000000, 'gold': 350, 'gold_daily': 50, 'oil_reserves': 25000000, 'oil_production': 1000000, 'grain': 40, 'electricity': 150, 'active_personnel': 185000, 'reserve_personnel': 900000},
+    "japan": {'population': 124000000, 'treasury': 70000000, 'tax_income': 12000000, 'daily_income': 20000000, 'gold': 400, 'gold_daily': 60, 'oil_reserves': 10000000, 'oil_production': 100000, 'grain': 30, 'electricity': 160, 'active_personnel': 240000, 'reserve_personnel': 600000},
+    "turkey": {'population': 85000000, 'treasury': 40000000, 'tax_income': 6000000, 'daily_income': 12000000, 'gold': 300, 'gold_daily': 40, 'oil_reserves': 30000000, 'oil_production': 500000, 'grain': 40, 'electricity': 130, 'active_personnel': 355000, 'reserve_personnel': 800000},
+    "saudi": {'population': 36000000, 'treasury': 65000000, 'tax_income': 8000000, 'daily_income': 22000000, 'gold': 300, 'gold_daily': 50, 'oil_reserves': 300000000, 'oil_production': 10000000, 'grain': 20, 'electricity': 140, 'active_personnel': 250000, 'reserve_personnel': 300000},
+    "india": {'population': 1420000000, 'treasury': 75000000, 'tax_income': 12000000, 'daily_income': 20000000, 'gold': 500, 'gold_daily': 60, 'oil_reserves': 50000000, 'oil_production': 800000, 'grain': 55, 'electricity': 140, 'active_personnel': 1450000, 'reserve_personnel': 1150000},
+    "uae": {'population': 10000000, 'treasury': 50000000, 'tax_income': 6000000, 'daily_income': 15000000, 'gold': 250, 'gold_daily': 40, 'oil_reserves': 120000000, 'oil_production': 3200000, 'grain': 15, 'electricity': 135, 'active_personnel': 65000, 'reserve_personnel': 75000},
+    "egypt": {'population': 105000000, 'treasury': 30000000, 'tax_income': 5000000, 'daily_income': 10000000, 'gold': 200, 'gold_daily': 30, 'oil_reserves': 15000000, 'oil_production': 600000, 'grain': 30, 'electricity': 125, 'active_personnel': 440000, 'reserve_personnel': 480000},
+    "brazil": {'population': 215000000, 'treasury': 40000000, 'tax_income': 7000000, 'daily_income': 12000000, 'gold': 250, 'gold_daily': 35, 'oil_reserves': 150000000, 'oil_production': 3000000, 'grain': 60, 'electricity': 140, 'active_personnel': 360000, 'reserve_personnel': 1300000},
+    "venezuela": {'population': 29000000, 'treasury': 35000000, 'tax_income': 5000000, 'daily_income': 10000000, 'gold': 200, 'gold_daily': 30, 'oil_reserves': 303000000, 'oil_production': 1200000, 'grain': 25, 'electricity': 110, 'active_personnel': 125000, 'reserve_personnel': 220000},
 }
 
-# ===== دسته‌بندی‌های دارایی‌های نظامی =====
-ASSET_CATEGORIES = {
-    "Aircraft":     ("✈️ نیروی هوایی", "فروند"),
-    "Missiles":     ("🚀 موشکی", "قبضه"),
-    "Air Defense":  ("🛡️ پدافند هوایی", "سامانه"),
-    "Navy":         ("🚢 نیروی دریایی", "فروند"),
-    "Ground Forces":("🚛 نیروی زمینی", "دستگاه"),
-    "UAV":          ("🛩️ پهپادها", "فروند"),
-    "Artillery":    ("🎯 توپخانه", "قبضه"),
-}
-
-# ===== کاتالوگ دقیق و جامع تجهیزات نظامی تمام ۱۷ کشور =====
 COUNTRY_EQUIPMENT_CATALOG = {
     "brazil": [
         {'key': 'gripen_e_br', 'name': 'جنگنده نسل ۴.۵ F-39E Gripen NG (مونتاژ بومی)', 'category': 'Aircraft', 'price': 85000000, 'maint': 40000, 'initial': 36, 'producible': True},
@@ -1091,6 +996,31 @@ COUNTRY_EQUIPMENT_CATALOG = {
         {'category': 'Air Defense', 'initial': 15, 'key': 'nasams', 'maint': 25000, 'name': 'NASAMS System', 'price': 8000000, 'producible': True},
         {'category': 'Air Defense', 'initial': 100, 'key': 'avenger', 'maint': 5000, 'name': 'Avenger Air Defense', 'price': 2000000, 'producible': True},
         {'category': 'Air Defense', 'initial': 250, 'key': 'military_radars', 'maint': 15000, 'name': 'Military Radars', 'price': 5000000, 'producible': True},
+    ],
+    "venezuela": [
+        {'key': 'su30mk2_ve', 'name': 'جنگنده سنگین Su-30MK2 Flanker-G', 'category': 'Aircraft', 'price': 45000000, 'maint': 30000, 'initial': 23, 'producible': False},
+        {'key': 'f16a_ve', 'name': 'جنگنده F-16A/B Fighting Falcon', 'category': 'Aircraft', 'price': 20000000, 'maint': 15000, 'initial': 18, 'producible': False},
+        {'key': 'k8_karakorum_ve', 'name': 'جت آموزشی و رزمی K-8 Karakorum', 'category': 'Aircraft', 'price': 8000000, 'maint': 5000, 'initial': 24, 'producible': False},
+        {'key': 'y8_transport_ve', 'name': 'هواپیمای ترابری Shaanxi Y-8', 'category': 'Aircraft', 'price': 25000000, 'maint': 15000, 'initial': 8, 'producible': False},
+        {'key': 'mi35m_ve', 'name': 'بالگرد هجومی Mi-35M Hind', 'category': 'Aircraft', 'price': 15000000, 'maint': 12000, 'initial': 10, 'producible': False},
+        {'key': 'mi171_ve', 'name': 'بالگرد ترابری Mi-171V-5', 'category': 'Aircraft', 'price': 9000000, 'maint': 7000, 'initial': 38, 'producible': False},
+        {'key': 'mohajer2_ve', 'name': 'پهپاد شناسایی بومی Arpía (مهاجر-۲)', 'category': 'UAV', 'price': 200000, 'maint': 500, 'initial': 30, 'producible': True},
+        {'key': 'ansat_uav_ve', 'name': 'پهپاد رزمی بومی ANSAT', 'category': 'UAV', 'price': 1000000, 'maint': 1500, 'initial': 15, 'producible': True},
+        {'key': 't72b1v_ve', 'name': 'تانک اصلی میدان نبرد T-72B1V', 'category': 'Ground Forces', 'price': 2000000, 'maint': 3000, 'initial': 92, 'producible': False},
+        {'key': 'bmp3m_ve', 'name': 'خودروی رزمی پیاده\u200cنظام BMP-3M', 'category': 'Ground Forces', 'price': 1800000, 'maint': 2500, 'initial': 123, 'producible': False},
+        {'key': 'btr80a_ve', 'name': 'نفربر زرهی چرخ\u200cدار BTR-80A', 'category': 'Ground Forces', 'price': 800000, 'maint': 1200, 'initial': 114, 'producible': False},
+        {'key': 'tiuna_mrap_ve', 'name': 'خودروی زرهی بومی Tiuna', 'category': 'Ground Forces', 'price': 150000, 'maint': 300, 'initial': 400, 'producible': True},
+        {'key': 'smerch_bm30_ve', 'name': 'سامانه راکت\u200cانداز سنگین ۳۰۰ م\u200cم BM-30 Smerch', 'category': 'Artillery', 'price': 3500000, 'maint': 5500, 'initial': 12, 'producible': False},
+        {'key': 'msta_s_ve', 'name': 'توپخانه خودکششی ۱۵۲ م\u200cم 2S19 Msta-S', 'category': 'Artillery', 'price': 3000000, 'maint': 4500, 'initial': 48, 'producible': False},
+        {'key': 'grad_bm21_ve', 'name': 'راکت\u200cانداز BM-21 Grad', 'category': 'Artillery', 'price': 350000, 'maint': 700, 'initial': 52, 'producible': False},
+        {'key': 'lupo_frigate_ve', 'name': 'ناوچه موشک\u200cانداز Mariscal Sucre (کلاس Lupo)', 'category': 'Navy', 'price': 150000000, 'maint': 30000, 'initial': 2, 'producible': False},
+        {'key': 'guaiqueri_pov_ve', 'name': 'شناور گشت دریایی Guaiquerí-class', 'category': 'Navy', 'price': 80000000, 'maint': 15000, 'initial': 4, 'producible': False},
+        {'key': 'kh31p_ve', 'name': 'موشک ضد رادار Kh-31P', 'category': 'Missiles', 'price': 600000, 'maint': 1500, 'initial': 80, 'producible': False},
+        {'key': 'kh59_ve', 'name': 'موشک کروز هواپایه Kh-59ME', 'category': 'Missiles', 'price': 1000000, 'maint': 2500, 'initial': 60, 'producible': False},
+        {'key': 's300vm_ve', 'name': 'سامانه پدافند موشکی بردبلند S-300VM (Antey-2500)', 'category': 'Air Defense', 'price': 80000000, 'maint': 140000, 'initial': 2, 'producible': False},
+        {'key': 'buk_m2e_ve', 'name': 'سامانه پدافند موشکی Buk-M2E', 'category': 'Air Defense', 'price': 25000000, 'maint': 40000, 'initial': 9, 'producible': False},
+        {'key': 'pechora_2m_ve', 'name': 'سامانه پدافندی Pechora-2M', 'category': 'Air Defense', 'price': 10000000, 'maint': 18000, 'initial': 11, 'producible': False},
+        {'key': 'igla_s_ve', 'name': 'سامانه پدافند دوش\u200cپرتview Igla-S', 'category': 'Air Defense', 'price': 100000, 'maint': 300, 'initial': 500, 'producible': False},
     ],
 }
 
