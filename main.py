@@ -21,6 +21,7 @@ from handlers.country import country_profile, treasury, oil, army, help_command,
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
 from handlers.operations import operations_menu, operations_callback_handler, operations_text_input_handler
 from handlers.statements import statements_menu, statements_callback_handler, statements_text_input_handler
+from handlers.research import research_menu, research_callback_handler
 from handlers.assets import show_assets_menu, get_assets_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
@@ -48,8 +49,11 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         if not force and c["last_income_date"] == today:
             continue
 
-        # 1. Deposit income & gold
-        db.adjust_treasury(c["id"], c["daily_income"])
+        # 1. Deposit income & gold minus maintenance
+        maint_info = db.calculate_country_maintenance_cost(c["id"])
+        net_income = c["daily_income"] - maint_info["total_maint"]
+
+        db.adjust_treasury(c["id"], net_income)
         db.adjust_gold(c["id"], c["gold_daily"])
 
         # 2. Process Approval Rating, Consumption & Emigration
@@ -131,6 +135,11 @@ def main():
     app.add_handler(CommandHandler("rewrite", statements_menu))
     app.add_handler(CallbackQueryHandler(statements_callback_handler, pattern=r"^stmt:"))
     app.add_handler(MessageHandler(filters.Regex("^📢 بیانیه و توییت$"), statements_menu))
+
+    # سیستم تحقیق و توسعه و لول فناوری بومی
+    app.add_handler(CommandHandler("research", research_menu))
+    app.add_handler(CommandHandler("tech", research_menu))
+    app.add_handler(CallbackQueryHandler(research_callback_handler, pattern=r"^research:"))
 
     # سیستم دیپلماسی و معاهدات بین‌المللی
     app.add_handler(CommandHandler("diplomacy", diplomacy_menu))

@@ -223,7 +223,7 @@ def get_approval_status_message(c: dict):
 
 
 def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
-    """تولید گزارش روزانه با فاصله‌گذاری مرتب، خطوط مجزا و بدون ایموجی‌های اضافی."""
+    """تولید گزارش روزانه با فاصله‌گذاری مرتب، کسر واقعی هزینه نگهداری و خطوط مجزا."""
     
     flag = c.get("flag", "")
     name = c.get("name", "کشور")
@@ -235,8 +235,14 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     oil_need = reqs["oil_need_daily"]
     grain_need = reqs["grain_need_daily"]
 
+    maint_info = db.calculate_country_maintenance_cost(c["id"])
+    total_maint = maint_info["total_maint"]
+    disc_pct = maint_info["discount_pct"]
+
     tax_income = c.get("tax_income", 0)
     daily_income = c.get("daily_income", 0)
+    net_income = daily_income - total_maint
+
     gold_daily = c.get("gold_daily", 0)
     oil_prod = c.get("oil_production", 0)
     grain_prod = c.get("grain_daily", 0)
@@ -250,7 +256,14 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     lines.append("━━━━━━━━━━━━━━━━━━\n")
     lines.append("*خلاصه مالی و تغییرات اقتصادی روزانه:*\n")
 
-    lines.append(f"• *درآمد پایه و مالیاتی:* +{format_money(daily_income)}/روز (واریز شد)\n")
+    lines.append(f"• *درآمد پایه و مالیاتی:* +{format_money(daily_income)}/روز\n")
+
+    if total_maint > 0:
+        disc_str = f" (تخفیف فناوری: {disc_pct}٪)" if disc_pct > 0 else ""
+        lines.append(f"• *هزینه نگهداری تجهیزات و ارتش:* -{format_money(total_maint)}/روز{disc_str}\n")
+
+    net_sign = "+" if net_income >= 0 else ""
+    lines.append(f"• *خالص تغییر روزانه خزانه:* {net_sign}{format_money(net_income)}/روز (اعمال گردید)\n")
 
     if gold_daily > 0:
         lines.append(f"• *تولید روزانه طلا:* +{gold_daily:,} شمش طلا\n")

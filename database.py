@@ -47,7 +47,8 @@ def init_db():
         country_key TEXT UNIQUE,
         approval_rating INTEGER DEFAULT 80,
         grain_daily INTEGER DEFAULT 0,
-        username TEXT
+        username TEXT,
+        tech_level INTEGER DEFAULT 1
     )
     """)
 
@@ -68,6 +69,11 @@ def init_db():
 
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN username TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN tech_level INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
         pass
 
@@ -321,7 +327,7 @@ def update_country_field(country_id: int, field: str, value):
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
         "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
-        "approval_rating", "grain_daily"
+        "approval_rating", "grain_daily", "tech_level"
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
@@ -1025,6 +1031,41 @@ def get_country_rankings() -> list:
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def calculate_country_maintenance_cost(country_id: int) -> dict:
+    """محاسبه دقیق هزینه نگهداری روزانه تسلیحات و ارتش با تخفیف سطح فناوری (Tech Level)."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT active_personnel, tech_level FROM countries WHERE id = ?", (country_id,))
+    c_row = cur.fetchone()
+    if not c_row:
+        conn.close()
+        return {"assets_maint": 0, "personnel_maint": 0, "total_maint": 0, "discount_pct": 0, "tech_level": 1}
+
+    active_p = c_row["active_personnel"] or 0
+    tech_lvl = c_row["tech_level"] or 1
+
+    discount_pct = min(40, (tech_lvl - 1) * 10)
+
+    cur.execute("SELECT amount, maintenance_cost FROM country_assets WHERE country_id = ? AND amount > 0", (country_id,))
+    asset_rows = cur.fetchall()
+    conn.close()
+
+    raw_assets_maint = sum(r["amount"] * (r["maintenance_cost"] or 0) for r in asset_rows)
+    assets_maint = int(raw_assets_maint * (1 - (discount_pct / 100.0)))
+
+    personnel_maint = active_p * 2
+    total_maint = assets_maint + personnel_maint
+
+    return {
+        "assets_maint": assets_maint,
+        "personnel_maint": personnel_maint,
+        "total_maint": total_maint,
+        "discount_pct": discount_pct,
+        "tech_level": tech_lvl
+    }
 
 
 # ---------- سیستم ثبت و بررسی رول‌های نظامی (Roleplay System) ----------
