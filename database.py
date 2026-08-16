@@ -448,6 +448,7 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             income_add = item.get("income_add", 0) * quantity
             elec_add = item.get("elec_add", 0) * quantity
             gold_daily_add = item.get("gold_daily_add", 0) * quantity
+            oil_prod_add = item.get("oil_prod_add", 0) * quantity
 
             cur.execute("SELECT treasury, oil_reserves FROM countries WHERE id = ?", (country_id,))
             row = cur.fetchone()
@@ -466,9 +467,10 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                 oil_reserves = MAX(0, oil_reserves - ?),
                 daily_income = daily_income + ?,
                 electricity = electricity + ?,
-                gold_daily = gold_daily + ?
+                gold_daily = gold_daily + ?,
+                oil_production = oil_production + ?
                 WHERE id = ?
-            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, country_id))
+            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, country_id))
 
             cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
             eq_row = cur.fetchone()

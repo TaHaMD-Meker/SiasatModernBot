@@ -13,8 +13,10 @@ from utils import format_money, format_number
 
 CIVILIAN_CATEGORIES = {
     "buildings": ("🏠 ساختمان‌ها", config.BUILDINGS),
-    "factories": ("🏭 صنعت", config.FACTORIES),
-    "power":     ("⚡ انرژی", config.POWER_PLANTS),
+    "factories": ("🏭 صنعت و کارخانجات", config.FACTORIES),
+    "power":     ("⚡ نیروگاه‌های انرژی", config.POWER_PLANTS),
+    "transport": ("🚢 حمل‌ونقل و ترابری", config.TRANSPORTATION),
+    "mines":     ("⛏️ منابع و معادن", config.MINES_AND_RESOURCES),
 }
 
 
@@ -30,9 +32,9 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     buttons = [
         [InlineKeyboardButton("🪖 ساخت/خرید تسلیحات نظامی بومی", callback_data="shopcat:military_assets")],
-        [InlineKeyboardButton("🏠 ساختمان‌ها", callback_data="shopcat:buildings")],
-        [InlineKeyboardButton("🏭 صنعت و کارخانجات", callback_data="shopcat:factories")],
-        [InlineKeyboardButton("⚡ نیروگاه‌های انرژی", callback_data="shopcat:power")],
+        [InlineKeyboardButton("🏠 ساختمان‌ها", callback_data="shopcat:buildings"), InlineKeyboardButton("🏭 صنعت و کارخانجات", callback_data="shopcat:factories")],
+        [InlineKeyboardButton("⚡ نیروگاه‌های انرژی", callback_data="shopcat:power"), InlineKeyboardButton("🚢 حمل‌ونقل و ترابری", callback_data="shopcat:transport")],
+        [InlineKeyboardButton("⛏️ منابع و معادن", callback_data="shopcat:mines")],
     ]
 
     text = (
