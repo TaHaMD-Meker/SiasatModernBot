@@ -23,7 +23,7 @@ def is_admin(user_id: int) -> bool:
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
-        await update.message.reply_text("⛔ این بخش فقط برای ادمین اصلی بازی مجاز است.")
+        await update.message.reply_text("⛔ این بخش فقط برای ادمین اصلی بازی مجاز است.", parse_mode="Markdown")
         return
 
     text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
@@ -54,7 +54,7 @@ async def show_countries_list(query, context, page: int = 0):
     countries = db.get_all_countries()
     if not countries:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
-        await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
     per_page = 5
@@ -396,7 +396,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         role_id = int(data.split(":")[2])
         r = db.get_roleplay_by_id(role_id)
         if not r or r["status"] != "pending":
-            await query.edit_message_text("❌ این رول قبلاً تعیین تکلیف شده است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]))
+            await query.edit_message_text("❌ این رول قبلاً تعیین تکلیف شده است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]), parse_mode="Markdown")
             return
 
         c = db.get_country_by_id(r["country_id"])
@@ -425,7 +425,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         role_id = int(data.split(":")[2])
         r = db.get_roleplay_by_id(role_id)
         if not r:
-            await query.edit_message_text("❌ رول یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]))
+            await query.edit_message_text("❌ رول یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]), parse_mode="Markdown")
             return
 
         db.update_roleplay_status(role_id, "approved")
@@ -444,13 +444,13 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به لیست رول‌های معلق", callback_data="admin:pending_roles")]]
-        await query.edit_message_text(f"✅ *رول کشور {c_name} با موفقیت تایید و از لیست معوقات حذف گردید.*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"✅ **رول کشور {c_name} با موفقیت تایید و از لیست معوقات حذف گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("admin:rej_role:"):
         role_id = int(data.split(":")[2])
         r = db.get_roleplay_by_id(role_id)
         if not r:
-            await query.edit_message_text("❌ رول یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]))
+            await query.edit_message_text("❌ رول یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]), parse_mode="Markdown")
             return
 
         db.update_roleplay_status(role_id, "rejected")
@@ -469,7 +469,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به لیست رول‌های معلق", callback_data="admin:pending_roles")]]
-        await query.edit_message_text(f"❌ *رول کشور {c_name} رد شد و از لیست معوقات حذف گردید.*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"❌ **رول کشور {c_name} رد شد و از لیست معوقات حذف گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("admin:c_tx_logs:"):
         c_id = int(data.split(":")[2])
@@ -540,10 +540,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         att_role = war_data.get("attacker_role", "")
 
         if not att_key or not att_role:
-            await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
+            await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
             return
 
-        await query.edit_message_text("🧠 *در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...*\nلطفاً شکیبا باشید...", parse_mode="Markdown")
+        await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
 
@@ -606,7 +606,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.message.reply_text(receipt_att, parse_mode="Markdown")
             await query.message.reply_text(receipt_def, parse_mode="Markdown")
         else:
-            await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
+            await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
 
     elif data == "admin:war_broadcast_receipts":
         war_data = context.user_data.get("war_analysis", {})
@@ -914,9 +914,9 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             val = int(clean_text)
             db.update_country_field(c_id, field, val)
             c = db.get_country_by_id(c_id)
-            await update.message.reply_text(f"✅ مقدار {field} برای کشور {c['name']} با موفقیت به {format_number(val)} تغییر یافت.\nبرای ادامه /admin را بزنید.")
+            await update.message.reply_text(f"✅ مقدار {field} برای کشور {c['name']} با موفقیت به {format_number(val)} تغییر یافت.\nبرای ادامه /admin را بزنید.", parse_mode="Markdown")
         except ValueError:
-            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد. برای مدیریت /admin را بزنید.")
+            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد. برای مدیریت /admin را بزنید.", parse_mode="Markdown")
 
     elif input_type == "asset_amount":
         c_id = input_state["country_id"]
@@ -926,9 +926,9 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             db.set_asset_amount(c_id, eq_key, val)
             c = db.get_country_by_id(c_id)
             asset = db.get_asset_by_key(c_id, eq_key)
-            await update.message.reply_text(f"✅ تعداد {asset['equipment_name']} برای کشور {c['name']} به {format_number(val)} تغییر یافت.\nبرای ادامه /admin را بزنید.")
+            await update.message.reply_text(f"✅ تعداد {asset['equipment_name']} برای کشور {c['name']} به {format_number(val)} تغییر یافت.\nبرای ادامه /admin را بزنید.", parse_mode="Markdown")
         except ValueError:
-            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد. برای مدیریت /admin را بزنید.")
+            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد. برای مدیریت /admin را بزنید.", parse_mode="Markdown")
 
     elif input_type == "direct_msg":
         player_id = input_state["player_id"]
@@ -940,9 +940,9 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
                 text=f"📩 *پیام مستقیم از طرف ادمین بازی:*\n\n{text}",
                 parse_mode="Markdown"
             )
-            await update.message.reply_text(f"✅ پیام شما با موفقیت برای رهبر کشور {c['name']} ارسال شد.")
+            await update.message.reply_text(f"✅ پیام شما با موفقیت برای رهبر کشور {c['name']} ارسال شد.", parse_mode="Markdown")
         except Exception as e:
-            await update.message.reply_text(f"❌ ارسال پیام به بازیکن ناموفق بود:\n{e}")
+            await update.message.reply_text(f"❌ ارسال پیام به بازیکن ناموفق بود:\n{e}", parse_mode="Markdown")
 
     elif input_type == "war_role_att":
         att_key = input_state["attacker_key"]
@@ -989,7 +989,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         context.user_data["war_analysis"]["defender_role"] = def_role
 
-        await update.message.reply_text("🧠 *در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...*\nلطفاً شکیبا باشید...", parse_mode="Markdown")
+        await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
 
@@ -1044,62 +1044,62 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def addmoney(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌هاست.")
+        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌هاست.", parse_mode="Markdown")
         return
 
     args = context.args
     if len(args) != 2:
-        await update.message.reply_text("کاربرد: /addmoney <player_id> <amount>")
+        await update.message.reply_text("کاربرد: /addmoney <player_id> <amount>", parse_mode="Markdown")
         return
 
     try:
         player_id, amount = int(args[0]), int(args[1])
     except ValueError:
-        await update.message.reply_text("مقادیر باید عدد باشند.")
+        await update.message.reply_text("مقادیر باید عدد باشند.", parse_mode="Markdown")
         return
 
     country = db.get_country_by_player(player_id)
     if not country:
-        await update.message.reply_text("کشوری پیدا نشد.")
+        await update.message.reply_text("کشوری پیدا نشد.", parse_mode="Markdown")
         return
 
     db.adjust_treasury(country["id"], amount)
-    await update.message.reply_text(f"✅ مبلغ {format_money(amount)} به خزانه {country['name']} اضافه شد.")
+    await update.message.reply_text(f"✅ مبلغ {format_money(amount)} به خزانه {country['name']} اضافه شد.", parse_mode="Markdown")
 
 
 async def removemoney(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌هاست.")
+        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌هاست.", parse_mode="Markdown")
         return
 
     args = context.args
     if len(args) != 2:
-        await update.message.reply_text("کاربرد: /removemoney <player_id> <amount>")
+        await update.message.reply_text("کاربرد: /removemoney <player_id> <amount>", parse_mode="Markdown")
         return
 
     try:
         player_id, amount = int(args[0]), int(args[1])
     except ValueError:
-        await update.message.reply_text("مقادیر باید عدد باشند.")
+        await update.message.reply_text("مقادیر باید عدد باشند.", parse_mode="Markdown")
         return
 
     country = db.get_country_by_player(player_id)
     if not country:
-        await update.message.reply_text("کشوری پیدا نشد.")
+        await update.message.reply_text("کشوری پیدا نشد.", parse_mode="Markdown")
         return
 
     db.adjust_treasury(country["id"], -amount)
-    await update.message.reply_text(f"✅ مبلغ {format_money(amount)} از خزانه {country['name']} کم شد.")
+    await update.message.reply_text(f"✅ مبلغ {format_money(amount)} از خزانه {country['name']} کم شد.", parse_mode="Markdown")
 
 
 async def listcountries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌هاست.")
+        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌هاست.", parse_mode="Markdown")
         return
 
     countries = db.get_all_countries()
     if not countries:
-        await update.message.reply_text("هنوز هیچ کشوری ثبت نشده.")
+        await update.message.reply_text("هنوز هیچ کشوری ثبت نشده.", parse_mode="Markdown")
         return
 
     lines = ["📋 لیست کشورها:\n"]

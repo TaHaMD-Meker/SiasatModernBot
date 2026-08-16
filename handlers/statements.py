@@ -21,7 +21,7 @@ async def require_country(update: Update):
     country = db.get_country_by_player(user_id)
     if not country:
         if update.message:
-            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.", parse_mode="Markdown")
         elif update.callback_query:
             await update.callback_query.answer("هنوز کشوری نساختی!", show_alert=True)
         return None
@@ -170,7 +170,7 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
     """رسمی‌سازی هوشمند متن محاوره‌ای به بیانیه ۳ سطری دیپلماتیک."""
     
     raw_text = update.message.text.strip()
-    await update.message.reply_text("✍️ *در حال رسمی‌سازی متن و نگارش بیانیه فاخر دیپلماتیک...*\nلطفاً شکیبا باشید...")
+    await update.message.reply_text("✍️ **در حال رسمی‌سازی متن و نگارش بیانیه فاخر دیپلماتیک...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
     polished_text = None

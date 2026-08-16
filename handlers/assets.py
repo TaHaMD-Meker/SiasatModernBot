@@ -73,7 +73,7 @@ async def show_assets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     country = db.get_country_by_player(user_id)
 
     if not country:
-        await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+        await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.", parse_mode="Markdown")
         return
 
     db.seed_country_assets(country["id"], country["country_key"])
@@ -121,7 +121,7 @@ async def assets_category_callback(update: Update, context: ContextTypes.DEFAULT
     country = db.get_country_by_player(user_id)
 
     if not country:
-        await query.edit_message_text("کشور شما یافت نشد!")
+        await query.edit_message_text("کشور شما یافت نشد!", parse_mode="Markdown")
         return
 
     category = query.data.split(":", 1)[1]
@@ -169,7 +169,7 @@ async def assets_back_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     country = db.get_country_by_player(user_id)
 
     if not country:
-        await query.edit_message_text("کشور شما یافت نشد!")
+        await query.edit_message_text("کشور شما یافت نشد!", parse_mode="Markdown")
         return
 
     text = f"{country['flag']} *{country['name']} — دارایی‌های نظامی اختصاصی*\n\nبرای مشاهده تجهیزات موجود، دسته مورد نظر را انتخاب کنید:"

@@ -19,7 +19,7 @@ async def require_country(update: Update):
     country = db.get_country_by_player(user_id)
     if not country:
         if update.message:
-            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.", parse_mode="Markdown")
         elif update.callback_query:
             await update.callback_query.answer("هنوز کشوری نساختی!", show_alert=True)
         return None
@@ -138,7 +138,7 @@ async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = item["name"] if item else key
             lines.append(f"{name}: {qty}")
 
-    await update.message.reply_text("\n".join(lines), reply_markup=get_main_keyboard(update.effective_user.id))
+    await update.message.reply_text("\n".join(lines), reply_markup=get_main_keyboard(update.effective_user.id), parse_mode="Markdown")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

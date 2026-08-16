@@ -25,7 +25,7 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+        await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.", parse_mode="Markdown")
         return
 
     # تضمین وجود دارایی‌های نظامی اختصاصی کشور
@@ -58,7 +58,7 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await query.edit_message_text("کشور یافت نشد.")
+        await query.edit_message_text("کشور یافت نشد.", parse_mode="Markdown")
         return
 
     if cat_key == "military_assets":
@@ -94,7 +94,7 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="shopback")])
 
-        await query.edit_message_text(f"🏪 {label}\n\nکالای مورد نظر رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(buttons))
+        await query.edit_message_text(f"🏪 {label}\n\nکالای مورد نظر رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
 async def show_military_asset_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,7 +105,7 @@ async def show_military_asset_category(update: Update, context: ContextTypes.DEF
     user_id = query.from_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await query.edit_message_text("کشور یافت نشد.")
+        await query.edit_message_text("کشور یافت نشد.", parse_mode="Markdown")
         return
 
     # فقط سلاح‌های دارای خط تولید بومی (producible_only=True)
@@ -139,16 +139,16 @@ async def confirm_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await query.edit_message_text("کشور یافت نشد.")
+        await query.edit_message_text("کشور یافت نشد.", parse_mode="Markdown")
         return
 
     asset = db.get_asset_by_key(country["id"], equipment_key)
     if not asset:
-        await query.edit_message_text("این تجهیز برای کشور شما تعریف نشده است.")
+        await query.edit_message_text("این تجهیز برای کشور شما تعریف نشده است.", parse_mode="Markdown")
         return
 
     if asset.get("producible", 1) != 1:
-        await query.edit_message_text("⚠️ این تجهیز وارداتی است و کشور شما خط تولید بومی برای ساخت مجدد آن را ندارد.")
+        await query.edit_message_text("⚠️ این تجهیز وارداتی است و کشور شما خط تولید بومی برای ساخت مجدد آن را ندارد.", parse_mode="Markdown")
         return
 
     unit = config.ASSET_CATEGORIES.get(asset["category"], ("", "عدد"))[1]
@@ -180,7 +180,7 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     parts = query.data.split(":")
     if len(parts) != 3:
-        await query.edit_message_text("درخواست نامعتبر است.")
+        await query.edit_message_text("درخواست نامعتبر است.", parse_mode="Markdown")
         return
 
     equipment_key = parts[1]
@@ -189,14 +189,14 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await query.edit_message_text("کشور یافت نشد.")
+        await query.edit_message_text("کشور یافت نشد.", parse_mode="Markdown")
         return
 
     success, msg, updated_asset = db.buy_country_asset_transaction(country["id"], equipment_key, quantity)
 
     if not success:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopcat:military_assets")]]
-        await query.edit_message_text(f"❌ *تولید انجام نشد:*\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"❌ **تولید انجام نشد:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
     db.add_log(actor=str(user_id), action="asset_purchase", details=f"{equipment_key} x{quantity}")
@@ -229,7 +229,7 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     item_key = query.data.split(":", 1)[1]
     item = config.ALL_SHOP_ITEMS.get(item_key)
     if not item:
-        await query.edit_message_text("این پروژه در دسترس نیست.")
+        await query.edit_message_text("این پروژه در دسترس نیست.", parse_mode="Markdown")
         return
 
     buttons = [
@@ -251,7 +251,7 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     parts = query.data.split(":")
     if len(parts) != 3:
-        await query.edit_message_text("داده‌های درخواست نامعتبر است.")
+        await query.edit_message_text("داده‌های درخواست نامعتبر است.", parse_mode="Markdown")
         return
 
     item_key = parts[1]
@@ -260,7 +260,7 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     country = db.get_country_by_player(update.effective_user.id)
     item = config.ALL_SHOP_ITEMS.get(item_key)
     if not country or not item:
-        await query.edit_message_text("خطا در انجام عملیات.")
+        await query.edit_message_text("خطا در انجام عملیات.", parse_mode="Markdown")
         return
 
     total_price = item["price"] * quantity

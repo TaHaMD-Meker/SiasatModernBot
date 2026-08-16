@@ -54,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     buttons = build_country_keyboard()
     if not buttons:
-        await update.message.reply_text("متأسفانه همه‌ی کشورها قبلاً انتخاب شدن!")
+        await update.message.reply_text("متأسفانه همه‌ی کشورها قبلاً انتخاب شدن!", parse_mode="Markdown")
         return
 
     await update.message.reply_text(
@@ -79,7 +79,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     existing = db.get_country_by_player(player_id)
     if existing:
-        await query.edit_message_text(f"تو از قبل کشور {existing['flag']} {existing['name']} رو داری!")
+        await query.edit_message_text(f"تو از قبل کشور {existing['flag']} {existing['name']} رو داری!", parse_mode="Markdown")
         await context.bot.send_message(
             chat_id=player_id,
             text="از دکمه‌های پایین صفحه استفاده کن 👇",
@@ -99,14 +99,14 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = query.data.split(":", 1)[1]
     info = config.COUNTRIES.get(key)
     if not info:
-        await query.edit_message_text("این کشور دیگه در دسترس نیست.")
+        await query.edit_message_text("این کشور دیگه در دسترس نیست.", parse_mode="Markdown")
         return
 
     # جلوگیری از انتخاب همزمان کشور توسط دو کاربر
     if key in db.get_taken_and_pending_country_keys():
         buttons = build_country_keyboard()
         if not buttons:
-            await query.edit_message_text("این کشور همین الان توسط کاربر دیگری درخواست شد!")
+            await query.edit_message_text("این کشور همین الان توسط کاربر دیگری درخواست شد!", parse_mode="Markdown")
             return
         await query.edit_message_text(
             "این کشور همین الان توسط یه بازیکن دیگه درخواست شد! یکی دیگه رو انتخاب کن:",
@@ -166,9 +166,9 @@ async def reset_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player_id = update.effective_user.id
     deleted = db.delete_country_by_player(player_id)
     if deleted:
-        await update.message.reply_text("✅ کشورت پاک شد. حالا می‌تونی دوباره /start رو بزنی.")
+        await update.message.reply_text("✅ کشورت پاک شد. حالا می‌تونی دوباره /start رو بزنی.", parse_mode="Markdown")
     else:
-        await update.message.reply_text("کشوری برای پاک کردن نداری.")
+        await update.message.reply_text("کشوری برای پاک کردن نداری.", parse_mode="Markdown")
 
 
 def get_start_handlers():

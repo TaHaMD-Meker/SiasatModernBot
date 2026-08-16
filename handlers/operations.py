@@ -18,7 +18,7 @@ async def require_country(update: Update):
     country = db.get_country_by_player(user_id)
     if not country:
         if update.message:
-            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.", parse_mode="Markdown")
         elif update.callback_query:
             await update.callback_query.answer("هنوز کشوری نساختی!", show_alert=True)
         return None
