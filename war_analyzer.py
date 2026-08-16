@@ -104,7 +104,7 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
 مهم بسیار حیاتی: از به کار بردن ایموجی‌های اضافی و کارتونی خودداری کن. لحن بسیار رسمی، سنگین و کارشناسی باشد. در صورت عدم وجود مرز زمینی یا موشکی بودن عملیات، به هیچ عنوان کلماتی مانند «پیشروی مرزی» یا «تصرف زمینی» به کار نبر!
 
 فرمت گزارش:
-**نتیجه سناریوی جنگی — ارزیابی عملیات {att_name} در برابر دفاع {def_name}**
+*نتیجه سناریوی جنگی — ارزیابی عملیات {att_name} در برابر دفاع {def_name}*
 پرونده: عملیات {att_name} / طرح دفاعی {def_name}
 ━━━━━━━━━━━━━━━━━━
 ...
@@ -226,16 +226,16 @@ def build_air_missile_report_text(att_flag, att_name, def_flag, def_name, attack
     """گزارش رسمی و سنگین نبرد موشکی/پدافندی."""
 
     lines = []
-    lines.append(f"**نتیجه سناریوی جنگی — ارزیابی عملیات موشکی/هوایی {att_name} در برابر دفاع {def_name}**")
+    lines.append(f"*نتیجه سناریوی جنگی — ارزیابی عملیات موشکی/هوایی {att_name} در برابر دفاع {def_name}*")
     lines.append(f"پرونده: طوفان موشکی-هوایی {att_flag} {att_name} / شبکه دفاع هوایی {def_flag} {def_name}")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **مرحله ۱: آماده‌سازی و شلیک پرتابه‌ها (۲۰:۰۰ – ۲۲:۰۰)**")
+    lines.append("■ *مرحله ۱: آماده‌سازی و شلیک پرتابه‌ها (۲۰:۰۰ – ۲۲:۰۰)*")
     lines.append(f"یگان‌های موشکی {att_name} شلیک دقیق پرتابه‌های کروز و بالستیک را به همراه پهپادها به سمت پایگاه‌های هوایی، راداری و خزانه‌های سوخت {def_name} آغاز کردند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **مرحله ۲: ورود به حریم هوایی و درگیری پدافند (۲۲:۰۰ – ۲۳:۳۰)**")
+    lines.append("■ *مرحله ۲: ورود به حریم هوایی و درگیری پدافند (۲۲:۰۰ – ۲۳:۳۰)*")
     lines.append(f"رادارهای هشدار زودهنگام {def_name} پرتابه‌های ورودی را شناسایی کردند.")
     lines.append(f"سامانه‌های پدافند هوایی چندلایه {def_name} جهت رهگیری شلیک شدند.")
     lines.append("نتیجه درگیری:")
@@ -244,19 +244,19 @@ def build_air_missile_report_text(att_flag, att_name, def_flag, def_name, attack
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **مرحله ۳: اصابت‌ها و خسارات زیرساختی (۲۳:۳۰ – ۰۵:۰۰)**")
+    lines.append("■ *مرحله ۳: اصابت‌ها و خسارات زیرساختی (۲۳:۳۰ – ۰۵:۰۰)*")
     lines.append("ارزیابی اهداف اصابت شده:")
-    lines.append(f"- **پایگاه‌های هوایی و سوله‌ها {def_name}:** آسیب به باندهای پرواز و سوله‌های نگهداری جنگنده‌ها.")
-    lines.append(f"- **مراکز پشتیبانی سوخت و C4I:** ورود خسارت به خزانه‌های سوخت و ایجاد اختلال موقت ارتباطی.\n")
+    lines.append(f"- *پایگاه‌های هوایی و سوله‌ها {def_name}:* آسیب به باندهای پرواز و سوله‌های نگهداری جنگنده‌ها.")
+    lines.append(f"- *مراکز پشتیبانی سوخت و C4I:* ورود خسارت به خزانه‌های سوخت و ایجاد اختلال موقت ارتباطی.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **مرحله ۴: آماده‌باش پدافند و گشت هوایی (۰۵:۰۰ – ۱۲:۰۰)**")
+    lines.append("■ *مرحله ۴: آماده‌باش پدافند و گشت هوایی (۰۵:۰۰ – ۱۲:۰۰)*")
     lines.append(f"جنگنده‌های {def_name} برای پوشش هوایی به پرواز درآمده و نیروهای امدادی پایگاه‌ها را تثبیت کردند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **جمع‌بندی نهایی سناریو:**")
+    lines.append("■ *جمع‌بندی نهایی سناریو:*")
     lines.append(f"عملکرد تهاجمی {att_name}: شلیک موثر پرتابه‌ها و تخریب بخشی از زیرساخت‌های کلیدی.")
     lines.append(f"عملکرد دفاعی {def_name}: رهگیری بخشی از موشک‌ها و جلوگیری از انهدام کامل پایگاه‌ها.\n")
 
@@ -264,7 +264,7 @@ def build_air_missile_report_text(att_flag, att_name, def_flag, def_name, attack
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **برآورد تلفات انسانی اولیه:**\n")
+    lines.append("■ *برآورد تلفات انسانی اولیه:*\n")
 
     lines.append(f"تلفات کشور مهاجم ({att_flag} {att_name}):")
     lines.append(f"• پرسنل نظامی: {losses['att_military_loss']} نفر (حمله از راه دور/بدون تلفات خاک خودی)")
@@ -281,28 +281,28 @@ def build_ground_invasion_report_text(att_flag, att_name, def_flag, def_name, at
     """گزارش نبردهای دارای تهاجم زمینی و مرزی."""
 
     lines = []
-    lines.append(f"**نتیجه سناریوی جنگی — ارزیابی عملیات زمینی {att_name} در برابر دفاع {def_name}**")
+    lines.append(f"*نتیجه سناریوی جنگی — ارزیابی عملیات زمینی {att_name} در برابر دفاع {def_name}*")
     lines.append(f"پرونده: تهاجم زمینی {att_flag} {att_name} / دفاع مرزی {def_flag} {def_name}")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **ساعت ۰۳:۰۰ — آغاز حمله**")
+    lines.append("■ *ساعت ۰۳:۰۰ — آغاز حمله*")
     lines.append("آتش‌پایه‌های توپخانه و حملات موشکی اولیه آغاز می‌شود.")
     lines.append("نتیجه: خطوط پاسگاهی مرزی زیر آتش سنگین قرار می‌گیرند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **ساعت ۰۶:۰۰ — ورود ستون‌های زرهی به محورهای مرزی**")
+    lines.append("■ *ساعت ۰۶:۰۰ — ورود ستون‌های زرهی به محورهای مرزی*")
     lines.append(f"پیشروی تانک‌ها و نفربرهای زرهی {att_name} در محورهای اصلی مرزی.")
     lines.append("درگیری شدید زرهی در مواضع پیشین مرزی.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **ساعت ۱۲:۰۰ — ورود نیروهای ذخیره مدافع**")
+    lines.append("■ *ساعت ۱۲:۰۰ — ورود نیروهای ذخیره مدافع*")
     lines.append(f"نیروهای ذخیره و یگان‌های ضدزره {def_name} وارد خطوط پدافندی می‌شوند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **برآورد تلفات انسانی اولیه:**\n")
+    lines.append("■ *برآورد تلفات انسانی اولیه:*\n")
 
     lines.append(f"تلفات کشور مهاجم ({att_flag} {att_name}):")
     lines.append(f"• پرسنل نظامی: {losses['att_military_loss']:,} نفر")
@@ -355,10 +355,10 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
 
     title_label = "مصرف‌شده/شلیک‌شده" if (is_attacker and op_type == "air_missile") else "تلفات تجهیزات"
     lines = []
-    lines.append(f"**{title_label} {c_flag} {c_name} — «{operation_name}»**")
+    lines.append(f"*{title_label} {c_flag} {c_name} — «{operation_name}»*")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("■ **تلفات انسانی:**")
+    lines.append("■ *تلفات انسانی:*")
     lines.append(f"> • پرسنل نظامی: {military_loss:,} نفر")
     lines.append(f"> • تلفات غیرنظامی: {civilian_loss:,} نفر\n")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
@@ -405,7 +405,7 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
         label = g_data["label"]
         items = g_data["items"]
 
-        lines.append(f"■ **{label}**\n")
+        lines.append(f"■ *{label}*\n")
 
         sub_sum = 0
         sub_unit = "واحد"
@@ -414,7 +414,7 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
         for item in items:
             sub_sum += item["loss"]
             sub_unit = item["unit"]
-            lines.append(f"> **{item['name']}**")
+            lines.append(f"> *{item['name']}*")
             lines.append(f"> قبل: {item['before']:,} {item['unit']}")
             lines.append(f"> {loss_word} {item['loss']:,} {item['unit']}")
             lines.append(f"> بعد: {item['after']:,} {item['unit']}\n")
@@ -426,13 +426,13 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
     sum_title = "جمع تسلیحات مصرف‌شده:" if (is_attacker and op_type == "air_missile") else "جمع کاهش تجهیزات ثبت‌شده:"
-    lines.append(f"■ **{sum_title}**\n")
+    lines.append(f"■ *{sum_title}*\n")
 
     for s_row in summary_rows:
         lines.append(f"> • {s_row}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-    lines.append("■ **ارزیابی مالی و استراتژیک:**\n")
+    lines.append("■ *ارزیابی مالی و استراتژیک:*\n")
     
     if total_usd_damage >= 1_000_000_000:
         damage_str = f"{total_usd_damage / 1_000_000_000:.2f} میلیارد دلار"
@@ -450,7 +450,7 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
         lines.append("> • زمان بازسازی و ترمیم زیرساخت‌ها: ۳ تا ۵ روز")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-    lines.append("■ **ارزیابی نهایی:**\n")
+    lines.append("■ *ارزیابی نهایی:*\n")
     if is_attacker and op_type == "air_missile":
         lines.append("> _عملیات شلیک با موفقیت کامل بدون تلفات انسانی نیروهای خودی اجرا گردید و پرتابه‌های شلیک‌شده طبق برنامه از دیتابیس کسر شدند._")
     else:

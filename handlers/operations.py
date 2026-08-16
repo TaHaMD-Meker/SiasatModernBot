@@ -37,11 +37,11 @@ async def operations_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remaining_roles = max(0, 2 - daily_count)
 
     text = (
-        f"🎯 **ستاد فرماندهی و ابلاغ عملیات {c['flag']} {c['name']}**\n"
+        f"🎯 *ستاد فرماندهی و ابلاغ عملیات {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "شما می‌توانید طرح‌ها و رول‌های نظامی خود را ثبت و جهت بررسی ادمین ارسال فرمایید.\n\n"
-        f"• **سقف مجاز روزانه:** ۲ رول (استفاده‌شده امروز: {daily_count} از ۲)\n"
-        f"• **امکان ثبت باقی‌مانده:** {remaining_roles} رول\n\n"
+        f"• *سقف مجاز روزانه:* ۲ رول (استفاده‌شده امروز: {daily_count} از ۲)\n"
+        f"• *امکان ثبت باقی‌مانده:* {remaining_roles} رول\n\n"
         "نوع رول مد نظر خود را انتخاب کنید:"
     )
 
@@ -80,7 +80,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
 
         if daily_count >= 2:
             await query.edit_message_text(
-                "⛔ **سقف مجاز روزانه پر شده است!**\n\nشما امروز سقف ۲ رول نظامی خود را ثبت کرده‌اید. فردا مجدداً می‌توانید رول جدید ثبت بفرمایید.",
+                "⛔ *سقف مجاز روزانه پر شده است!*\n\nشما امروز سقف ۲ رول نظامی خود را ثبت کرده‌اید. فردا مجدداً می‌توانید رول جدید ثبت بفرمایید.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
                 parse_mode="Markdown"
             )
@@ -92,14 +92,14 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         type_label = "📝 رول تهاجمی (حمله)" if role_type == "attack" else "🛡️ رول پدافندی (دفاع)"
 
         await query.edit_message_text(
-            f"🎯 **ثبت {type_label} — کشور {country['flag']} {country['name']}**\n\nلطفاً **متن کامل طرح، جزئیات عملیات و دستورات نظامی** خود را در پیام بعدی ارسال فرمایید:",
+            f"🎯 *ثبت {type_label} — کشور {country['flag']} {country['name']}*\n\nلطفاً *متن کامل طرح، جزئیات عملیات و دستورات نظامی* خود را در پیام بعدی ارسال فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="op:menu")]]),
             parse_mode="Markdown"
         )
 
     elif data == "op:my_roles":
         roles = db.get_country_roleplays(country["id"])
-        lines = [f"📋 **لیست رول‌های ثبت‌شده اخیر کشور {country['flag']} {country['name']}**\n━━━━━━━━━━━━━━━━━━\n"]
+        lines = [f"📋 *لیست رول‌های ثبت‌شده اخیر کشور {country['flag']} {country['name']}*\n━━━━━━━━━━━━━━━━━━\n"]
 
         if not roles:
             lines.append("هنوز هیچ رول نظامی ثبت نکرده‌اید.")
@@ -117,8 +117,8 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
                 s_lbl = status_labels.get(r["status"], r["status"])
                 short_text = r["role_text"][:60] + "..." if len(r["role_text"]) > 60 else r["role_text"]
 
-                lines.append(f"• **تاریخ {dt_str}** | **نوع:** {t_lbl}")
-                lines.append(f"  **وضعیت:** {s_lbl}")
+                lines.append(f"• *تاریخ {dt_str}* | *نوع:* {t_lbl}")
+                lines.append(f"  *وضعیت:* {s_lbl}")
                 lines.append(f'  _"{short_text}"_\n')
 
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]
@@ -153,13 +153,13 @@ async def operations_text_input_handler(update: Update, context: ContextTypes.DE
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else "بدون یوزرنیم"
 
     admin_msg = (
-        "📝 **رول نظامی جدید دریافتی جهت بررسی و تایید!**\n"
+        "📝 *رول نظامی جدید دریافتی جهت بررسی و تایید!*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"• **کشور:** {country['flag']} {country['name']}\n"
-        f"• **بازیکن:** {user_name_str} (ID: `{user_id}`)\n"
-        f"• **نوع رول:** {type_label}\n"
-        f"• **شناسه رول:** `{role_id}`\n\n"
-        f"📋 **متن کامل رول:**\n"
+        f"• *کشور:* {country['flag']} {country['name']}\n"
+        f"• *بازیکن:* {user_name_str} (ID: `{user_id}`)\n"
+        f"• *نوع رول:* {type_label}\n"
+        f"• *شناسه رول:* `{role_id}`\n\n"
+        f"📋 *متن کامل رول:*\n"
         f'"{text}"'
     )
 
@@ -180,7 +180,7 @@ async def operations_text_input_handler(update: Update, context: ContextTypes.DE
             pass
 
     await update.message.reply_text(
-        f"✅ **{type_label} شما با موفقیت ثبت شد.**\n\n"
+        f"✅ *{type_label} شما با موفقیت ثبت شد.*\n\n"
         "طرح عملیاتی شما جهت بررسی برای ستاد مدیریت ارسال گردید. پس از تایید ادمین، اطلاع‌رسانی خواهد شد.",
         parse_mode="Markdown",
         reply_markup=get_main_keyboard(user_id)

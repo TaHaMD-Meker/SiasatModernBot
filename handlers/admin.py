@@ -26,7 +26,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ این بخش فقط برای ادمین اصلی بازی مجاز است.")
         return
 
-    text = "👑 **پنل مدیریت بازی «سیاست مدرن»**\n\nلطفاً یک گزینه را انتخاب کنید:"
+    text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
@@ -79,7 +79,7 @@ async def show_countries_list(query, context, page: int = 0):
     keyboard.append(nav_row)
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin:menu")])
 
-    text = f"📋 **لیست کشورهای فعال (تعداد کل: {len(countries)})**\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
+    text = f"📋 *لیست کشورهای فعال (تعداد کل: {len(countries)})*\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
@@ -109,7 +109,7 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
     text = (
         f"{notice}\n\n" if notice else ""
     ) + (
-        f"🌐 **مدیریت کشور {c['flag']} {c['name']}**\n"
+        f"🌐 *مدیریت کشور {c['flag']} {c['name']}*\n"
         f"👤 شناسه تلگرام بازیکن: `{c['player_id']}`\n"
         f"🔑 کلید کشور: `{c['country_key'] or 'نامشخص'}`\n\n"
         f"👥 جمعیت: {format_number(c['population'])}\n"
@@ -153,7 +153,7 @@ async def menu_treasury(query, country_id: int):
     c = db.get_country_by_id(country_id)
     if not c:
         return
-    text = f"🏦 **تغییر خزانه کشور {c['flag']} {c['name']}**\nموجودی فعلی: {format_money(c['treasury'])}\n\nیکی از مقادیر زیر را انتخاب کنید یا مقدار دلخواه تایپ کنید:"
+    text = f"🏦 *تغییر خزانه کشور {c['flag']} {c['name']}*\nموجودی فعلی: {format_money(c['treasury'])}\n\nیکی از مقادیر زیر را انتخاب کنید یا مقدار دلخواه تایپ کنید:"
 
     keyboard = [
         [
@@ -180,7 +180,7 @@ async def menu_gold(query, country_id: int):
     c = db.get_country_by_id(country_id)
     if not c:
         return
-    text = f"🪙 **تغییر طلای کشور {c['flag']} {c['name']}**\nطلای فعلی: {format_number(c['gold'])}\n\nیک گزینه را انتخاب کنید:"
+    text = f"🪙 *تغییر طلای کشور {c['flag']} {c['name']}*\nطلای فعلی: {format_number(c['gold'])}\n\nیک گزینه را انتخاب کنید:"
 
     keyboard = [
         [
@@ -208,7 +208,7 @@ async def menu_oil(query, country_id: int):
     if not c:
         return
     text = (
-        f"🛢️ **تغییر وضعیت نفت کشور {c['flag']} {c['name']}**\n"
+        f"🛢️ *تغییر وضعیت نفت کشور {c['flag']} {c['name']}*\n"
         f"ذخایر فعلی: {format_oil(c['oil_reserves'])}\n"
         f"تولید روزانه فعلی: {format_oil(c['oil_production'])}/روز"
     )
@@ -239,7 +239,7 @@ async def menu_assets(query, country_id: int):
         return
 
     assets = db.get_country_assets(country_id)
-    text = f"🎖️ **مدیریت دارایی‌های نظامی اختصاصی {c['flag']} {c['name']}**\n\nیک سلاح/تجهیز را برای تغییر تعداد انتخاب کنید:"
+    text = f"🎖️ *مدیریت دارایی‌های نظامی اختصاصی {c['flag']} {c['name']}*\n\nیک سلاح/تجهیز را برای تغییر تعداد انتخاب کنید:"
 
     keyboard = []
     for a in assets:
@@ -262,7 +262,7 @@ async def menu_single_asset_item(query, country_id: int, equipment_key: str):
     prod_str = "بومی (قابل خرید در فروشگاه)" if asset.get("producible", 1) == 1 else "وارداتی (غیرقابل خرید در فروشگاه)"
 
     text = (
-        f"⚙️ **ویرایش دارایی نظامی:** {asset['equipment_name']}\n"
+        f"⚙️ *ویرایش دارایی نظامی:* {asset['equipment_name']}\n"
         f"کشور: {c['flag']} {c['name']}\n"
         f"نوع: `{prod_str}`\n"
         f"تعداد فعلی: `{format_number(asset['amount'])} {unit}`\n"
@@ -324,7 +324,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:stats":
         stats = db.get_game_stats()
         text = (
-            "📊 **آمار کلی بازی «سیاست مدرن»**\n\n"
+            "📊 *آمار کلی بازی «سیاست مدرن»*\n\n"
             f"🌐 تعداد کشورهای ساخته شده: `{stats['countries_count']}`\n"
             f"🏦 مجموع کل ثروت خزانه کشورها: {format_money(stats['total_treasury'])}\n"
             f"🪙 مجموع طلا در گردش: {format_number(stats['total_gold'])}\n"
@@ -336,19 +336,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:activity_logs":
         logs = db.get_recent_logs(20)
-        lines = ["📜 **رصد آخرین فعالیت‌ها و لاگ‌های سیستم**\n━━━━━━━━━━━━━━━━━━\n"]
+        lines = ["📜 *رصد آخرین فعالیت‌ها و لاگ‌های سیستم*\n━━━━━━━━━━━━━━━━━━\n"]
         if not logs:
             lines.append("هیچ لاگی در سیستم ثبت نشده است.")
         else:
             for lg in logs:
                 dt_str = lg.get("created_at", "")[:19].replace("T", " ")
-                lines.append(f"• `{dt_str}` | **کاربر:** `{lg.get('actor')}` | **عملیات:** `{lg.get('action')}` | {lg.get('details')}\n")
+                lines.append(f"• `{dt_str}` | *کاربر:* `{lg.get('actor')}` | *عملیات:* `{lg.get('action')}` | {lg.get('details')}\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:dip_logs":
         txs = db.get_recent_diplomatic_logs(20)
-        lines = ["✉️ **رصد آخرین معاهدات و تراکنش‌های دیپلماتیک**\n━━━━━━━━━━━━━━━━━━\n"]
+        lines = ["✉️ *رصد آخرین معاهدات و تراکنش‌های دیپلماتیک*\n━━━━━━━━━━━━━━━━━━\n"]
         if not txs:
             lines.append("هیچ معاهده یا تراکنش دیپلماتیکی ثبت نشده است.")
         else:
@@ -356,24 +356,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 dt_str = tx.get("created_at", "")[:19].replace("T", " ")
                 c = db.get_country_by_id(tx["country_id"])
                 c_name = f"{c['flag']} {c['name']}" if c else "نامشخص"
-                lines.append(f"• `{dt_str}` | **{c_name}:** {tx.get('description')} | **مبلغ/حجم:** {tx.get('amount')}\n")
+                lines.append(f"• `{dt_str}` | *{c_name}:* {tx.get('description')} | *مبلغ/حجم:* {tx.get('amount')}\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:rankings":
         rankings = db.get_country_rankings()
-        lines = ["🏆 **رتبه‌بندی ثروت و قدرتمندترین کشورها**\n━━━━━━━━━━━━━━━━━━\n"]
+        lines = ["🏆 *رتبه‌بندی ثروت و قدرتمندترین کشورها*\n━━━━━━━━━━━━━━━━━━\n"]
         if not rankings:
             lines.append("هیچ کشوری ساخته نشده است.")
         else:
             for idx, c in enumerate(rankings, 1):
-                lines.append(f"{idx}. {c['flag']} **{c['name']}** | 🏦 خزانه: {format_money(c['treasury'])} | 🪙 طلا: {c['gold']} | 🛢️ نفت: {format_oil(c['oil_reserves'])}\n")
+                lines.append(f"{idx}. {c['flag']} *{c['name']}* | 🏦 خزانه: {format_money(c['treasury'])} | 🪙 طلا: {c['gold']} | 🛢️ نفت: {format_oil(c['oil_reserves'])}\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:pending_roles":
         roles = db.get_pending_roleplays()
-        text = "📝 **مدیریت رول‌های نظامی معلق (تاییدنشده)**\n━━━━━━━━━━━━━━━━━━\n\n"
+        text = "📝 *مدیریت رول‌های نظامی معلق (تاییدنشده)*\n━━━━━━━━━━━━━━━━━━\n\n"
 
         if not roles:
             text += "✅ در حال حاضر هیچ رول تاییدنشده‌ای در انتظار بررسی وجود ندارد."
@@ -404,12 +404,12 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         type_label = "📝 رول تهاجمی (حمله)" if r["role_type"] == "attack" else "🛡️ رول پدافندی (دفاع)"
 
         text = (
-            f"📝 **بررسی رول نظامی — کشور {c_name}**\n"
+            f"📝 *بررسی رول نظامی — کشور {c_name}*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"• **نوع رول:** {type_label}\n"
-            f"• **تاریخ ثبت:** `{r.get('created_at', '')[:19].replace('T', ' ')}`\n"
-            f"• **شناسه عددی کاربر:** `{r['player_id']}`\n\n"
-            "📋 **متن کامل رول:**\n"
+            f"• *نوع رول:* {type_label}\n"
+            f"• *تاریخ ثبت:* `{r.get('created_at', '')[:19].replace('T', ' ')}`\n"
+            f"• *شناسه عددی کاربر:* `{r['player_id']}`\n\n"
+            "📋 *متن کامل رول:*\n"
             f'"{r["role_text"]}"'
         )
 
@@ -435,8 +435,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         p_id = r["player_id"]
         type_label = "تهاجمی (حمله)" if r["role_type"] == "attack" else "پدافندی (دفاع)"
         player_msg = (
-            f"✅ **رول نظامی {type_label} شما توسط مدیریت بازی تایید شد!**\n\n"
-            f"👑 **کشور {c_name}:** طرح عملیاتی شما جهت ارزیابی و شبیه‌سازی نبرد وارد ستاد فرماندهی گردید."
+            f"✅ *رول نظامی {type_label} شما توسط مدیریت بازی تایید شد!*\n\n"
+            f"👑 *کشور {c_name}:* طرح عملیاتی شما جهت ارزیابی و شبیه‌سازی نبرد وارد ستاد فرماندهی گردید."
         )
         try:
             await context.bot.send_message(chat_id=p_id, text=player_msg, parse_mode="Markdown")
@@ -444,7 +444,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به لیست رول‌های معلق", callback_data="admin:pending_roles")]]
-        await query.edit_message_text(f"✅ **رول کشور {c_name} با موفقیت تایید و از لیست معوقات حذف گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"✅ *رول کشور {c_name} با موفقیت تایید و از لیست معوقات حذف گردید.*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("admin:rej_role:"):
         role_id = int(data.split(":")[2])
@@ -460,8 +460,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         p_id = r["player_id"]
         type_label = "تهاجمی (حمله)" if r["role_type"] == "attack" else "پدافندی (دفاع)"
         player_msg = (
-            f"❌ **رول نظامی {type_label} شما توسط مدیریت بازی رد شد.**\n\n"
-            f"👑 **کشور {c_name}:** می‌توانید با اصلاح جزئیات، رول جدیدی از بخش 🎯 عملیات ثبت نمایید."
+            f"❌ *رول نظامی {type_label} شما توسط مدیریت بازی رد شد.*\n\n"
+            f"👑 *کشور {c_name}:* می‌توانید با اصلاح جزئیات، رول جدیدی از بخش 🎯 عملیات ثبت نمایید."
         )
         try:
             await context.bot.send_message(chat_id=p_id, text=player_msg, parse_mode="Markdown")
@@ -469,24 +469,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به لیست رول‌های معلق", callback_data="admin:pending_roles")]]
-        await query.edit_message_text(f"❌ **رول کشور {c_name} رد شد و از لیست معوقات حذف گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"❌ *رول کشور {c_name} رد شد و از لیست معوقات حذف گردید.*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("admin:c_tx_logs:"):
         c_id = int(data.split(":")[2])
         c = db.get_country_by_id(c_id)
         txs = db.get_country_transactions(c_id, 20)
-        lines = [f"📜 **تراکنش‌ها و فعالیت‌های اخیر کشور {c['flag']} {c['name']}**\n━━━━━━━━━━━━━━━━━━\n"]
+        lines = [f"📜 *تراکنش‌ها و فعالیت‌های اخیر کشور {c['flag']} {c['name']}*\n━━━━━━━━━━━━━━━━━━\n"]
         if not txs:
             lines.append("هیچ تراکنشی برای این کشور ثبت نشده است.")
         else:
             for tx in txs:
                 dt_str = tx.get("created_at", "")[:19].replace("T", " ")
-                lines.append(f"• `{dt_str}` | **شرح:** {tx.get('description')} | **نوع:** `{tx.get('type')}`\n")
+                lines.append(f"• `{dt_str}` | *شرح:* {tx.get('description')} | *نوع:* `{tx.get('type')}`\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{c['id']}")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_start":
-        text = "🧠 **بخش تحلیل هوشمند نبرد و سناریو (AI War Analysis)**\n\nلطفاً **کشور مهاجم** را انتخاب کنید:"
+        text = "🧠 *بخش تحلیل هوشمند نبرد و سناریو (AI War Analysis)*\n\nلطفاً *کشور مهاجم* را انتخاب کنید:"
         keyboard = []
         row = []
         for k, c in config.COUNTRIES.items():
@@ -510,8 +510,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["admin_awaiting_input"] = {"type": "war_role_att", "attacker_key": att_key}
 
         text = (
-            f"📝 **رول و برنامه عملیاتی کشور مهاجم ({flag} {name})**\n\n"
-            "لطفاً **رول / نقشه عملیاتی و توضیحات تهاجمی** ارسال‌شده توسط بازیکن مهاجم را ارسال فرمایید:"
+            f"📝 *رول و برنامه عملیاتی کشور مهاجم ({flag} {name})*\n\n"
+            "لطفاً *رول / نقشه عملیاتی و توضیحات تهاجمی* ارسال‌شده توسط بازیکن مهاجم را ارسال فرمایید:"
         )
         keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -526,8 +526,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["admin_awaiting_input"] = {"type": "war_role_def", "defender_key": def_key}
 
         text = (
-            f"🛡️ **طرح و رول دفاعی / پدافندی کشور مدافع ({flag} {name})**\n\n"
-            "لطفاً **رول یا طرح دفاع هوایی / پدافندی** ارسال‌شده توسط بازیکن مدافع را ارسال فرمایید:\n"
+            f"🛡️ *طرح و رول دفاعی / پدافندی کشور مدافع ({flag} {name})*\n\n"
+            "لطفاً *رول یا طرح دفاع هوایی / پدافندی* ارسال‌شده توسط بازیکن مدافع را ارسال فرمایید:\n"
             "*(در صورت عدم ارسال رول توسط بازیکن مدافع، عدد ۰ یا کلمه 'هیچ' را بفرستید)*"
         )
         keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="admin:menu")]]
@@ -543,7 +543,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
             return
 
-        await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
+        await query.edit_message_text("🧠 *در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...*\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
 
@@ -596,8 +596,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             ]
 
             await query.edit_message_text(
-                "✅ **تلفات و خسارات فوق با موفقیت در دیتابیس ثبت و کسر گردید.**\n\n"
-                "📋 **فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:**",
+                "✅ *تلفات و خسارات فوق با موفقیت در دیتابیس ثبت و کسر گردید.*\n\n"
+                "📋 *فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
@@ -627,7 +627,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                         pass
             keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
             await query.message.reply_text(
-                f"📢 **فاکتورهای دقیق تلفات با موفقیت به {sent_count} بازیکن ارسال شد.**",
+                f"📢 *فاکتورهای دقیق تلفات با موفقیت به {sent_count} بازیکن ارسال شد.*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
@@ -648,14 +648,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                         pass
             keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
             await query.edit_message_text(
-                f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 **گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن ارسال گردید.**",
+                f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 *گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن ارسال گردید.*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
 
     elif data == "admin:sync_catalog":
         db.sync_all_country_assets_to_catalog()
-        text = "⚡ **همگام‌سازی کامل انجام شد!**\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
+        text = "⚡ *همگام‌سازی کامل انجام شد!*\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -663,7 +663,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         from main import daily_income_job
         count = await daily_income_job(context, force=True)
         await query.edit_message_text(
-            f"⚡ **درآمد روزانه و گزارش کشورها با موفقیت برای {count} کشور واریز و ارسال شد!**",
+            f"⚡ *درآمد روزانه و گزارش کشورها با موفقیت برای {count} کشور واریز و ارسال شد!*",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]),
             parse_mode="Markdown"
         )
@@ -694,14 +694,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.add_log(actor=str(user_id), action="approve_country", details=f"{c_key} to {req['player_id']}")
 
         await query.edit_message_text(
-            f"✅ **کشور {c_info['flag']} {c_info['name']} با موفقیت به کاربر @{req['username']} (ID: `{req['player_id']}`) واگذار گردید.**",
+            f"✅ *کشور {c_info['flag']} {c_info['name']} با موفقیت به کاربر @{req['username']} (ID: `{req['player_id']}`) واگذار گردید.*",
             parse_mode="Markdown"
         )
 
         p_id = req["player_id"]
         congratulations_msg = (
-            f"🎉 **تبریک! درخواست انتخاب کشور شما توسط مدیریت عالی بازی تایید گردید.**\n\n"
-            f"👑 **رهبر گرامی، کشور {c_info['flag']} {c_info['name']} با موفقیت به شما واگذار شد.**\n\n"
+            f"🎉 *تبریک! درخواست انتخاب کشور شما توسط مدیریت عالی بازی تایید گردید.*\n\n"
+            f"👑 *رهبر گرامی، کشور {c_info['flag']} {c_info['name']} با موفقیت به شما واگذار شد.*\n\n"
             "آرزوی موفقیت، اقتدار و سربلندی برای دولت و ملت شما در عرصه بین‌المللی داریم.\n"
             "هم‌اکنون کیبورد مدیریت کشور در پایین صفحه برای شما فعال گردید 👇"
         )
@@ -730,7 +730,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.add_log(actor=str(user_id), action="reject_country", details=f"{c_key} for {p_id}")
 
         await query.edit_message_text(
-            f"❌ **درخواست کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} برای کاربر @{req['username']} رد شد.**",
+            f"❌ *درخواست کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} برای کاربر @{req['username']} رد شد.*",
             parse_mode="Markdown"
         )
 
@@ -738,7 +738,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await context.bot.send_message(
                 chat_id=p_id,
                 text=(
-                    f"❌ **درخواست شما برای انتخاب کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} توسط ادمین بازی رد شد.**\n\n"
+                    f"❌ *درخواست شما برای انتخاب کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} توسط ادمین بازی رد شد.*\n\n"
                     "می‌توانید با ارسال دستور /start کشور دیگری را انتخاب نمایید."
                 ),
                 parse_mode="Markdown"
@@ -813,7 +813,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         }
 
         await query.edit_message_text(
-            f"✏️ **تنظیم سفارشی {field_names.get(field, field)} برای کشور {c['name']}**\n\n"
+            f"✏️ *تنظیم سفارشی {field_names.get(field, field)} برای کشور {c['name']}*\n\n"
             f"لطفاً عدد جدید مورد نظر را در یک پیام بفرستید (مثلاً `250000000`):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c:{c_id}")]])
         )
@@ -826,7 +826,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["admin_awaiting_input"] = {"type": "asset_amount", "country_id": c_id, "equipment_key": equipment_key}
 
         await query.edit_message_text(
-            f"✏️ **تنظیم تعداد {asset['equipment_name']} برای کشور {c['name']}**\n\n"
+            f"✏️ *تنظیم تعداد {asset['equipment_name']} برای کشور {c['name']}*\n\n"
             f"لطفاً تعداد جدید مورد نظر را ارسال کنید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:asset_item:{c_id}:{equipment_key}")]])
         )
@@ -837,7 +837,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["admin_awaiting_input"] = {"type": "direct_msg", "country_id": c_id, "player_id": c["player_id"]}
 
         await query.edit_message_text(
-            f"✉️ **ارسال پیام مستقیم به رهبر {c['flag']} {c['name']}**\n\n"
+            f"✉️ *ارسال پیام مستقیم به رهبر {c['flag']} {c['name']}*\n\n"
             f"متن پیام خود را بنویسید تا مستقیماً برای بازیکن ارسال شود:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c:{c_id}")]])
         )
@@ -845,7 +845,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:broadcast_prompt":
         context.user_data["admin_awaiting_input"] = {"type": "broadcast"}
         await query.edit_message_text(
-            "📢 **ارسال پیام همگانی به تمام بازیکنان**\n\n"
+            "📢 *ارسال پیام همگانی به تمام بازیکنان*\n\n"
             "متن پیام اعلان بازی را ارسال کنید تا برای تمام رهبران کشورها فرستاده شود:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")]])
         )
@@ -854,9 +854,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["admin_awaiting_input"] = {"type": "set_channel"}
         curr_ch = config.get_channel_id()
         await query.edit_message_text(
-            f"📢 **تنظیم آیدی کانال تلگرام جهت انتشار بیانیه‌ها و توییت‌ها**\n━━━━━━━━━━━━━━━━━━\n\n"
-            f"• **آیدی کانال فعلی:** `{curr_ch}`\n\n"
-            "لطفاً **آیدی یا شناسه عددی کانال تلگرام** خود را ارسال فرمایید (مثلاً: `@ModernWarFarChannel` یا `-1001234567890`):",
+            f"📢 *تنظیم آیدی کانال تلگرام جهت انتشار بیانیه‌ها و توییت‌ها*\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"• *آیدی کانال فعلی:* `{curr_ch}`\n\n"
+            "لطفاً *آیدی یا شناسه عددی کانال تلگرام* خود را ارسال فرمایید (مثلاً: `@ModernWarFarChannel` یا `-1001234567890`):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")]]),
             parse_mode="Markdown"
         )
@@ -866,7 +866,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         c_id = int(data.split(":")[2])
         c = db.get_country_by_id(c_id)
         text = (
-            f"⚠️ **آیا از حذف کامل کشور {c['flag']} {c['name']} مطمئن هستید؟**\n\n"
+            f"⚠️ *آیا از حذف کامل کشور {c['flag']} {c['name']} مطمئن هستید؟*\n\n"
             f"• شناسه بازیکن: `{c['player_id']}`\n"
             f"• تمام ثروت، طلا، نفت و تجهیزات این کشور حذف خواهد شد و بازیکن می‌تواند دوباره /start بزند.\n"
             f"این عمل غیرقابل بازگشت است!"
@@ -884,7 +884,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             name = c["name"]
             db.delete_country_by_id(c_id)
             await query.edit_message_text(
-                f"✅ کشور **{name}** با موفقیت و به‌طور کامل حذف شد.",
+                f"✅ کشور *{name}* با موفقیت و به‌طور کامل حذف شد.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📋 بازگشت به لیست کشورها", callback_data="admin:list:0")]])
             )
 
@@ -937,7 +937,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         try:
             await context.bot.send_message(
                 chat_id=player_id,
-                text=f"📩 **پیام مستقیم از طرف ادمین بازی:**\n\n{text}",
+                text=f"📩 *پیام مستقیم از طرف ادمین بازی:*\n\n{text}",
                 parse_mode="Markdown"
             )
             await update.message.reply_text(f"✅ پیام شما با موفقیت برای رهبر کشور {c['name']} ارسال شد.")
@@ -958,8 +958,8 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         name = c_info.get("name", att_key)
 
         text_msg = (
-            f"🎯 **رول و برنامه عملیاتی کشور {flag} {name} دریافت گردید.**\n\n"
-            "اکنون **کشور مدافع** را جهت ارزیابی و شبیه‌سازی نبرد انتخاب فرمایید:"
+            f"🎯 *رول و برنامه عملیاتی کشور {flag} {name} دریافت گردید.*\n\n"
+            "اکنون *کشور مدافع* را جهت ارزیابی و شبیه‌سازی نبرد انتخاب فرمایید:"
         )
 
         keyboard = []
@@ -989,7 +989,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         context.user_data["war_analysis"]["defender_role"] = def_role
 
-        await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
+        await update.message.reply_text("🧠 *در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...*\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
 
@@ -1014,8 +1014,8 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
     elif input_type == "set_channel":
         db.set_setting("channel_id", text)
         await update.message.reply_text(
-            f"✅ **آیدی کانال تلگرام با موفقیت بروزرسانی شد!**\n\n"
-            f"• **کانال جدید:** `{text}`\n\n"
+            f"✅ *آیدی کانال تلگرام با موفقیت بروزرسانی شد!*\n\n"
+            f"• *کانال جدید:* `{text}`\n\n"
             "کافیست ربات را در این کانال به‌عنوان ادمین با دسترسی ارسال پیام اضافه فرمایید تا بیانیه‌ها و توییت‌ها مستقیماً در آن منتشر شوند.",
             parse_mode="Markdown"
         )
@@ -1024,7 +1024,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         countries = db.get_all_countries()
         success_count = 0
         fail_count = 0
-        msg_text = f"📢 **اطلاعیه همگانی ادمین بازی:**\n\n{text}"
+        msg_text = f"📢 *اطلاعیه همگانی ادمین بازی:*\n\n{text}"
 
         for c in countries:
             try:
@@ -1034,7 +1034,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
                 fail_count += 1
 
         await update.message.reply_text(
-            f"📢 **نتیجه ارسال پیام همگانی:**\n\n"
+            f"📢 *نتیجه ارسال پیام همگانی:*\n\n"
             f"✅ ارسال موفق به: {success_count} کشور\n"
             f"❌ ناموفق: {fail_count} کشور"
         )

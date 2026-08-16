@@ -36,12 +36,12 @@ async def statements_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = (
-        f"📢 **سامانه بیانیه‌ها و تریبون رسمی کشور {c['flag']} {c['name']}**\n"
+        f"📢 *سامانه بیانیه‌ها و تریبون رسمی کشور {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "لطفاً یک بخش را انتخاب کنید:\n\n"
-        "• **📢 ثبت بیانیه رسمی:** ثبت بیانیه رسمی با پوستر تصویری و ارسال به کانال\n"
-        "• **✍️ رسمی‌سازی متن (AI):** تبدیل متون محاوره‌ای به بیانیه‌های فاخر دیپلماتیک جهت کپی\n"
-        "• **🐦 ثبت توییت:** انتشار توییت‌های کوتاه واکنش سریع در کانال بازی"
+        "• *📢 ثبت بیانیه رسمی:* ثبت بیانیه رسمی با پوستر تصویری و ارسال به کانال\n"
+        "• *✍️ رسمی‌سازی متن (AI):* تبدیل متون محاوره‌ای به بیانیه‌های فاخر دیپلماتیک جهت کپی\n"
+        "• *🐦 ثبت توییت:* انتشار توییت‌های کوتاه واکنش سریع در کانال بازی"
     )
 
     keyboard = [
@@ -76,19 +76,19 @@ async def statements_callback_handler(update: Update, context: ContextTypes.DEFA
     elif data == "stmt:mode:statement":
         context.user_data["statement_input"] = {"type": "official_statement"}
         text = (
-            f"📢 **ثبت بیانیه رسمی کشور {country['flag']} {country['name']}**\n"
+            f"📢 *ثبت بیانیه رسمی کشور {country['flag']} {country['name']}*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "⚠️ **قوانین ثبت بیانیه:**\n"
-            "۱. ارسال **پوستر / عکس رسمی** همراه با متن الزامی است (بدون عکس تایید نمی‌شود).\n"
-            "۲. متن بیانیه باید رسمی و **حداقل دارای ۳ سطر** باشد.\n\n"
-            "لطفاً **عکس بیانیه را همراه با زیرنویس (Caption)** ارسال فرمایید:"
+            "⚠️ *قوانین ثبت بیانیه:*\n"
+            "۱. ارسال *پوستر / عکس رسمی* همراه با متن الزامی است (بدون عکس تایید نمی‌شود).\n"
+            "۲. متن بیانیه باید رسمی و *حداقل دارای ۳ سطر* باشد.\n\n"
+            "لطفاً *عکس بیانیه را همراه با زیرنویس (Caption)* ارسال فرمایید:"
         )
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="stmt:menu")]]), parse_mode="Markdown")
 
     elif data == "stmt:mode:rewrite":
         context.user_data["statement_input"] = {"type": "ai_rewrite"}
         text = (
-            f"✍️ **سامانه رسمی‌سازی هوشمند متون (AI Rewriter)**\n"
+            f"✍️ *سامانه رسمی‌سازی هوشمند متون (AI Rewriter)*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "لطفاً متن ساده، محاوره‌ای یا خامی که می‌خواهید به یک بیانیه رسمی فاخر تبدیل شود را ارسال بفرمایید:\n\n"
             "*(ربات متن شما را به یک بیانیه ۳ سطری سنگین دیپلماتیک تبدیل کرده و جهت کپی در یک پیام برای شما می‌فرستد)*"
@@ -98,7 +98,7 @@ async def statements_callback_handler(update: Update, context: ContextTypes.DEFA
     elif data == "stmt:mode:tweet":
         context.user_data["statement_input"] = {"type": "official_tweet"}
         text = (
-            f"🐦 **ثبت توییت کشوری — {country['flag']} {country['name']}**\n"
+            f"🐦 *ثبت توییت کشوری — {country['flag']} {country['name']}*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "لطفاً متن توییت یا واکنش سریع کوتاه خود را جهت انتشار در کانال ارسال فرمایید:"
         )
@@ -113,7 +113,7 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     # Check photo attachment
     if not update.message.photo:
         await update.message.reply_text(
-            "⚠️ **ثبت بیانیه انجام نشد:**\n\nارسال **پوستر / تصویر رسمی** الزامی است! لطفاً بیانیه خود را به‌صورت عکس همراه با متن زیرنویس (Caption) ارسال فرمایید.",
+            "⚠️ *ثبت بیانیه انجام نشد:*\n\nارسال *پوستر / تصویر رسمی* الزامی است! لطفاً بیانیه خود را به‌صورت عکس همراه با متن زیرنویس (Caption) ارسال فرمایید.",
             parse_mode="Markdown",
             reply_markup=get_main_keyboard(update.effective_user.id)
         )
@@ -124,7 +124,7 @@ async def process_official_statement_input(update: Update, context: ContextTypes
 
     if len(lines) < 3 or len(caption) < 40:
         await update.message.reply_text(
-            "⚠️ **متن بیانیه کوتاه است:**\n\nمتن بیانیه رسمی باید **حداقل دارای ۳ سطر کامل** و رسمی باشد. لطفاً متن را اصلاح نموده و مجدداً با تصویر ارسال بفرمایید.",
+            "⚠️ *متن بیانیه کوتاه است:*\n\nمتن بیانیه رسمی باید *حداقل دارای ۳ سطر کامل* و رسمی باشد. لطفاً متن را اصلاح نموده و مجدداً با تصویر ارسال بفرمایید.",
             parse_mode="Markdown",
             reply_markup=get_main_keyboard(update.effective_user.id)
         )
@@ -157,7 +157,7 @@ async def process_official_statement_input(update: Update, context: ContextTypes
         print(f"Channel post error: {e}")
 
     # Confirm to player
-    conf_msg = f"✅ **بیانیه رسمی کشور {country['flag']} {country['name']} با موفقیت ثبت شد!**\n\n"
+    conf_msg = f"✅ *بیانیه رسمی کشور {country['flag']} {country['name']} با موفقیت ثبت شد!*\n\n"
     if posted_to_channel:
         conf_msg += "📢 این بیانیه مستقیماً در کانال رسمی بازی منتشر گردید."
     else:
@@ -170,7 +170,7 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
     """رسمی‌سازی هوشمند متن محاوره‌ای به بیانیه ۳ سطری دیپلماتیک."""
     
     raw_text = update.message.text.strip()
-    await update.message.reply_text("✍️ **در حال رسمی‌سازی متن و نگارش بیانیه فاخر دیپلماتیک...**\nلطفاً شکیبا باشید...")
+    await update.message.reply_text("✍️ *در حال رسمی‌سازی متن و نگارش بیانیه فاخر دیپلماتیک...*\nلطفاً شکیبا باشید...")
 
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
     polished_text = None
@@ -247,7 +247,7 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     except Exception as e:
         print(f"Channel tweet error: {e}")
 
-    conf_msg = f"✅ **توییت رسمی کشور {country['flag']} {country['name']} منتشر گردید!**\n\n"
+    conf_msg = f"✅ *توییت رسمی کشور {country['flag']} {country['name']} منتشر گردید!*\n\n"
     if posted_to_channel:
         conf_msg += "📢 توییت شما در کانال رسمی بازی قرار گرفت."
     else:

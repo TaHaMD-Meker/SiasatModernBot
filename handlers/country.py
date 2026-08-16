@@ -35,7 +35,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     app_icon = "🟢" if app_val >= 75 else ("🟡" if app_val >= 50 else ("🟠" if app_val >= 40 else "🔴"))
 
     text = (
-        f"{c['flag']} **وضعیت کشور {c['name']}**\n\n"
+        f"{c['flag']} *وضعیت کشور {c['name']}*\n\n"
         f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
         f"👥 جمعیت: {format_number(c['population'])}\n"
         f"💰 درآمد مالیاتی: {format_money(c['tax_income'])}\n"
@@ -148,15 +148,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📜 راهنمای بازی «سیاست مدرن»\n\n"
         "شما می‌توانید از دکمه‌های ثابت پایین صفحه یا دستورات زیر استفاده کنید:\n\n"
-        "🌐 **وضعیت کشور** (`/country`)\n"
-        "🏦 **خزانه و طلا** (`/treasury`)\n"
-        "🛢️ **وضعیت نفت** (`/oil`)\n"
-        "🪖 **وضعیت ارتش** (`/army`)\n"
-        "🏪 **فروشگاه** (`/shop`)\n"
-        "📜 **راهنما** (`/help`)"
+        "🌐 *وضعیت کشور* (`/country`)\n"
+        "🏦 *خزانه و طلا* (`/treasury`)\n"
+        "🛢️ *وضعیت نفت* (`/oil`)\n"
+        "🪖 *وضعیت ارتش* (`/army`)\n"
+        "🏪 *فروشگاه* (`/shop`)\n"
+        "📜 *راهنما* (`/help`)"
     )
 
     if is_adm:
-        text += "\n\n👑 **پنل مدیریت:** فقط برای ادمین اصلی بازی فعال است."
+        text += "\n\n👑 *پنل مدیریت:* فقط برای ادمین اصلی بازی فعال است."
 
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))

@@ -21,13 +21,13 @@ async def check_and_alert_anti_cheat(context, proposer_c, recipient_c, amount_va
             r_user = f"@{recipient_c.get('username')}" if recipient_c.get('username') else "بدون_آیدی"
 
             alert_text = (
-                "🚨 **هشدار هوشمند آنتی‌چیت (احتمال مولتی‌اکانت / تقلب)**\n"
+                "🚨 *هشدار هوشمند آنتی‌چیت (احتمال مولتی‌اکانت / تقلب)*\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"• **فرستنده:** {proposer_c['flag']} {proposer_c['name']} (کاربر: {p_user} | ID: `{proposer_c['player_id']}`)\n"
-                f"• **گیرنده:** {recipient_c['flag']} {recipient_c['name']} (کاربر: {r_user} | ID: `{recipient_c['player_id']}`)\n\n"
-                f"• **نوع تراکنش:** {tx_type_label}\n"
-                f"• **حجم/ارزش:** {amount_val}\n\n"
-                "⚠️ **توضیحات:** حجم جابه‌جایی منابع/تسلیحات از آستانه هشدار گذشته است."
+                f"• *فرستنده:* {proposer_c['flag']} {proposer_c['name']} (کاربر: {p_user} | ID: `{proposer_c['player_id']}`)\n"
+                f"• *گیرنده:* {recipient_c['flag']} {recipient_c['name']} (کاربر: {r_user} | ID: `{recipient_c['player_id']}`)\n\n"
+                f"• *نوع تراکنش:* {tx_type_label}\n"
+                f"• *حجم/ارزش:* {amount_val}\n\n"
+                "⚠️ *توضیحات:* حجم جابه‌جایی منابع/تسلیحات از آستانه هشدار گذشته است."
             )
             kb = [[InlineKeyboardButton(f"🔍 بررسی کشور فرستنده ({proposer_c['name']})", callback_data=f"admin:c:{proposer_c['id']}")]]
             await context.bot.send_message(chat_id=admin_id, text=alert_text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -55,14 +55,14 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = (
-        f"🌐 **اتاق دیپلماسی و روابط بین‌الملل {c['flag']} {c['name']}**\n"
+        f"🌐 *اتاق دیپلماسی و روابط بین‌الملل {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "لطفاً یک بخش را انتخاب کنید:\n\n"
-        "• **یادداشت دیپلماتیک:** ارسال پیام رسمی به سایر کشورها\n"
-        "• **قرارداد تجاری:** مبادله نفت، غلات، طلا و پول با معاهده رسمی\n"
-        "• **انتقال/فروش تسلیحات:** انتقال تجهیزات نظامی از دارایی‌های کشوری\n"
-        "• **کمک خارجی:** ارسال کمک‌های انسان‌دوستانه بدون مابه‌ازا\n"
-        "• **روابط و تحریم‌ها:** مدیریت اتحادها و تحریم‌های یک‌طرفه"
+        "• *یادداشت دیپلماتیک:* ارسال پیام رسمی به سایر کشورها\n"
+        "• *قرارداد تجاری:* مبادله نفت، غلات، طلا و پول با معاهده رسمی\n"
+        "• *انتقال/فروش تسلیحات:* انتقال تجهیزات نظامی از دارایی‌های کشوری\n"
+        "• *کمک خارجی:* ارسال کمک‌های انسان‌دوستانه بدون مابه‌ازا\n"
+        "• *روابط و تحریم‌ها:* مدیریت اتحادها و تحریم‌های یک‌طرفه"
     )
 
     keyboard = [
@@ -89,7 +89,7 @@ async def dip_message_start(query, context, country):
         await query.edit_message_text("❌ هیچ کشور دیگری در بازی ثبت نشده است.")
         return
 
-    text = "✉️ **ارسال یادداشت دیپلماتیک رسمی**\n\nلطفاً کشور مقصد را انتخاب فرمایید:"
+    text = "✉️ *ارسال یادداشت دیپلماتیک رسمی*\n\nلطفاً کشور مقصد را انتخاب فرمایید:"
     keyboard = []
     row = []
     for c in other_countries:
@@ -115,7 +115,7 @@ async def dip_trade_start(query, context, country):
         await query.edit_message_text("❌ هیچ کشور دیگری در بازی برای معامله وجود ندارد.")
         return
 
-    text = "📜 **پیشنهاد قرارداد تجاری رسمی**\n\nلطفاً طرف دوم قرارداد (کشور مخاطب) را انتخاب کنید:"
+    text = "📜 *پیشنهاد قرارداد تجاری رسمی*\n\nلطفاً طرف دوم قرارداد (کشور مخاطب) را انتخاب کنید:"
     keyboard = []
     row = []
     for c in other_countries:
@@ -146,7 +146,7 @@ async def dip_military_start(query, context, country):
         await query.edit_message_text("❌ هیچ کشور دیگری در بازی وجود ندارد.")
         return
 
-    text = "🎖️ **انتقال / فروش تسلیحات نظامی**\n\nلطفاً کشور دریافت‌کننده تسلیحات را انتخاب بفرمایید:"
+    text = "🎖️ *انتقال / فروش تسلیحات نظامی*\n\nلطفاً کشور دریافت‌کننده تسلیحات را انتخاب بفرمایید:"
     keyboard = []
     row = []
     for c in other_countries:
@@ -169,7 +169,7 @@ async def dip_aid_start(query, context, country):
     countries = db.get_all_countries()
     other_countries = [c for c in countries if c["id"] != country["id"]]
 
-    text = "🕊️ **ارسال کمک‌های خارجی و انسان‌دوستانه**\n\nلطفاً کشور دریافت‌کننده کمک را انتخاب کنید:"
+    text = "🕊️ *ارسال کمک‌های خارجی و انسان‌دوستانه*\n\nلطفاً کشور دریافت‌کننده کمک را انتخاب کنید:"
     keyboard = []
     row = []
     for c in other_countries:
@@ -191,7 +191,7 @@ async def dip_relations_menu(query, context, country):
     countries = db.get_all_countries()
     other_countries = [c for c in countries if c["id"] != country["id"]]
 
-    lines = [f"🤝 **مدیریت روابط دیپلماتیک و تحریم‌های کشور {country['flag']} {country['name']}**\n"]
+    lines = [f"🤝 *مدیریت روابط دیپلماتیک و تحریم‌های کشور {country['flag']} {country['name']}*\n"]
     keyboard = []
 
     for c in other_countries:
@@ -200,17 +200,17 @@ async def dip_relations_menu(query, context, country):
         s_by = rel.get("sanctioned_by", 0)
 
         if st == "allied":
-            status_text = "🟢 **متحد رسمی**"
+            status_text = "🟢 *متحد رسمی*"
             act_btn = InlineKeyboardButton("💔 لغو اتحاد", callback_data=f"dip:rel_act:break:{c['id']}")
         elif st == "sanctioned":
             if s_by == country["id"]:
-                status_text = "🔴 **تحریم‌شده توسط شما**"
+                status_text = "🔴 *تحریم‌شده توسط شما*"
                 act_btn = InlineKeyboardButton("🔓 لغو تحریم", callback_data=f"dip:rel_act:unsanction:{c['id']}")
             else:
-                status_text = "🔴 **شما را تحریم کرده**"
+                status_text = "🔴 *شما را تحریم کرده*"
                 act_btn = InlineKeyboardButton("🚫 تحریم متقابل", callback_data=f"dip:rel_act:sanction:{c['id']}")
         else:
-            status_text = "⚪ **روابط عادی**"
+            status_text = "⚪ *روابط عادی*"
             act_btn = InlineKeyboardButton("🤝 پیشنهاد اتحاد", callback_data=f"dip:rel_act:propose_alliance:{c['id']}")
 
         sanc_btn = InlineKeyboardButton("🚫 تحریم", callback_data=f"dip:rel_act:sanction:{c['id']}") if st != "sanctioned" else None
@@ -255,7 +255,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         target_id = int(data.split(":")[2])
         if db.are_sanctioned(country["id"], target_id):
             await query.edit_message_text(
-                "🚫 **امکان معامله یا انتقال تسلیحات وجود ندارد:** یکی از دو کشور دیگری را تحریم کرده است.",
+                "🚫 *امکان معامله یا انتقال تسلیحات وجود ندارد:* یکی از دو کشور دیگری را تحریم کرده است.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:mil_start")]])
             )
             return
@@ -273,7 +273,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
-        text = f"🎖️ **انتقال تسلیحات نظامی به {target_c['flag']} {target_c['name']}**\n\nلطفاً دسته‌بندی تجهیزات ارسالی را انتخاب کنید:"
+        text = f"🎖️ *انتقال تسلیحات نظامی به {target_c['flag']} {target_c['name']}*\n\nلطفاً دسته‌بندی تجهیزات ارسالی را انتخاب کنید:"
         keyboard = []
         cat_labels = {
             "Aircraft": "✈️ نیروی هوایی", "UAV": "🛩️ پهپادها", "Ground Forces": "🚛 نیروی زمینی",
@@ -297,7 +297,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
-        text = "🎖️ **انتخاب تجهیز نظامی جهت انتقال:**\n\nلطفاً سلاح مد نظر را انتخاب فرمایید:"
+        text = "🎖️ *انتخاب تجهیز نظامی جهت انتقال:*\n\nلطفاً سلاح مد نظر را انتخاب فرمایید:"
         keyboard = []
         for a in available_assets:
             keyboard.append([InlineKeyboardButton(f"{a['equipment_name']} (موجودی: {a['amount']:,})", callback_data=f"dip:mil_asset:{a['equipment_key']}")])
@@ -318,7 +318,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data["diplomacy_input"] = {"type": "mil_asset_qty"}
 
         await query.edit_message_text(
-            f"🎖️ **انتقال {asset['equipment_name']}**\n📦 موجودی فعلی کشور شما: {asset['amount']:,} واحد\n\nلطفاً **تعداد ارسالی** را به عدد وارد فرمایید:",
+            f"🎖️ *انتقال {asset['equipment_name']}*\n📦 موجودی فعلی کشور شما: {asset['amount']:,} واحد\n\nلطفاً *تعداد ارسالی* را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]])
         )
 
@@ -343,11 +343,11 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         )
 
         recip_msg = (
-            f"🎖️ **پیشنهاد معاهده تحویل/فروش تسلیحات نظامی از طرف {country['flag']} {country['name']}**\n\n"
-            f"• **سلاح ارسالی:** {draft['equipment_name']}\n"
-            f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
-            f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
-            f"• **پرداخت‌کننده هزینه ترانزیت (۵۰۰ هزار دلار):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+            f"🎖️ *پیشنهاد معاهده تحویل/فروش تسلیحات نظامی از طرف {country['flag']} {country['name']}*\n\n"
+            f"• *سلاح ارسالی:* {draft['equipment_name']}\n"
+            f"• *تعداد تحویلی:* {draft['offered_amount']:,} واحد\n"
+            f"• *مبلغ پرداختی درخواستی از شما:* {format_money(draft['requested_amount'])}\n"
+            f"• *پرداخت‌کننده هزینه ترانزیت (۵۰۰ هزار دلار):* {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
             "آیا با دریافت و امضای این معاهده تسلیحاتی موافقید؟"
         )
         recip_kb = [
@@ -362,7 +362,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 pass
 
         await query.edit_message_text(
-            f"✅ **پیشنهاد معاهده نظامی با موفقیت به کشور {target_c['name']} ارسال شد.**\nپس از تایید و امضای طرف مقابل، تجهیزات به کشور مقصد منتقل می‌گردد.",
+            f"✅ *پیشنهاد معاهده نظامی با موفقیت به کشور {target_c['name']} ارسال شد.*\nپس از تایید و امضای طرف مقابل، تجهیزات به کشور مقصد منتقل می‌گردد.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]])
         )
 
@@ -371,7 +371,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         target_c = db.get_country_by_id(target_id)
         context.user_data["diplomacy_input"] = {"type": "send_msg", "target_id": target_id}
         await query.edit_message_text(
-            f"✉️ **ارسال یادداشت دیپلماتیک به {target_c['flag']} {target_c['name']}**\n\n"
+            f"✉️ *ارسال یادداشت دیپلماتیک به {target_c['flag']} {target_c['name']}*\n\n"
             "لطفاً متن یادداشت رسمی خود را ارسال فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]])
         )
@@ -383,14 +383,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         target_id = int(data.split(":")[2])
         if db.are_sanctioned(country["id"], target_id):
             await query.edit_message_text(
-                "🚫 **امکان معامله وجود ندارد:** یکی از دو کشور دیگری را تحریم کرده است.",
+                "🚫 *امکان معامله وجود ندارد:* یکی از دو کشور دیگری را تحریم کرده است.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:trade_start")]])
             )
             return
 
         context.user_data["trade_draft"] = {"target_id": target_id}
         # Choose offered resource type
-        text = f"📜 **قرارداد تجاری با کشور {db.get_country_by_id(target_id)['name']}**\n\n**مرحله ۱:** نوع کالای ارسالی (پیشنهادی شما) را انتخاب کنید:"
+        text = f"📜 *قرارداد تجاری با کشور {db.get_country_by_id(target_id)['name']}*\n\n*مرحله ۱:* نوع کالای ارسالی (پیشنهادی شما) را انتخاب کنید:"
         keyboard = [
             [InlineKeyboardButton("💰 پول (خزانه)", callback_data="dip:trade_off:treasury"), InlineKeyboardButton("🪙 طلا", callback_data="dip:trade_off:gold")],
             [InlineKeyboardButton("🛢️ نفت", callback_data="dip:trade_off:oil"), InlineKeyboardButton("🌾 غلات", callback_data="dip:trade_off:grain")],
@@ -405,7 +405,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
         await query.edit_message_text(
-            f"💰 **مقدار پیشنهادی ({type_labels.get(off_type, off_type)})** را به عدد وارد فرمایید:",
+            f"💰 *مقدار پیشنهادی ({type_labels.get(off_type, off_type)})* را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]])
         )
 
@@ -416,7 +416,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
         await query.edit_message_text(
-            f"🎯 **مقدار درخواستی مابه‌ازا ({type_labels.get(req_type, req_type)})** را به عدد وارد فرمایید:",
+            f"🎯 *مقدار درخواستی مابه‌ازا ({type_labels.get(req_type, req_type)})* را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]])
         )
 
@@ -444,10 +444,10 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         # Send contract offer to recipient player
         recip_msg = (
-            f"📜 **پیشنهاد قرارداد تجاری رسمی از طرف {country['flag']} {country['name']}**\n\n"
-            f"• **کالای تحویلی به شما:** {draft['offered_amount']:,} {type_map.get(draft['offered_type'])}\n"
-            f"• **مابه‌ازای درخواستی از شما:** {draft['requested_amount']:,} {type_map.get(draft['requested_type'])}\n"
-            f"• **پرداخت‌کننده هزینه ترانزیت (۵۰۰ هزار دلار):** {'فروشنده (پیشنهاددهنده)' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+            f"📜 *پیشنهاد قرارداد تجاری رسمی از طرف {country['flag']} {country['name']}*\n\n"
+            f"• *کالای تحویلی به شما:* {draft['offered_amount']:,} {type_map.get(draft['offered_type'])}\n"
+            f"• *مابه‌ازای درخواستی از شما:* {draft['requested_amount']:,} {type_map.get(draft['requested_type'])}\n"
+            f"• *پرداخت‌کننده هزینه ترانزیت (۵۰۰ هزار دلار):* {'فروشنده (پیشنهاددهنده)' if payer == 'seller' else 'خریدار (شما)'}\n\n"
             "آیا با انعقاد و اجرای این معاهده تجاری موافقید؟"
         )
         recip_kb = [
@@ -462,7 +462,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 pass
 
         await query.edit_message_text(
-            f"✅ **پیشنهاد قرارداد تجاری با موفقیت به کشور {target_c['name']} ارسال شد.**\nپس از تایید طرف مقابل، معاهده به طور خودکار اجرا می‌گردد.",
+            f"✅ *پیشنهاد قرارداد تجاری با موفقیت به کشور {target_c['name']} ارسال شد.*\nپس از تایید طرف مقابل، معاهده به طور خودکار اجرا می‌گردد.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]])
         )
 
@@ -471,7 +471,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         succ, msg = db.execute_trade_contract_transaction(contract_id)
 
         if not succ:
-            await query.edit_message_text(f"❌ **اجرای قرارداد ناموفق بود:**\n\n{msg}", parse_mode="Markdown")
+            await query.edit_message_text(f"❌ *اجرای قرارداد ناموفق بود:*\n\n{msg}", parse_mode="Markdown")
             return
 
         c_data = db.get_trade_contract(contract_id)
@@ -496,13 +496,13 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         # Send Financial Receipt to both sides
         receipt_text = (
-            f"📄 **فیش مالی نهایی قرارداد تجاری بین‌المللی**\n"
+            f"📄 *فیش مالی نهایی قرارداد تجاری بین‌المللی*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"• **طرف اول:** {p_c['flag']} {p_c['name']}\n"
-            f"• **طرف دوم:** {r_c['flag']} {r_c['name']}\n\n"
-            f"• **کالای مبادله‌شده:** {offered_str}\n"
-            f"• **مابه‌ازای دریافتی:** {requested_str}\n"
-            f"• **وضعیت معاهده:** 🟢 ثبت و امضا شد (تراکنش اتمیک موفق)"
+            f"• *طرف اول:* {p_c['flag']} {p_c['name']}\n"
+            f"• *طرف دوم:* {r_c['flag']} {r_c['name']}\n\n"
+            f"• *کالای مبادله‌شده:* {offered_str}\n"
+            f"• *مابه‌ازای دریافتی:* {requested_str}\n"
+            f"• *وضعیت معاهده:* 🟢 ثبت و امضا شد (تراکنش اتمیک موفق)"
         )
 
         await query.edit_message_text(receipt_text, parse_mode="Markdown")
@@ -520,7 +520,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             p_c = db.get_country_by_id(c_data["proposer_id"])
             if p_c and p_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ **پیشنهاد قرارداد تجاری شما توسط کشور {country['name']} رد شد.**", parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ *پیشنهاد قرارداد تجاری شما توسط کشور {country['name']} رد شد.*", parse_mode="Markdown")
                 except Exception:
                     pass
         await query.edit_message_text("❌ قرارداد تجاری رد شد.")
@@ -533,7 +533,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data["aid_draft"] = {"target_id": target_id}
         target_c = db.get_country_by_id(target_id)
 
-        text = f"🕊️ **ارسال کمک‌های انسان‌دوستانه به {target_c['flag']} {target_c['name']}**\n\nنوع کمک را انتخاب کنید:"
+        text = f"🕊️ *ارسال کمک‌های انسان‌دوستانه به {target_c['flag']} {target_c['name']}*\n\nنوع کمک را انتخاب کنید:"
         keyboard = [
             [InlineKeyboardButton("💰 کمک مالی (دلار)", callback_data="dip:aid_type:treasury"), InlineKeyboardButton("🪙 طلا", callback_data="dip:aid_type:gold")],
             [InlineKeyboardButton("🛢️ کمک سوخت (نفت)", callback_data="dip:aid_type:oil"), InlineKeyboardButton("🌾 کمک غذایی (غلات)", callback_data="dip:aid_type:grain")],
@@ -548,7 +548,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
         await query.edit_message_text(
-            f"🕊️ **میزان کمک اهدایی ({type_labels.get(res_type, res_type)})** را وارد فرمایید:",
+            f"🕊️ *میزان کمک اهدایی ({type_labels.get(res_type, res_type)})* را وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]])
         )
 
@@ -563,7 +563,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         if act == "propose_alliance":
             # Send alliance offer
             offer_msg = (
-                f"🤝 **پیشنهاد رسمی معاهده اتحاد استراتژیک از طرف {country['flag']} {country['name']}**\n\n"
+                f"🤝 *پیشنهاد رسمی معاهده اتحاد استراتژیک از طرف {country['flag']} {country['name']}*\n\n"
                 "آیا با تشکیل پیمان اتحاد نظامی و سیاسی موافقید؟"
             )
             kb = [
@@ -576,7 +576,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 except Exception:
                     pass
             await query.edit_message_text(
-                f"✅ **پیشنهاد اتحاد با موفقیت برای کشور {target_c['name']} ارسال شد.**",
+                f"✅ *پیشنهاد اتحاد با موفقیت برای کشور {target_c['name']} ارسال شد.*",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]])
             )
 
@@ -584,28 +584,28 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             db.set_diplomatic_relation(country["id"], target_id, "normal", 0)
             if target_c and target_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"💔 **کشور {country['name']} پیمان اتحاد را لغو نمود.**", parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"💔 *کشور {country['name']} پیمان اتحاد را لغو نمود.*", parse_mode="Markdown")
                 except Exception:
                     pass
-            await query.edit_message_text("💔 **پیمان اتحاد لغو گردید.**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
+            await query.edit_message_text("💔 *پیمان اتحاد لغو گردید.*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
 
         elif act == "sanction":
             db.set_diplomatic_relation(country["id"], target_id, "sanctioned", country["id"])
             if target_c and target_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🚫 **کشور {country['name']} کشور شما را زیر تحریم‌های یک‌طرفه قرار داد.**", parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🚫 *کشور {country['name']} کشور شما را زیر تحریم‌های یک‌طرفه قرار داد.*", parse_mode="Markdown")
                 except Exception:
                     pass
-            await query.edit_message_text("🚫 **تحریم یک‌طرفه علیه کشور مخاطب اعمال شد.**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
+            await query.edit_message_text("🚫 *تحریم یک‌طرفه علیه کشور مخاطب اعمال شد.*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
 
         elif act == "unsanction":
             db.set_diplomatic_relation(country["id"], target_id, "normal", 0)
             if target_c and target_c.get("player_id"):
                 try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🔓 **کشور {country['name']} تحریم‌های یک‌طرفه علیه شما را لغو کرد.**", parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=target_c["player_id"], text=f"🔓 *کشور {country['name']} تحریم‌های یک‌طرفه علیه شما را لغو کرد.*", parse_mode="Markdown")
                 except Exception:
                     pass
-            await query.edit_message_text("🔓 **تحریم یک‌طرفه لغو گردید.**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
+            await query.edit_message_text("🔓 *تحریم یک‌طرفه لغو گردید.*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]))
 
     elif data.startswith("dip:alliance_accept:"):
         proposer_id = int(data.split(":")[2])
@@ -613,20 +613,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         p_c = db.get_country_by_id(proposer_id)
         if p_c and p_c.get("player_id"):
             try:
-                await context.bot.send_message(chat_id=p_c["player_id"], text=f"🤝 **کشور {country['name']} پیشنهاد اتحاد شما را پذیرفت! هم‌اکنون دو کشور متحد رسمی هستند.**", parse_mode="Markdown")
+                await context.bot.send_message(chat_id=p_c["player_id"], text=f"🤝 *کشور {country['name']} پیشنهاد اتحاد شما را پذیرفت! هم‌اکنون دو کشور متحد رسمی هستند.*", parse_mode="Markdown")
             except Exception:
                 pass
-        await query.edit_message_text("🤝 **پیمان اتحاد رسمی به امضا رسید.**", parse_mode="Markdown")
+        await query.edit_message_text("🤝 *پیمان اتحاد رسمی به امضا رسید.*", parse_mode="Markdown")
 
     elif data.startswith("dip:alliance_reject:"):
         proposer_id = int(data.split(":")[2])
         p_c = db.get_country_by_id(proposer_id)
         if p_c and p_c.get("player_id"):
             try:
-                await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ **کشور {country['name']} پیشنهاد اتحاد شما را رد کرد.**", parse_mode="Markdown")
+                await context.bot.send_message(chat_id=p_c["player_id"], text=f"❌ *کشور {country['name']} پیشنهاد اتحاد شما را رد کرد.*", parse_mode="Markdown")
             except Exception:
                 pass
-        await query.edit_message_text("❌ **پیشنهاد اتحاد رد شد.**", parse_mode="Markdown")
+        await query.edit_message_text("❌ *پیشنهاد اتحاد رد شد.*", parse_mode="Markdown")
 
 
 # ==================== Text Input Handler برای دیپلماسی ====================
@@ -652,7 +652,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
         target_c = db.get_country_by_id(target_id)
 
         memo = (
-            f"✉️ **یادداشت دیپلماتیک رسمی از طرف {country['flag']} {country['name']}**\n"
+            f"✉️ *یادداشت دیپلماتیک رسمی از طرف {country['flag']} {country['name']}*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f'"{text}"\n\n'
             "━━━━━━━━━━━━━━━━━━"
@@ -673,7 +673,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             context.user_data["trade_draft"]["offered_amount"] = amt
             
             # Ask for requested resource type
-            msg = "📜 **قرارداد تجاری**\n\n**مرحله ۲:** کالایی که در مابه‌ازای معامله از طرف مقابل می‌خواهید را انتخاب کنید:"
+            msg = "📜 *قرارداد تجاری*\n\n*مرحله ۲:* کالایی که در مابه‌ازای معامله از طرف مقابل می‌خواهید را انتخاب کنید:"
             kb = [
                 [InlineKeyboardButton("💰 پول (خزانه)", callback_data="dip:trade_req:treasury"), InlineKeyboardButton("🪙 طلا", callback_data="dip:trade_req:gold")],
                 [InlineKeyboardButton("🛢️ نفت", callback_data="dip:trade_req:oil"), InlineKeyboardButton("🌾 غلات", callback_data="dip:trade_req:grain")],
@@ -690,7 +690,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             context.user_data["trade_draft"]["requested_amount"] = amt
 
             # Ask for transport payer
-            msg = "📜 **قرارداد تجاری**\n\n**مرحله ۳:** پرداخت‌کننده هزینه ترانزیت و حمل‌ونقل (۵۰۰ هزار دلار) را مشخص کنید:"
+            msg = "📜 *قرارداد تجاری*\n\n*مرحله ۳:* پرداخت‌کننده هزینه ترانزیت و حمل‌ونقل (۵۰۰ هزار دلار) را مشخص کنید:"
             kb = [
                 [InlineKeyboardButton("فروشنده (پیشنهاددهنده)", callback_data="dip:trade_payer:seller")],
                 [InlineKeyboardButton("خریدار (کشور مخاطب)", callback_data="dip:trade_payer:buyer")],
@@ -711,7 +711,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             context.user_data["diplomacy_input"] = {"type": "mil_asset_price"}
 
             await update.message.reply_text(
-                "💰 **قیمت درخواستی برای فروش (به دلار)** را وارد فرمایید:\n*(در صورت اهدا/انتقال رایگان عدد ۰ را وارد نمایید)*",
+                "💰 *قیمت درخواستی برای فروش (به دلار)* را وارد فرمایید:\n*(در صورت اهدا/انتقال رایگان عدد ۰ را وارد نمایید)*",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]])
             )
         except ValueError:
@@ -724,7 +724,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                 raise ValueError
             context.user_data["mil_draft"]["requested_amount"] = price
 
-            msg = "🎖️ **معاهده نظامی**\n\nپرداخت‌کننده هزینه ترانزیت و حمل‌ونقل نظامی (۵۰۰ هزار دلار) را مشخص کنید:"
+            msg = "🎖️ *معاهده نظامی*\n\nپرداخت‌کننده هزینه ترانزیت و حمل‌ونقل نظامی (۵۰۰ هزار دلار) را مشخص کنید:"
             kb = [
                 [InlineKeyboardButton("فروشنده (پیشنهاددهنده)", callback_data="dip:mil_payer:seller")],
                 [InlineKeyboardButton("خریدار (کشور مخاطب)", callback_data="dip:mil_payer:buyer")],
@@ -744,7 +744,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt)
 
             if not succ:
-                await update.message.reply_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", parse_mode="Markdown")
+                await update.message.reply_text(f"❌ *ارسال کمک ناموفق بود:*\n\n{msg_res}", parse_mode="Markdown")
                 return
 
             target_c = db.get_country_by_id(target_id)
@@ -756,11 +756,11 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
 
             # Send receipt to recipient
             aid_receipt = (
-                f"📄 **فیش اهدای کمک‌های خارجی و انسان‌دوستانه**\n"
+                f"📄 *فیش اهدای کمک‌های خارجی و انسان‌دوستانه*\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"• **اهداکننده:** {country['flag']} {country['name']}\n"
-                f"• **دریافت‌کننده:** {target_c['flag']} {target_c['name']}\n"
-                f"• **نوع و مقدار کمک:** {amt:,} {type_labels.get(res_type, res_type)}\n\n"
+                f"• *اهداکننده:* {country['flag']} {country['name']}\n"
+                f"• *دریافت‌کننده:* {target_c['flag']} {target_c['name']}\n"
+                f"• *نوع و مقدار کمک:* {amt:,} {type_labels.get(res_type, res_type)}\n\n"
                 "تراکنش مالی و انتقال منابع با موفقیت ثبت شد."
             )
 

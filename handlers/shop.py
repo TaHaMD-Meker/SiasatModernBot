@@ -39,8 +39,8 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     text = (
-        f"🏪 **فروشگاه ملی کشور {country['flag']} {country['name']}**\n"
-        f"🏦 موجودی خزانه: **{format_money(country['treasury'])}**\n\n"
+        f"🏪 *فروشگاه ملی کشور {country['flag']} {country['name']}*\n"
+        f"🏦 موجودی خزانه: *{format_money(country['treasury'])}*\n\n"
         "لطفاً دسته مورد نظر را جهت خرید انتخاب کنید:"
     )
 
@@ -80,7 +80,7 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             [InlineKeyboardButton("🔙 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")],
         ]
-        text = f"🪖 **خط تولید تسلیحات نظامی بومی کشور {country['flag']} {country['name']}**\n\nیک دسته‌بندی نظامی را انتخاب کنید (فقط سلاح‌های دارای خط تولید بومی قابل خرید هستند):"
+        text = f"🪖 *خط تولید تسلیحات نظامی بومی کشور {country['flag']} {country['name']}*\n\nیک دسته‌بندی نظامی را انتخاب کنید (فقط سلاح‌های دارای خط تولید بومی قابل خرید هستند):"
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
         return
 
@@ -114,12 +114,12 @@ async def show_military_asset_category(update: Update, context: ContextTypes.DEF
 
     buttons = []
     if not assets:
-        text = f"{country['flag']} **تسلیحات {cat_info[0]} بومی {country['name']}**\n\n❌ کشور شما خط تولید بومی برای تسلیحات این دسته ندارد (تجهیزات موجود شما وارداتی هستند)."
+        text = f"{country['flag']} *تسلیحات {cat_info[0]} بومی {country['name']}*\n\n❌ کشور شما خط تولید بومی برای تسلیحات این دسته ندارد (تجهیزات موجود شما وارداتی هستند)."
     else:
         for item in assets:
             btn_label = f"{item['equipment_name']} — {format_money(item['buy_price'])} (موجود: {format_number(item['amount'])})"
             buttons.append([InlineKeyboardButton(btn_label, callback_data=f"confirm_asset_buy:{item['equipment_key']}")])
-        text = f"{country['flag']} **خط تولید تسلیحات {cat_info[0]} بومی {country['name']}**\n\nبرای سفارش و ساخت، روی سلاح مورد نظر کلیک کنید:"
+        text = f"{country['flag']} *خط تولید تسلیحات {cat_info[0]} بومی {country['name']}*\n\nبرای سفارش و ساخت، روی سلاح مورد نظر کلیک کنید:"
 
     buttons.append([InlineKeyboardButton("🔙 بازگشت به دسته‌های نظامی", callback_data="shopcat:military_assets")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
@@ -154,10 +154,10 @@ async def confirm_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     unit = config.ASSET_CATEGORIES.get(asset["category"], ("", "عدد"))[1]
 
     text = (
-        f"🛒 **سفارش ساخت تجهیز نظامی بومی:** {asset['equipment_name']}\n"
-        f"💰 **هزینه تولید هر واحد:** {format_money(asset['buy_price'])}\n"
-        f"📦 **موجودی فعلی کشور شما:** {format_number(asset['amount'])} {unit}\n"
-        f"🏦 **موجودی خزانه:** {format_money(country['treasury'])}\n\n"
+        f"🛒 *سفارش ساخت تجهیز نظامی بومی:* {asset['equipment_name']}\n"
+        f"💰 *هزینه تولید هر واحد:* {format_money(asset['buy_price'])}\n"
+        f"📦 *موجودی فعلی کشور شما:* {format_number(asset['amount'])} {unit}\n"
+        f"🏦 *موجودی خزانه:* {format_money(country['treasury'])}\n\n"
         "تعداد مورد نظر برای تولید را انتخاب کنید:"
     )
 
@@ -196,7 +196,7 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
 
     if not success:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopcat:military_assets")]]
-        await query.edit_message_text(f"❌ **تولید انجام نشد:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(f"❌ *تولید انجام نشد:*\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
     db.add_log(actor=str(user_id), action="asset_purchase", details=f"{equipment_key} x{quantity}")
@@ -206,11 +206,11 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     total_cost = updated_asset["buy_price"] * quantity
 
     text = (
-        f"✅ **تولید با موفقیت انجام شد!**\n\n"
-        f"🛒 **تجهیز بومی:** {updated_asset['equipment_name']} (تعداد: {quantity} {unit})\n"
-        f"💰 **مبلغ کسر شده از خزانه:** {format_money(total_cost)}\n"
-        f"📦 **موجودی جدید کشور شما:** {format_number(updated_asset['amount'])} {unit}\n"
-        f"🏦 **موجودی جدید خزانه:** {format_money(updated_country['treasury'])}"
+        f"✅ *تولید با موفقیت انجام شد!*\n\n"
+        f"🛒 *تجهیز بومی:* {updated_asset['equipment_name']} (تعداد: {quantity} {unit})\n"
+        f"💰 *مبلغ کسر شده از خزانه:* {format_money(total_cost)}\n"
+        f"📦 *موجودی جدید کشور شما:* {format_number(updated_asset['amount'])} {unit}\n"
+        f"🏦 *موجودی جدید خزانه:* {format_money(updated_country['treasury'])}"
     )
 
     keyboard = [
@@ -237,7 +237,7 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")],
     ]
 
-    desc_text = item.get("desc", f"🏗️ **پروژه:** {item['name']}\n\n💰 **هزینه احداث:** {format_money(item['price'])}")
+    desc_text = item.get("desc", f"🏗️ *پروژه:* {item['name']}\n\n💰 *هزینه احداث:* {format_money(item['price'])}")
 
     await query.edit_message_text(
         desc_text,
@@ -269,7 +269,7 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     if not success:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")]]
         await query.edit_message_text(
-            f"❌ **عملیات احداث انجام نشد:**\n\n{msg}",
+            f"❌ *عملیات احداث انجام نشد:*\n\n{msg}",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -284,22 +284,22 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
 
     benefit_lines = []
     if oil_req > 0:
-        benefit_lines.append(f"🛢️ **نفت کسرشده:** {format_oil(oil_req)}")
+        benefit_lines.append(f"🛢️ *نفت کسرشده:* {format_oil(oil_req)}")
     if income_add > 0:
-        benefit_lines.append(f"💵 **افزایش درآمد روزانه:** +{format_money(income_add)}/روز")
+        benefit_lines.append(f"💵 *افزایش درآمد روزانه:* +{format_money(income_add)}/روز")
     if elec_add > 0:
-        benefit_lines.append(f"⚡ **تولید انرژی افزوده‌شده:** +{elec_add}٪")
+        benefit_lines.append(f"⚡ *تولید انرژی افزوده‌شده:* +{elec_add}٪")
 
     benefits_str = "\n".join(benefit_lines) if benefit_lines else "✅ پروژه با موفقیت در دیتابیس ثبت شد."
 
     text = (
-        f"✅ **پروژه با موفقیت ساخته و ثبت شد!**\n\n"
-        f"🏗️ **نام پروژه:** {item['name']}\n"
-        f"💰 **مبلغ کسر شده از خزانه:** {format_money(total_price)}\n"
+        f"✅ *پروژه با موفقیت ساخته و ثبت شد!*\n\n"
+        f"🏗️ *نام پروژه:* {item['name']}\n"
+        f"💰 *مبلغ کسر شده از خزانه:* {format_money(total_price)}\n"
         f"{benefits_str}\n\n"
-        f"🏦 **موجودی جدید خزانه:** {format_money(updated_country['treasury'])}\n"
-        f"⚡ **تراز جدید برق:** {updated_country['electricity']}٪\n"
-        f"📈 **درآمد روزانه جدید:** {format_money(updated_country['daily_income'])}"
+        f"🏦 *موجودی جدید خزانه:* {format_money(updated_country['treasury'])}\n"
+        f"⚡ *تراز جدید برق:* {updated_country['electricity']}٪\n"
+        f"📈 *درآمد روزانه جدید:* {format_money(updated_country['daily_income'])}"
     )
 
     keyboard = [

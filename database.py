@@ -475,7 +475,7 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
             asset_dict = dict(asset)
 
             if asset_dict.get("producible", 1) != 1:
-                return False, f"⚠️ تجهیز **{asset_dict['equipment_name']}** یک سلاح وارداتی است و کشور شما خط تولید بومی آن را ندارد. امکان خرید مجدد در فروشگاه وجود ندارد.", asset_dict
+                return False, f"⚠️ تجهیز *{asset_dict['equipment_name']}* یک سلاح وارداتی است و کشور شما خط تولید بومی آن را ندارد. امکان خرید مجدد در فروشگاه وجود ندارد.", asset_dict
 
             total_cost = asset_dict["buy_price"] * quantity
 

@@ -35,8 +35,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not user.username:
         await update.message.reply_text(
-            "⛔ **خطا در ساخت کشور (احراز هویت تلگرام):**\n\n"
-            "جهت حفظ امنیت بازی و جلوگیری از حساب‌های ناشناس و فیک، حساب تلگرام شما باید دارای **آیدی / یوزرنیم (@username)** باشد.\n\n"
+            "⛔ *خطا در ساخت کشور (احراز هویت تلگرام):*\n\n"
+            "جهت حفظ امنیت بازی و جلوگیری از حساب‌های ناشناس و فیک، حساب تلگرام شما باید دارای *آیدی / یوزرنیم (@username)* باشد.\n\n"
             "لطفاً در تنظیمات تلگرام خود یک آیدی (Username) تنظیم فرموده و سپس مجدداً دستور /start را ارسال کنید.",
             parse_mode="Markdown"
         )
@@ -72,7 +72,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not user.username:
         await query.edit_message_text(
-            "⛔ **حساب تلگرام شما فاقد یوزرنیم (@username) است.**\nلطفاً ابتدا در تنظیمات تلگرام آیدی ست کرده و سپس /start بزنید.",
+            "⛔ *حساب تلگرام شما فاقد یوزرنیم (@username) است.*\nلطفاً ابتدا در تنظیمات تلگرام آیدی ست کرده و سپس /start بزنید.",
             parse_mode="Markdown"
         )
         return
@@ -91,7 +91,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending_req = db.get_pending_request_by_player(player_id)
     if pending_req:
         await query.edit_message_text(
-            "⏳ **شما یک درخواست معلق فعال دارید.**\nلطفاً منتظر بررسی و تایید ادمین اصلی بازی بمانید.",
+            "⏳ *شما یک درخواست معلق فعال دارید.*\nلطفاً منتظر بررسی و تایید ادمین اصلی بازی بمانید.",
             parse_mode="Markdown"
         )
         return
@@ -127,13 +127,13 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Send approval request to Admin
     admin_msg = (
-        "📥 **درخواست جدید انتخاب کشور**\n"
+        "📥 *درخواست جدید انتخاب کشور*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"• **کشور درخواستی:** {info['flag']} {info['name']} (`{key}`)\n"
-        f"• **نام کاربر:** {user.first_name or ''} {user.last_name or ''}\n"
-        f"• **یوزرنیم تلگرام:** @{user.username}\n"
-        f"• **شناسه عددی (ID):** `{player_id}`\n"
-        f"• **لینک پیوی کاربر:** [پیوی کاربر](tg://user?id={player_id})\n\n"
+        f"• *کشور درخواستی:* {info['flag']} {info['name']} (`{key}`)\n"
+        f"• *نام کاربر:* {user.first_name or ''} {user.last_name or ''}\n"
+        f"• *یوزرنیم تلگرام:* @{user.username}\n"
+        f"• *شناسه عددی (ID):* `{player_id}`\n"
+        f"• *لینک پیوی کاربر:* [پیوی کاربر](tg://user?id={player_id})\n\n"
         f"آیا با واگذاری کشور {info['flag']} {info['name']} به این کاربر موافقید؟"
     )
 
@@ -154,7 +154,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
     await query.edit_message_text(
-        f"⏳ **درخواست انتخاب کشور ثبت گردید!**\n\n"
+        f"⏳ *درخواست انتخاب کشور ثبت گردید!*\n\n"
         f"درخواست شما برای دریافت کشور {info['flag']} {info['name']} جهت تایید برای ادمین اصلی بازی ارسال شد.\n"
         "پس از بررسی و تایید ادمین، کشور شما فعال گردیده و اطلاع‌رسانی خواهد شد.",
         parse_mode="Markdown"
