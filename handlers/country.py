@@ -4,7 +4,7 @@
 پشتیبانی از دکمه‌های پایین صفحه (ReplyKeyboard)
 """
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 import database as db
@@ -18,7 +18,10 @@ async def require_country(update: Update):
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+        if update.message:
+            await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.")
+        elif update.callback_query:
+            await update.callback_query.answer("هنوز کشوری نساختی!", show_alert=True)
         return None
     return country
 
@@ -32,7 +35,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     app_icon = "🟢" if app_val >= 75 else ("🟡" if app_val >= 50 else ("🟠" if app_val >= 40 else "🔴"))
 
     text = (
-        f"{c['flag']} {c['name']}\n\n"
+        f"{c['flag']} **وضعیت کشور {c['name']}**\n\n"
         f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
         f"👥 جمعیت: {format_number(c['population'])}\n"
         f"💰 درآمد مالیاتی: {format_money(c['tax_income'])}\n"
@@ -46,7 +49,42 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
         f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}"
     )
-    await update.message.reply_text(text, reply_markup=get_main_keyboard(update.effective_user.id))
+
+    inline_keyboard = [[InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")]]
+
+    if update.message:
+        await update.message.reply_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(update.effective_user.id)
+        )
+        await update.message.reply_text(
+            "👇 جهت مشاهده تحلیل دقیق منابع و تحلیل رضایت عمومی کلیک کنید:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard)
+        )
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard),
+            parse_mode="Markdown"
+        )
+
+
+async def country_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    await query.answer()
+
+    if data == "country:approval_details":
+        c = await require_country(update)
+        if not c:
+            return
+        msg = approval_system.get_approval_status_message(c)
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به وضعیت کشور", callback_data="country:back_profile")]]
+        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "country:back_profile":
+        await country_profile(update, context)
 
 
 async def approval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

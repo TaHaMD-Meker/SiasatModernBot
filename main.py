@@ -17,7 +17,7 @@ import config
 import database as db
 import approval_system
 from handlers.start import get_start_handlers
-from handlers.country import country_profile, treasury, oil, army, help_command, approval_command
+from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.assets import show_assets_menu, get_assets_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
@@ -78,6 +78,7 @@ def main():
     app.add_handler(CommandHandler("oil", oil))
     app.add_handler(CommandHandler("army", army))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CallbackQueryHandler(country_callback_handler, pattern=r"^country:"))
 
     # دکمه‌های ثابت پایین صفحه (Reply Keyboard Text Handlers)
     app.add_handler(MessageHandler(filters.Regex("^🌐 وضعیت کشور$"), country_profile))
