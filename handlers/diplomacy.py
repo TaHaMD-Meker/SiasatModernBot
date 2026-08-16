@@ -130,7 +130,6 @@ async def dip_trade_start(query, context, country):
     keyboard = []
     row = []
     for c in other_countries:
-        # Check if sanctioned
         if db.are_sanctioned(country["id"], c["id"]):
             btn_label = f"🚫 {c['name']} (تحریم)"
         else:
@@ -192,11 +191,9 @@ async def dip_blockade_start(query, context, country):
 
     keyboard = []
 
-    # If currently under blockade by another country
     if im_blockaded:
         keyboard.append([InlineKeyboardButton("💥 شکستن محاصره دریایی (نبرد موشکی/دریایی)", callback_data="dip:break_blk")])
 
-    # If I am blockading other countries
     my_blockades = [b for b in active_blks if b["blockader_id"] == country["id"]]
     for b in my_blockades:
         t_c = db.get_country_by_id(b["target_id"])
@@ -409,7 +406,6 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         db.update_country_field(target_id, "approval_rating", new_app)
 
         await news_engine.trigger_blockade_news(context.bot, country, target_c)
-        await news_engine.trigger_protest_news(context.bot, target_c, f"محاصره کامل دریایی بنادر توسط ناوگان {country['name']}")
 
         if target_c.get("player_id"):
             try:
@@ -418,7 +414,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     text=(
                         f"⚓ **هشدار اضطراری — محاصره دریایی!**\n\n"
                         f"ناوگان دریایی قدرتمند کشور {country['flag']} {country['name']} تمامی بنادر و خطوط مواصلاتی دریایی شما را تحت محاصره کامل قرار داد!\n"
-                        f"📉 این امر موجب کسر ۱۵٪ از رضایت عمومی و شکل‌گیری اعتراضات معیشتی گردیده است."
+                        f"📉 این امر موجب کسر ۱۵٪ از رضایت عمومی و توقف درآمد بنادر تجاری گردیده است."
                     ),
                     parse_mode="Markdown"
                 )
@@ -429,7 +425,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"⚓ **عملیات محاصره دریایی علیه کشور {target_c['flag']} {target_c['name']} با موفقیت اجرا شد.**\n\n"
             f"• **قدرت ناوگان شما:** {blockader_power:,} امتیاز\n"
             f"• **قدرت ناوگان هدف:** {target_power:,} امتیاز\n\n"
-            "📢 خبر فوری این حادثه ژئوپلیتیک و موج اعتراضات مردمی در کانال رسمی منتشر گردید.",
+            "📢 خبر فوری این حادثه ژئوپلیتیک در کانال رسمی منتشر گردید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
             parse_mode="Markdown"
         )
@@ -495,17 +491,108 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_text("❌ تجهیز مورد نظر موجود نیست.", parse_mode="Markdown")
             return
 
-        if "mil_draft" not in context.user_data:
-            context.user_data["mil_draft"] = {}
+        if "mil_draft" not in context.user_data or not context.user_data["mil_draft"].get("target_id"):
+            await query.edit_message_text(
+                "⚠️ **نشست دیپلماتیک شما منقضی شده است.** لطفاً مجدداً از منوی دیپلماسی اقدام فرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
         context.user_data["mil_draft"]["equipment_key"] = eq_key
         context.user_data["mil_draft"]["equipment_name"] = asset["equipment_name"]
         context.user_data["mil_draft"]["max_amount"] = asset["amount"]
         context.user_data["diplomacy_input"] = {"type": "mil_asset_qty"}
 
+        max_amt = asset["amount"]
+        possible_qtys = [1, 5, 10, 25, 50, 100]
+        qty_buttons = []
+        row = []
+
+        for q in possible_qtys:
+            if q < max_amt:
+                row.append(InlineKeyboardButton(f"📦 {q:,} واحد", callback_data=f"dip:mil_qty:{q}"))
+                if len(row) == 3:
+                    qty_buttons.append(row)
+                    row = []
+        if max_amt > 0:
+            row.append(InlineKeyboardButton(f"📦 کل موجودی ({max_amt:,})", callback_data=f"dip:mil_qty:{max_amt}"))
+            qty_buttons.append(row)
+
+        qty_buttons.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
+
         await query.edit_message_text(
-            f"🎖️ **انتقال {asset['equipment_name']}**\n📦 موجودی فعلی کشور شما: {asset['amount']:,} واحد\n\nلطفاً **تعداد ارسالی** را به عدد وارد فرمایید:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]], parse_mode="Markdown")
+            f"🎖️ **انتقال {asset['equipment_name']}**\n📦 موجودی فعلی کشور شما: {asset['amount']:,} واحد\n\n"
+            "لطفاً **تعداد ارسالی** را از دکمه‌های زیر انتخاب کرده یا عدد مد نظر خود را تایپ فرمایید:",
+            reply_markup=InlineKeyboardMarkup(qty_buttons),
+            parse_mode="Markdown"
         )
+
+    elif data.startswith("dip:mil_qty:"):
+        qty_str = data.split(":")[2]
+        draft = context.user_data.get("mil_draft", {})
+        if not draft.get("target_id"):
+            await query.edit_message_text(
+                "⚠️ **نشست دیپلماتیک منقضی شده است.** لطفاً مجدداً اقدام فرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        max_amt = draft.get("max_amount", 1)
+        try:
+            qty = int(qty_str)
+        except ValueError:
+            qty = max_amt
+
+        qty = max(1, min(qty, max_amt))
+        draft["offered_amount"] = qty
+        context.user_data["mil_draft"] = draft
+        context.user_data["diplomacy_input"] = {"type": "mil_asset_price"}
+
+        price_buttons = [
+            [InlineKeyboardButton("🎁 اهدای رایگان (۰ $)", callback_data="dip:mil_price:0")],
+            [InlineKeyboardButton("💰 ۱,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:1000000"), InlineKeyboardButton("💰 ۵,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:5000000")],
+            [InlineKeyboardButton("💰 ۱۰,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:10000000"), InlineKeyboardButton("💰 ۵۰,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:50000000")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+        ]
+
+        await query.edit_message_text(
+            f"🎖️ **انتقال {draft.get('equipment_name', 'تجهیز')} (تعداد: {qty:,} واحد)**\n\n"
+            "لطفاً **قیمت درخواستی برای فروش (به دلار)** را از دکمه‌های زیر انتخاب کرده یا عدد مد نظر را تایپ فرمایید:",
+            reply_markup=InlineKeyboardMarkup(price_buttons),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("dip:mil_price:"):
+        price_str = data.split(":")[2]
+        draft = context.user_data.get("mil_draft", {})
+        if not draft.get("target_id"):
+            await query.edit_message_text(
+                "⚠️ **نشست دیپلماتیک منقضی شده است.** لطفاً مجدداً اقدام فرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        try:
+            price = int(price_str)
+        except ValueError:
+            price = 0
+
+        draft["requested_amount"] = price
+        context.user_data["mil_draft"] = draft
+
+        text = (
+            f"🎖️ **معاهده نظامی — {draft.get('equipment_name', 'تجهیز')} (تعداد: {draft.get('offered_amount', 1):,} واحد | قیمت: {format_money(price)})**\n\n"
+            "پرداخت‌کننده هزینه ترانزیت و حمل‌ونقل نظامی را مشخص بفرمایید:"
+        )
+        kb = [
+            [InlineKeyboardButton("فروشنده (پیشنهاددهنده)", callback_data="dip:mil_payer:seller")],
+            [InlineKeyboardButton("خریدار (کشور مخاطب)", callback_data="dip:mil_payer:buyer")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
     elif data.startswith("dip:mil_payer:"):
         payer = data.split(":")[2]
@@ -531,7 +618,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
     elif data.startswith("dip:mil_finish:"):
         _, _, mode, payer = data.split(":")
         draft = context.user_data.get("mil_draft", {})
-        target_c = db.get_country_by_id(draft["target_id"])
+        target_c = db.get_country_by_id(draft.get("target_id", 0))
+
+        if not target_c:
+            await query.edit_message_text(
+                "⚠️ **نشست دیپلماتیک منقضی شده است.** لطفاً مجدداً اقدام فرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
 
         if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
             await query.edit_message_text(
@@ -610,7 +705,6 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             return
 
         context.user_data["trade_draft"] = {"target_id": target_id}
-        # Choose offered resource type
         text = f"📜 **قرارداد تجاری با کشور {db.get_country_by_id(target_id)['name']}**\n\n**مرحله ۱:** نوع کالای ارسالی (پیشنهادی شما) را انتخاب کنید:"
         keyboard = [
             [InlineKeyboardButton("💰 پول (خزانه)", callback_data="dip:trade_off:treasury"), InlineKeyboardButton("🪙 طلا", callback_data="dip:trade_off:gold")],
@@ -671,7 +765,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
     elif data.startswith("dip:trade_finish:"):
         _, _, mode, payer = data.split(":")
         draft = context.user_data.get("trade_draft", {})
-        target_c = db.get_country_by_id(draft["target_id"])
+        target_c = db.get_country_by_id(draft.get("target_id", 0))
+
+        if not target_c:
+            await query.edit_message_text(
+                "⚠️ **نشست دیپلماتیک منقضی شده است.** لطفاً مجدداً اقدام فرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
 
         if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
             await query.edit_message_text(
@@ -959,7 +1061,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             context.user_data["trade_draft"]["requested_amount"] = amt
 
             # Ask for transport payer
-            msg = "📜 **قرارداد تجاری**\n\n**مرحله ۳:** پرداخت‌کننده هزینه ترانزیت و حمل‌ونقل (۵۰۰ هزار دلار) را مشخص کنید:"
+            msg = "📜 **قرارداد تجاری**\n\n**مرحله ۳:** پرداخت‌کننده هزینه ترانزیت و حمل‌ونقل را مشخص کنید:"
             kb = [
                 [InlineKeyboardButton("فروشنده (پیشنهاددهنده)", callback_data="dip:trade_payer:seller")],
                 [InlineKeyboardButton("خریدار (کشور مخاطب)", callback_data="dip:trade_payer:buyer")],
@@ -971,7 +1073,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
     elif input_type == "mil_asset_qty":
         try:
             qty = int(clean_num)
-            max_qty = context.user_data["mil_draft"]["max_amount"]
+            max_qty = context.user_data.get("mil_draft", {}).get("max_amount", 1)
             if qty <= 0 or qty > max_qty:
                 await update.message.reply_text(f"❌ تعداد وارد شده باید بین ۱ تا {max_qty:,} باشد.", parse_mode="Markdown")
                 return
@@ -979,9 +1081,17 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             context.user_data["mil_draft"]["offered_amount"] = qty
             context.user_data["diplomacy_input"] = {"type": "mil_asset_price"}
 
+            price_buttons = [
+                [InlineKeyboardButton("🎁 اهدای رایگان (۰ $)", callback_data="dip:mil_price:0")],
+                [InlineKeyboardButton("💰 ۱,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:1000000"), InlineKeyboardButton("💰 ۵,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:5000000")],
+                [InlineKeyboardButton("💰 ۱۰,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:10000000"), InlineKeyboardButton("💰 ۵۰,۰۰۰,۰۰۰ $", callback_data="dip:mil_price:50000000")],
+                [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+            ]
+
             await update.message.reply_text(
-                "💰 **قیمت درخواستی برای فروش (به دلار)** را وارد فرمایید:\n**(در صورت اهدا/انتقال رایگان عدد ۰ را وارد نمایید)**",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]], parse_mode="Markdown")
+                f"🎖️ **انتقال تجهیز نظامی (تعداد: {qty:,} واحد)**\n\nلطفاً **قیمت درخواستی برای فروش (به دلار)** را انتخاب کرده یا عدد مد نظر را تایپ فرمایید:",
+                reply_markup=InlineKeyboardMarkup(price_buttons),
+                parse_mode="Markdown"
             )
         except ValueError:
             await update.message.reply_text("❌ عدد وارد شده نامعتبر بود.", parse_mode="Markdown")
@@ -993,7 +1103,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                 raise ValueError
             context.user_data["mil_draft"]["requested_amount"] = price
 
-            msg = "🎖️ **معاهده نظامی**\n\nپرداخت‌کننده هزینه ترانزیت و حمل‌ونقل نظامی (۵۰۰ هزار دلار) را مشخص کنید:"
+            msg = "🎖️ **معاهده نظامی**\n\nپرداخت‌کننده هزینه ترانزیت و حمل‌ونقل نظامی را مشخص بفرمایید:"
             kb = [
                 [InlineKeyboardButton("فروشنده (پیشنهاددهنده)", callback_data="dip:mil_payer:seller")],
                 [InlineKeyboardButton("خریدار (کشور مخاطب)", callback_data="dip:mil_payer:buyer")],
