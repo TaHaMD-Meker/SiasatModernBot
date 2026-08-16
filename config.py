@@ -1137,4 +1137,12 @@ for group in (BUILDINGS, FACTORIES, POWER_PLANTS):
     ALL_SHOP_ITEMS.update(group)
 
 # ===== مسیر فایل دیتابیس =====
-DB_PATH = os.environ.get("DB_PATH", "game.db")
+# ===== مسیر دیتابیس =====
+# پشتیبانی از Volume دائمی Railway (در صورت وجود /data یا تنظیم متغیر DB_PATH)
+DB_PATH = os.environ.get("DB_PATH", "/data/game.db" if os.path.exists("/data") else "game.db")
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+    except Exception:
+        pass

@@ -4,11 +4,15 @@
 شامل مدیریت کشورها، دارایی‌های اختصاصی نظامی (Country Assets System)، همگام‌سازی اتوماتیک دیتابیس با آخرین کاتالوگ و خرید اتومیک.
 """
 
+import os
 import sqlite3
 import datetime
 import config
 
 def get_connection():
+    db_dir = os.path.dirname(config.DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -276,7 +280,7 @@ def adjust_oil_production(country_id: int, delta: int):
 # ---------- همگام‌سازی و به‌روزرسانی کلی کشورها ----------
 
 def sync_all_country_assets_to_catalog():
-    """به‌روزرسانی تمام کشورهای ساخته‌شده قبلی با آمار و آمار تجهیزات جدید کاتالوگ."""
+    """به‌روزرسانی همگام‌سازی تجهیزات کاتالوگ بدون دست‌زدن به ذخایر اقتصادی و خریدهای قبلی بازیکنان."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -290,19 +294,6 @@ def sync_all_country_assets_to_catalog():
         if not c_key:
             continue
 
-        sv = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
-        cur.execute("""
-            UPDATE countries SET
-            population = ?, treasury = ?, tax_income = ?, daily_income = ?,
-            gold = ?, gold_daily = ?, oil_reserves = ?, oil_production = ?,
-            active_personnel = ?, reserve_personnel = ?
-            WHERE id = ?
-        """, (
-            sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
-            sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
-            sv["active_personnel"], sv["reserve_personnel"], c_id
-        ))
-
         catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(c_key, config.DEFAULT_COUNTRY_EQUIPMENT)
         for item in catalog:
             producible_val = 1 if item.get("producible", True) else 0
@@ -313,7 +304,6 @@ def sync_all_country_assets_to_catalog():
                 ON CONFLICT(country_id, equipment_key) DO UPDATE SET
                 category = excluded.category,
                 equipment_name = excluded.equipment_name,
-                amount = excluded.amount,
                 buy_price = excluded.buy_price,
                 maintenance_cost = excluded.maintenance_cost,
                 producible = excluded.producible
