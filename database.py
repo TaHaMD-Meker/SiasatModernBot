@@ -829,6 +829,31 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 if is_country_blockaded(p_id) or is_country_blockaded(r_id):
                     return False, "⚓ **امکان اجرای معاهده از طریق ترابری دریایی وجود ندارد:** خطوط مواصلاتی دریایی یکی از دو کشور تحت محاصره کامل دریایی است. لطفا برای این معاهده از ترابری هوایی یا زمینی استفاده بفرمایید."
 
+                # Check Strait Blockades & Tolls
+                for owner_key, strait_info in STRAITS_MAPPING.items():
+                    s_key = strait_info["strait_key"]
+                    st_data = get_strait_status(s_key)
+                    st_status = st_data["status"]
+                    st_toll = st_data["toll"]
+
+                    p_c_key = p_c.get("country_key")
+                    r_c_key = r_c.get("country_key")
+
+                    if p_c_key in strait_info["affected_keys"] or r_c_key in strait_info["affected_keys"]:
+                        if st_status == "blocked" and owner_key not in [p_c_key, r_c_key]:
+                            owner_c = get_country_by_key(owner_key)
+                            owner_name = owner_c["name"] if owner_c else owner_key
+                            return False, f"⛔ **امکان ترانزیت دریایی وجود ندارد:** {strait_info['name']} توسط کشور {owner_name} مسدود گردیده است!\n\n💡 برای عبور موفق از این تنگه، باید معاهده با **ترابری هوایی** یا **زمینی** صادر شود."
+
+                        elif st_status == "toll" and owner_key not in [p_c_key, r_c_key]:
+                            owner_c = get_country_by_key(owner_key)
+                            if owner_c:
+                                if p_c["treasury"] >= st_toll:
+                                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (st_toll, p_id))
+                                    cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (st_toll, owner_c["id"]))
+                                    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                    cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)", (owner_c["id"], f"دریافت عوارض ترانزیت {strait_info['name']} از معاهده {p_c['name']} و {r_c['name']}", st_toll, now_str))
+
             c_min, c_max = _ordered_pair(p_id, r_id)
             cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
             rel_row = cur.fetchone()
@@ -1268,6 +1293,67 @@ def update_roleplay_status(role_id: int, status: str):
     cur.execute("UPDATE pending_roleplays SET status = ? WHERE id = ?", (status, role_id))
     conn.commit()
     conn.close()
+
+
+STRAITS_MAPPING = {
+    "iran": {
+        "strait_key": "hormuz",
+        "name": "تنگه استراتژیک هرمز",
+        "desc": "شریان حیاتی انرژی خلیج فارس (مسیر اصلی صادرات نفت امارات، قطر، عربستان و عراق)",
+        "affected_keys": ["uae", "qatar", "saudi", "iraq", "israel"]
+    },
+    "egypt": {
+        "strait_key": "suez",
+        "name": "کانال استراتژیک سوئز",
+        "desc": "شاهراه ترانزیت دریایی آسیا به اروپا و دریای مدیترانه",
+        "affected_keys": ["uk", "france", "germany", "italy", "india", "china", "israel"]
+    },
+    "hezbollah": {
+        "strait_key": "bab_el_mandeb",
+        "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
+        "desc": "گلوگاه امنیت دریای سرخ و باب‌المندب",
+        "affected_keys": ["israel", "usa", "uk", "france", "germany"]
+    },
+    "turkey": {
+        "strait_key": "bosphorus",
+        "name": "تنگه بسفر و دردانل (پیمان مونترو)",
+        "desc": "دروازه انحصاری عبور و مرور دریای سیاه به آب‌های آزاد",
+        "affected_keys": ["russia", "ukraine", "poland"]
+    },
+    "india": {
+        "strait_key": "malacca",
+        "name": "تنگه مالاکا و اقیانوس هند",
+        "desc": "مسیر اصلی ترانزیت انرژی و تجارت شرق آسیا",
+        "affected_keys": ["china", "japan", "south_korea", "taiwan"]
+    },
+    "china": {
+        "strait_key": "taiwan_strait_cn",
+        "name": "تنگه تایوان",
+        "desc": "گلوگاه ترانزیت دریای چین جنوبی",
+        "affected_keys": ["taiwan", "japan", "usa", "south_korea"]
+    },
+    "taiwan": {
+        "strait_key": "taiwan_strait_tw",
+        "name": "تنگه تایوان (ضلع شرقی)",
+        "desc": "خط ترانزیت و پدافند دریایی تایوان",
+        "affected_keys": ["china"]
+    }
+}
+
+
+def get_strait_info_by_country_key(country_key: str):
+    return STRAITS_MAPPING.get(country_key)
+
+
+def get_strait_status(strait_key: str) -> dict:
+    status = get_setting(f"strait_status_{strait_key}", "open")
+    toll = int(get_setting(f"strait_toll_{strait_key}", "1000000"))
+    return {"status": status, "toll": toll}
+
+
+def set_strait_status(strait_key: str, status: str, toll_amount: int = 1000000):
+    set_setting(f"strait_status_{strait_key}", status)
+    set_setting(f"strait_toll_{strait_key}", str(toll_amount))
 
 
 def delete_roleplay(role_id: int):

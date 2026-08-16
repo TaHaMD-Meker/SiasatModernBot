@@ -72,6 +72,7 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📜 پیشنهاد قرارداد تجاری", callback_data="dip:trade_start")],
         [InlineKeyboardButton("🎖️ انتقال/فروش تسلیحات نظامی", callback_data="dip:mil_start")],
         [InlineKeyboardButton("⚓ محاصره دریایی بین‌المللی", callback_data="dip:blockade_start")],
+        [InlineKeyboardButton("🌊 مدیریت و انسداد تنگه‌ها", callback_data="dip:strait_menu")],
         [InlineKeyboardButton("🕊️ کمک خارجی و انسان‌دوستانه", callback_data="dip:aid_start")],
         [InlineKeyboardButton("🤝 اتحادها و تحریم‌ها", callback_data="dip:rel_start")],
     ]
@@ -316,6 +317,91 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data == "dip:blockade_start":
         await dip_blockade_start(query, context, country)
+
+    elif data == "dip:strait_menu":
+        c_key = country.get("country_key")
+        strait_info = db.get_strait_info_by_country_key(c_key)
+
+        if not strait_info:
+            text = (
+                f"🌊 **مدیریت تنگه‌های استراتژیک بین‌المللی**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"📍 کشور شما (**{country['flag']} {country['name']}**) موقعیت تسلط مستقیم بر تنگه‌های اصلی بین‌المللی در دیتابیس را ندارد.\n\n"
+                "📌 **تنگه‌های استراتژیک بازی:**\n"
+                "• **تنگه هرمز:** تحت تسلط 🇮🇷 ایران\n"
+                "• **کانال سوئز:** تحت تسلط 🇪🇬 مصر\n"
+                "• **تنگه باب‌المندب:** تحت تسلط 🇾🇪 حزب‌الله و جبهه مقاومت\n"
+                "• **تنگه بسفر (مونترو):** تحت تسلط 🇹🇷 ترکیه\n"
+                "• **تنگه مالاکا:** تحت تسلط 🇮🇳 هند\n"
+                "• **تنگه تایوان:** تحت تسلط 🇨🇳 چین و 🇹🇼 تایوان"
+            )
+            kb = [[InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")]]
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            return
+
+        st_data = db.get_strait_status(strait_info["strait_key"])
+        st_status = st_data["status"]
+        st_toll = st_data["toll"]
+
+        status_map = {
+            "open": "🟢 باز و ترانزیت آزاد",
+            "blocked": "🔴 مسدودسازی کامل آبراه",
+            "toll": f"🟡 فعال بودن عوارض ترانزیت ({format_money(st_toll)}/عبور)"
+        }
+
+        text = (
+            f"🌊 **ستاد مدیریت و کنترل {strait_info['name']} — {country['flag']} {country['name']}**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• **توصیف ژئوپلیتیک:** {strait_info['desc']}\n"
+            f"• **وضعیت فعلی آبراه:** {status_map.get(st_status, st_status)}\n\n"
+            "لطفاً اقدام مد نظر جهت اعمال بر تنگه را انتخاب فرمایید:"
+        )
+
+        kb = [
+            [InlineKeyboardButton("🔴 مسدودسازی کامل تنگه", callback_data="dip:strait_act:block")],
+            [InlineKeyboardButton("🟡 دریافت عوارض ترانزیت (حق عبور)", callback_data="dip:strait_act:toll")],
+            [InlineKeyboardButton("🟢 بازگشایی کامل و ترانزیت آزاد", callback_data="dip:strait_act:open")],
+            [InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data.startswith("dip:strait_act:"):
+        act = data.split(":")[2]
+        c_key = country.get("country_key")
+        strait_info = db.get_strait_info_by_country_key(c_key)
+
+        if not strait_info:
+            await query.edit_message_text("❌ شما تسلطی بر تنگه‌های استراتژیک ندارید.", parse_mode="Markdown")
+            return
+
+        s_key = strait_info["strait_key"]
+        s_name = strait_info["name"]
+
+        if act == "block":
+            db.set_strait_status(s_key, "blocked")
+            await news_engine.trigger_strait_news(context.bot, country, s_name, "block")
+            await query.edit_message_text(
+                f"🔴 **{s_name} به طور کامل مسدود گردید.**\n\n📢 خبر فوری انسداد آبراه در کانال اصلی بازی منتشر شد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+        elif act == "toll":
+            toll_val = 1_000_000
+            db.set_strait_status(s_key, "toll", toll_val)
+            await news_engine.trigger_strait_news(context.bot, country, s_name, "toll", format_money(toll_val))
+            await query.edit_message_text(
+                f"🟡 **عوارض ترانزیت ({format_money(toll_val)}) برای عبور از {s_name} برقرار گردید.**\n\n📢 خبر رسمی در کانال منتشر گردید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+        elif act == "open":
+            db.set_strait_status(s_key, "open")
+            await news_engine.trigger_strait_news(context.bot, country, s_name, "open")
+            await query.edit_message_text(
+                f"🟢 **{s_name} بازگشایی شد و ترانزیت آزاد برقرار گردید.**\n\n📢 خبر رسمی در کانال منتشر گردید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
 
     elif data == "dip:break_blk":
         msl_assets = db.get_country_assets(country["id"], category="Missiles")

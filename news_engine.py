@@ -96,3 +96,28 @@ async def trigger_protest_news(bot, country: dict, reason: str):
         "شکل گرفته است. گزارش‌ها از خروج تدریجی نیروها و موج جدید مهاجرت خبر می‌دهند."
     )
     await post_breaking_news(bot, title, body, "بحران اجتماعی")
+
+
+async def trigger_strait_news(bot, country: dict, strait_name: str, action_type: str, toll_str: str = ""):
+    """انتشار خبر فوری وضعیت انسداد یا عوارض ترانزیت در تنگه‌های استراتژیک."""
+    if action_type == "block":
+        title = f"انسداد کامل {strait_name} توسط {country['name']}"
+        body = (
+            f"دولت {country['flag']} {country['name']} رسماً مسدودسازی کامل و انسداد ترانزیت در {strait_name} را اعلام نمود.\n"
+            "کلیه خطوط کشتیرانی و معاهدات دریایی در این آبراه استراتژیک متوقف گردید."
+        )
+        category = "بحران ژئوپلیتیک"
+    elif action_type == "toll":
+        title = f"وضع عوارض ترانزیت در {strait_name} توسط {country['name']}"
+        body = (
+            f"دولت {country['flag']} {country['name']} دریافت عوارض ترانزیت ({toll_str}) برای عبور تمام شناورهای تجاری از {strait_name} را آغاز کرد."
+        )
+        category = "معاهده بین‌المللی"
+    else:
+        title = f"بازگشایی و ترانزیت آزاد در {strait_name} توسط {country['name']}"
+        body = (
+            f"دولت {country['flag']} {country['name']} لغو انسداد و بازگشایی کامل ترانزیت آزاد دریایی در {strait_name} را رسماً اعلام نمود."
+        )
+        category = "تحرکات ژئوپلیتیک"
+
+    await post_breaking_news(bot, title, body, category)
