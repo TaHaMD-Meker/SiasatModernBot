@@ -162,6 +162,8 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     if country_id and country_key:
         seed_country_assets(country_id, country_key)
 
+    return country_id
+
 
 def get_country_by_id(country_id: int):
     conn = get_connection()
@@ -458,7 +460,7 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                             (quantity, country_id, item_key))
             else:
                 cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
-                            (quantity, country_id, item_key))
+                            (country_id, item_key, quantity))
 
             now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cur.execute("""
@@ -485,7 +487,7 @@ def add_equipment(country_id: int, item_key: str, quantity: int):
     else:
         if quantity > 0:
             cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)",
-                        (quantity, country_id, item_key))
+                        (country_id, item_key, quantity))
     conn.commit()
     conn.close()
 
