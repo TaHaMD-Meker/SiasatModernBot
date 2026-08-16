@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 
 import database as db
 import config
+import war_analyzer
 from utils import format_money, format_number, format_oil
 
 
@@ -28,6 +29,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "👑 **پنل مدیریت بازی «سیاست مدرن»**\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
+        [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
@@ -324,6 +326,107 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+    elif data == "admin:war_start":
+        text = "🧠 **بخش تحلیل هوشمند نبرد و سناریو (AI War Analysis)**\n\nلطفاً **کشور مهاجم** را انتخاب کنید:"
+        keyboard = []
+        row = []
+        for k, c in config.COUNTRIES.items():
+            btn = InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"admin:war_att:{k}")
+            row.append(btn)
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:war_att:"):
+        att_key = data.split(":")[2]
+        c_info = config.COUNTRIES.get(att_key, {})
+        flag = c_info.get("flag", "")
+        name = c_info.get("name", att_key)
+
+        context.user_data["war_analysis"] = {"attacker_key": att_key}
+        context.user_data["admin_awaiting_input"] = {"type": "war_role", "attacker_key": att_key}
+
+        text = (
+            f"📝 **رول و برنامه عملیاتی کشور مهاجم ({flag} {name})**\n\n"
+            "لطفاً **رول / نقشه عملیاتی و توضیحات تهاجمی** ارسال‌شده توسط بازیکن را در پیام بعدی ارسال فرمایید:"
+        )
+        keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:war_def:"):
+        def_key = data.split(":")[2]
+        war_data = context.user_data.get("war_analysis", {})
+        att_key = war_data.get("attacker_key")
+        att_role = war_data.get("attacker_role", "")
+
+        if not att_key or not att_role:
+            await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
+            return
+
+        await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...")
+
+        report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
+
+        context.user_data["war_analysis"]["defender_key"] = def_key
+        context.user_data["war_analysis"]["losses"] = losses
+        context.user_data["war_analysis"]["report_text"] = report_text
+
+        keyboard = [
+            [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
+            [InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")],
+            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+        ]
+
+        if len(report_text) > 4000:
+            part1 = report_text[:3800]
+            part2 = report_text[3800:]
+            await query.message.reply_text(part1, parse_mode="Markdown")
+            await query.message.reply_text(part2, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            await query.edit_message_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:war_apply":
+        war_data = context.user_data.get("war_analysis", {})
+        att_key = war_data.get("attacker_key")
+        def_key = war_data.get("defender_key")
+        losses = war_data.get("losses")
+
+        if att_key and def_key and losses:
+            war_analyzer.apply_war_losses_to_db(att_key, def_key, losses)
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+            await query.edit_message_text(
+                f"{war_data.get('report_text', '')}\n\n━━━━━━━━━━━━━━━━━━\n✅ **تلفات و خسارات فوق با موفقیت در دیتابیس هر دو کشور ثبت و کسر گردید.**",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+        else:
+            await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]))
+
+    elif data == "admin:war_broadcast":
+        war_data = context.user_data.get("war_analysis", {})
+        report_text = war_data.get("report_text")
+        if report_text:
+            users = db.get_all_countries()
+            sent_count = 0
+            for u in users:
+                p_id = u.get("player_id")
+                if p_id:
+                    try:
+                        await context.bot.send_message(chat_id=p_id, text=report_text, parse_mode="Markdown")
+                        sent_count += 1
+                    except Exception:
+                        pass
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+            await query.edit_message_text(
+                f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 **گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن ارسال گردید.**",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
     elif data == "admin:sync_catalog":
         db.sync_all_country_assets_to_catalog()
         text = "⚡ **همگام‌سازی کامل انجام شد!**\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
@@ -524,6 +627,40 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             await update.message.reply_text(f"✅ پیام شما با موفقیت برای رهبر کشور {c['name']} ارسال شد.")
         except Exception as e:
             await update.message.reply_text(f"❌ ارسال پیام به بازیکن ناموفق بود:\n{e}")
+
+    elif input_type == "war_role":
+        att_key = input_state["attacker_key"]
+        role_text = update.message.text.strip()
+
+        if "war_analysis" not in context.user_data:
+            context.user_data["war_analysis"] = {}
+        context.user_data["war_analysis"]["attacker_key"] = att_key
+        context.user_data["war_analysis"]["attacker_role"] = role_text
+
+        c_info = config.COUNTRIES.get(att_key, {})
+        flag = c_info.get("flag", "")
+        name = c_info.get("name", att_key)
+
+        text_msg = (
+            f"🎯 **رول و برنامه عملیاتی کشور {flag} {name} با موفقیت ثبت شد.**\n\n"
+            "اکنون **کشور مدافع** را جهت ارزیابی و شبیه‌سازی نبرد انتخاب فرمایید:"
+        )
+
+        keyboard = []
+        row = []
+        for k, c in config.COUNTRIES.items():
+            if k == att_key:
+                continue
+            btn = InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"admin:war_def:{k}")
+            row.append(btn)
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin:menu")])
+
+        await update.message.reply_text(text_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif input_type == "broadcast":
         countries = db.get_all_countries()
