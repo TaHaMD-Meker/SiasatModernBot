@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 
 import database as db
 import config
+import approval_system
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
@@ -27,8 +28,12 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not c:
         return
 
+    app_val = c.get('approval_rating', 80)
+    app_icon = "🟢" if app_val >= 75 else ("🟡" if app_val >= 50 else ("🟠" if app_val >= 40 else "🔴"))
+
     text = (
         f"{c['flag']} {c['name']}\n\n"
+        f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
         f"👥 جمعیت: {format_number(c['population'])}\n"
         f"💰 درآمد مالیاتی: {format_money(c['tax_income'])}\n"
         f"🏦 خزانه: {format_money(c['treasury'])}\n"
@@ -37,11 +42,20 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🛢️ ذخیره نفت: {format_oil(c['oil_reserves'])}\n"
         f"🛢️ تولید نفت: {format_oil(c['oil_production'])} در روز\n\n"
         f"🌾 غلات: {format_number(c['grain'])}\n"
-        f"⚡ برق: {c['electricity']}\n\n"
+        f"⚡ برق: {c['electricity']}٪\n\n"
         f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
         f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}"
     )
     await update.message.reply_text(text, reply_markup=get_main_keyboard(update.effective_user.id))
+
+
+async def approval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    c = await require_country(update)
+    if not c:
+        return
+
+    msg = approval_system.get_approval_status_message(c)
+    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
 
 
 async def treasury(update: Update, context: ContextTypes.DEFAULT_TYPE):

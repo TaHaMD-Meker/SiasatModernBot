@@ -15,8 +15,9 @@ from telegram.ext import (
 
 import config
 import database as db
+import approval_system
 from handlers.start import get_start_handlers
-from handlers.country import country_profile, treasury, oil, army, help_command
+from handlers.country import country_profile, treasury, oil, army, help_command, approval_command
 from handlers.assets import show_assets_menu, get_assets_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
@@ -46,11 +47,15 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE):
 
         db.adjust_treasury(c["id"], c["daily_income"])
         db.adjust_gold(c["id"], c["gold_daily"])
+
+        # Process Approval Rating, Consumption & Emigration
+        app_res = approval_system.process_daily_approval_and_emigration(c)
+
         db.update_country_field(c["id"], "last_income_date", today)
-        db.add_transaction(c["id"], "daily_income", "درآمد روزانه", c["daily_income"])
+        db.add_transaction(c["id"], "daily_income", "درآمد روزانه و واریز منابع", c["daily_income"])
         updated_count += 1
 
-    logger.info(f"درآمد روزانه برای {updated_count} کشور واریز شد.")
+    logger.info(f"درآمد روزانه و محاسبه رضایت عمومی برای {updated_count} کشور انجام شد.")
 
 
 def main():
@@ -68,6 +73,7 @@ def main():
 
     # دستورات متنی نمایش وضعیت کشور
     app.add_handler(CommandHandler("country", country_profile))
+    app.add_handler(CommandHandler("approval", approval_command))
     app.add_handler(CommandHandler("treasury", treasury))
     app.add_handler(CommandHandler("oil", oil))
     app.add_handler(CommandHandler("army", army))
@@ -75,6 +81,7 @@ def main():
 
     # دکمه‌های ثابت پایین صفحه (Reply Keyboard Text Handlers)
     app.add_handler(MessageHandler(filters.Regex("^🌐 وضعیت کشور$"), country_profile))
+    app.add_handler(MessageHandler(filters.Regex("^📊 رضایت عمومی$"), approval_command))
     app.add_handler(MessageHandler(filters.Regex("^🎖️ دارایی‌های نظامی$"), show_assets_menu))
     app.add_handler(MessageHandler(filters.Regex("^🏦 خزانه و طلا$"), treasury))
     app.add_handler(MessageHandler(filters.Regex("^🛢️ وضعیت نفت$"), oil))

@@ -44,12 +44,18 @@ def init_db():
         reserve_personnel INTEGER DEFAULT 0,
         last_income_date TEXT,
         created_at TEXT,
-        country_key TEXT UNIQUE
+        country_key TEXT UNIQUE,
+        approval_rating INTEGER DEFAULT 80
     )
     """)
 
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN country_key TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN approval_rating INTEGER DEFAULT 80")
     except sqlite3.OperationalError:
         pass
 
@@ -234,7 +240,8 @@ def update_country_field(country_id: int, field: str, value):
     allowed = {
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
-        "active_personnel", "reserve_personnel", "last_income_date", "name", "flag"
+        "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
+        "approval_rating"
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
