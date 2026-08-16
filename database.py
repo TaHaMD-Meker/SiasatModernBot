@@ -443,15 +443,32 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
+            item = config.ALL_SHOP_ITEMS.get(item_key, {})
+            oil_req = item.get("oil_req", 0) * quantity
+            income_add = item.get("income_add", 0) * quantity
+            elec_add = item.get("elec_add", 0) * quantity
+            gold_daily_add = item.get("gold_daily_add", 0) * quantity
+
+            cur.execute("SELECT treasury, oil_reserves FROM countries WHERE id = ?", (country_id,))
             row = cur.fetchone()
             if not row:
                 return False, "کشور پیدا نشد."
 
             if row["treasury"] < total_price:
-                return False, f"موجودی کافی نیست! قیمت: {total_price} | خزانه: {row['treasury']}"
+                return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_price:,} دلار\nخزانه فعلی: {row['treasury']:,} دلار"
 
-            cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (total_price, country_id))
+            if oil_req > 0 and row["oil_reserves"] < oil_req:
+                return False, f"🛢️ ذخیره نفت کافی نیست!\nنفت مورد نیاز برای احداث: {oil_req:,} بشکه\nذخیره موجود: {row['oil_reserves']:,} بشکه"
+
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                oil_reserves = MAX(0, oil_reserves - ?),
+                daily_income = daily_income + ?,
+                electricity = electricity + ?,
+                gold_daily = gold_daily + ?
+                WHERE id = ?
+            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, country_id))
 
             cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
             eq_row = cur.fetchone()
@@ -466,9 +483,9 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?,?,?,?,?)
-            """, (country_id, "purchase", f"خرید {item_name} x{quantity}", -total_price, now_str))
+            """, (country_id, "purchase", f"احداث {item_name} x{quantity}", -total_price, now_str))
 
-        return True, "خرید با موفقیت انجام شد."
+        return True, "پروژه احداث با موفقیت ثبت گردید."
     except Exception as e:
         return False, f"خطا در دیتابیس: {e}"
     finally:

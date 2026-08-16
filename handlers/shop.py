@@ -226,17 +226,20 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     item_key = query.data.split(":", 1)[1]
     item = config.ALL_SHOP_ITEMS.get(item_key)
     if not item:
-        await query.edit_message_text("این کالا در دسترس نیست.")
+        await query.edit_message_text("این پروژه در دسترس نیست.")
         return
 
     buttons = [
-        [InlineKeyboardButton("✅ تأیید خرید (۱ عدد)", callback_data=f"docivbuy:{item_key}:1")],
-        [InlineKeyboardButton("❌ لغو", callback_data="shopback")],
+        [InlineKeyboardButton("✅ تأیید و احداث پروژه (۱ عدد)", callback_data=f"docivbuy:{item_key}:1")],
+        [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")],
     ]
+
+    desc_text = item.get("desc", f"🏗️ **پروژه:** {item['name']}\n\n💰 **هزینه احداث:** {format_money(item['price'])}")
+
     await query.edit_message_text(
-        f"خرید: {item['name']}\n💰 قیمت واحد: {format_money(item['price'])}\n\n"
-        "برای خرید ۱ عدد تأیید کنید:",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        desc_text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode="Markdown"
     )
 
 
@@ -254,22 +257,54 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     country = db.get_country_by_player(update.effective_user.id)
     item = config.ALL_SHOP_ITEMS.get(item_key)
     if not country or not item:
-        await query.edit_message_text("خطا در انجام خرید.")
+        await query.edit_message_text("خطا در انجام عملیات.")
         return
 
     total_price = item["price"] * quantity
     success, msg = db.buy_item_transaction(country["id"], item_key, quantity, total_price, item["name"])
 
     if not success:
-        await query.edit_message_text(f"❌ خرید انجام نشد:\n{msg}")
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")]]
+        await query.edit_message_text(
+            f"❌ **عملیات احداث انجام نشد:**\n\n{msg}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
         return
 
-    db.add_log(actor=str(update.effective_user.id), action="purchase", details=f"{item_key} x{quantity}")
+    db.add_log(actor=str(update.effective_user.id), action="civilian_purchase", details=f"{item_key} x{quantity}")
     updated_country = db.get_country_by_player(update.effective_user.id)
 
+    oil_req = item.get("oil_req", 0) * quantity
+    income_add = item.get("income_add", 0) * quantity
+    elec_add = item.get("elec_add", 0) * quantity
+
+    benefit_lines = []
+    if oil_req > 0:
+        benefit_lines.append(f"🛢️ **نفت کسرشده:** {format_oil(oil_req)}")
+    if income_add > 0:
+        benefit_lines.append(f"💵 **افزایش درآمد روزانه:** +{format_money(income_add)}/روز")
+    if elec_add > 0:
+        benefit_lines.append(f"⚡ **تولید انرژی افزوده‌شده:** +{elec_add}٪")
+
+    benefits_str = "\n".join(benefit_lines) if benefit_lines else "✅ پروژه با موفقیت در دیتابیس ثبت شد."
+
+    text = (
+        f"✅ **پروژه با موفقیت ساخته و ثبت شد!**\n\n"
+        f"🏗️ **نام پروژه:** {item['name']}\n"
+        f"💰 **مبلغ کسر شده از خزانه:** {format_money(total_price)}\n"
+        f"{benefits_str}\n\n"
+        f"🏦 **موجودی جدید خزانه:** {format_money(updated_country['treasury'])}\n"
+        f"⚡ **تراز جدید برق:** {updated_country['electricity']}٪\n"
+        f"📈 **درآمد روزانه جدید:** {format_money(updated_country['daily_income'])}"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🏪 بازگشت به فروشگاه", callback_data="shopback")],
+    ]
+
     await query.edit_message_text(
-        f"✅ خرید غیرنظامی با موفقیت انجام شد!\n\n"
-        f"🛒 {item['name']} x{quantity}\n"
-        f"💰 مبلغ کسر شده: {format_money(total_price)}\n"
-        f"🏦 موجودی جدید خزانه: {format_money(updated_country['treasury'])}"
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
     )
