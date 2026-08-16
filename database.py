@@ -167,6 +167,20 @@ def init_db():
     )
     """)
 
+    # محاصره‌های دریایی بین‌المللی
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS naval_blockades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        blockader_id INTEGER NOT NULL,
+        target_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        UNIQUE(blockader_id, target_id),
+        FOREIGN KEY(blockader_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(target_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     # روابط دیپلماتیک بین کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS diplomatic_relations (
@@ -994,6 +1008,57 @@ def set_setting(key: str, value: str):
         INSERT INTO settings (key, value) VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
     """, (key, str(value)))
+    conn.commit()
+    conn.close()
+
+
+# ---------- سیستم محاصره دریایی بین‌المللی ----------
+
+def create_naval_blockade(blockader_id: int, target_id: int) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cur.execute("""
+        INSERT INTO naval_blockades (blockader_id, target_id, status, created_at)
+        VALUES (?, ?, 'active', ?)
+        ON CONFLICT(blockader_id, target_id) DO UPDATE SET status = 'active'
+    """, (blockader_id, target_id, now_str))
+    blockade_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return blockade_id
+
+
+def is_country_blockaded(country_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM naval_blockades WHERE target_id = ? AND status = 'active'", (country_id,))
+    row = cur.fetchone()
+    conn.close()
+    return bool(row)
+
+
+def get_active_blockades_for_country(country_id: int) -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM naval_blockades WHERE (target_id = ? OR blockader_id = ?) AND status = 'active'", (country_id, country_id))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def lift_naval_blockade(blockader_id: int, target_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE naval_blockades SET status = 'lifted' WHERE blockader_id = ? AND target_id = ? AND status = 'active'", (blockader_id, target_id))
+    conn.commit()
+    conn.close()
+
+
+def break_naval_blockade(target_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE naval_blockades SET status = 'broken' WHERE target_id = ? AND status = 'active'", (target_id,))
     conn.commit()
     conn.close()
 

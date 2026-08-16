@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 
 import database as db
 import config
+import news_engine
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
@@ -61,6 +62,7 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• **یادداشت دیپلماتیک:** ارسال پیام رسمی به سایر کشورها\n"
         "• **قرارداد تجاری:** مبادله نفت، غلات، طلا و پول با معاهده رسمی\n"
         "• **انتقال/فروش تسلیحات:** انتقال تجهیزات نظامی از دارایی‌های کشوری\n"
+        "• **محاصره دریایی:** مسدودسازی بنادر و خطوط مواصلاتی کشور هدف\n"
         "• **کمک خارجی:** ارسال کمک‌های انسان‌دوستانه بدون مابه‌ازا\n"
         "• **روابط و تحریم‌ها:** مدیریت اتحادها و تحریم‌های یک‌طرفه"
     )
@@ -69,6 +71,7 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✉️ ارسال یادداشت دیپلماتیک", callback_data="dip:msg_start")],
         [InlineKeyboardButton("📜 پیشنهاد قرارداد تجاری", callback_data="dip:trade_start")],
         [InlineKeyboardButton("🎖️ انتقال/فروش تسلیحات نظامی", callback_data="dip:mil_start")],
+        [InlineKeyboardButton("⚓ محاصره دریایی بین‌المللی", callback_data="dip:blockade_start")],
         [InlineKeyboardButton("🕊️ کمک خارجی و انسان‌دوستانه", callback_data="dip:aid_start")],
         [InlineKeyboardButton("🤝 اتحادها و تحریم‌ها", callback_data="dip:rel_start")],
     ]
@@ -165,6 +168,42 @@ async def dip_military_start(query, context, country):
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+
+# ==================== 2.7. محاصره دریایی بین‌المللی ====================
+
+async def dip_blockade_start(query, context, country):
+    assets = db.get_country_assets(country["id"], category="Navy")
+    naval_count = sum(a["amount"] for a in assets)
+
+    if naval_count < 1:
+        await query.edit_message_text(
+            "⚓ **عدم توانایی عملیاتی:** کشور شما در حال حاضر فاقد یگان‌های ناوشکن، ناوچه یا ناوهای رزمی در دیتابیس برای اجرای محاصره دریایی است.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
+        return
+
+    countries = db.get_all_countries()
+    other_countries = [c for c in countries if c["id"] != country["id"]]
+
+    text = f"⚓ **عملیات محاصره دریایی بین‌المللی — ناوگان {country['flag']} {country['name']}**\n\nلطفاً کشور هدف جهت مسدودسازی بنادر و خطوط دریایی را انتخاب کنید:"
+
+    keyboard = []
+    row = []
+    for c in other_countries:
+        is_blk = db.is_country_blockaded(c["id"])
+        lbl = f"⚓ {c['name']} (تحت محاصره)" if is_blk else f"{c['flag']} {c['name']}"
+        btn = InlineKeyboardButton(lbl, callback_data=f"dip:blk_target:{c['id']}")
+        row.append(btn)
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")])
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
 async def dip_aid_start(query, context, country):
     countries = db.get_all_countries()
     other_countries = [c for c in countries if c["id"] != country["id"]]
@@ -250,6 +289,46 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data == "dip:mil_start":
         await dip_military_start(query, context, country)
+
+    elif data == "dip:blockade_start":
+        await dip_blockade_start(query, context, country)
+
+    elif data.startswith("dip:blk_target:"):
+        target_id = int(data.split(":")[2])
+        target_c = db.get_country_by_id(target_id)
+
+        if not target_c:
+            await query.edit_message_text("❌ کشور هدف پیدا نشد.", parse_mode="Markdown")
+            return
+
+        db.create_naval_blockade(country["id"], target_id)
+
+        new_app = max(0, target_c.get("approval_rating", 80) - 15)
+        db.update_country_field(target_id, "approval_rating", new_app)
+
+        await news_engine.trigger_blockade_news(context.bot, country, target_c)
+        await news_engine.trigger_protest_news(context.bot, target_c, f"محاصره کامل دریایی بنادر توسط ناوگان {country['name']}")
+
+        if target_c.get("player_id"):
+            try:
+                await context.bot.send_message(
+                    chat_id=target_c["player_id"],
+                    text=(
+                        f"⚓ **هشدار اضطراری — محاصره دریایی!**\n\n"
+                        f"ناوگان دریایی کشور {country['flag']} {country['name']} تمامی بنادر و خطوط مواصلاتی دریایی شما را تحت محاصره کامل قرار داد!\n"
+                        f"📉 این امر موجب کسر ۱۵٪ از رضایت عمومی و شکل‌گیری اعتراضات معیشتی گردیده است."
+                    ),
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+        await query.edit_message_text(
+            f"⚓ **عملیات محاصره دریایی علیه کشور {target_c['flag']} {target_c['name']} با موفقیت اجرا شد.**\n\n"
+            "📢 خبر فوری این حادثه ژئوپلیتیک و موج اعتراضات مردمی در کانال رسمی منتشر گردید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
 
     elif data.startswith("dip:mil_target:"):
         target_id = int(data.split(":")[2])
