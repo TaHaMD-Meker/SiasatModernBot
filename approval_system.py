@@ -110,13 +110,21 @@ def process_daily_approval_and_emigration(c: dict):
         grain_penalty = 0
         grain_ok = True
 
-    # 4. Recovery
-    if elec_ok and oil_ok and grain_ok:
+    # 4. Check Treasury Debt Penalty (-10% for every -$10,000,000 deficit)
+    treasury = c.get("treasury", 0)
+    if treasury < 0:
+        debt_units = abs(treasury) / 10_000_000
+        debt_penalty = -int(debt_units * 10)
+    else:
+        debt_penalty = 0
+
+    # 5. Recovery
+    if elec_ok and oil_ok and grain_ok and treasury >= 0:
         recovery = 2
     else:
         recovery = 0
 
-    net_change = elec_penalty + oil_penalty + grain_penalty + recovery
+    net_change = elec_penalty + oil_penalty + grain_penalty + debt_penalty + recovery
     new_approval = max(0, min(100, current_approval + net_change))
     db.update_country_field(cid, "approval_rating", new_approval)
 
@@ -207,6 +215,13 @@ def get_approval_status_message(c: dict):
     else:
         grain_status = f"گرسنگی و کمبود غلات (کسری: {format_number(grain_need - avail_grain)} تن)"
     lines.append(f"• *تامین غذا و غلات:* {grain_status}\n")
+
+    # Treasury Debt Penalty
+    treasury = c.get("treasury", 0)
+    if treasury < 0:
+        debt_units = abs(treasury) / 10_000_000
+        debt_drop = int(debt_units * 10)
+        lines.append(f"• *دیون و بدهی سنگین خزانه:* کسر {debt_drop}٪ از رضایت عمومی به دلیل بدهی {format_money(treasury)}\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
     lines.append("*وضعیت جمعیت و مهاجرت:*\n")

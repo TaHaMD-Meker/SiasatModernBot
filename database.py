@@ -1156,7 +1156,7 @@ def get_industrial_oil_consumption(country_id: int) -> int:
 
 
 def calculate_country_maintenance_cost(country_id: int) -> dict:
-    """محاسبه دقیق هزینه نگهداری روزانه تسلیحات و ارتش با تخفیف سطح فناوری (Tech Level)."""
+    """محاسبه متوازن هزینه نگهداری روزانه تسلیحات و ارتش با تخفیف سطح فناوری (Tech Level)."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -1176,9 +1176,10 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
     conn.close()
 
     raw_assets_maint = sum(r["amount"] * (r["maintenance_cost"] or 0) for r in asset_rows)
-    assets_maint = int(raw_assets_maint * (1 - (discount_pct / 100.0)))
+    scaled_maint = int(raw_assets_maint * 0.02)
+    assets_maint = int(scaled_maint * (1 - (discount_pct / 100.0)))
 
-    personnel_maint = active_p * 2
+    personnel_maint = int(active_p * 0.5)
     total_maint = assets_maint + personnel_maint
 
     return {
