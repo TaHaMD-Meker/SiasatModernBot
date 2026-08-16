@@ -147,7 +147,7 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     posted_to_channel = False
     try:
         await context.bot.send_photo(
-            chat_id=config.CHANNEL_ID,
+            chat_id=config.get_channel_id(),
             photo=photo_file_id,
             caption=channel_card,
             parse_mode="Markdown"
@@ -239,7 +239,7 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     posted_to_channel = False
     try:
         await context.bot.send_message(
-            chat_id=config.CHANNEL_ID,
+            chat_id=config.get_channel_id(),
             text=tweet_card,
             parse_mode="Markdown"
         )

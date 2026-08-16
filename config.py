@@ -1683,6 +1683,16 @@ for group in (BUILDINGS, FACTORIES, POWER_PLANTS, TRANSPORTATION, MINES_AND_RESO
 # ===== کانال تلگرام جهت انتشار بیانیه‌ها و توییت‌ها =====
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ModernWarFarChannel")
 
+def get_channel_id():
+    try:
+        import database as db
+        db_val = db.get_setting("channel_id")
+        if db_val:
+            return db_val
+    except Exception:
+        pass
+    return CHANNEL_ID
+
 # ===== مسیر فایل دیتابیس =====
 # ===== مسیر دیتابیس =====
 # پشتیبانی از Volume دائمی Railway (در صورت وجود /data یا تنظیم متغیر DB_PATH)

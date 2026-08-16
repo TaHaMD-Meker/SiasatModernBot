@@ -153,14 +153,11 @@ def init_db():
     )
     """)
 
-    # لاگ‌ها
+    # تنظیمات پویای سیستم
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        actor TEXT,
-        action TEXT,
-        details TEXT,
-        created_at TEXT
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
     )
     """)
 
@@ -971,7 +968,28 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
         return False, f"خطا در ارسال کمک: {e}"
 
 
-# ---------- ابزارهای رصد و نظارت ادمین ----------
+# ---------- تنظیمات پویا ----------
+
+def get_setting(key: str, default_val: str = None) -> str:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = cur.fetchone()
+    conn.close()
+    if row and row["value"]:
+        return row["value"]
+    return default_val
+
+
+def set_setting(key: str, value: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    """, (key, str(value)))
+    conn.commit()
+    conn.close()
 
 def get_country_transactions(country_id: int, limit: int = 20) -> list:
     conn = get_connection()

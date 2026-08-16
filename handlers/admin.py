@@ -31,6 +31,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
         [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
+        [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
         [InlineKeyboardButton("✉️ رصد معاهدات و پیام‌های دیپلماتیک", callback_data="admin:dip_logs")],
         [InlineKeyboardButton("📜 رصد فعالیت‌ها و لاگ‌های سیستم", callback_data="admin:activity_logs")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
@@ -849,6 +850,17 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")]])
         )
 
+    elif data == "admin:set_channel_prompt":
+        context.user_data["admin_awaiting_input"] = {"type": "set_channel"}
+        curr_ch = config.get_channel_id()
+        await query.edit_message_text(
+            f"📢 **تنظیم آیدی کانال تلگرام جهت انتشار بیانیه‌ها و توییت‌ها**\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"• **آیدی کانال فعلی:** `{curr_ch}`\n\n"
+            "لطفاً **آیدی یا شناسه عددی کانال تلگرام** خود را ارسال فرمایید (مثلاً: `@ModernWarFarChannel` یا `-1001234567890`):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")]]),
+            parse_mode="Markdown"
+        )
+
     # تأیید و اجرای حذف کشور
     elif data.startswith("admin:delconfirm:"):
         c_id = int(data.split(":")[2])
@@ -998,6 +1010,15 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             await update.message.reply_text(part2, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             await update.message.reply_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif input_type == "set_channel":
+        db.set_setting("channel_id", text)
+        await update.message.reply_text(
+            f"✅ **آیدی کانال تلگرام با موفقیت بروزرسانی شد!**\n\n"
+            f"• **کانال جدید:** `{text}`\n\n"
+            "کافیست ربات را در این کانال به‌عنوان ادمین با دسترسی ارسال پیام اضافه فرمایید تا بیانیه‌ها و توییت‌ها مستقیماً در آن منتشر شوند.",
+            parse_mode="Markdown"
+        )
 
     elif input_type == "broadcast":
         countries = db.get_all_countries()
