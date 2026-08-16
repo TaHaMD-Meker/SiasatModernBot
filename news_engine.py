@@ -37,9 +37,9 @@ async def trigger_blockade_news(bot, blockader_c: dict, target_c: dict):
     """انتشار خبر فوری آغاز محاصره دریایی."""
     title = f"محاصره دریایی بنادر {target_c['name']} توسط {blockader_c['name']}"
     body = (
-        f"یگان‌های ناوگان دریایی کشور {blockader_c['flag']} {blockader_c['name']} تمام خطوط مواصلاتی دریایی "
-        f"و بنادر تجاری کشور {target_c['flag']} {target_c['name']} را زیر محاصره کامل دریایی قرار دادند.\n"
-        f"این اقدام موجب قطع صادرات/واردات دریایی، افت ۱۵ درصدی رضایت عمومی و شکل‌گیری اعتراضات شهری در {target_c['name']} شده است."
+        f"یگان‌های ناوگان دریایی کشور {blockader_c['flag']} {blockader_c['name']} تمام خطوط ترانزیت دریایی "
+        f"و بنادر تجاری کشور {target_c['flag']} {target_c['name']} را زیر محاصره کامل قرار دادند.\n"
+        f"این اقدام موجب توقف مبادلات دریایی و صفر شدن درآمدهای تجاری بنادر گردیده است. (مسیرهای ترابری هوایی و زمینی همچنان فعال می‌باشد)."
     )
     await post_breaking_news(bot, title, body, "محاصره دریایی بین‌المللی")
 
@@ -61,14 +61,31 @@ async def trigger_unblockade_news(bot, blockader_c: dict, target_c: dict, is_bro
     await post_breaking_news(bot, title, body, "تحرکات ژئوپلیتیک")
 
 
-async def trigger_trade_news(bot, prop_c: dict, recip_c: dict, details_str: str):
-    """انتشار خبر فوری انعقاد معاهده بزرگ بین‌المللی."""
-    title = f"امضای معاهده تجاری استراتژیک بین {prop_c['name']} و {recip_c['name']}"
-    body = (
-        f"نمایندگان دیپلماتیک دو کشور {prop_c['flag']} {prop_c['name']} و {recip_c['flag']} {recip_c['name']} "
-        f"معاهده بزرگ اقتصادی و تجاری را امضا کردند.\nجزییات معاهده: {details_str}"
-    )
-    await post_breaking_news(bot, title, body, "معاهده بین‌المللی")
+async def trigger_trade_news(bot, prop_c: dict, recip_c: dict, details_str: str = "", transport_mode: str = "sea"):
+    """انتشار خبر فوری محرمانه معاهده یا ترابری بین‌المللی (بدون افشای جزئیات عددی و نام تسلیحات)."""
+    if transport_mode == "air":
+        title = f"پروازهای ترابری سنگین هوایی بین {prop_c['name']} و {recip_c['name']}"
+        body = (
+            f"پرواز چند فروند هواپیمای ترابری سنگین هوایی بین کشور {prop_c['flag']} {prop_c['name']} و کشور {recip_c['flag']} {recip_c['name']} "
+            f"توسط رادارهای منطقه‌ای به ثبت رسید.\nطبق مفاد معاهده دوجانبه، جزئیات عددی و نوع محموله‌های ترابری‌شده محرمانه باقی مانده است."
+        )
+        category = "تحرکات ژئوپلیتیک"
+    elif transport_mode == "land":
+        title = f"ترانزیت و مبادلات زمینی بین {prop_c['name']} و {recip_c['name']}"
+        body = (
+            f"حرکت کاروان‌های ترانزیت زمینی تحت تدابیر امنیتی بین کشور {prop_c['flag']} {prop_c['name']} و کشور {recip_c['flag']} {recip_c['name']} "
+            f"مشاهده گردید.\nجزئیات و محتوای این معاهده تجاری محرمانه می‌باشد."
+        )
+        category = "معاهده بین‌المللی"
+    else:
+        title = f"امضای معاهده تجاری و ترانزیت دریایی بین {prop_c['name']} و {recip_c['name']}"
+        body = (
+            f"نمایندگان دیپلماتیک دو کشور {prop_c['flag']} {prop_c['name']} و {recip_c['flag']} {recip_c['name']} "
+            f"معاهده جدید تجاری از طریق خطوط مواصلاتی دریایی را امضا و اجرا نمودند.\nجزئیات دقیق محموله‌ها محرمانه حفظ شده است."
+        )
+        category = "معاهده بین‌المللی"
+
+    await post_breaking_news(bot, title, body, category)
 
 
 async def trigger_protest_news(bot, country: dict, reason: str):

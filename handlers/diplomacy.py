@@ -511,9 +511,43 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         payer = data.split(":")[2]
         draft = context.user_data.get("mil_draft", {})
         draft["transport_payer"] = payer
-        draft["transport_cost"] = 500_000
 
+        text = (
+            "🌐 **انتخاب روش ترابری و ترانزیت محموله نظامی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "لطفاً روش ارسال تجهیزات را انتخاب بفرمایید:\n\n"
+            "• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سریع‌ترین / فعال در زمان محاصره)\n"
+            "• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (ترانزیت زمینی / فعال)\n"
+            "• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
+            [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+            [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:sea:{payer}")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("dip:mil_finish:"):
+        _, _, mode, payer = data.split(":")
+        draft = context.user_data.get("mil_draft", {})
         target_c = db.get_country_by_id(draft["target_id"])
+
+        if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
+            await query.edit_message_text(
+                "⚓ **ترابری دریایی مسدود است!**\n\nکشور شما یا کشور مقصد در حال حاضر تحت محاصره کامل دریایی است. لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
+                    [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
+        cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
+        mode_labels = {"air": "✈️ ترابری هوایی", "land": "🚛 ترابری زمینی", "sea": "🚢 ترابری دریایی"}
+        t_cost = cost_map.get(mode, 300_000)
 
         contract_id = db.create_trade_contract(
             proposer_id=country["id"],
@@ -523,8 +557,9 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             requested_type="treasury",
             requested_amount=draft["requested_amount"],
             transport_payer=payer,
-            transport_cost=500_000,
-            offered_key=draft["equipment_key"]
+            transport_cost=t_cost,
+            offered_key=draft["equipment_key"],
+            transport_mode=mode
         )
 
         recip_msg = (
@@ -532,7 +567,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"• **سلاح ارسالی:** {draft['equipment_name']}\n"
             f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
             f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
-            f"• **پرداخت‌کننده هزینه ترانزیت (۵۰۰ هزار دلار):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+            f"• **روش ترابری:** {mode_labels.get(mode, mode)}\n"
+            f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
             "آیا با دریافت و امضای این معاهده تسلیحاتی موافقید؟"
         )
         recip_kb = [
@@ -547,10 +583,10 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 pass
 
         await query.edit_message_text(
-            f"✅ **پیشنهاد معاهده نظامی با موفقیت به کشور {target_c['name']} ارسال شد.**\nپس از تایید و امضای طرف مقابل، تجهیزات به کشور مقصد منتقل می‌گردد.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]], parse_mode="Markdown")
+            f"✅ **پیشنهاد معاهده نظامی با موفقیت به کشور {target_c['name']} ارسال شد.**\nپس از تایید و امضای طرف مقابل، تجهیزات منتقل می‌گردد.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
         )
-
     elif data.startswith("dip:msg_target:"):
         target_id = int(data.split(":")[2])
         target_c = db.get_country_by_id(target_id)
@@ -615,11 +651,44 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         payer = data.split(":")[2] # 'seller' or 'buyer'
         draft = context.user_data.get("trade_draft", {})
         draft["transport_payer"] = payer
-        draft["transport_cost"] = 500_000 # Standard flat transport fee
 
+        text = (
+            "🌐 **انتخاب روش ترابری و ترانزیت محموله تجاری**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "لطفاً روش ارسال کالاهای تجاری را انتخاب بفرمایید:\n\n"
+            "• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سریع‌ترین / فعال در زمان محاصره)\n"
+            "• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (ترانزیت زمینی / فعال)\n"
+            "• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
+            [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+            [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:sea:{payer}")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("dip:trade_finish:"):
+        _, _, mode, payer = data.split(":")
+        draft = context.user_data.get("trade_draft", {})
         target_c = db.get_country_by_id(draft["target_id"])
 
-        # Create pending contract
+        if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
+            await query.edit_message_text(
+                "⚓ **ترابری دریایی مسدود است!**\n\nکشور شما یا کشور مقصد در حال حاضر تحت محاصره کامل دریایی است. لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
+                    [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
+        cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
+        mode_labels = {"air": "✈️ ترابری هوایی", "land": "🚛 ترابری زمینی", "sea": "🚢 ترابری دریایی"}
+        t_cost = cost_map.get(mode, 300_000)
+
         contract_id = db.create_trade_contract(
             proposer_id=country["id"],
             recipient_id=draft["target_id"],
@@ -628,17 +697,18 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             requested_type=draft["requested_type"],
             requested_amount=draft["requested_amount"],
             transport_payer=payer,
-            transport_cost=500_000
+            transport_cost=t_cost,
+            transport_mode=mode
         )
 
         type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
 
-        # Send contract offer to recipient player
         recip_msg = (
             f"📜 **پیشنهاد قرارداد تجاری رسمی از طرف {country['flag']} {country['name']}**\n\n"
             f"• **کالای تحویلی به شما:** {draft['offered_amount']:,} {type_map.get(draft['offered_type'])}\n"
             f"• **مابه‌ازای درخواستی از شما:** {draft['requested_amount']:,} {type_map.get(draft['requested_type'])}\n"
-            f"• **پرداخت‌کننده هزینه ترانزیت (۵۰۰ هزار دلار):** {'فروشنده (پیشنهاددهنده)' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+            f"• **روش ترابری:** {mode_labels.get(mode, mode)}\n"
+            f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده (پیشنهاددهنده)' if payer == 'seller' else 'خریدار (شما)'}\n\n"
             "آیا با انعقاد و اجرای این معاهده تجاری موافقید؟"
         )
         recip_kb = [
@@ -654,9 +724,9 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         await query.edit_message_text(
             f"✅ **پیشنهاد قرارداد تجاری با موفقیت به کشور {target_c['name']} ارسال شد.**\nپس از تایید طرف مقابل، معاهده به طور خودکار اجرا می‌گردد.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]], parse_mode="Markdown")
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
         )
-
     elif data.startswith("dip:trade_accept:"):
         contract_id = int(data.split(":")[2])
         succ, msg = db.execute_trade_contract_transaction(contract_id)
@@ -697,7 +767,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         )
 
         try:
-            await news_engine.trigger_trade_news(context.bot, p_c, r_c, f"{offered_str} در برابر {requested_str}")
+            t_mode = c_data.get("transport_mode", "sea") or "sea"
+            await news_engine.trigger_trade_news(context.bot, p_c, r_c, transport_mode=t_mode)
         except Exception:
             pass
 

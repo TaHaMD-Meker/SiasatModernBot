@@ -221,6 +221,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cur.execute("ALTER TABLE trade_contracts ADD COLUMN transport_mode TEXT DEFAULT 'sea'")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -770,15 +775,15 @@ def are_sanctioned(c1_id: int, c2_id: int) -> bool:
     return rel.get("status") == "sanctioned"
 
 
-def create_trade_contract(proposer_id: int, recipient_id: int, offered_type: str, offered_amount: int, requested_type: str, requested_amount: int, transport_payer: str = "seller", transport_cost: int = 0, offered_key: str = None) -> int:
+def create_trade_contract(proposer_id: int, recipient_id: int, offered_type: str, offered_amount: int, requested_type: str, requested_amount: int, transport_payer: str = "seller", transport_cost: int = 0, offered_key: str = None, transport_mode: str = "sea") -> int:
     conn = get_connection()
     cur = conn.cursor()
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     cur.execute("""
         INSERT INTO trade_contracts
-        (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, now_str))
+        (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, now_str))
     contract_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -818,6 +823,11 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
 
             p_id = c["proposer_id"]
             r_id = c["recipient_id"]
+
+            t_mode = c.get("transport_mode", "sea") or "sea"
+            if t_mode == "sea":
+                if is_country_blockaded(p_id) or is_country_blockaded(r_id):
+                    return False, "⚓ **امکان اجرای معاهده از طریق ترابری دریایی وجود ندارد:** خطوط مواصلاتی دریایی یکی از دو کشور تحت محاصره کامل دریایی است. لطفا برای این معاهده از ترابری هوایی یا زمینی استفاده بفرمایید."
 
             c_min, c_max = _ordered_pair(p_id, r_id)
             cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
