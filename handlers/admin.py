@@ -29,6 +29,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "👑 **پنل مدیریت بازی «سیاست مدرن»**\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
+        [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
         [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
         [InlineKeyboardButton("✉️ رصد معاهدات و پیام‌های دیپلماتیک", callback_data="admin:dip_logs")],
         [InlineKeyboardButton("📜 رصد فعالیت‌ها و لاگ‌های سیستم", callback_data="admin:activity_logs")],
@@ -368,6 +369,106 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 lines.append(f"{idx}. {c['flag']} **{c['name']}** | 🏦 خزانه: {format_money(c['treasury'])} | 🪙 طلا: {c['gold']} | 🛢️ نفت: {format_oil(c['oil_reserves'])}\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:pending_roles":
+        roles = db.get_pending_roleplays()
+        text = "📝 **مدیریت رول‌های نظامی معلق (تاییدنشده)**\n━━━━━━━━━━━━━━━━━━\n\n"
+
+        if not roles:
+            text += "✅ در حال حاضر هیچ رول تاییدنشده‌ای در انتظار بررسی وجود ندارد."
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        else:
+            text += "لطفاً برای بررسی و تایید، رول مد نظر را انتخاب کنید:"
+            keyboard = []
+            type_labels = {"attack": "📝 تهاجمی (حمله)", "defense": "🛡️ پدافندی (دفاع)"}
+            for r in roles:
+                c = db.get_country_by_id(r["country_id"])
+                c_name = f"{c['flag']} {c['name']}" if c else "نامشخص"
+                t_lbl = type_labels.get(r["role_type"], r["role_type"])
+                btn_text = f"{c_name} | {t_lbl}"
+                keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"admin:show_role:{r['id']}")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")])
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:show_role:"):
+        role_id = int(data.split(":")[2])
+        r = db.get_roleplay_by_id(role_id)
+        if not r or r["status"] != "pending":
+            await query.edit_message_text("❌ این رول قبلاً تعیین تکلیف شده است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]))
+            return
+
+        c = db.get_country_by_id(r["country_id"])
+        c_name = f"{c['flag']} {c['name']}" if c else "نامشخص"
+        type_label = "📝 رول تهاجمی (حمله)" if r["role_type"] == "attack" else "🛡️ رول پدافندی (دفاع)"
+
+        text = (
+            f"📝 **بررسی رول نظامی — کشور {c_name}**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• **نوع رول:** {type_label}\n"
+            f"• **تاریخ ثبت:** `{r.get('created_at', '')[:19].replace('T', ' ')}`\n"
+            f"• **شناسه عددی کاربر:** `{r['player_id']}`\n\n"
+            "📋 **متن کامل رول:**\n"
+            f'"{r["role_text"]}"'
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("✅ تایید رول و ارسال پیام تایید به بازیکن", callback_data=f"admin:app_role:{role_id}")],
+            [InlineKeyboardButton("❌ رد رول", callback_data=f"admin:rej_role:{role_id}")],
+            [InlineKeyboardButton("🔙 بازگشت به لیست رول‌ها", callback_data="admin:pending_roles")]
+        ]
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:app_role:"):
+        role_id = int(data.split(":")[2])
+        r = db.get_roleplay_by_id(role_id)
+        if not r:
+            await query.edit_message_text("❌ رول یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]))
+            return
+
+        db.update_roleplay_status(role_id, "approved")
+        c = db.get_country_by_id(r["country_id"])
+        c_name = f"{c['flag']} {c['name']}" if c else "کشور"
+
+        p_id = r["player_id"]
+        type_label = "تهاجمی (حمله)" if r["role_type"] == "attack" else "پدافندی (دفاع)"
+        player_msg = (
+            f"✅ **رول نظامی {type_label} شما توسط مدیریت بازی تایید شد!**\n\n"
+            f"👑 **کشور {c_name}:** طرح عملیاتی شما جهت ارزیابی و شبیه‌سازی نبرد وارد ستاد فرماندهی گردید."
+        )
+        try:
+            await context.bot.send_message(chat_id=p_id, text=player_msg, parse_mode="Markdown")
+        except Exception:
+            pass
+
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به لیست رول‌های معلق", callback_data="admin:pending_roles")]]
+        await query.edit_message_text(f"✅ **رول کشور {c_name} با موفقیت تایید و از لیست معوقات حذف گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:rej_role:"):
+        role_id = int(data.split(":")[2])
+        r = db.get_roleplay_by_id(role_id)
+        if not r:
+            await query.edit_message_text("❌ رول یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:pending_roles")]]))
+            return
+
+        db.update_roleplay_status(role_id, "rejected")
+        c = db.get_country_by_id(r["country_id"])
+        c_name = f"{c['flag']} {c['name']}" if c else "کشور"
+
+        p_id = r["player_id"]
+        type_label = "تهاجمی (حمله)" if r["role_type"] == "attack" else "پدافندی (دفاع)"
+        player_msg = (
+            f"❌ **رول نظامی {type_label} شما توسط مدیریت بازی رد شد.**\n\n"
+            f"👑 **کشور {c_name}:** می‌توانید با اصلاح جزئیات، رول جدیدی از بخش 🎯 عملیات ثبت نمایید."
+        )
+        try:
+            await context.bot.send_message(chat_id=p_id, text=player_msg, parse_mode="Markdown")
+        except Exception:
+            pass
+
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به لیست رول‌های معلق", callback_data="admin:pending_roles")]]
+        await query.edit_message_text(f"❌ **رول کشور {c_name} رد شد و از لیست معوقات حذف گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("admin:c_tx_logs:"):
         c_id = int(data.split(":")[2])

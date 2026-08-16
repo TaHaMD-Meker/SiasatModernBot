@@ -125,6 +125,21 @@ def init_db():
     )
     """)
 
+    # رول‌های نظامی معلق جهت بررسی و تایید ادمین
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pending_roleplays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        role_type TEXT NOT NULL,
+        role_text TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        created_date TEXT,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     # تراکنش‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
@@ -992,3 +1007,74 @@ def get_country_rankings() -> list:
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ---------- سیستم ثبت و بررسی رول‌های نظامی (Roleplay System) ----------
+
+def create_pending_roleplay(country_id: int, player_id: int, role_type: str, role_text: str) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    now_str = now_dt.isoformat()
+    today_str = datetime.date.today().isoformat()
+
+    cur.execute("""
+        INSERT INTO pending_roleplays (country_id, player_id, role_type, role_text, status, created_at, created_date)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+    """, (country_id, player_id, role_type, role_text, now_str, today_str))
+    role_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return role_id
+
+
+def get_daily_roleplay_count(country_id: int, today_str: str) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) as count FROM pending_roleplays WHERE country_id = ? AND created_date = ?", (country_id, today_str))
+    row = cur.fetchone()
+    conn.close()
+    return row["count"] if row else 0
+
+
+def get_pending_roleplays() -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_roleplays WHERE status = 'pending' ORDER BY id DESC")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_roleplay_by_id(role_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_roleplays WHERE id = ?", (role_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_country_roleplays(country_id: int) -> list:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_roleplays WHERE country_id = ? ORDER BY id DESC LIMIT 10", (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_roleplay_status(role_id: int, status: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE pending_roleplays SET status = ? WHERE id = ?", (status, role_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_roleplay(role_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pending_roleplays WHERE id = ?", (role_id,))
+    conn.commit()
+    conn.close()

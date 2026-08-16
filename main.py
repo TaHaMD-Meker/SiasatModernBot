@@ -19,6 +19,7 @@ import approval_system
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
+from handlers.operations import operations_menu, operations_callback_handler, operations_text_input_handler
 from handlers.assets import show_assets_menu, get_assets_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
@@ -116,6 +117,13 @@ def main():
     app.add_handler(CallbackQueryHandler(confirm_civilian_purchase, pattern=r"^buyciv:"))
     app.add_handler(CallbackQueryHandler(execute_civilian_purchase, pattern=r"^docivbuy:"))
 
+    # سیستم ابلاغ عملیات و رول‌های نظامی
+    app.add_handler(CommandHandler("role", operations_menu))
+    app.add_handler(CommandHandler("operation", operations_menu))
+    app.add_handler(CommandHandler("ops", operations_menu))
+    app.add_handler(CallbackQueryHandler(operations_callback_handler, pattern=r"^op:"))
+    app.add_handler(MessageHandler(filters.Regex("^🎯 عملیات$"), operations_menu))
+
     # سیستم دیپلماسی و معاهدات بین‌المللی
     app.add_handler(CommandHandler("diplomacy", diplomacy_menu))
     app.add_handler(CommandHandler("message", diplomacy_menu))
@@ -134,12 +142,14 @@ def main():
     app.add_handler(CommandHandler("removemoney", removemoney))
     app.add_handler(CommandHandler("listcountries", listcountries))
 
-    # دریافت ورودی‌های متنی (تایپی) ادمین و دیپلماسی
+    # دریافت ورودی‌های متنی (تایپی) ادمین، دیپلماسی و رول‌ها
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.user_data.get("admin_awaiting_input"):
             await admin_input_text_handler(update, context)
         elif context.user_data.get("diplomacy_input"):
             await diplomacy_text_input_handler(update, context)
+        elif context.user_data.get("roleplay_text_input"):
+            await operations_text_input_handler(update, context)
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, combined_text_input_handler))
 
