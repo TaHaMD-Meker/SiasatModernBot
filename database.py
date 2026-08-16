@@ -1098,6 +1098,33 @@ def get_country_rankings() -> list:
     return [dict(r) for r in rows]
 
 
+def calculate_naval_power(country_id: int) -> int:
+    """محاسبه دقیق امتیاز قدرت رزمی نیروی دریایی بر اساس ناوها، ناوشکن‌ها و زیردریایی‌های موجود."""
+    assets = get_country_assets(country_id, category="Navy")
+    if not assets:
+        return 0
+
+    total_power = 0
+    for a in assets:
+        eq_name = a["equipment_name"].lower()
+        amount = a["amount"]
+        if amount <= 0:
+            continue
+
+        if any(c in eq_name for c in ["carrier", "ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "anadolu", "lha", "lhd", "cavour", "trieste", "هواپیمابر", "بالگردبر"]):
+            total_power += (amount * 100)
+        elif any(d in eq_name for d in ["destroyer", "burke", "zumwalt", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "maya", "atago", "kongo", "sejong", "ناوشکن"]):
+            total_power += (amount * 30)
+        elif any(s in eq_name for s in ["virginia", "ohio", "yasen", "borei", "type 094", "astute", "vanguard", "suffren", "ssn", "ssbn", "هسته‌ای"]):
+            total_power += (amount * 25)
+        elif any(f in eq_name for f in ["frigate", "sub", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "fateh", "halifax", "برگامینی", "ناوچه", "زیردریایی"]):
+            total_power += (amount * 10)
+        else:
+            total_power += (amount * 3)
+
+    return total_power
+
+
 def has_active_oil_import_contract(country_id: int) -> bool:
     """بررسی وجود قرارداد فعال واردات نفت خام برای کشورهای صنعتی فاقد نفت."""
     conn = get_connection()

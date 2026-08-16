@@ -301,6 +301,22 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_text("❌ کشور هدف پیدا نشد.", parse_mode="Markdown")
             return
 
+        blockader_power = db.calculate_naval_power(country["id"])
+        target_power = db.calculate_naval_power(target_id)
+        required_power = int(target_power * 1.2)
+
+        if blockader_power < required_power:
+            await query.edit_message_text(
+                f"⚓ **عملیات محاصره دریایی ناموفق بود!**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **قدرت رزمی ناوگان شما ({country['name']}):** {blockader_power:,} امتیاز\n"
+                f"• **قدرت رزمی ناوگان هدف ({target_c['name']}):** {target_power:,} امتیاز\n"
+                f"• **حداقل قدرت لازم جهت محاصره:** {required_power:,} امتیاز\n\n"
+                f"⚠️ **توضیحات:** ناوگان دریایی برتر کشور {target_c['name']} اجازه مسدودسازی بنادر خود را نداد!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
         db.create_naval_blockade(country["id"], target_id)
 
         new_app = max(0, target_c.get("approval_rating", 80) - 15)
@@ -315,7 +331,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     chat_id=target_c["player_id"],
                     text=(
                         f"⚓ **هشدار اضطراری — محاصره دریایی!**\n\n"
-                        f"ناوگان دریایی کشور {country['flag']} {country['name']} تمامی بنادر و خطوط مواصلاتی دریایی شما را تحت محاصره کامل قرار داد!\n"
+                        f"ناوگان دریایی قدرتمند کشور {country['flag']} {country['name']} تمامی بنادر و خطوط مواصلاتی دریایی شما را تحت محاصره کامل قرار داد!\n"
                         f"📉 این امر موجب کسر ۱۵٪ از رضایت عمومی و شکل‌گیری اعتراضات معیشتی گردیده است."
                     ),
                     parse_mode="Markdown"
@@ -325,6 +341,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         await query.edit_message_text(
             f"⚓ **عملیات محاصره دریایی علیه کشور {target_c['flag']} {target_c['name']} با موفقیت اجرا شد.**\n\n"
+            f"• **قدرت ناوگان شما:** {blockader_power:,} امتیاز\n"
+            f"• **قدرت ناوگان هدف:** {target_power:,} امتیاز\n\n"
             "📢 خبر فوری این حادثه ژئوپلیتیک و موج اعتراضات مردمی در کانال رسمی منتشر گردید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
             parse_mode="Markdown"
