@@ -1108,7 +1108,7 @@ def get_country_rankings() -> list:
 
 
 def calculate_naval_power(country_id: int) -> int:
-    """محاسبه دقیق امتیاز قدرت رزمی نیروی دریایی بر اساس ناوها، ناوشکن‌ها و زیردریایی‌های موجود."""
+    """محاسبه متوازن و واقعی امتیاز قدرت رزمی نیروی دریایی آب‌های آزاد."""
     assets = get_country_assets(country_id, category="Navy")
     if not assets:
         return 0
@@ -1120,16 +1120,22 @@ def calculate_naval_power(country_id: int) -> int:
         if amount <= 0:
             continue
 
-        if any(c in eq_name for c in ["carrier", "ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "anadolu", "lha", "lhd", "cavour", "trieste", "هواپیمابر", "بالگردبر"]):
-            total_power += (amount * 100)
-        elif any(d in eq_name for d in ["destroyer", "burke", "zumwalt", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "maya", "atago", "kongo", "sejong", "ناوشکن"]):
-            total_power += (amount * 30)
-        elif any(s in eq_name for s in ["virginia", "ohio", "yasen", "borei", "type 094", "astute", "vanguard", "suffren", "ssn", "ssbn", "هسته‌ای"]):
-            total_power += (amount * 25)
-        elif any(f in eq_name for f in ["frigate", "sub", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "fateh", "halifax", "برگامینی", "ناوچه", "زیردریایی"]):
-            total_power += (amount * 10)
+        if any(c in eq_name for c in ["ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "carrier", "هواپیمابر"]):
+            total_power += int(amount * 500)
+        elif any(l in eq_name for l in ["america", "wasp", "dokdo", "anadolu", "trieste", "lha", "lhd", "lph", "بالگردبر", "ناو بالگردبر"]):
+            total_power += int(amount * 200)
+        elif any(d in eq_name for d in ["destroyer", "burke", "zumwalt", "ticonderoga", "cruiser", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "slava", "maya", "atago", "kongo", "sejong", "کلاس کیروف", "رزم‌پناو", "ناوشکن"]):
+            total_power += int(amount * 80)
+        elif any(s in eq_name for s in ["virginia", "ohio", "los angeles", "seawolf", "yasen", "borei", "type 094", "type 093", "astute", "vanguard", "suffren", "arihant", "dreadnought", "ssn", "ssbn", "هسته‌ای"]):
+            total_power += int(amount * 70)
+        elif any(f in eq_name for f in ["frigate", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "halifax", "hobart", "miecznik", "برگامینی", "جماران", "سهند", "دنا", "دماوند", "ناوچه"]):
+            total_power += int(amount * 30)
+        elif any(c in eq_name for c in ["corvette", "buyan", "steregushchiy", "sa'ar", "baynunah", "soleimani", "شهید سلیمانی", "فاتح", "پیروز"]):
+            total_power += int(amount * 12)
+        elif any(s in eq_name for s in ["sub", "kilo", "ghadir", "midget", "زیردریایی"]):
+            total_power += int(amount * 10)
         else:
-            total_power += (amount * 3)
+            total_power += int(amount * 0.2)
 
     return total_power
 
