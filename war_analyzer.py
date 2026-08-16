@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-ماژول تحلیل هوشمند سناریوی نبرد و محاسبه تلفات (AI War Analysis Module)
-پشتیبانی از تفکیک هوشمند نوع عملیات (حمله موشکی/هوایی/پهپادی در برابر عملیات زمینی)، فاکتورهای قبل/تلفات/بعد و ارزیابی نهایی.
+ماژول تحلیل هوشمند و فوق‌ارتقایافته سناریوی نبرد (AI War Analysis Module v2.0)
+شامل تفکیک دقیق تلفات انسانی نظامی و غیرنظامی، نرخ اصابت/رهگیری، محاسبه خسارت مالی به دلار، روحیه ملی، زمان ترمیم و عدم کسر تلفات انسانی غیرواقعی از کشور مهاجم در حملات موشکی.
 """
 
 import os
@@ -62,28 +62,24 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
     att_assets = db.get_country_assets(att_cid) if att_cid else []
     def_assets = db.get_country_assets(def_cid) if def_cid else []
 
-    # If assets list in DB is empty, load fallback catalog assets
     if not att_assets:
         att_assets = config.COUNTRY_EQUIPMENT_CATALOG.get(attacker_key, [])
         for a in att_assets:
-            if "equipment_key" not in a:
-                a["equipment_key"] = a["key"]
-            if "equipment_name" not in a:
-                a["equipment_name"] = a["name"]
-            if "amount" not in a:
-                a["amount"] = a.get("initial", 100)
+            if "equipment_key" not in a: a["equipment_key"] = a["key"]
+            if "equipment_name" not in a: a["equipment_name"] = a["name"]
+            if "amount" not in a: a["amount"] = a.get("initial", 100)
 
     if not def_assets:
         def_assets = config.COUNTRY_EQUIPMENT_CATALOG.get(defender_key, [])
         for d in def_assets:
-            if "equipment_key" not in d:
-                d["equipment_key"] = d["key"]
-            if "equipment_name" not in d:
-                d["equipment_name"] = d["name"]
-            if "amount" not in d:
-                d["amount"] = d.get("initial", 100)
+            if "equipment_key" not in d: d["equipment_key"] = d["key"]
+            if "equipment_name" not in d: d["equipment_name"] = d["name"]
+            if "amount" not in d: d["amount"] = d.get("initial", 100)
 
     op_type = detect_operation_type(attacker_key, defender_key, attacker_role, defender_role)
+
+    # Calculate Losses
+    losses = calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key)
 
     # Try AI API if available
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
@@ -101,7 +97,11 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
 
 نوع عملیات تشخیص داده شده: {"حمله موشکی، پهپادی و هوایی" if op_type == "air_missile" else "عملیات زمینی و تهاجم مرزی"}
 
-مهم بسیار حیاتی: در صورت عدم وجود مرز زمینی یا موشکی بودن عملیات، به هیچ عنوان کلماتی مانند «پیشروی مرزی» یا «تصرف زمینی» به کار نبر! فقط اصابت موشک‌ها، پدافند هوایی، پایگاه‌ها، رادارها، آواکس و جنگنده‌ها را تحلیل کن.
+تلفات منطقی محاسبه شده:
+مهاجم: {losses['att_military_loss']} نظامی، {losses['att_civilian_loss']} غیرنظامی
+مدافع: {losses['def_military_loss']} نظامی، {losses['def_civilian_loss']} غیرنظامی
+
+مهم بسیار حیاتی: در صورت عدم وجود مرز زمینی یا موشکی بودن عملیات، به هیچ عنوان کلماتی مانند «پیشروی مرزی» یا «تصرف زمینی» به کار نبر! آمار کشته‌ها منطقی و واقعی باشد.
 
 فرمت گزارش:
 📄 نتیجه سناریوی جنگی — ارزیابی عملیات {att_name} در برابر دفاع {def_name}
@@ -125,13 +125,11 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
                 res = json.loads(response.read().decode("utf-8"))
                 report_text = res["choices"][0]["message"]["content"]
                 if report_text:
-                    losses = calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key)
                     return report_text, losses
         except Exception as e:
             print(f"AI API call failed, falling back to built-in simulation engine: {e}")
 
-    # Fallback Built-in Intelligent War Engine
-    losses = calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key)
+    # Fallback Built-in Engine
     if op_type == "air_missile":
         report_text = build_air_missile_report_text(
             att_flag, att_name, def_flag, def_name, attacker_role, defender_role, losses, att_assets, def_assets
@@ -145,118 +143,138 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
 
 
 def calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key):
-    """محاسبه تلفات واقعی و متوازن بر اساس تجهیزات تمام دسته‌بندی‌های دو کشور."""
+    """محاسبه تلفات واقعی، متوازن و منطقی انسان‌ها و تجهیزات دو کشور."""
     
-    def pick_losses_from_assets(assets_list):
+    def pick_losses_from_assets(assets_list, is_attacker, op_type):
         result_losses = []
-        # Group assets by category
         by_cat = {}
         for item in assets_list:
             eq_key = item.get("equipment_key") or item.get("key")
             eq_name = item.get("equipment_name") or item.get("name")
             cat = item.get("category", "Ground Forces")
             amount = item.get("amount", item.get("initial", 50))
-            by_cat.setdefault(cat, []).append({"key": eq_key, "name": eq_name, "amount": amount, "category": cat})
+            buy_price = item.get("buy_price", item.get("price", 1_000_000))
+            by_cat.setdefault(cat, []).append({
+                "key": eq_key, "name": eq_name, "amount": amount, "category": cat, "price": buy_price
+            })
 
         for cat, items in by_cat.items():
-            # Select 1 to 3 items per category
-            selected = random.sample(items, min(len(items), random.randint(1, 3)))
-            for it in selected:
-                curr_amt = it["amount"]
-                if curr_amt <= 0:
-                    continue
-                # Calculate loss
-                if cat in ["Aircraft", "Navy", "Air Defense"]:
-                    loss_qty = max(1, min(curr_amt, random.randint(1, 4)))
-                elif cat in ["Missiles", "UAV"]:
-                    loss_qty = max(1, min(curr_amt, random.randint(2, 12)))
-                else:
-                    loss_qty = max(1, min(curr_amt, random.randint(2, 8)))
+            # If attacker in pure air/missile raid, only expend Missiles/UAVs or intercepted aircraft
+            if is_attacker and op_type == "air_missile":
+                if cat in ["Missiles", "UAV"]:
+                    selected = random.sample(items, min(len(items), random.randint(1, 4)))
+                    for it in selected:
+                        curr_amt = it["amount"]
+                        if curr_amt <= 0: continue
+                        loss_qty = max(1, min(curr_amt, random.randint(2, 10)))
+                        result_losses.append({
+                            "equipment_key": it["key"], "equipment_name": it["name"],
+                            "amount": loss_qty, "category": cat, "price": it["price"]
+                        })
+                elif cat == "Aircraft":
+                    if random.random() < 0.15:
+                        selected = random.sample(items, 1)
+                        for it in selected:
+                            if it["amount"] > 0:
+                                result_losses.append({
+                                    "equipment_key": it["key"], "equipment_name": it["name"],
+                                    "amount": 1, "category": cat, "price": it["price"]
+                                })
+            else:
+                # Defender or Ground Invasion
+                selected = random.sample(items, min(len(items), random.randint(1, 3)))
+                for it in selected:
+                    curr_amt = it["amount"]
+                    if curr_amt <= 0: continue
+                    if cat in ["Aircraft", "Navy", "Air Defense"]:
+                        loss_qty = max(1, min(curr_amt, random.randint(1, 3)))
+                    elif cat in ["Missiles", "UAV"]:
+                        loss_qty = max(1, min(curr_amt, random.randint(2, 8)))
+                    else:
+                        loss_qty = max(1, min(curr_amt, random.randint(2, 6)))
 
-                result_losses.append({
-                    "equipment_key": it["key"],
-                    "equipment_name": it["name"],
-                    "amount": loss_qty,
-                    "category": cat
-                })
+                    result_losses.append({
+                        "equipment_key": it["key"], "equipment_name": it["name"],
+                        "amount": loss_qty, "category": cat, "price": it["price"]
+                    })
+
         return result_losses
 
-    att_losses = pick_losses_from_assets(att_assets)
-    def_losses = pick_losses_from_assets(def_assets)
+    att_losses = pick_losses_from_assets(att_assets, True, op_type)
+    def_losses = pick_losses_from_assets(def_assets, False, op_type)
 
-    att_personnel_loss = random.randint(400, 1500) if op_type == "air_missile" else random.randint(1800, 5500)
-    def_personnel_loss = random.randint(2500, 8500) if op_type == "air_missile" else random.randint(3500, 12000)
+    if op_type == "air_missile":
+        # Pure stand-off raid: Attacker has 0 home casualties!
+        att_military_loss = 0
+        att_civilian_loss = 0
+        def_military_loss = random.randint(15, 65) # Realistic e.g. 36
+        def_civilian_loss = random.randint(2, 25)
+    else:
+        # Ground Invasion:
+        att_military_loss = random.randint(120, 380)
+        att_civilian_loss = random.randint(5, 30)
+        def_military_loss = random.randint(180, 520)
+        def_civilian_loss = random.randint(20, 85)
 
     return {
         "att_losses": att_losses,
         "def_losses": def_losses,
-        "att_personnel_loss": att_personnel_loss,
-        "def_personnel_loss": def_personnel_loss,
+        "att_military_loss": att_military_loss,
+        "att_civilian_loss": att_civilian_loss,
+        "def_military_loss": def_military_loss,
+        "def_civilian_loss": def_civilian_loss,
     }
 
 
 def build_air_missile_report_text(att_flag, att_name, def_flag, def_name, attacker_role, defender_role, losses, att_assets, def_assets):
-    """گزارش مخصوص عملیات هوایی، موشکی و پدافندی (بدون پیشروی زمینی)."""
+    """گزارش منطقی و استاندارد نبرد موشکی/پدافندی."""
 
     lines = []
     lines.append(f"📄 **نتیجه سناریوی جنگی — ارزیابی عملیات موشکی/هوایی {att_name} در برابر دفاع {def_name}**")
     lines.append(f"📁 **پرونده:** طوفان موشکی-هوایی {att_flag} {att_name} / شبکه دفاع هوایی {def_flag} {def_name}")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("⏱️ **مرحله ۱: آماده‌سازی، شلیک و تشدید عملیات (۲۰:۰۰ – ۲۲:۰۰)**")
-    lines.append(f"🚀 {att_name} شلیک ترکیبی موشک‌های بالستیک، کروز و پهپادهای تهاجمی را از محورهای متصل آغاز کرد.")
-    lines.append("موشک‌ها با هدایت سیستم‌های جنگ الکترونیک جهت عبور از رادارهای پدافندی شلیک شدند.\n")
+    lines.append("⏱️ **مرحله ۱: آماده‌سازی و شلیک پرتابه‌ها (۲۰:۰۰ – ۲۲:۰۰)**")
+    lines.append(f"🚀 یگان‌های موشکی {att_name} شلیک دقیق پرتابه‌های کروز و بالستیک را به همراه پهپادها به سمت پایگاه‌های هوایی، راداری و خزانه‌های سوخت {def_name} آغاز کردند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("⏱️ **مرحله ۲: ورود به حریم هوایی و درگیری سنگین پدافند (۲۲:۰۰ – ۲۳:۳۰)**")
-    lines.append(f"🌐 شبکه راداری و هشدار زودهنگام {def_name} ورود پرتابه‌ها را شناسایی کرد.")
-    lines.append(f"🛡️ سامانه‌های پدافند هوایی چندلایه {def_name} وارد واکنش سریع شدند.")
+    lines.append("⏱️ **مرحله ۲: ورود به حریم هوایی و درگیری پدافند (۲۲:۰۰ – ۲۳:۳۰)**")
+    lines.append(f"🌐 رادارهای هشدار زودهنگام {def_name} پرتابه‌های ورودی را شناسایی کردند.")
+    lines.append(f"🛡️ سامانه‌های پدافند هوایی چندلایه {def_name} جهت رهگیری شلیک شدند.")
     lines.append("نتیجه درگیری:")
-    lines.append(f"• حدود ۳۰ تا ۴۰ درصد از پرتابه‌ها توسط پدافند هوایی {def_name} رهگیری و منهدم شدند.")
-    lines.append(f"• پرتابه‌های باقی‌مانده از لایه‌های پدافندی عبور کرده و به سمت اهداف استراتژیک ادامه مسیر دادند.\n")
+    lines.append(f"• حدود ۳۵٪ از موشک‌ها توسط سامانه‌های پدافندی {def_name} رهگیری شدند.")
+    lines.append(f"• ۶۵٪ پرتابه‌ها از سپر پدافندی عبور کرده و به اهداف تعیین‌شده متصل شدند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("⏱️ **مرحله ۳: اصابت‌ها و خسارات به پایگاه‌ها و زیرساخت‌ها (۲۳:۳۰ – ۰۵:۰۰)**")
+    lines.append("⏱️ **مرحله ۳: اصابت‌ها و خسارات زیرساختی (۲۳:۳۰ – ۰۵:۰۰)**")
     lines.append("🎯 **ارزیابی اهداف اصابت شده:**")
-    lines.append(f"{def_flag} **پایگاه‌های هوایی اصلی {def_name}:**")
-    lines.append("آسیب به سوله‌های نگهداری جنگنده‌ها، باند پرواز و تأسیسات پشتیبانی.")
-    lines.append(f"{def_flag} **مراکز فرماندهی و لجستیک سوخت:**")
-    lines.append("اصابت موشک‌های کروز به خزانه‌های سوخت و خطوط ارتباطی C4I، ایجاد اختلال موقت در سیستم‌های ارتباطی.\n")
+    lines.append(f"{def_flag} **پایگاه‌های هوایی و سوله‌ها:** آسیب به باندهای پرواز و سوله‌های نگهداری جنگنده‌ها.")
+    lines.append(f"{def_flag} **مراکز پشتیبانی سوخت و C4I:** ورود خسارت به خزانه‌های سوخت و ایجاد اختلال موقت ارتباطی.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("⏱️ **مرحله ۴: واکنش نیروی هوایی و پدافند مدافع (۰۵:۰۰ – ۱۲:۰۰)**")
-    lines.append(f"{def_flag} نیروی هوایی {def_name} جنگنده‌های خود را جهت گشت‌زنی و حفاظت از حریم هوایی به پرواز درآورد.")
-    lines.append("سامانه‌های پدافند هوایی مجدداً بازسازماندهی شدند و وضعیت آماده‌باش کامل اعلام گردید.\n")
+    lines.append("⏱️ **مرحله ۴: آماده‌باش پدافند و گشت هوایی (۰۵:۰۰ – ۱۲:۰۰)**")
+    lines.append(f"{def_flag} جنگنده‌های {def_name} برای پوشش هوایی به پرواز درآمدند و نیروهای امدادی پایگاه‌ها را تثبیت کردند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
     lines.append("📊 **جمع‌بندی نهایی سناریو:**")
-    lines.append(f"{att_flag} **دستاوردهای تهاجمی {att_name}:**")
-    lines.append("✅ عبور موفق بخشی از موشک‌ها و پهپادها از لایه‌های پدافندی")
-    lines.append("✅ ورود خسارت به زیرساخت‌های هوایی، سوخت و مراکز راداری مدافع\n")
-
-    lines.append(f"{def_flag} **عملکرد پدافندی {def_name}:**")
-    lines.append("✅ رهگیری و انهدام بخشی از موشک‌های شلیک‌شده")
-    lines.append("✅ حفظ توان عملیاتی پایگاه‌ها و جلوگیری از فلج کامل نیروی هوایی\n")
-
-    lines.append(f"📌 **نتیجه کلی:** 🟡 عملیات هوایی/موشکی {att_name} ضربات سنگینی به زیرساخت‌ها وارد ساخت، اما شبکه پدافندی {def_name} توان عملیاتی خود را حفظ نمود.\n")
+    lines.append(f"{att_flag} **عملکرد تهاجمی {att_name}:** شلیک موثر پرتابه‌ها و تخریب بخشی از زیرساخت‌های کلیدی.")
+    lines.append(f"{def_flag} **عملکرد دفاعی {def_name}:** رهگیری بخشی از موشک‌ها و جلوگیری از انهدام کامل پایگاه‌ها.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("💥 **برآورد تلفات اولیه تجهیزاتی و انسانی:**\n")
+    lines.append("💥 **برآورد تلفات انسانی اولیه:**\n")
 
     lines.append(f"🔴 **تلفات کشور مهاجم ({att_flag} {att_name}):**")
-    lines.append(f"• 🪖 پرسنل نظامی: {losses['att_personnel_loss']:,} نفر")
-    for item in losses["att_losses"]:
-        lines.append(f"• {item['equipment_name']}: {item['amount']:,} واحد")
+    lines.append(f"• 🪖 پرسنل نظامی: {losses['att_military_loss']} نفر (حمله از راه دور/بدون تلفات خاک خودی)")
+    lines.append(f"• 👥 تلفات غیرنظامی: {losses['att_civilian_loss']} نفر")
 
     lines.append(f"\n🔵 **تلفات کشور مدافع ({def_flag} {def_name}):**")
-    lines.append(f"• 🪖 پرسنل نظامی: {losses['def_personnel_loss']:,} نفر")
-    for item in losses["def_losses"]:
-        lines.append(f"• {item['equipment_name']}: {item['amount']:,} واحد")
+    lines.append(f"• 🪖 پرسنل نظامی: {losses['def_military_loss']} نفر")
+    lines.append(f"• 👥 تلفات غیرنظامی: {losses['def_civilian_loss']} نفر")
 
     return "\n".join(lines)
 
@@ -282,39 +300,25 @@ def build_ground_invasion_report_text(att_flag, att_name, def_flag, def_name, at
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
     lines.append("⏱️ **ساعت ۱۲:۰۰ — ورود نیروهای ذخیره مدافع**")
-    lines.append(f"{def_flag} نیروهای ذخیره و یگان‌های ضدزره {def_name} وارد خطوط پدافندی می‌شوند.")
-    lines.append("سرعت پیشروی ستون‌های زرهی کند می‌شود.\n")
+    lines.append(f"{def_flag} نیروهای ذخیره و یگان‌های ضدزره {def_name} وارد خطوط پدافندی می‌شوند.\n")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    lines.append("⏱️ **روز دوم تا هفتم — تثبیت مواضع و ضدحملات**")
-    lines.append("درگیری سنگین در مناطق مرزی ادامه یافته و خطوط نبرد تثبیت می‌شوند.\n")
-
-    lines.append("━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("📊 **جمع‌بندی نهایی سناریو:**")
-    lines.append(f"{att_flag} **دستاوردهای {att_name}:** پیشروی محدود مرزی و تصرف چند پاسگاه.")
-    lines.append(f"{def_flag} **دفاع {def_name}:** متوقف ساختن پیشروی عمیق و حفظ شهرهای اصلی.\n")
-
-    lines.append("━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("💥 **برآورد تلفات اولیه تجهیزاتی و انسانی:**\n")
+    lines.append("💥 **برآورد تلفات انسانی اولیه:**\n")
 
     lines.append(f"🔴 **تلفات کشور مهاجم ({att_flag} {att_name}):**")
-    lines.append(f"• 🪖 پرسنل نظامی: {losses['att_personnel_loss']:,} نفر")
-    for item in losses["att_losses"]:
-        lines.append(f"• {item['equipment_name']}: {item['amount']:,} واحد")
+    lines.append(f"• 🪖 پرسنل نظامی: {losses['att_military_loss']:,} نفر")
+    lines.append(f"• 👥 تلفات غیرنظامی: {losses['att_civilian_loss']:,} نفر")
 
     lines.append(f"\n🔵 **تلفات کشور مدافع ({def_flag} {def_name}):**")
-    lines.append(f"• 🪖 پرسنل نظامی: {losses['def_personnel_loss']:,} نفر")
-    for item in losses["def_losses"]:
-        lines.append(f"• {item['equipment_name']}: {item['amount']:,} واحد")
+    lines.append(f"• 🪖 پرسنل نظامی: {losses['def_military_loss']:,} نفر")
+    lines.append(f"• 👥 تلفات غیرنظامی: {losses['def_civilian_loss']:,} نفر")
 
     return "\n".join(lines)
 
 
-def build_detailed_loss_receipt(country_key: str, item_losses: list, personnel_loss: int, operation_name: str = "عملیات اخیر"):
-    """تولید فاکتور دقیق تلفات تجهیزاتی قبل/تلفات/بعد برای کشور مشخص."""
+def build_detailed_loss_receipt(country_key: str, item_losses: list, military_loss: int, civilian_loss: int, operation_name: str = "عملیات اخیر", is_attacker: bool = False, op_type: str = "air_missile"):
+    """تولید فاکتور دقیق قبل/تلفات/بعد تجهیزات، خسارت مالی، روحیه و زمان ترمیم."""
     
     c_info = config.COUNTRIES.get(country_key, {})
     c_flag = c_info.get("flag", "")
@@ -343,19 +347,26 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, personnel_l
         elif category == "Artillery":
             return ("Artillery", "🎯 توپخانه و راکت‌انداز", "سامانه", "🚀")
         elif category == "Navy":
-            return ("Navy", "🚢 نیروی دریایی", "فروند", "🚢")
+            return ("Navy", "🚢 نیروی دریایی", "فروند", "فروند")
         elif category == "Missiles":
-            return ("Missiles", "🚀 توان موشکی", "فروند", "فروند")
+            return ("Missiles", "🚀 توان موشکی", "فروند", "🚀")
         elif category == "Air Defense":
             return ("Air Defense", "🛡️ پدافند هوایی", "سامانه/آتشبار", "🛡️")
         else:
             return (category, category, "واحد", "⚔️")
 
+    title_label = "مصرف‌شده/شلیک‌شده" if (is_attacker and op_type == "air_missile") else "تلفات تجهیزات"
     lines = []
-    lines.append(f"📄 **تلفات تجهیزات {c_flag} {c_name} — عملیات «{operation_name}»**\n")
+    lines.append(f"📄 **{title_label} {c_flag} {c_name} — «{operation_name}»**")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    lines.append("👥 **تلفات انسانی:**")
+    lines.append(f"• 🪖 پرسنل نظامی: {military_loss:,} نفر")
+    lines.append(f"• 👥 تلفات غیرنظامی: {civilian_loss:,} نفر\n")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
     grouped = {}
+    total_usd_damage = 0
 
     for loss in item_losses:
         eq_key = loss["equipment_key"]
@@ -366,6 +377,9 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, personnel_l
         cat_item = catalog_map.get(eq_key, {})
 
         eq_name = loss.get("equipment_name") or asset_info.get("equipment_name") or cat_item.get("name") or eq_key
+        unit_price = loss.get("price") or asset_info.get("buy_price") or cat_item.get("price", 1_000_000)
+
+        total_usd_damage += (unit_price * loss_amt)
 
         current_qty = asset_info.get("amount", cat_item.get("initial", loss_amt))
         after_qty = current_qty
@@ -398,12 +412,14 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, personnel_l
 
         sub_sum = 0
         sub_unit = "واحد"
+        loss_word = "مصرف/شلیک:" if (is_attacker and op_type == "air_missile") else "تلفات:"
+
         for item in items:
             sub_sum += item["loss"]
             sub_unit = item["unit"]
             lines.append(f"{item['icon']} **{item['name']}**")
             lines.append(f"قبل: {item['before']:,} {item['unit']}")
-            lines.append(f"تلفات: {item['loss']:,} {item['unit']}")
+            lines.append(f"{loss_word} {item['loss']:,} {item['unit']}")
             lines.append(f"بعد: {item['after']:,} {item['unit']}\n")
 
         lines.append("---\n")
@@ -412,15 +428,36 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, personnel_l
         summary_rows.append(f"{short_lbl}: {sub_sum:,} {sub_unit}")
 
     lines.append("━━━━━━━━━━━━━━━━━━\n")
-    lines.append("📌 **جمع کاهش تجهیزات ثبت‌شده:**\n")
-    lines.append(f"• 🪖 پرسنل نظامی: {personnel_loss:,} نفر")
+    sum_title = "جمع تسلیحات مصرف‌شده:" if (is_attacker and op_type == "air_missile") else "جمع کاهش تجهیزات ثبت‌شده:"
+    lines.append(f"📌 **{sum_title}**\n")
 
     for s_row in summary_rows:
         lines.append(f"• {s_row}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━\n")
+    lines.append("💰 **ارزیابی مالی و استراتژیک:**")
+    
+    if total_usd_damage >= 1_000_000_000:
+        damage_str = f"{total_usd_damage / 1_000_000_000:.2f} میلیارد دلار"
+    elif total_usd_damage >= 1_000_000:
+        damage_str = f"{total_usd_damage / 1_000_000:.1f} میلیون دلار"
+    else:
+        damage_str = f"{total_usd_damage:,} دلار"
+
+    lines.append(f"• 💸 ارزش کل تجهیزات و خسارات: {damage_str}")
+    if is_attacker:
+        lines.append("• 📈 تغییر روحیه ملی: +۱۰٪ (حماسه و اقتدار ملی)")
+        lines.append("• ⏳ زمان آمادگی برای موج بعدی: ۱۲ ساعت")
+    else:
+        lines.append("• 📈 تغییر روحیه ملی: -۵٪ (اضطراب عمومی و پناهگاه)")
+        lines.append("• ⏳ زمان بازسازی و ترمیم زیرساخت‌ها: ۳ تا ۵ روز")
+
+    lines.append("\n━━━━━━━━━━━━━━━━━━\n")
     lines.append("🟠 **ارزیابی نهایی:**")
-    lines.append("خسارت اصلی روی پایگاه‌های هوایی، سامانه‌های پدافندی و تجهیزات کلیدی متمرکز شده و بخش قابل‌توجهی از توان عملیاتی برای مدتی نیازمند بازسازی و جایگزینی است.")
+    if is_attacker and op_type == "air_missile":
+        lines.append("عملیات شلیک با موفقیت کامل بدون تلفات انسانی نیروهای خودی اجرا گردید و پرتابه‌های شلیک‌شده طبق برنامه از دیتابیس کسر شدند.")
+    else:
+        lines.append("خسارت اصلی روی پایگاه‌های هوایی، سامانه‌های پدافندی و تجهیزات کلیدی متمرکز شده و بخش قابل‌توجهی از توان عملیاتی برای مدتی نیازمند بازسازی و جایگزینی است.")
 
     return "\n".join(lines)
 
@@ -435,9 +472,8 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
 
     if att_country:
         att_cid = att_country["id"]
-        # Seed assets if country_assets empty
         db.seed_country_assets(att_cid, attacker_key)
-        new_att_p = max(0, att_country["active_personnel"] - losses.get("att_personnel_loss", 0))
+        new_att_p = max(0, att_country["active_personnel"] - losses.get("att_military_loss", 0))
         cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_att_p, att_cid))
 
         for item in losses.get("att_losses", []):
@@ -448,9 +484,8 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
 
     if def_country:
         def_cid = def_country["id"]
-        # Seed assets if country_assets empty
         db.seed_country_assets(def_cid, defender_key)
-        new_def_p = max(0, def_country["active_personnel"] - losses.get("def_personnel_loss", 0))
+        new_def_p = max(0, def_country["active_personnel"] - losses.get("def_military_loss", 0))
         cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_def_p, def_cid))
 
         for item in losses.get("def_losses", []):
@@ -462,3 +497,4 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
     conn.commit()
     conn.close()
     return True
+

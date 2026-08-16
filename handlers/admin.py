@@ -410,7 +410,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         war_data = context.user_data.get("war_analysis", {})
         att_key = war_data.get("attacker_key")
         def_key = war_data.get("defender_key")
-        losses = war_data.get("losses")
+        losses = war_data.get("losses", {})
 
         if att_key and def_key and losses:
             # 1. Deduct losses from DB
@@ -418,10 +418,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
             # 2. Build detailed loss receipts
             receipt_att = war_analyzer.build_detailed_loss_receipt(
-                att_key, losses.get("att_losses", []), losses.get("att_personnel_loss", 0), "عملیات تهاجمی اخیر"
+                att_key, losses.get("att_losses", []),
+                losses.get("att_military_loss", 0), losses.get("att_civilian_loss", 0),
+                "عملیات تهاجمی اخیر", is_attacker=True
             )
             receipt_def = war_analyzer.build_detailed_loss_receipt(
-                def_key, losses.get("def_losses", []), losses.get("def_personnel_loss", 0), "عملیات دفاعی اخیر"
+                def_key, losses.get("def_losses", []),
+                losses.get("def_military_loss", 0), losses.get("def_civilian_loss", 0),
+                "عملیات دفاعی اخیر", is_attacker=False
             )
 
             context.user_data["war_analysis"]["receipt_att"] = receipt_att
@@ -433,7 +437,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             ]
 
             await query.edit_message_text(
-                "✅ **تلفات و خسارات فوق با موفقیت در دیتابیس کسر و بروزرسانی شد.**\n\n"
+                "✅ **تلفات و خسارات فوق با موفقیت در دیتابیس ثبت و کسر گردید.**\n\n"
                 "📋 **فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:**",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
