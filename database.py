@@ -235,6 +235,11 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        rebalance_existing_countries_income()
+    except Exception:
+        pass
+
 
 # ---------- کشورها ----------
 
@@ -426,6 +431,44 @@ def sync_all_country_assets_to_catalog():
 
     conn.commit()
     conn.close()
+
+
+def rebalance_existing_countries_income():
+    """به‌روزرسانی و بالانس درآمد روزانه و مالیاتی تمام کشورها بر اساس آخرین مقادیر بالانس‌شده در config."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key FROM countries")
+            countries = cur.fetchall()
+
+            for c in countries:
+                c_id = c["id"]
+                c_key = c["country_key"]
+                
+                overrides = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
+                base_daily = overrides.get("daily_income", config.STARTING_VALUES["daily_income"])
+                base_tax = overrides.get("tax_income", config.STARTING_VALUES["tax_income"])
+
+                cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
+                eq_rows = cur.fetchall()
+                civ_income = 0
+                for eq in eq_rows:
+                    i_key = eq["item_key"]
+                    qty = eq["quantity"]
+                    item = config.ALL_SHOP_ITEMS.get(i_key, {})
+                    civ_income += item.get("income_add", 0) * qty
+
+                new_total_daily = base_daily + civ_income
+
+                cur.execute("""
+                    UPDATE countries SET
+                    tax_income = ?,
+                    daily_income = ?
+                    WHERE id = ?
+                """, (base_tax, new_total_daily, c_id))
+    except Exception as e:
+        print(f"Error rebalancing country incomes: {e}")
 
 
 def seed_country_assets(country_id: int, country_key: str):
