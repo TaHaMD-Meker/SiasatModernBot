@@ -703,25 +703,38 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
             ]
 
-            await query.edit_message_text(
+            confirm_msg = (
                 "✅ *تلفات و خسارات فوق با موفقیت در دیتابیس ثبت و کسر گردید.*\n\n"
-                "📋 *فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:*",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
+                "📋 *فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:*"
             )
 
-            # Send receipt messages safely
-            if len(receipt_att) > 4000:
-                await query.message.reply_text(receipt_att[:3800], parse_mode="Markdown")
-                await query.message.reply_text(receipt_att[3800:], parse_mode="Markdown")
-            else:
-                await query.message.reply_text(receipt_att, parse_mode="Markdown")
+            try:
+                await query.edit_message_text(confirm_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                try: await query.message.reply_text(confirm_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                except Exception: pass
 
-            if len(receipt_def) > 4000:
-                await query.message.reply_text(receipt_def[:3800], parse_mode="Markdown")
-                await query.message.reply_text(receipt_def[3800:], parse_mode="Markdown")
-            else:
-                await query.message.reply_text(receipt_def, parse_mode="Markdown")
+            async def send_safe_receipt(receipt_text):
+                if not receipt_text:
+                    return
+                try:
+                    if len(receipt_text) > 3800:
+                        await context.bot.send_message(chat_id=user_id, text=receipt_text[:3800], parse_mode="Markdown")
+                        await context.bot.send_message(chat_id=user_id, text=receipt_text[3800:], parse_mode="Markdown")
+                    else:
+                        await context.bot.send_message(chat_id=user_id, text=receipt_text, parse_mode="Markdown")
+                except Exception:
+                    try:
+                        if len(receipt_text) > 3800:
+                            await context.bot.send_message(chat_id=user_id, text=receipt_text[:3800])
+                            await context.bot.send_message(chat_id=user_id, text=receipt_text[3800:])
+                        else:
+                            await context.bot.send_message(chat_id=user_id, text=receipt_text)
+                    except Exception as ex:
+                        print(f"Failed to send receipt: {ex}")
+
+            await send_safe_receipt(receipt_att)
+            await send_safe_receipt(receipt_def)
         else:
             await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
 

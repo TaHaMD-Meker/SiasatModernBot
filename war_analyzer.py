@@ -679,36 +679,42 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
 
 def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
     """اعمال کسر تلفات و خسارات از دیتابیس هر دو کشور."""
-    conn = db.get_connection()
-    cur = conn.cursor()
-
     att_country = db.get_country_by_key(attacker_key)
     def_country = db.get_country_by_key(defender_key)
 
     if att_country:
-        att_cid = att_country["id"]
-        db.seed_country_assets(att_cid, attacker_key)
-        new_att_p = max(0, att_country["active_personnel"] - losses.get("att_military_loss", 0))
-        cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_att_p, att_cid))
-
-        for item in losses.get("att_losses", []):
-            cur.execute("""
-                UPDATE country_assets SET amount = MAX(0, amount - ?)
-                WHERE country_id = ? AND equipment_key = ?
-            """, (item["amount"], att_cid, item["equipment_key"]))
-
+        db.seed_country_assets(att_country["id"], attacker_key)
     if def_country:
-        def_cid = def_country["id"]
-        db.seed_country_assets(def_cid, defender_key)
-        new_def_p = max(0, def_country["active_personnel"] - losses.get("def_military_loss", 0))
-        cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_def_p, def_cid))
+        db.seed_country_assets(def_country["id"], defender_key)
 
-        for item in losses.get("def_losses", []):
-            cur.execute("""
-                UPDATE country_assets SET amount = MAX(0, amount - ?)
-                WHERE country_id = ? AND equipment_key = ?
-            """, (item["amount"], def_cid, item["equipment_key"]))
+    conn = db.get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
 
-    conn.commit()
-    conn.close()
-    return True
+            if att_country:
+                att_cid = att_country["id"]
+                new_att_p = max(0, att_country["active_personnel"] - losses.get("att_military_loss", 0))
+                cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_att_p, att_cid))
+
+                for item in losses.get("att_losses", []):
+                    cur.execute("""
+                        UPDATE country_assets SET amount = MAX(0, amount - ?)
+                        WHERE country_id = ? AND equipment_key = ?
+                    """, (item["amount"], att_cid, item["equipment_key"]))
+
+            if def_country:
+                def_cid = def_country["id"]
+                new_def_p = max(0, def_country["active_personnel"] - losses.get("def_military_loss", 0))
+                cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_def_p, def_cid))
+
+                for item in losses.get("def_losses", []):
+                    cur.execute("""
+                        UPDATE country_assets SET amount = MAX(0, amount - ?)
+                        WHERE country_id = ? AND equipment_key = ?
+                    """, (item["amount"], def_cid, item["equipment_key"]))
+
+        return True
+    except Exception as e:
+        print(f"Error applying war losses: {e}")
+        return False
