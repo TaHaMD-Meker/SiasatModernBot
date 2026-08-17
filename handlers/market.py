@@ -389,11 +389,13 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             low_p = st.get("lowest_active")
 
             low_str = f"{low_p:,} $" if low_p else "بدون عرضه"
+            avg_p_str = f"{int(avg_p):,} $" if (trades > 0 and avg_p > 0) else "بدون معامله"
+            trades_str = f"{trades:,} معامله" if trades > 0 else "بدون معامله"
 
             lines.append(f"• **{label}:**")
             lines.append(f"  ارزان‌ترین قیمت فعال: **{low_str}**")
-            lines.append(f"  میانگین قیمت معاملات: **{int(avg_p):,} $**")
-            lines.append(f"  حجم کل معاملات تا کنون: **{vol:,} واحد** ({trades} معامله)\n")
+            lines.append(f"  میانگین قیمت معاملات: **{avg_p_str}**")
+            lines.append(f"  حجم کل معاملات تا کنون: **{vol:,} واحد** ({trades_str})\n")
 
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی بورس", callback_data="market:menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
