@@ -159,10 +159,14 @@ def process_daily_approval_and_emigration(c: dict):
         tax_per_capita = c.get("tax_income", 0) / pop if pop > 0 else 0.1
         new_tax = int(new_pop * tax_per_capita)
 
+        daily_per_capita = c.get("daily_income", 0) / pop if pop > 0 else 0.1
+        new_daily_income = int(new_pop * daily_per_capita)
+
         db.update_country_field(cid, "population", new_pop)
         db.update_country_field(cid, "active_personnel", new_active)
         db.update_country_field(cid, "reserve_personnel", new_reserve)
         db.update_country_field(cid, "tax_income", new_tax)
+        db.update_country_field(cid, "daily_income", new_daily_income)
 
     return {
         "new_approval": new_approval,

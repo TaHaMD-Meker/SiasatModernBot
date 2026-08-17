@@ -17,6 +17,7 @@ import config
 import database as db
 import approval_system
 import news_engine
+from utils import format_money, format_number, format_oil
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
