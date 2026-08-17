@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-ماژول تحلیل هوشمند سناریوی نبرد و شبیه‌ساز جنگ‌ها (AI War & Battle Simulator Engine v3.0)
-طراحی‌شده با قالب‌بندی رسمی، سنگین، بدون ایموجی‌های اضافی، مرتب، خوانا و کارشناسی.
+ماژول تحلیل هوشمند سناریوی نبرد و شبیه‌ساز جنگ‌ها (AI War & Battle Simulator Engine v3.1)
+طراحی‌شده با استخراج دقیق و هوشمند نام تسلیحات و اعداد شلیک‌شده از متن رول بازیکنان،
+قالب‌بندی رسمی، سنگین، بدون ایموجی‌های اضافی، مرتب، خوانا و کارشناسی.
 """
 
 import os
+import re
 import random
 import json
 import urllib.request
@@ -22,6 +24,13 @@ NON_CONTIGUOUS_PAIRS = {
     ("saudi", "israel"), ("israel", "saudi"),
     ("usa", "israel"), ("israel", "usa"),
 }
+
+
+def convert_farsi_digits(text: str) -> str:
+    farsi_digits = '۰۱۲۳۴۵۶۷۸۹'
+    eng_digits = '0123456789'
+    trans_table = str.maketrans(farsi_digits, eng_digits)
+    return text.translate(trans_table)
 
 
 def detect_operation_type(attacker_key: str, defender_key: str, attacker_role: str, defender_role: str):
@@ -47,6 +56,131 @@ def detect_operation_type(attacker_key: str, defender_key: str, attacker_role: s
         return "ground_invasion"
     else:
         return "air_missile"
+
+
+def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets: list, country_key: str) -> list:
+    """استخراج هوشمند دقیق نام تسلیحات و تعداد شلیک‌شده/استفاده‌شده از متن رول بازیکن."""
+    if not roleplay_text or len(roleplay_text.strip()) < 5:
+        return []
+
+    text_clean = convert_farsi_digits(roleplay_text)
+
+    catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(country_key, [])
+
+    assets_map = {}
+    for a in country_assets:
+        e_key = a.get("equipment_key") or a.get("key")
+        e_name = a.get("equipment_name") or a.get("name")
+        e_cat = a.get("category", "Missiles")
+        e_amt = a.get("amount", a.get("initial", 100))
+        e_price = a.get("buy_price", a.get("price", 1_000_000))
+        if e_key:
+            assets_map[e_key] = {
+                "equipment_key": e_key,
+                "equipment_name": e_name,
+                "amount": e_amt,
+                "category": e_cat,
+                "price": e_price
+            }
+
+    for cat_item in catalog:
+        e_key = cat_item.get("key")
+        if e_key and e_key not in assets_map:
+            assets_map[e_key] = {
+                "equipment_key": e_key,
+                "equipment_name": cat_item.get("name", e_key),
+                "amount": cat_item.get("initial", 100),
+                "category": cat_item.get("category", "Missiles"),
+                "price": cat_item.get("price", 1_000_000)
+            }
+
+    parsed_losses = {}
+
+    alias_dict = {
+        "hoveyzeh": ["هویزه", "hoveyzeh"],
+        "noor": ["نور", "noor"],
+        "paveh": ["پاوه", "paveh"],
+        "kheybar": ["خیبرشکن", "خیبر شکن", "kheibar", "kheybar"],
+        "sejjil": ["سجیل", "sejjil", "sajil"],
+        "khorramshahr": ["خرمشهر", "khorramshahr"],
+        "fattah": ["فتاح", "fattah"],
+        "shahed136": ["شاهد ۱۳۶", "شاهد-۱۳۶", "شاهد۱۳۶"],
+        "shahed129": ["شاهد ۱۲۹", "شاهد-۱۲۹", "شاهد۱۲۹"],
+        "shahed191": ["شاهد ۱۹۱", "شاهد-۱۹۱", "شاهد۱۹۱"],
+        "mohajer6": ["مهاجر ۶", "مهاجر-۶", "مهاجر۶"],
+        "fateh110": ["فاتح ۱۱۰", "فاتح-۱۱۰"],
+        "fateh313": ["فاتح ۳۱۳", "فاتح-۳۱۳"],
+        "zolfaghar": ["ذوالفقار"],
+        "dezful": ["دزفول", "dezful"],
+        "haj_qasem": ["حاج قاسم", "قاسم"],
+        "iron_dome": ["گنبد آهنین", "گنبد اهنین", "iron dome"],
+        "arrow": ["پیکان", "اروو", "arrow"],
+        "david": ["فلاخن داوود", "داوود", "davids sling"],
+        "patriot": ["پاتریوت", "patriot"],
+        "f35": ["f-35", "f35", "اف-۳۵", "اف ۳۵"],
+        "f15": ["f-15", "f15", "اف-۱۵", "اف ۱۵"],
+        "f16": ["f-16", "f16", "اف-۱۶", "اف ۱۶"],
+        "su35": ["سوخو-۳۵", "سوخو ۳۵", "su-35", "su35"],
+        "abrams": ["آبرامز", "ابرامز", "abrams"],
+        "merkava": ["مرکاوا", "merkava"],
+        "leopard": ["لئوپارد", "لیوپارد", "leopard"],
+        "t90": ["تی-۹۰", "ت-۹۰", "t-90", "t90"],
+    }
+
+    for e_key, item in assets_map.items():
+        name = item["equipment_name"].lower()
+        key = e_key.lower()
+
+        keywords = set()
+        keywords.add(name)
+        keywords.add(key)
+
+        clean_name = re.sub(r'^(موشک|کروز|پدافند|ضدکشتی|تپ|راکت|تانک|شناور|ناوچه|پهپاد|سامانه|ناو)\s+', '', name)
+        keywords.add(clean_name)
+        keywords.add(clean_name.replace('-', ' '))
+        keywords.add(clean_name.replace('-', ''))
+
+        for alias_key, aliases in alias_dict.items():
+            if alias_key in key or any(alias_key in kw for kw in keywords):
+                for a in aliases:
+                    keywords.add(a.lower())
+
+        valid_keywords = sorted([kw for kw in keywords if len(kw) >= 2], key=len, reverse=True)
+
+        found_qty = None
+        for kw in valid_keywords:
+            esc_kw = re.escape(kw)
+
+            p1 = r'(\d+)\s*(?:فروند|عدد|دستگاه|سامانه|آتشبار|واحد|دست)?\s*(?:موشک|پهپاد|جنگنده|کروز|تانک|نفربر)?\s*' + esc_kw
+            p2 = esc_kw + r'\s*(?:\([^)]*\))?\s*(?:برد\s*\d+\s*کیلومتر)?\s*(?:با|تعداد|به تعداد)?\s*(\d+)\s*(?:فروند|عدد|دستگاه|واحد)?'
+            p3 = esc_kw + r'\s*\(\s*(\d+)\s*\)'
+            p4 = r'\(\s*(\d+)\s*' + esc_kw + r'\s*\)'
+
+            m1 = re.search(p1, text_clean, re.IGNORECASE)
+            m3 = re.search(p3, text_clean, re.IGNORECASE)
+            m4 = re.search(p4, text_clean, re.IGNORECASE)
+            m2 = re.search(p2, text_clean, re.IGNORECASE)
+
+            if m1:
+                found_qty = int(m1.group(1))
+            elif m3:
+                found_qty = int(m3.group(1))
+            elif m4:
+                found_qty = int(m4.group(1))
+            elif m2:
+                found_qty = int(m2.group(1))
+
+            if found_qty and found_qty > 0 and found_qty < 50000:
+                parsed_losses[e_key] = {
+                    "equipment_key": e_key,
+                    "equipment_name": item["equipment_name"],
+                    "amount": found_qty,
+                    "category": item["category"],
+                    "price": item["price"]
+                }
+                break
+
+    return list(parsed_losses.values())
 
 
 def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_role: str, defender_role: str = ""):
@@ -85,8 +219,11 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
 
     op_type = detect_operation_type(attacker_key, defender_key, attacker_role, defender_role)
 
-    # محاسبه تلفات بر اساس موازنه قوا و سطح فناوری (Tech Level)
-    losses = calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key)
+    # محاسبه تلفات بر اساس استخراج از متن رول یا موازنه قوا
+    losses = calculate_simulated_losses(
+        att_assets, def_assets, att_country, def_country, op_type,
+        attacker_key, defender_key, attacker_role, defender_role
+    )
 
     # فراخوانی هوش مصنوعی در صورت وجود API Key
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
@@ -183,8 +320,8 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
     return report_text, losses
 
 
-def calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key):
-    """محاسبه هوشمند و واقعی تلفات انسانی و تجهیزاتی با احتساب سطح فناوری و پدافند."""
+def calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key, attacker_role="", defender_role=""):
+    """محاسبه هوشمند و واقعی تلفات انسانی و تجهیزاتی با احتساب استخراج مستقیم از متن رول."""
     
     att_tech = att_country.get("tech_level", 1) if att_country else 1
     def_tech = def_country.get("tech_level", 1) if def_country else 1
@@ -240,8 +377,19 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
 
         return result_losses
 
-    att_losses = pick_losses_from_assets(att_assets, True, op_type)
-    def_losses = pick_losses_from_assets(def_assets, False, op_type)
+    # ۱. ابتدا تلاش برای استخراج دقیق تسلیحات و اعداد از متن رول مهاجم
+    att_parsed = parse_weapon_mentions_from_roleplay_text(attacker_role, att_assets, attacker_key)
+    if att_parsed:
+        att_losses = att_parsed
+    else:
+        att_losses = pick_losses_from_assets(att_assets, True, op_type)
+
+    # ۲. تلاش برای استخراج دقیق تسلیحات از متن رول مدافع
+    def_parsed = parse_weapon_mentions_from_roleplay_text(defender_role, def_assets, defender_key)
+    if def_parsed:
+        def_losses = def_parsed
+    else:
+        def_losses = pick_losses_from_assets(def_assets, False, op_type)
 
     tech_diff = att_tech - def_tech
 
@@ -437,8 +585,8 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
         total_usd_damage += (unit_price * loss_amt)
 
         current_qty = asset_info.get("amount", cat_item.get("initial", loss_amt))
-        after_qty = current_qty
-        before_qty = current_qty + loss_amt
+        after_qty = max(0, current_qty - loss_amt)
+        before_qty = current_qty
 
         subcat_id, subcat_label, unit = get_subcat_info(eq_name, cat_key)
 
