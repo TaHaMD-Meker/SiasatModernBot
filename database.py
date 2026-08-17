@@ -1665,8 +1665,15 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
             res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات"}
             res_label = res_names.get(res_type, res_type)
 
-            add_transaction(buyer_id, "market_buy", f"خرید {buy_amount:,} واحد {res_label} از بورس جهانی", -total_buyer_cost)
-            add_transaction(seller_id, "market_sell", f"فروش {buy_amount:,} واحد {res_label} در بورس جهانی", commodity_cost)
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (buyer_id, "market_buy", f"خرید {buy_amount:,} واحد {res_label} از بورس جهانی", -total_buyer_cost, now_str))
+
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (seller_id, "market_sell", f"فروش {buy_amount:,} واحد {res_label} در بورس جهانی", commodity_cost, now_str))
 
             result_meta = {
                 "seller": seller_c,
