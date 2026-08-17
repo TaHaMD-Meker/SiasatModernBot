@@ -261,8 +261,12 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
     att_cid = att_country["id"] if att_country else None
     def_cid = def_country["id"] if def_country else None
 
-    att_assets = db.get_country_assets(att_cid) if att_cid else []
-    def_assets = db.get_country_assets(def_cid) if def_cid else []
+    if att_cid:
+        db.seed_country_assets(att_cid, attacker_key)
+        att_assets = db.get_country_assets(att_cid)
+    if def_cid:
+        db.seed_country_assets(def_cid, defender_key)
+        def_assets = db.get_country_assets(def_cid)
 
     if not att_assets:
         att_assets = config.COUNTRY_EQUIPMENT_CATALOG.get(attacker_key, [])
