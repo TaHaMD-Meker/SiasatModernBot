@@ -68,6 +68,7 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     keyboard = [
+        [InlineKeyboardButton("📈 بازار بورس بین‌المللی کالاها (طلا، نفت، غلات)", callback_data="market:menu")],
         [InlineKeyboardButton("✉️ ارسال یادداشت دیپلماتیک", callback_data="dip:msg_start")],
         [InlineKeyboardButton("📜 پیشنهاد قرارداد تجاری", callback_data="dip:trade_start")],
         [InlineKeyboardButton("🎖️ انتقال/فروش تسلیحات نظامی", callback_data="dip:mil_start")],

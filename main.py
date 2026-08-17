@@ -24,6 +24,7 @@ from handlers.operations import operations_menu, operations_callback_handler, op
 from handlers.statements import statements_menu, statements_callback_handler, statements_text_input_handler
 from handlers.research import research_menu, research_callback_handler
 from handlers.assets import show_assets_menu, get_assets_handlers
+from handlers.market import market_main_menu, market_text_input_handler, get_market_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
     confirm_asset_purchase, execute_asset_purchase,
@@ -200,17 +201,23 @@ def main():
 
     app.add_handler(CallbackQueryHandler(ignore_callback, pattern=r"^ignore$"))
 
+    # سیستم بازار بورس بین‌المللی کالاها (/market)
+    for handler in get_market_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
     app.add_handler(CommandHandler("listcountries", listcountries))
 
-    # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، رول‌ها و بیانیه‌ها
+    # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، رول‌ها و بیانیه‌ها
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.user_data.get("admin_awaiting_input"):
             await admin_input_text_handler(update, context)
         elif context.user_data.get("diplomacy_input"):
             await diplomacy_text_input_handler(update, context)
+        elif context.user_data.get("market_sell_draft"):
+            await market_text_input_handler(update, context)
         elif context.user_data.get("roleplay_text_input"):
             await operations_text_input_handler(update, context)
         elif context.user_data.get("statement_input"):

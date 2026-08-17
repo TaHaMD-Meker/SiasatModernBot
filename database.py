@@ -226,6 +226,34 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # بازار بورس بین‌المللی کالاها (Global Commodities Exchange)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS market_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_id INTEGER NOT NULL,
+        resource_type TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        unit_price INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(seller_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS market_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_id INTEGER NOT NULL,
+        buyer_id INTEGER NOT NULL,
+        resource_type TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        unit_price INTEGER NOT NULL,
+        total_price INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(seller_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(buyer_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1405,3 +1433,252 @@ def delete_roleplay(role_id: int):
     cur.execute("DELETE FROM pending_roleplays WHERE id = ?", (role_id,))
     conn.commit()
     conn.close()
+
+
+# ---------- بازار بورس بین‌المللی کالاها (Global Commodities Exchange) ----------
+
+def create_market_order(seller_id: int, resource_type: str, amount: int, unit_price: int) -> tuple[bool, str]:
+    """ثبت یک عرضه جدید در بورس کالا. کالا از انبار فروشنده کسر شده و سپرده‌گذاری می‌شود."""
+    if amount <= 0 or unit_price <= 0:
+        return False, "تعداد و قیمت واحد باید بزرگتر از صفر باشند."
+
+    resource_cols = {
+        "oil": "oil_reserves",
+        "gold": "gold",
+        "grain": "grain"
+    }
+    col = resource_cols.get(resource_type)
+    if not col:
+        return False, "نوع کالای درخواستی نامعتبر است."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(f"SELECT {col} FROM countries WHERE id = ?", (seller_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "کشور فروشنده یافت نشد."
+
+            current_qty = row[col]
+            if current_qty < amount:
+                res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات"}
+                return False, f"موجودی {res_names[resource_type]} کافی نیست! (موجودی فعلی: {current_qty:,})"
+
+            cur.execute(f"UPDATE countries SET {col} = {col} - ? WHERE id = ?", (amount, seller_id))
+
+            now_str = datetime.datetime.now().isoformat()
+            cur.execute("""
+                INSERT INTO market_orders (seller_id, resource_type, amount, unit_price, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (seller_id, resource_type, amount, unit_price, now_str))
+
+        return True, "عرضه با موفقیت در بازار بورس جهانی ثبت گردید."
+    except Exception as e:
+        return False, f"خطا در ثبت عرضه: {e}"
+
+
+def get_market_orders(resource_type: str = None) -> list[dict]:
+    """دریافت لیست عرضه‌های فعال بورس کالا (مرتب‌شده بر اساس ارزان‌ترین قیمت واحد)."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    if resource_type:
+        cur.execute("""
+            SELECT m.*, c.name as seller_name, c.flag as seller_flag, c.country_key as seller_key
+            FROM market_orders m
+            JOIN countries c ON m.seller_id = c.id
+            WHERE m.resource_type = ? AND m.amount > 0
+            ORDER BY m.unit_price ASC, m.id ASC
+        """, (resource_type,))
+    else:
+        cur.execute("""
+            SELECT m.*, c.name as seller_name, c.flag as seller_flag, c.country_key as seller_key
+            FROM market_orders m
+            JOIN countries c ON m.seller_id = c.id
+            WHERE m.amount > 0
+            ORDER BY m.unit_price ASC, m.id ASC
+        """)
+
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_market_order_by_id(order_id: int) -> dict:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT m.*, c.name as seller_name, c.flag as seller_flag, c.country_key as seller_key, c.player_id as seller_player_id
+        FROM market_orders m
+        JOIN countries c ON m.seller_id = c.id
+        WHERE m.id = ?
+    """, (order_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_country_market_orders(seller_id: int) -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM market_orders WHERE seller_id = ? AND amount > 0 ORDER BY id DESC
+    """, (seller_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def cancel_market_order(seller_id: int, order_id: int) -> tuple[bool, str]:
+    """لغو عرضه فعال بورس و عودت باقی‌مانده کالا به انبار کشور."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM market_orders WHERE id = ? AND seller_id = ?", (order_id, seller_id))
+            order = cur.fetchone()
+            if not order:
+                return False, "سفارش مورد نظر یافت نشد یا متعلق به کشور شما نیست."
+
+            ord_dict = dict(order)
+            rem_amount = ord_dict["amount"]
+            res_type = ord_dict["resource_type"]
+
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+            col = resource_cols.get(res_type)
+
+            if col and rem_amount > 0:
+                cur.execute(f"UPDATE countries SET {col} = {col} + ? WHERE id = ?", (rem_amount, seller_id))
+
+            cur.execute("DELETE FROM market_orders WHERE id = ?", (order_id,))
+
+        return True, "عرضه با موفقیت لغو شد و کالای باقی‌مانده به انبار کشور عودت داده گردید."
+    except Exception as e:
+        return False, f"خطا در لغو سفارش: {e}"
+
+
+def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int, transport_mode: str = "sea") -> tuple[bool, str, dict]:
+    """خرید فوری و مستقیم کالا از بورس جهانی توسط کشور خریدار."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM market_orders WHERE id = ?", (order_id,))
+            order_row = cur.fetchone()
+            if not order_row:
+                return False, "سفارش مورد نظر در بازار بورس یافت نشد یا منقضی شده است.", {}
+
+            order = dict(order_row)
+            seller_id = order["seller_id"]
+
+            if seller_id == buyer_id:
+                return False, "امکان خرید از عرضه متعلق به کشور خودتان وجود ندارد.", {}
+
+            if buy_amount <= 0 or buy_amount > order["amount"]:
+                return False, f"حداکثر مقدار قابل خرید از این عرضه {order['amount']:,} واحد می‌باشد.", {}
+
+            cur.execute("SELECT * FROM countries WHERE id = ?", (seller_id,))
+            seller = cur.fetchone()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (buyer_id,))
+            buyer = cur.fetchone()
+
+            if not seller or not buyer:
+                return False, "کشور خریدار یا فروشنده یافت نشد.", {}
+
+            seller_c = dict(seller)
+            buyer_c = dict(buyer)
+
+            c_min, c_max = _ordered_pair(seller_id, buyer_id)
+            cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
+            rel_row = cur.fetchone()
+            if rel_row and rel_row["status"] == "sanctioned":
+                return False, "امکان معامله تجاری با کشور تحریم‌شده وجود ندارد.", {}
+
+            if transport_mode == "sea":
+                if is_country_blockaded(seller_id) or is_country_blockaded(buyer_id):
+                    return False, "⚓ **ترابری دریایی مسدود است:** یکی از دو کشور تحت محاصره کامل دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده بفرمایید.", {}
+
+                for owner_key, strait_info in STRAITS_MAPPING.items():
+                    affected_keys = strait_info.get("affected_keys", [])
+                    s_key = seller_c.get("country_key")
+                    b_key = buyer_c.get("country_key")
+                    if (s_key in affected_keys or b_key in affected_keys) and owner_key not in (s_key, b_key):
+                        st_status = get_strait_status(strait_info["strait_key"])
+                        if st_status["status"] == "closed":
+                            return False, f"⚓ **گلوگاه دریایی مسدود است:** مسیر ترانزیت دریایی از {strait_info['name']} مسدود شده است.", {}
+
+            transport_costs = {"sea": 300_000, "land": 1_000_000, "air": 2_000_000}
+            t_cost = transport_costs.get(transport_mode, 300_000)
+
+            unit_price = order["unit_price"]
+            commodity_cost = buy_amount * unit_price
+            total_buyer_cost = commodity_cost + t_cost
+
+            if buyer_c["treasury"] < total_buyer_cost:
+                return False, f"موجودی خزانه کافی نیست!\nارزش کالا: {format_money(commodity_cost)}\nهزینه ترابری: {format_money(t_cost)}\nمجموع هزینه: {format_money(total_buyer_cost)}\nخزانه شما: {format_money(buyer_c['treasury'])}", {}
+
+            res_type = order["resource_type"]
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+            col = resource_cols[res_type]
+
+            cur.execute(f"UPDATE countries SET treasury = treasury - ?, {col} = {col} + ? WHERE id = ?", (total_buyer_cost, buy_amount, buyer_id))
+            cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (commodity_cost, seller_id))
+
+            rem_amount = order["amount"] - buy_amount
+            if rem_amount <= 0:
+                cur.execute("DELETE FROM market_orders WHERE id = ?", (order_id,))
+            else:
+                cur.execute("UPDATE market_orders SET amount = ? WHERE id = ?", (rem_amount, order_id))
+
+            now_str = datetime.datetime.now().isoformat()
+            cur.execute("""
+                INSERT INTO market_history (seller_id, buyer_id, resource_type, amount, unit_price, total_price, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (seller_id, buyer_id, res_type, buy_amount, unit_price, commodity_cost, now_str))
+
+            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات"}
+            res_label = res_names.get(res_type, res_type)
+
+            add_transaction(buyer_id, "market_buy", f"خرید {buy_amount:,} واحد {res_label} از بورس جهانی", -total_buyer_cost)
+            add_transaction(seller_id, "market_sell", f"فروش {buy_amount:,} واحد {res_label} در بورس جهانی", commodity_cost)
+
+            result_meta = {
+                "seller": seller_c,
+                "buyer": buyer_c,
+                "commodity_cost": commodity_cost,
+                "transport_cost": t_cost,
+                "total_buyer_cost": total_buyer_cost,
+                "res_type": res_type,
+                "res_label": res_label,
+                "buy_amount": buy_amount,
+                "unit_price": unit_price
+            }
+
+            return True, "معامله بورس با موفقیت انجام شد.", result_meta
+
+    except Exception as e:
+        return False, f"خطا در اجرای معامله بورس: {e}", {}
+
+
+def get_market_stats() -> dict:
+    """دریافت آمار کلی حجم معاملات و میانگین قیمت‌های بورس جهانی."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    stats = {}
+    for r_type in ("oil", "gold", "grain"):
+        cur.execute("""
+            SELECT COUNT(*) as trade_count, SUM(amount) as total_volume, AVG(unit_price) as avg_price, MIN(unit_price) as min_price, MAX(unit_price) as max_price
+            FROM market_history
+            WHERE resource_type = ?
+        """, (r_type,))
+        row = cur.fetchone()
+        stats[r_type] = dict(row) if row else {}
+
+        cur.execute("SELECT MIN(unit_price) as lowest_active FROM market_orders WHERE resource_type = ? AND amount > 0", (r_type,))
+        low_row = cur.fetchone()
+        stats[r_type]["lowest_active"] = low_row["lowest_active"] if low_row and low_row["lowest_active"] else None
+
+    conn.close()
+    return stats
