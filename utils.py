@@ -62,3 +62,15 @@ def get_main_keyboard(user_id: int):
         buttons.append(["👑 پنل مدیریت"])
 
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+
+def clear_text_input_flags(user_data: dict):
+    """پاک‌سازی تمام پرچم‌های ورودی متنی برای جلوگیری از تداخل فیلدها."""
+    input_keys = [
+        "admin_awaiting_input", "diplomacy_input", "market_sell_draft",
+        "un_draft", "roleplay_text_input", "statement_input", "aid_draft",
+        "trade_draft", "mil_draft", "role_submit_draft"
+    ]
+    for key in input_keys:
+        if key in user_data:
+            del user_data[key]

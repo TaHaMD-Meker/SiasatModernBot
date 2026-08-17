@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 import database as db
 import config
-from utils import format_money, format_number, format_oil, get_main_keyboard
+from utils import format_money, format_number, format_oil, get_main_keyboard, clear_text_input_flags
 
 
 async def require_country(update: Update):
@@ -314,6 +314,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     elif data.startswith("market:sell_type:"):
         res_type = data.split(":")[2]
+        clear_text_input_flags(context.user_data)
         context.user_data["market_sell_draft"] = {"step": "amount", "res_type": res_type}
 
         res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات"}

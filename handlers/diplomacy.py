@@ -776,7 +776,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text(
             f"✉️ **ارسال یادداشت دیپلماتیک به {target_c['flag']} {target_c['name']}**\n\n"
             "لطفاً متن یادداشت رسمی خود را ارسال فرمایید:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]], parse_mode="Markdown")
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
         )
 
     elif data == "dip:trade_start":
@@ -787,7 +788,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         if db.are_sanctioned(country["id"], target_id):
             await query.edit_message_text(
                 "🚫 **امکان معامله وجود ندارد:** یکی از دو کشور دیگری را تحریم کرده است.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:trade_start")]], parse_mode="Markdown")
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:trade_start")]]),
+                parse_mode="Markdown"
             )
             return
 
@@ -1041,7 +1043,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات"}
         await query.edit_message_text(
             f"🕊️ **میزان کمک اهدایی ({type_labels.get(res_type, res_type)})** را وارد فرمایید:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]], parse_mode="Markdown")
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
         )
 
     elif data == "dip:rel_start":
@@ -1069,7 +1072,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     pass
             await query.edit_message_text(
                 f"✅ **پیشنهاد اتحاد با موفقیت برای کشور {target_c['name']} ارسال شد.**",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]], parse_mode="Markdown")
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]),
+                parse_mode="Markdown"
             )
 
         elif act == "break":
