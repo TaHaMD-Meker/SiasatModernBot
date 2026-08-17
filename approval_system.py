@@ -80,19 +80,26 @@ def process_daily_approval_and_emigration(c: dict):
     # 2. Check Oil (production + reserves)
     current_oil_res = c.get("oil_reserves", 0)
     current_oil_prod = c.get("oil_production", 0)
-    available_oil = current_oil_res + current_oil_prod
+    
+    net_daily_oil = current_oil_prod - oil_need
 
-    if available_oil < oil_need:
-        oil_deficit_pct = (oil_need - available_oil) / oil_need
-        oil_penalty = -max(1, int(oil_deficit_pct * 6))
-        db.update_country_field(cid, "oil_reserves", 0)
-        oil_ok = False
-    else:
-        deficit_from_prod = max(0, oil_need - current_oil_prod)
-        new_res = max(0, current_oil_res - deficit_from_prod)
+    if net_daily_oil >= 0:
+        new_res = current_oil_res + net_daily_oil
         db.update_country_field(cid, "oil_reserves", new_res)
         oil_penalty = 0
         oil_ok = True
+    else:
+        deficit = abs(net_daily_oil)
+        if current_oil_res >= deficit:
+            new_res = current_oil_res - deficit
+            db.update_country_field(cid, "oil_reserves", new_res)
+            oil_penalty = 0
+            oil_ok = True
+        else:
+            oil_deficit_pct = (deficit - current_oil_res) / max(1, oil_need)
+            oil_penalty = -max(1, int(oil_deficit_pct * 6))
+            db.update_country_field(cid, "oil_reserves", 0)
+            oil_ok = False
 
     # 3. Check Grain (Food / Hunger) - include daily grain production
     current_grain_res = c.get("grain", 0)
@@ -199,11 +206,15 @@ def get_approval_status_message(c: dict):
     # Oil Status
     res_oil = c.get("oil_reserves", 0)
     prod_oil = c.get("oil_production", 0)
-    avail_oil = res_oil + prod_oil
-    if avail_oil >= oil_need:
-        oil_status = f"تامین کامل (نیاز روزانه: {format_oil(oil_need)})"
+    net_oil = prod_oil - oil_need
+    net_str = f"+{format_oil(net_oil)}" if net_oil >= 0 else f"-{format_oil(abs(net_oil))}"
+
+    if prod_oil >= oil_need:
+        oil_status = f"تامین کامل و مازاد صادراتی (تولید: +{format_oil(prod_oil)}/روز | مصرف صنعتی/عمومی: -{format_oil(oil_need)}/روز | تراز خالص: {net_str}/روز)"
+    elif res_oil + prod_oil >= oil_need:
+        oil_status = f"تامین از محل ذخایر (تولید: +{format_oil(prod_oil)}/روز | مصرف صنعتی/عمومی: -{format_oil(oil_need)}/روز | تراز خالص: {net_str}/روز)"
     else:
-        oil_status = f"کمبود سوخت و نفت (کسری: {format_oil(oil_need - avail_oil)})"
+        oil_status = f"کمبود شدید نفت و سوخت (کسری روزانه: {format_oil(oil_need - (res_oil + prod_oil))})"
     lines.append(f"• *سوخت و نفت:* {oil_status}\n")
 
     # Grain Status
