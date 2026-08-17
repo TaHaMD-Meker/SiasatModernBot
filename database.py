@@ -254,6 +254,31 @@ def init_db():
     )
     """)
 
+    # شورای امنیت و رای‌گیری‌های سازمان ملل متحد (UN Resolutions)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS un_resolutions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        creator_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'active',
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS un_votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resolution_id INTEGER NOT NULL,
+        voter_country_id INTEGER NOT NULL,
+        vote_option TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(resolution_id, voter_country_id),
+        FOREIGN KEY(resolution_id) REFERENCES un_resolutions(id) ON DELETE CASCADE,
+        FOREIGN KEY(voter_country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1682,3 +1707,145 @@ def get_market_stats() -> dict:
 
     conn.close()
     return stats
+
+
+# ---------- سازمان ملل متحد (United Nations) ----------
+
+def claim_un_country(admin_player_id: int) -> tuple[bool, str]:
+    """فعال‌سازی و واگذاری کشور/نقش سازمان ملل متحد (🇺🇳) اختصاصی ادمین اصلی."""
+    conn = get_connection()
+    new_un_id = None
+    try:
+        with conn:
+            cur = conn.cursor()
+            # بررسی اینکه آیا ادمین قبلاً کشوری دارد یا خیر
+            cur.execute("SELECT id, name, country_key FROM countries WHERE player_id = ?", (admin_player_id,))
+            existing = cur.fetchone()
+            if existing:
+                ex_c = dict(existing)
+                if ex_c["country_key"] == "un":
+                    return False, "نقش سازمان ملل متحد از قبل برای شما فعال است."
+                return False, f"شما در حال حاضر هدایت کشور {ex_c['name']} را بر عهده دارید.\nلطفاً ابتدا کشور فعلی خود را با دستور /resetme یا دکمه حذف کشور لغو فرمایید."
+
+            un_overrides = config.COUNTRY_STARTING_OVERRIDES.get("un", {})
+            now_str = datetime.datetime.now().isoformat()
+
+            cur.execute("""
+                INSERT INTO countries
+                (player_id, name, flag, population, treasury, tax_income, daily_income,
+                gold, gold_daily, oil_reserves, oil_production, grain, electricity,
+                active_personnel, reserve_personnel, created_at, country_key, approval_rating)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                admin_player_id, "سازمان ملل متحد", "🇺🇳",
+                un_overrides.get("population", 0), un_overrides.get("treasury", 100_000_000),
+                un_overrides.get("tax_income", 0), un_overrides.get("daily_income", 5_000_000),
+                un_overrides.get("gold", 1000), un_overrides.get("gold_daily", 0),
+                un_overrides.get("oil_reserves", 10_000_000), un_overrides.get("oil_production", 0),
+                un_overrides.get("grain", 500_000), un_overrides.get("electricity", 100),
+                un_overrides.get("active_personnel", 100_000), un_overrides.get("reserve_personnel", 200_000),
+                now_str, "un", un_overrides.get("approval_rating", 95)
+            ))
+
+            cur.execute("SELECT id FROM countries WHERE player_id = ?", (admin_player_id,))
+            new_un = cur.fetchone()
+            if new_un:
+                new_un_id = new_un["id"]
+
+        if new_un_id:
+            seed_country_assets(new_un_id, "un")
+
+        return True, "🇺🇳 **نقش سازمان ملل متحد با موفقیت برای شما فعال گردید!**"
+    except Exception as e:
+        return False, f"خطا در فعال‌سازی نقش سازمان ملل: {e}"
+
+
+def create_un_resolution(title: str, description: str, creator_id: int) -> int:
+    """ثبت قطعنامه جدید شورای امنیت سازمان ملل."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now().isoformat()
+    cur.execute("""
+        INSERT INTO un_resolutions (title, description, creator_id, status, created_at)
+        VALUES (?, ?, ?, 'active', ?)
+    """, (title, description, creator_id, now_str))
+    res_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return res_id
+
+
+def get_un_resolutions(status: str = "active") -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM un_resolutions WHERE status = ? ORDER BY id DESC", (status,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_un_resolution_by_id(res_id: int) -> dict:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM un_resolutions WHERE id = ?", (res_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def cast_un_vote(resolution_id: int, voter_country_id: int, vote_option: str) -> tuple[bool, str]:
+    """ثبت رای کشور در رای‌گیری قطعنامه سازمان ملل."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM un_resolutions WHERE id = ?", (resolution_id,))
+            res = cur.fetchone()
+            if not res or res["status"] != "active":
+                return False, "این رای‌گیری بسته یا منقضی شده است."
+
+            now_str = datetime.datetime.now().isoformat()
+            cur.execute("""
+                INSERT INTO un_votes (resolution_id, voter_country_id, vote_option, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(resolution_id, voter_country_id) DO UPDATE SET
+                vote_option = excluded.vote_option,
+                created_at = excluded.created_at
+            """, (resolution_id, voter_country_id, vote_option, now_str))
+
+        return True, "رای شما با موفقیت در شورای امنیت ثبت گردید."
+    except Exception as e:
+        return False, f"خطا در ثبت رای: {e}"
+
+
+def get_un_resolution_votes(resolution_id: int) -> dict:
+    """دریافت آمار رای‌گیری قطعنامه به همراه تفکیک کشورها."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT v.*, c.name, c.flag, c.country_key
+        FROM un_votes v
+        JOIN countries c ON v.voter_country_id = c.id
+        WHERE v.resolution_id = ?
+    """, (resolution_id,))
+    rows = cur.fetchall()
+    conn.close()
+
+    votes = {"yes": [], "no": [], "abstain": []}
+    for r in rows:
+        v_dict = dict(r)
+        opt = v_dict["vote_option"]
+        if opt in votes:
+            votes[opt].append(v_dict)
+
+    return votes
+
+
+def close_un_resolution(resolution_id: int, final_status: str) -> bool:
+    """بستن یا اعلام نتیجه قطعنامه (passed, vetoed, failed)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE un_resolutions SET status = ? WHERE id = ?", (final_status, resolution_id))
+    conn.commit()
+    conn.close()
+    return True

@@ -18,7 +18,7 @@ def build_country_keyboard():
     buttons = []
     row = []
     for key, info in config.COUNTRIES.items():
-        if key in taken:
+        if key in taken or key == "un":
             continue
         row.append(InlineKeyboardButton(f"{info['flag']} {info['name']}", callback_data=f"pickcountry:{key}"))
         if len(row) == 2:

@@ -74,6 +74,7 @@ COUNTRIES = {
     "iraq": {'name': 'عراق', 'flag': '🇮🇶'},
     "north_korea": {'name': 'کره شمالی', 'flag': '🇰🇵'},
     "hezbollah": {'name': 'حزب\u200cالله', 'flag': '🟡'},
+    "un": {'name': 'سازمان ملل متحد', 'flag': '🇺🇳'},
 }
 
 COUNTRY_STARTING_OVERRIDES = {
@@ -105,9 +106,15 @@ COUNTRY_STARTING_OVERRIDES = {
     "iraq": {'population': 44000000, 'treasury': 28000000, 'tax_income': 700000, 'daily_income': 1400000, 'gold': 180, 'gold_daily': 25, 'oil_reserves': 145000000, 'oil_production': 4500000, 'grain': 25000, 'electricity': 85, 'active_personnel': 200000, 'reserve_personnel': 150000, 'approval_rating': 75},
     "north_korea": {'population': 26000000, 'treasury': 15000000, 'tax_income': 300000, 'daily_income': 700000, 'gold': 300, 'gold_daily': 40, 'oil_reserves': 5000000, 'oil_production': 10000, 'grain': 15000, 'electricity': 80, 'active_personnel': 1280000, 'reserve_personnel': 600000, 'approval_rating': 90},
     "hezbollah": {'population': 4500000, 'treasury': 12000000, 'tax_income': 250000, 'daily_income': 500000, 'gold': 100, 'gold_daily': 15, 'oil_reserves': 2000000, 'oil_production': 0, 'grain': 10000, 'electricity': 70, 'active_personnel': 50000, 'reserve_personnel': 50000, 'approval_rating': 88},
+    "un": {'population': 0, 'treasury': 100000000, 'tax_income': 0, 'daily_income': 5000000, 'gold': 1000, 'gold_daily': 0, 'oil_reserves': 10000000, 'oil_production': 0, 'grain': 500000, 'electricity': 100, 'active_personnel': 100000, 'reserve_personnel': 200000, 'approval_rating': 95},
 }
 
 COUNTRY_EQUIPMENT_CATALOG = {
+    "un": [
+        {'key': 'un_blue_helmets', 'name': 'یگان صلح‌بانان کلاه‌آبی (UN Peacekeepers)', 'category': 'Ground Forces', 'price': 1000000, 'maint': 1000, 'initial': 100000, 'producible': True},
+        {'key': 'un_air_transport', 'name': 'هواپیمای ترابری صلح‌بانان (UN Cargo)', 'category': 'Aircraft', 'price': 30000000, 'maint': 10000, 'initial': 50, 'producible': True},
+        {'key': 'un_patrol_vessel', 'name': 'شناور گشتی بین‌المللی (UN Patrol)', 'category': 'Navy', 'price': 10000000, 'maint': 5000, 'initial': 30, 'producible': True},
+    ],
     "brazil": [
         {'key': 'gripen_e_br', 'name': 'F-39E Gripen NG', 'category': 'Aircraft', 'price': 85000000, 'maint': 40000, 'initial': 36, 'producible': True},
         {'key': 'gripen_f_br', 'name': 'دوکابین F-39F Gripen NG', 'category': 'Aircraft', 'price': 90000000, 'maint': 42000, 'initial': 8, 'producible': True},

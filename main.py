@@ -25,6 +25,7 @@ from handlers.statements import statements_menu, statements_callback_handler, st
 from handlers.research import research_menu, research_callback_handler
 from handlers.assets import show_assets_menu, get_assets_handlers
 from handlers.market import market_main_menu, market_text_input_handler, get_market_handlers
+from handlers.un import un_main_menu, un_text_input_handler, get_un_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
     confirm_asset_purchase, execute_asset_purchase,
@@ -205,12 +206,16 @@ def main():
     for handler in get_market_handlers():
         app.add_handler(handler)
 
+    # سیستم سازمان ملل متحد (/un)
+    for handler in get_un_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
     app.add_handler(CommandHandler("listcountries", listcountries))
 
-    # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، رول‌ها و بیانیه‌ها
+    # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها و بیانیه‌ها
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.user_data.get("admin_awaiting_input"):
             await admin_input_text_handler(update, context)
@@ -218,6 +223,8 @@ def main():
             await diplomacy_text_input_handler(update, context)
         elif context.user_data.get("market_sell_draft"):
             await market_text_input_handler(update, context)
+        elif context.user_data.get("un_draft"):
+            await un_text_input_handler(update, context)
         elif context.user_data.get("roleplay_text_input"):
             await operations_text_input_handler(update, context)
         elif context.user_data.get("statement_input"):
