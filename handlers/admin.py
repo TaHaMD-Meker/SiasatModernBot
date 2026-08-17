@@ -15,6 +15,7 @@ from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
 ACTIVE_WAR_ANALYSES = {}
+LATEST_WAR_ANALYSIS = {}
 
 
 def is_admin(user_id: int) -> bool:
@@ -670,7 +671,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_apply":
-        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
         att_key = war_data.get("attacker_key")
         def_key = war_data.get("defender_key")
         losses = war_data.get("losses", {})
@@ -695,6 +696,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             war_data["receipt_def"] = receipt_def
             ACTIVE_WAR_ANALYSES[user_id] = war_data
             context.user_data["war_analysis"] = war_data
+            LATEST_WAR_ANALYSIS.update(war_data)
 
             keyboard = [
                 [InlineKeyboardButton("📢 برودکست فاکتور تلفات به بازیکنان", callback_data="admin:war_broadcast_receipts")],
@@ -724,7 +726,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
 
     elif data == "admin:war_broadcast_receipts":
-        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
         receipt_att = war_data.get("receipt_att")
         receipt_def = war_data.get("receipt_def")
 
@@ -752,7 +754,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             )
 
     elif data == "admin:war_broadcast":
-        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
         report_text = war_data.get("report_text")
         if report_text:
             users = db.get_all_countries()
