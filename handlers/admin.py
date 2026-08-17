@@ -660,7 +660,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                         sent_count += 1
                     except Exception:
                         pass
-            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+            await query.answer(f"📢 فاکتورها به {sent_count} بازیکن ارسال شد!", show_alert=True)
+            keyboard = [
+                [InlineKeyboardButton("📢 ارسال مجدد فاکتور تلفات به بازیکنان", callback_data="admin:war_broadcast_receipts")],
+                [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+            ]
             await query.message.reply_text(
                 f"📢 *فاکتورهای دقیق تلفات با موفقیت به {sent_count} بازیکن ارسال شد.*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
@@ -681,9 +685,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                         sent_count += 1
                     except Exception:
                         pass
-            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+            await query.answer(f"📢 گزارش نبرد به {sent_count} بازیکن ارسال گردید!", show_alert=True)
+            keyboard = [
+                [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
+                [InlineKeyboardButton("📢 ارسال مجدد برودکست به بازیکنان", callback_data="admin:war_broadcast")],
+                [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+            ]
             await query.edit_message_text(
-                f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 *گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن ارسال گردید.*",
+                f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 *گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن برودکست شد.*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
