@@ -502,6 +502,8 @@ def rebalance_existing_countries_income():
                 overrides = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
                 base_daily = overrides.get("daily_income", config.STARTING_VALUES["daily_income"])
                 base_tax = overrides.get("tax_income", config.STARTING_VALUES["tax_income"])
+                base_oil_res = overrides.get("oil_reserves", config.STARTING_VALUES["oil_reserves"])
+                base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES["oil_production"])
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
@@ -517,9 +519,11 @@ def rebalance_existing_countries_income():
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
-                    daily_income = ?
+                    daily_income = ?,
+                    oil_reserves = ?,
+                    oil_production = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, c_id))
+                """, (base_tax, new_total_daily, base_oil_res, base_oil_prod, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
