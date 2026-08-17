@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 import database as db
 import config
+import news_engine
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
@@ -346,7 +347,17 @@ async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 try: await context.bot.send_message(chat_id=p_id, text=msg, parse_mode="Markdown")
                 except Exception: pass
 
-        await update.message.reply_text("✅ بیانیه رسمی دبیرکل با موفقیت برای تمامی بازیکنان برودکست شد.", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+        try:
+            await news_engine.post_breaking_news(
+                context.bot,
+                news_title="بیانیه رسمی دبیرکل سازمان ملل متحد",
+                news_body=text,
+                event_category="سازمان ملل متحد"
+            )
+        except Exception:
+            pass
+
+        await update.message.reply_text("✅ بیانیه رسمی دبیرکل با موفقیت برای تمامی بازیکنان و کانال اصلی برودکست شد.", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 
 def get_un_handlers():

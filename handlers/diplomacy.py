@@ -960,21 +960,47 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"• **طرف دوم:** {r_c['flag']} {r_c['name']}\n\n"
             f"• **کالای مبادله‌شده:** {offered_str}\n"
             f"• **مابه‌ازای دریافتی:** {requested_str}\n"
-            f"• **وضعیت معاهده:** 🟢 ثبت و امضا شد (تراکنش اتمیک موفق)"
+            f"• **وضعیت معاهده:** 🟢 ثبت و امضا شد (تراکنش اتمیک موفق)\n\n"
+            "❓ **انتشار در اخبار رسمی:** آیا تمایل دارید خبر ترانزیت این معاهده در کانال رسمی اخبار تلگرام منتشر شود؟"
         )
 
-        try:
-            t_mode = c_data.get("transport_mode", "sea") or "sea"
-            await news_engine.trigger_trade_news(context.bot, p_c, r_c, transport_mode=t_mode)
-        except Exception:
-            pass
+        keyboard = [
+            [
+                InlineKeyboardButton("📢 بله، انتشار در کانال اخبار", callback_data=f"dip:pub_news:{contract_id}:yes"),
+                InlineKeyboardButton("🔕 خیر، معاهده محرمانه بماند", callback_data=f"dip:pub_news:{contract_id}:no")
+            ]
+        ]
 
-        await query.edit_message_text(receipt_text, parse_mode="Markdown")
+        await query.edit_message_text(receipt_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         if p_c and p_c.get("player_id"):
             try:
                 await context.bot.send_message(chat_id=p_c["player_id"], text=receipt_text, parse_mode="Markdown")
             except Exception:
                 pass
+
+    elif data.startswith("dip:pub_news:"):
+        parts = data.split(":")
+        contract_id = int(parts[2])
+        choice = parts[3] # 'yes' or 'no'
+
+        c_data = db.get_trade_contract(contract_id)
+        if choice == "yes" and c_data:
+            p_c = db.get_country_by_id(c_data["proposer_id"])
+            r_c = db.get_country_by_id(c_data["recipient_id"])
+            t_mode = c_data.get("transport_mode", "sea") or "sea"
+            try:
+                await news_engine.trigger_trade_news(context.bot, p_c, r_c, transport_mode=t_mode)
+                await query.edit_message_text(
+                    f"{query.message.text}\n\n📢 **خبر ترانزیت این معاهده با موفقیت در کانال رسمی اخبار منتشر شد.**",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                await query.edit_message_text(f"{query.message.text}\n\n❌ خطا در انتشار خبر: {e}", parse_mode="Markdown")
+        else:
+            await query.edit_message_text(
+                f"{query.message.text}\n\n🔕 **این معاهده کاملاً محرمانه باقی ماند و هیچ خبری در کانال رسمی منتشر نگردید.**",
+                parse_mode="Markdown"
+            )
 
     elif data.startswith("dip:trade_reject:"):
         contract_id = int(data.split(":")[2])

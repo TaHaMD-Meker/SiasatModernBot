@@ -239,7 +239,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             f"• **ارزش کالا:** {format_money(meta['commodity_cost'])}\n"
             f"• **هزینه ترابری ({t_mode}):** {format_money(meta['transport_cost'])}\n"
             f"• **مجموع پرداختی از خزانه:** **{format_money(meta['total_buyer_cost'])}**\n\n"
-            f"✅ کالا فوراً به ذخایر استراتژیک کشور شما منتقل گردید."
+            f"✅ کالا فوراً به ذخایر استراتژیک کشور شما منتقل گردید.\n\n"
+            "❓ **انتشار در اخبار رسمی:** آیا تمایل دارید خبر این ترانزیت/معامله در کانال رسمی اخبار منتشر شود؟"
         )
 
         # Send Private Receipt to Seller
@@ -256,11 +257,42 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
                 pass
 
         keyboard = [
+            [
+                InlineKeyboardButton("📢 بله، انتشار در کانال اخبار", callback_data=f"market:pub_news:{order_id}:{t_mode}:yes"),
+                InlineKeyboardButton("🔕 خیر، معامله محرمانه بماند", callback_data=f"market:pub_news:{order_id}:{t_mode}:no"),
+            ],
             [InlineKeyboardButton("🏪 بازگشت به بورس کالا", callback_data="market:menu")],
             [InlineKeyboardButton("🌐 مشاهده وضعیت کشور", callback_data="country:back_profile")]
         ]
 
         await query.edit_message_text(result_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("market:pub_news:"):
+        parts = data.split(":")
+        order_id = int(parts[2])
+        t_mode = parts[3]
+        choice = parts[4]
+
+        if choice == "yes":
+            order = db.get_market_order_by_id(order_id)
+            buyer_c = country
+            seller_c = db.get_country_by_id(order["seller_id"]) if order else None
+            if buyer_c and seller_c:
+                try:
+                    await news_engine.trigger_trade_news(context.bot, buyer_c, seller_c, transport_mode=t_mode)
+                    await query.edit_message_text(
+                        f"{query.message.text}\n\n📢 **خبر ترانزیت این معامله با موفقیت در کانال رسمی اخبار منتشر شد.**",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    await query.edit_message_text(f"{query.message.text}\n\n❌ خطا در انتشار خبر: {e}", parse_mode="Markdown")
+            else:
+                await query.edit_message_text(f"{query.message.text}\n\n❌ اطلاعات معامله یافت نشد.", parse_mode="Markdown")
+        else:
+            await query.edit_message_text(
+                f"{query.message.text}\n\n🔕 **این معامله کاملاً محرمانه باقی ماند و هیچ خبری در کانال رسمی منتشر نگردید.**",
+                parse_mode="Markdown"
+            )
 
     elif data == "market:create_order":
         text = (
