@@ -32,9 +32,8 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
         [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
+        [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
-        [InlineKeyboardButton("✉️ رصد معاهدات و پیام‌های دیپلماتیک", callback_data="admin:dip_logs")],
-        [InlineKeyboardButton("📜 رصد فعالیت‌ها و لاگ‌های سیستم", callback_data="admin:activity_logs")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
@@ -369,6 +368,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+    elif data == "admin:monitor_menu":
+        text = (
+            "🔎 **رصد و پایش فعالیت بازیکنان**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "جهت مشاهده آخرین فعالیت‌ها، تراکنش‌ها و پیام‌های دیپلماتیک بازیکنان، بخش مورد نظر را انتخاب بفرمایید:"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✉️ رصد معاهدات و پیام‌های دیپلماتیک", callback_data="admin:dip_logs")],
+            [InlineKeyboardButton("📜 رصد فعالیت‌ها و لاگ‌های سیستم", callback_data="admin:activity_logs")],
+            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
     elif data == "admin:activity_logs":
         logs = db.get_recent_logs(20)
         lines = ["📜 *رصد آخرین فعالیت‌ها و لاگ‌های سیستم*\n━━━━━━━━━━━━━━━━━━\n"]
@@ -378,7 +390,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             for lg in logs:
                 dt_str = lg.get("created_at", "")[:19].replace("T", " ")
                 lines.append(f"• `{dt_str}` | *کاربر:* `{lg.get('actor')}` | *عملیات:* `{lg.get('action')}` | {lg.get('details')}\n")
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به رصد بازیکنان", callback_data="admin:monitor_menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:dip_logs":
@@ -392,7 +404,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 c = db.get_country_by_id(tx["country_id"])
                 c_name = f"{c['flag']} {c['name']}" if c else "نامشخص"
                 lines.append(f"• `{dt_str}` | *{c_name}:* {tx.get('description')} | *مبلغ/حجم:* {tx.get('amount')}\n")
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به رصد بازیکنان", callback_data="admin:monitor_menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:rankings":
