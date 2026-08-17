@@ -14,6 +14,9 @@ import war_analyzer
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
+ACTIVE_WAR_ANALYSES = {}
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
@@ -600,7 +603,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         flag = c_info.get("flag", "")
         name = c_info.get("name", att_key)
 
-        context.user_data["war_analysis"] = {"attacker_key": att_key}
+        war_data = {"attacker_key": att_key}
+        ACTIVE_WAR_ANALYSES[user_id] = war_data
+        context.user_data["war_analysis"] = war_data
         context.user_data["admin_awaiting_input"] = {"type": "war_role_att", "attacker_key": att_key}
 
         text = (
@@ -616,7 +621,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         flag = c_info.get("flag", "")
         name = c_info.get("name", def_key)
 
-        context.user_data["war_analysis"]["defender_key"] = def_key
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
+        war_data["defender_key"] = def_key
+        ACTIVE_WAR_ANALYSES[user_id] = war_data
+        context.user_data["war_analysis"] = war_data
         context.user_data["admin_awaiting_input"] = {"type": "war_role_def", "defender_key": def_key}
 
         text = (
@@ -629,7 +637,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data.startswith("admin:war_def:"):
         def_key = data.split(":")[2]
-        war_data = context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
         att_key = war_data.get("attacker_key")
         att_role = war_data.get("attacker_role", "")
 
@@ -641,9 +649,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
 
-        context.user_data["war_analysis"]["defender_key"] = def_key
-        context.user_data["war_analysis"]["losses"] = losses
-        context.user_data["war_analysis"]["report_text"] = report_text
+        war_data["defender_key"] = def_key
+        war_data["losses"] = losses
+        war_data["report_text"] = report_text
+        ACTIVE_WAR_ANALYSES[user_id] = war_data
+        context.user_data["war_analysis"] = war_data
 
         keyboard = [
             [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
@@ -660,7 +670,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_apply":
-        war_data = context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
         att_key = war_data.get("attacker_key")
         def_key = war_data.get("defender_key")
         losses = war_data.get("losses", {})
@@ -681,8 +691,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 "عملیات دفاعی اخیر", is_attacker=False
             )
 
-            context.user_data["war_analysis"]["receipt_att"] = receipt_att
-            context.user_data["war_analysis"]["receipt_def"] = receipt_def
+            war_data["receipt_att"] = receipt_att
+            war_data["receipt_def"] = receipt_def
+            ACTIVE_WAR_ANALYSES[user_id] = war_data
+            context.user_data["war_analysis"] = war_data
 
             keyboard = [
                 [InlineKeyboardButton("📢 برودکست فاکتور تلفات به بازیکنان", callback_data="admin:war_broadcast_receipts")],
@@ -696,14 +708,23 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode="Markdown"
             )
 
-            # Send receipt messages
-            await query.message.reply_text(receipt_att, parse_mode="Markdown")
-            await query.message.reply_text(receipt_def, parse_mode="Markdown")
+            # Send receipt messages safely
+            if len(receipt_att) > 4000:
+                await query.message.reply_text(receipt_att[:3800], parse_mode="Markdown")
+                await query.message.reply_text(receipt_att[3800:], parse_mode="Markdown")
+            else:
+                await query.message.reply_text(receipt_att, parse_mode="Markdown")
+
+            if len(receipt_def) > 4000:
+                await query.message.reply_text(receipt_def[:3800], parse_mode="Markdown")
+                await query.message.reply_text(receipt_def[3800:], parse_mode="Markdown")
+            else:
+                await query.message.reply_text(receipt_def, parse_mode="Markdown")
         else:
             await query.edit_message_text("❌ داده‌های سناریو پیدا نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
 
     elif data == "admin:war_broadcast_receipts":
-        war_data = context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
         receipt_att = war_data.get("receipt_att")
         receipt_def = war_data.get("receipt_def")
 
@@ -731,7 +752,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             )
 
     elif data == "admin:war_broadcast":
-        war_data = context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
         report_text = war_data.get("report_text")
         if report_text:
             users = db.get_all_countries()
@@ -740,7 +761,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 p_id = u.get("player_id")
                 if p_id:
                     try:
-                        await context.bot.send_message(chat_id=p_id, text=report_text, parse_mode="Markdown")
+                        if len(report_text) > 4000:
+                            await context.bot.send_message(chat_id=p_id, text=report_text[:3800], parse_mode="Markdown")
+                            await context.bot.send_message(chat_id=p_id, text=report_text[3800:], parse_mode="Markdown")
+                        else:
+                            await context.bot.send_message(chat_id=p_id, text=report_text, parse_mode="Markdown")
                         sent_count += 1
                     except Exception:
                         pass
@@ -750,11 +775,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 [InlineKeyboardButton("📢 ارسال مجدد برودکست به بازیکنان", callback_data="admin:war_broadcast")],
                 [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
             ]
-            await query.edit_message_text(
-                f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 *گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن برودکست شد.*",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
-            )
+            if len(report_text) > 3500:
+                await query.message.reply_text(
+                    f"📢 *گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن برودکست شد.*",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(
+                    f"{report_text}\n\n━━━━━━━━━━━━━━━━━━\n📢 *گزارش نبرد با موفقیت به {sent_count} کشور/بازیکن برودکست شد.*",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
 
     elif data == "admin:sync_catalog":
         db.sync_all_country_assets_to_catalog()
@@ -1086,19 +1118,21 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         def_role_raw = update.message.text.strip()
         def_role = "" if def_role_raw in ["0", "۰", "هیچ", "ندارد"] else def_role_raw
 
-        war_data = context.user_data.get("war_analysis", {})
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
         att_key = war_data.get("attacker_key")
         att_role = war_data.get("attacker_role", "")
 
-        context.user_data["war_analysis"]["defender_role"] = def_role
+        war_data["defender_key"] = def_key
+        war_data["defender_role"] = def_role
 
         await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
         report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
 
-        context.user_data["war_analysis"]["defender_key"] = def_key
-        context.user_data["war_analysis"]["losses"] = losses
-        context.user_data["war_analysis"]["report_text"] = report_text
+        war_data["losses"] = losses
+        war_data["report_text"] = report_text
+        ACTIVE_WAR_ANALYSES[user_id] = war_data
+        context.user_data["war_analysis"] = war_data
 
         keyboard = [
             [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
