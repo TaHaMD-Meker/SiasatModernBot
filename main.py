@@ -16,6 +16,7 @@ from telegram.ext import (
 import config
 import database as db
 import approval_system
+import news_engine
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
@@ -189,6 +190,15 @@ def main():
     # پنل پیشرفته ادمین (مخصوص آیدی 8052987465)
     app.add_handler(CommandHandler(["admin", "panel"], admin_panel))
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern=r"^admin:"))
+
+    async def ignore_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.callback_query:
+            try:
+                await update.callback_query.answer()
+            except Exception:
+                pass
+
+    app.add_handler(CallbackQueryHandler(ignore_callback, pattern=r"^ignore$"))
 
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
