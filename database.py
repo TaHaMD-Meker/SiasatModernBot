@@ -316,6 +316,11 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_grain_scale_v2()
+    except Exception:
+        pass
+
 
 def fix_legacy_grain_scale():
     """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
@@ -348,6 +353,38 @@ def fix_legacy_grain_scale():
     set_setting("grain_scale_fixed_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
     if fixed_count:
         print(f"[grain-migration] {fixed_count} country grain stocks upgraded to ton-scale.")
+
+
+def fix_grain_scale_v2():
+    """مایگریشن v2: فشرده‌سازی ذخایر غلات به مقیاس هفته‌ای بازی (۳ تا ۱۰ روز ذخیره).
+
+    طبق بازطراحی بالانس، ذخیره غلات کشورها باید در بازه‌ی ریتم هفته‌ای بازی باشد.
+    این تابع یک بار اجرا می‌شود و ذخایر بالاتر از سقف استاندارد جدید را فقط تا سقف
+    پایین می‌آورد (کشورهایی که ذخیره‌شان کمتر از سقف است دست نمی‌خورند).
+    """
+    if get_setting("grain_scale_fixed_v2"):
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, country_key, population, grain FROM countries")
+    rows = cur.fetchall()
+    changed = 0
+    for row in rows:
+        cid = row[0]
+        ckey = row[1]
+        pop = row[2] or 10_000_000
+        grain = row[3] or 0
+        need_daily = max(10, int((pop / 1_000_000) * 100))
+        preset = config.COUNTRY_STARTING_OVERRIDES.get(ckey, {}) if ckey else {}
+        cap = preset.get("grain") or (need_daily * 7)
+        if grain > cap:
+            cur.execute("UPDATE countries SET grain = ? WHERE id = ?", (cap, cid))
+            changed += 1
+    conn.commit()
+    conn.close()
+    set_setting("grain_scale_fixed_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if changed:
+        print(f"[grain-migration-v2] {changed} country grain stocks capped to weekly scale.")
 
 
 # ---------- کشورها ----------
