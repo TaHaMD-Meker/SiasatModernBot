@@ -1420,8 +1420,14 @@ STRAITS_MAPPING = {
     "iran": {
         "strait_key": "hormuz",
         "name": "تنگه استراتژیک هرمز",
-        "desc": "شریان حیاتی انرژی خلیج فارس (مسیر اصلی صادرات نفت امارات، قطر، عربستان و عراق)",
-        "affected_keys": ["uae", "qatar", "saudi", "iraq", "israel"]
+        "desc": "شریان حیاتی انرژی خلیج فارس (مسیر اصلی صادرات نفت امارات، قطر، عربستان، کویت و عراق)",
+        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "israel"]
+    },
+    "oman": {
+        "strait_key": "hormuz_south",
+        "name": "تنگه هرمز و دریای عمان (ضلع جنوبی)",
+        "desc": "شاهراه ترانزیت نفت خلیج فارس به اقیانوس هند",
+        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "iran"]
     },
     "egypt": {
         "strait_key": "suez",
