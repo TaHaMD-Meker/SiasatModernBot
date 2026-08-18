@@ -326,6 +326,11 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_refinery_oil_production_v2()
+    except Exception:
+        pass
+
 
 def fix_legacy_grain_scale():
     """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
@@ -429,6 +434,54 @@ def fix_refinery_oil_production():
         return
     except Exception as e:
         print(f"Error in fix_refinery_oil_production: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fix_refinery_oil_production_v2():
+    """مایگریشن v4: اعمال تمایز نفتی/غیرنفتی روی تولید پالایشگاه‌های موجود.
+
+    کشورهای غیرنفتی از هر پالایشگاه فقط +۲۵هزار بشکه می‌گیرند؛ اگر ترمیم قبلی
+    به آن‌ها +۱۰۰هزار داده باشد (فرمول قدیمی)، به مقدار درست جدید اصلاح می‌شود.
+    مقادیر آسیب‌دیده از جنگ که با فرمول‌ها مطابقت ندارند، دست نمی‌خورند.
+    """
+    if get_setting("oil_prod_repair_v2"):
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key, oil_production FROM countries")
+            rows = cur.fetchall()
+            changed = 0
+            for r in rows:
+                cur.execute(
+                    "SELECT COALESCE(SUM(quantity), 0) AS q FROM equipment WHERE country_id = ? AND item_key = 'oil_refinery'",
+                    (r["id"],),
+                )
+                qty = cur.fetchone()["q"]
+                if not qty:
+                    continue
+                base = config.get_country_base_oil_production(r["country_key"])
+                eff = config.get_refinery_effect(r["country_key"])
+                expected_new = base + eff["oil_prod"] * qty
+                expected_old = base + 100_000 * qty
+                current = r["oil_production"] or 0
+                if not config.is_oil_country(r["country_key"]) and current == expected_old:
+                    cur.execute("UPDATE countries SET oil_production = ? WHERE id = ?", (expected_new, r["id"]))
+                    changed += 1
+                elif current < expected_new:
+                    cur.execute("UPDATE countries SET oil_production = ? WHERE id = ?", (expected_new, r["id"]))
+                    changed += 1
+        conn.close()
+        if changed:
+            print(f"[oil-prod-repair-v2] {changed} countries adjusted for oil/non-oil refinery rules.")
+        set_setting("oil_prod_repair_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+    except Exception as e:
+        print(f"Error in fix_refinery_oil_production_v2: {e}")
         try:
             conn.close()
         except Exception:
@@ -653,7 +706,10 @@ def rebalance_existing_countries_income():
                     i_key = eq["item_key"]
                     qty = eq["quantity"]
                     item = config.ALL_SHOP_ITEMS.get(i_key, {})
-                    civ_income += item.get("income_add", 0) * qty
+                    inc = item.get("income_add", 0)
+                    if i_key == "oil_refinery":
+                        inc = config.get_refinery_effect(c_key).get("income", inc)
+                    civ_income += inc * qty
 
                 new_total_daily = base_daily + civ_income
 
@@ -796,10 +852,16 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             grain_daily_add = item.get("grain_daily_add", 0) * quantity
             grain_bonus = item.get("grain_bonus", 0) * quantity
 
-            cur.execute("SELECT treasury, oil_reserves FROM countries WHERE id = ?", (country_id,))
+            cur.execute("SELECT treasury, oil_reserves, country_key FROM countries WHERE id = ?", (country_id,))
             row = cur.fetchone()
             if not row:
                 return False, "کشور پیدا نشد."
+
+            # تمایز نفتی/غیرنفتی: اثر پالایشگاه به نوع کشور بستگی دارد
+            if item_key == "oil_refinery" and row["country_key"]:
+                eff = config.get_refinery_effect(row["country_key"])
+                income_add = eff["income"] * quantity
+                oil_prod_add = eff["oil_prod"] * quantity
 
             if row["treasury"] < total_price:
                 return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_price:,} دلار\nخزانه فعلی: {row['treasury']:,} دلار"

@@ -321,6 +321,12 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     ]
 
     desc_text = item.get("desc", f"🏗️ *پروژه:* {item['name']}\n\n💰 *هزینه احداث:* {format_money(item['price'])}")
+    if item_key == "oil_refinery" and country and not config.is_oil_country(country.get("country_key")):
+        desc_text += (
+            "\n\n⚠️ *توجه — کشور غیرنفتی:* به دلیل نداشتن میدان نفتی، در کشور شما هر پالایشگاه "
+            "*+۲۵,۰۰۰ بشکه/روز* تولید نفت و *+۶۰۰,۰۰۰ دلار/روز* درآمد دارد "
+            "(به‌جای +۱۰۰,۰۰۰ بشکه و +۷۵۰,۰۰۰ دلار برای کشورهای نفتی)."
+        )
     desc_text += f"\n📊 *تعداد احداث‌شده فعلی شما:* {curr_qty}/{max_limit} واحد"
 
     await query.edit_message_text(

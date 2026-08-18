@@ -1852,3 +1852,27 @@ if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
     except Exception:
         pass
+
+# ===== تمایز کشورهای نفتی و غیرنفتی در اثرگذاری پالایشگاه =====
+# کشور با پایه تولید نفت زیر این مقدار = غیرنفتی (پالایشگاه فقط درآمد تصفیه می‌دهد)
+OIL_COUNTRY_THRESHOLD = 100_000
+REFINERY_BONUS = {
+    "oil_country":     {"oil_prod": 100_000, "income": 750_000},
+    "non_oil_country": {"oil_prod": 25_000,  "income": 600_000},
+}
+
+
+def get_country_base_oil_production(country_key):
+    """پایه تولید نفت کشور بر اساس کانفیگ (بدون ساختمان‌ها)."""
+    if country_key and country_key in COUNTRY_STARTING_OVERRIDES:
+        return COUNTRY_STARTING_OVERRIDES[country_key].get("oil_production", 0)
+    return STARTING_VALUES.get("oil_production", 1_000_000)
+
+
+def is_oil_country(country_key):
+    return get_country_base_oil_production(country_key) >= OIL_COUNTRY_THRESHOLD
+
+
+def get_refinery_effect(country_key):
+    """اثر هر واحد پالایشگاه بر اساس نوع کشور (نفتی/غیرنفتی)."""
+    return REFINERY_BONUS["oil_country" if is_oil_country(country_key) else "non_oil_country"]
