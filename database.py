@@ -986,8 +986,11 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                                 if p_c["treasury"] >= st_toll:
                                     cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (st_toll, p_id))
                                     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (st_toll, owner_c["id"]))
+                                    p_c["treasury"] -= st_toll
                                     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
                                     cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)", (owner_c["id"], f"دریافت عوارض ترانزیت {strait_info['name']} از معاهده {p_c['name']} و {r_c['name']}", st_toll, now_str))
+                                else:
+                                    return False, f"⛔ **امکان پرداخت عوارض وجود ندارد:** خزانه کشور {p_c['name']} برای پرداخت عوارض ترانزیت {strait_info['name']} ({format_money(st_toll)}) کافی نیست."
 
             off_type = c["offered_type"]
             off_key = c.get("offered_key")
