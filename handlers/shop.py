@@ -143,15 +143,21 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if cat_key in CIVILIAN_CATEGORIES:
         label, items = CIVILIAN_CATEGORIES[cat_key]
+        equipment = db.get_equipment(country["id"])
         buttons = []
         for item_key, item in items.items():
-            buttons.append([InlineKeyboardButton(
-                f"{item['name']} — {format_money(item['price'])}",
-                callback_data=f"buyciv:{item_key}"
-            )])
-        buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="shopback")])
+            curr_qty = equipment.get(item_key, 0)
+            max_limit = item.get("max_limit", 10)
+            status_str = f"({curr_qty}/{max_limit})"
+            if curr_qty >= max_limit:
+                btn_label = f"🔒 {item['name']} — {status_str} [تکمیل سقف]"
+            else:
+                btn_label = f"{item['name']} — {format_money(item['price'])} {status_str}"
 
-        await query.edit_message_text(f"🏪 {label}\n\nکالای مورد نظر رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+            buttons.append([InlineKeyboardButton(btn_label, callback_data=f"buyciv:{item_key}")])
+
+        buttons.append([InlineKeyboardButton("🔙 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")])
+        await query.edit_message_text(f"🏪 *{label}*\n\nکالای مورد نظر جهت احداث را انتخاب کنید (تعداد احداث‌شده در پرانتز مشخص است):", reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
 async def show_military_asset_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -292,6 +298,23 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text("این پروژه در دسترس نیست.", parse_mode="Markdown")
         return
 
+    country = db.get_country_by_player(update.effective_user.id)
+    if country:
+        equipment = db.get_equipment(country["id"])
+        curr_qty = equipment.get(item_key, 0)
+        max_limit = item.get("max_limit", 10)
+        if curr_qty >= max_limit:
+            await query.edit_message_text(
+                f"🔒 **سقف مجاز احداث این پروژه پر شده است!**\n\n"
+                f"• **پروژه:** {item['name']}\n"
+                f"• **سقف مجاز:** {max_limit} واحد\n"
+                f"• **احداث‌شده شما:** {curr_qty} واحد\n\n"
+                "شما نمی‌توانید بیش از سقف تعیین‌شده اقدام به احداث این پروژه بفرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")]]),
+                parse_mode="Markdown"
+            )
+            return
+
     buttons = [
         [InlineKeyboardButton("✅ تأیید و احداث پروژه (۱ عدد)", callback_data=f"docivbuy:{item_key}:1")],
         [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")],
@@ -320,6 +343,24 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     item = config.ALL_SHOP_ITEMS.get(item_key)
     if not country or not item:
         await query.answer("خطا در انجام عملیات.", show_alert=True)
+        return
+
+    equipment = db.get_equipment(country["id"])
+    curr_qty = equipment.get(item_key, 0)
+    max_limit = item.get("max_limit", 10)
+
+    if curr_qty + quantity > max_limit:
+        await query.answer("❌ سقف مجاز احداث این پروژه پر شده است!", show_alert=True)
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")]]
+        await query.edit_message_text(
+            f"🔒 **سقف مجاز احداث این پروژه پر شده است!**\n\n"
+            f"• **نام پروژه:** {item['name']}\n"
+            f"• **سقف مجاز احداث:** {max_limit} واحد\n"
+            f"• **تعداد احداث‌شده فعلی شما:** {curr_qty} واحد\n\n"
+            f"شما نمی‌توانید بیش از {max_limit} واحد از این پروژه را در کشور خود احداث فرمایید.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
         return
 
     total_price = item["price"] * quantity

@@ -445,9 +445,20 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             for lg in logs:
                 dt_str = lg.get("created_at", "")[:19].replace("T", " ")
-                lines.append(f"• `{dt_str}` | *کاربر:* `{lg.get('actor')}` | *عملیات:* `{lg.get('action')}` | {lg.get('details')}\n")
+                actor_id = lg.get("actor", "")
+                c = db.get_country_by_player(int(actor_id)) if (actor_id and actor_id.isdigit()) else None
+                c_str = f"{c['flag']} {c['name']}" if c else f"`{actor_id}`"
+                act_str = str(lg.get("action", "")).replace("_", "\\_")
+                det_str = str(lg.get("details", "")).replace("_", "\\_")
+                lines.append(f"• `{dt_str}` | *کاربر:* {c_str} | *عملیات:* `{act_str}` | {det_str}\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به رصد بازیکنان", callback_data="admin:monitor_menu")]]
-        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        try:
+            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception:
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            except Exception:
+                pass
 
     elif data == "admin:dip_logs":
         txs = db.get_recent_diplomatic_logs(20)
