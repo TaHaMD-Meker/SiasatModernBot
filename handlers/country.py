@@ -47,7 +47,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📈 درآمد روزانه: {format_money(c['daily_income'])}\n\n"
         f"🛢️ ذخیره نفت: {format_oil(c['oil_reserves'])}\n"
         f"🛢️ تولید نفت: {format_oil(c['oil_production'])} در روز\n\n"
-        f"🌾 غلات: {format_number(c['grain'])}\n"
+        f"🌾 غلات: {format_number(c['grain'])} تن\n"
         f"⚡ برق: {c['electricity']}٪\n\n"
         f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
         f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}{badges_str}"

@@ -42,7 +42,7 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"🏦 *کشور:* {c['flag']} {c['name']}\n"
         f"💰 *موجودی خزانه:* {format_money(c['treasury'])}\n"
-        f"🛢️ *ذخیره نفت:* {format_oil(c['oil_reserves'])} | 🪙 *طلا:* {format_number(c['gold'])} | 🌾 *غلات:* {format_number(c['grain'])}\n\n"
+        f"🛢️ *ذخیره نفت:* {format_oil(c['oil_reserves'])} | 🪙 *طلا:* {format_number(c['gold'])} | 🌾 *غلات:* {format_number(c['grain'])} تن\n\n"
         f"📊 **قیمت‌های کف فعلی بازار:**\n"
         f"• 🛢️ **نفت خام:** هر بشکه {oil_low}\n"
         f"• 🪙 **شمش طلا:** هر شمش {gold_low}\n"

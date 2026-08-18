@@ -311,6 +311,44 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_legacy_grain_scale()
+    except Exception:
+        pass
+
+
+def fix_legacy_grain_scale():
+    """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
+
+    واحد رسمی غلات در بازی «تن» است، اما کشورهای قدیمی با مقادیر ۱۵ تا ۱۰۰ تن
+    (کمتر از یک روز نیاز!) ساخته شده بودند و برای همیشه در حالت قحطی می‌ماندند.
+    این تابع فقط یک بار اجرا می‌شود و ذخیره کشورها را در صورت کمتر بودن از
+    مقدار استاندارد جدید (بر اساس کانفیگ)، به بالا ارتقا می‌دهد.
+    """
+    if get_setting("grain_scale_fixed_v1"):
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, country_key, population, grain FROM countries")
+    rows = cur.fetchall()
+    fixed_count = 0
+    for row in rows:
+        cid = row[0]
+        ckey = row[1]
+        pop = row[2] or 10_000_000
+        grain = row[3] or 0
+        need_daily = max(10, int((pop / 1_000_000) * 100))
+        preset = config.COUNTRY_STARTING_OVERRIDES.get(ckey, {}) if ckey else {}
+        target = preset.get("grain") or (need_daily * 25)
+        if grain < target:
+            cur.execute("UPDATE countries SET grain = ? WHERE id = ?", (target, cid))
+            fixed_count += 1
+    conn.commit()
+    conn.close()
+    set_setting("grain_scale_fixed_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if fixed_count:
+        print(f"[grain-migration] {fixed_count} country grain stocks upgraded to ton-scale.")
+
 
 # ---------- کشورها ----------
 
