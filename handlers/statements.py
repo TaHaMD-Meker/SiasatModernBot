@@ -133,24 +133,9 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     photo_file_id = update.message.photo[-1].file_id
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # Build exact channel statement card with Markdown & Plain text fallbacks
-    channel_card_md = (
-        "📑 **«بیانیه رسمی کشوری»**\n"
-        f"🪐 **کشور:** {country['flag']} {country['name']}\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{caption}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📌 **صادرکننده:** {user_name_str} | **تاریخ:** {datetime.date.today().isoformat()}"
-    )
-
-    channel_card_plain = (
-        "📑 «بیانیه رسمی کشوری»\n"
-        f"🪐 کشور: {country['flag']} {country['name']}\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{caption}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📌 صادرکننده: {user_name_str} | تاریخ: {datetime.date.today().isoformat()}"
-    )
+    # ارسال مستقیم متن بیانیه بازیکن بدون هیچ قالب اضافی (درخواست مدیریت)
+    channel_card_md = caption
+    channel_card_plain = caption
 
     # Multi-tier resilient post to Channel
     posted_to_channel = False
@@ -208,30 +193,130 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     await update.message.reply_text(conf_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
 
 
+
+# ---------- موتور بیانیه‌ساز دیپلماتیک نسخه ۲ (بدون تکرار) ----------
+
+import random
+
+_INFORMAL_MAP = {
+    "می‌خوایم": "می‌خواهیم", "می‌خوام": "می‌خواهم", "می‌خوید": "می‌خواهید",
+    "می‌خواد": "می‌خواهد", "بخواد": "بخواهد", "می‌خویم": "می‌خواهیم",
+    "بذار": "بگذار", "بذارید": "بگذارید", "بذارن": "بگذارند", "اینطوری": "بدین‌گونه",
+    "اونها": "آن‌ها", "اونا": "آنان", "حتماً": "قطعاً",
+    "میشه": "می‌شود", "می‌شه": "می‌شود", "کنن": "کنند", "هستن": "هستند",
+    "بزنن": "بزنند", "بگیرن": "بگیرند", "بدن": "دهند",
+}
+
+def _formalize(text: str) -> str:
+    for k, v in _INFORMAL_MAP.items():
+        text = text.replace(k, v)
+    return text.strip()
+
+_STMT_OPENERS = [
+    "دفتر مطبوعاتی و مرکز ارتباطات دولت {c} بیانیه ذیل را به اطلاع افکار عمومی جهان می‌رساند:",
+    "وزارت امور خارجه {c} بدین‌وسیله مواضع رسمی و مصوب شورای عالی امنیت ملی را اعلام می‌دارد:",
+    "سخنگوی رسمی دولت {c} در پی ارزیابی‌های کارشناسی و نشست فوری شورای امنیت، ابلاغیه ذیل را صادر نمود:",
+    "حکومت {c} در بیانیه‌ای رسمی، ضمن تجدید تأکید بر اصول منشور ملل متحد، مواضع خود را چنین اعلام کرد:",
+    "مرکز راهبری دیپلماسی {c} با صدور اطلاعیه‌ای فوری، نکات ذیل را مورد توجه جامعه جهانی قرار داد:",
+    "قصر ریاست‌جمهوری {c} در پیگیری حقوق مشروع ملت خود، مواضع قطعی دولت را بدین شرح اعلام نمود:",
+    "شورای هماهنگی راهبردی {c} پس از بررسی همه‌جانبهرفتارهای اخیر، متن ذیل را سند رسمی مواضع کشور قرار داد:",
+]
+
+_STMT_BODY_FRAMES = [
+    "محور اصلی این اعلامیه {t} است؛ موضوعی که از این پس در رأس دستور کار دیپلماتیک و اجرایی دولت قرار می‌گیرد.",
+    "بر پایه مصوبات جدید کابینه، رسماً اعلام می‌گردد: «{t}»",
+    "متن کامل موضع رسمی دولت بدین شرح ابلاغ می‌شود: «{t}»",
+    "در پی رصد دقیق تحولات جاری، {c} رسماً موضوع {t} را در چارچوب منافع راهبردی خود محور قرار داده است.",
+    "بر اساس ارزیابی مشترک ستاد مشترک و وزارت خارجه، محور {t} با حساسیت تمام پیگیری و ابلاغ گردید.",
+    "دولت {c} رسماً حاکمیت و عزم خود را در خصوص {t} به تمامی طرف‌های ذی‌ربط اعلام می‌دارد.",
+]
+
+_STMT_ELABS = [
+    "هرگونه اقدام مغایر با منافع ملت {c}، پاسخ متناسب و قاطع خواهد داشت و مسئولیت پیامدهای آن بر عهده طرف مقابل است.",
+    "{c} بر تعهد خود به منشور ملل متحد، حسن همجواری و حل مسالمت‌آمیز اختلافات پاینده است و از هیچ تلاش دیپلماتیک مشارکتی دریغ نخواهد ورزید.",
+    "حفظ ثبات، امنیت و آرامش منطقه، خط قرمز و اصل ثابت سیاست خارجی {c} است.",
+    "دولت {c} آمادگی کامل خود را برای گفت‌وگو در چارچوب عزت و منافع ملی اعلام می‌دارد.",
+    "نیروهای مسلح {c} در بالاترین سطح آمادگی دفاعی، پشتیبان تمام‌عیار این موضع رسمی هستند.",
+    "این مواضع با نظر کامل نهادهای راهبردی و رأی شورای عالی امنیت {c} تدوین و ابلاغ گردیده است.",
+    "پنجره دیپلماسی همچنان گشوده است؛ هرچند مشروط به حسن‌نیت و اقدام عملی طرف‌های مقابل خواهد بود.",
+    "ملت {c} در پشتیبانی از این موضع، یکپارچه و هم‌صدا ایستاده‌اند و هیچ اختلافی در ارکان دولت مشاهده نمی‌شود.",
+]
+
+_STMT_CLOSERS = [
+    "این بیانیه رسماً به دبیرخانه سازمان ملل متحد، سفارت‌های ذی‌ربط و نهادهای بین‌المللی ابلاغ گردید.",
+    "نسخه کامل این سند در بایگانی دیپلماتیک {c} ثبت شده و مبنای رسمی مذاکرات آینده خواهد بود.",
+    "تا اطلاع ثانوی، این متن تنها مرجع رسمی اعلام مواضع {c} در این موضوع به شمار می‌رود.",
+    "جهان باید بداند که ملت {c} در دفاع از این موضع، یکپارچه و مصمم است.",
+    "روابط عمومی {c} جزئیات تکمیلی را در نشست خبری پیش‌رو اعلام خواهد کرد.",
+    "پیروندهای این موضع به‌طور مستمر از سوی دستگاه دیپلماسی {c} رصد و گزارش می‌شود.",
+]
+
+_RECENT_STMT_SIGS = []
+
+def generate_diplomatic_statement(country_name: str, raw_text: str) -> str:
+    """ساخت بیانیه رسمی متنوع از متن خام؛ ترکیب تصادفی گشایش/بدنه/توضیح/اختتام بدون تکرار اخیر."""
+    formal = _formalize(raw_text)
+
+    def fill(t: str) -> str:
+        return t.replace("{c}", country_name).replace("{t}", formal)
+
+    for _ in range(4):
+        o = random.choice(_STMT_OPENERS)
+        b = random.choice(_STMT_BODY_FRAMES)
+        e1 = random.choice(_STMT_ELABS)
+        e2 = random.choice(_STMT_ELABS)
+        cl = random.choice(_STMT_CLOSERS)
+        if e1 != e2 and (o, b, e1, cl) not in _RECENT_STMT_SIGS:
+            break
+
+    _RECENT_STMT_SIGS.append((o, b, e1, cl))
+    if len(_RECENT_STMT_SIGS) > 40:
+        _RECENT_STMT_SIGS.pop(0)
+
+    lines = [fill(o), fill(b), fill(e1)]
+    if e2 != e1 and random.random() < 0.45:
+        lines.append(fill(e2))
+    lines.append(fill(cl))
+    return "\n".join(lines)
+
+
 async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT_TYPE, country: dict):
     """رسمی‌سازی هوشمند متن محاوره‌ای به بیانیه ۳ سطری دیپلماتیک."""
     
     raw_text = update.message.text.strip()
     await update.message.reply_text("✍️ **در حال رسمی‌سازی متن و نگارش بیانیه فاخر دیپلماتیک...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
-    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+    openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = openai_key or openrouter_key
     polished_text = None
 
     if api_key:
         try:
+            # فیکس: کلید OpenRouter قبلاً به آدرس OpenAI وصل می‌شد؛ اکنون درست تشخیص داده می‌شود
+            if not openai_key and openrouter_key:
+                api_base = "https://openrouter.ai/api/v1"
+                default_model = "deepseek/deepseek-chat-v3-0324:free"
+            else:
+                api_base = "https://api.openai.com/v1"
+                default_model = "gpt-4o-mini"
+            model_name = os.environ.get("AI_MODEL") or default_model
             prompt = f"""شما یک دیپلمات ارشد بین‌المللی و سخنگوی دولت {country['name']} هستید.
 متن خام/محاوره‌ای زیر را به یک بیانیه رسمی، فاخر، سنگین و کارشناسی (حداقل در ۳ سطر) تبدیل کن.
+در هر بار نگارش، لحن و جمله‌بندی کاملاً متفاوتی به کار ببر (دیپلماتیک، قاطع، هشدارآمیز، همبستگی‌محور و...) و از کلیشه‌های تکراری پرهیز کن.
 
 متن خام:
 "{raw_text}"
 
 نکته مهم: فقط و فقط متن رسمی بازنویسی‌شده را بازگردان بدون هیچ توضیحات اضافی یا کلمات مقدماتی.
 """
-            url = "https://api.openai.com/v1/chat/completions"
+            url = api_base + "/chat/completions"
             data = {
-                "model": "gpt-4o-mini",
-                "messages": [{"role": "system", "content": "You are a senior diplomatic speechwriter."}, {"role": "user", "content": prompt}],
-                "temperature": 0.7
+                "model": model_name,
+                "messages": [{"role": "system", "content": "You are a senior diplomatic speechwriter. Vary tone, structure and vocabulary every time; never repeat your previous phrasings."}, {"role": "user", "content": prompt}],
+                "temperature": 0.95,
+                "presence_penalty": 0.6,
+                "frequency_penalty": 0.5
             }
             req = urllib.request.Request(
                 url,
@@ -246,12 +331,8 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
             print(f"AI Rewriter error: {e}")
 
     if not polished_text:
-        # Fallback Algorithmic Diplomatic Speechwriter
-        polished_text = (
-            f"دولت و وزارت امور خارجه کشور {country['name']} بدین‌وسیله مواضع رسمی خود را در قبال تحرکات اخیر اعلام می‌دارد.\n"
-            f"بر اساس تصمیمات عالی شورای امنیت ملی، {raw_text} به‌صورت ویژه در دستور کار دیپلماتیک و اجرایی قرار گرفته است.\n"
-            "اراده صریح کشور بر حفظ اقتدار ملی، ثبات منطقه‌ای و پاسخ قاطع به هرگونه تحرک ناهمگون استوار خواهد بود."
-        )
+        # موتور بیانیه‌ساز دیپلماتیک نسخه ۲ (متنوع و بدون تکرار)
+        polished_text = generate_diplomatic_statement(country['name'], raw_text)
 
     # Output ONLY polished text in 1 message for easy copying
     await update.message.reply_text(
@@ -267,24 +348,9 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     tweet_text = update.message.text.strip()
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # Build Tweet Card with Markdown & Plain text fallbacks
-    tweet_card_md = (
-        "🐦 **«توییت رسمی کشوری»**\n"
-        f"🪐 **کشور:** {country['flag']} {country['name']}\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{tweet_text}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📌 **صادرکننده:** {user_name_str} | **تاریخ:** {datetime.date.today().isoformat()}"
-    )
-
-    tweet_card_plain = (
-        "🐦 «توییت رسمی کشوری»\n"
-        f"🪐 کشور: {country['flag']} {country['name']}\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{tweet_text}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📌 صادرکننده: {user_name_str} | تاریخ: {datetime.date.today().isoformat()}"
-    )
+    # ارسال مستقیم متن توییت بازیکن بدون هیچ قالب اضافی (درخواست مدیریت)
+    tweet_card_md = tweet_text
+    tweet_card_plain = tweet_text
 
     # Multi-tier resilient post to Channel
     posted_to_channel = False
