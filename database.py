@@ -321,6 +321,11 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_refinery_oil_production()
+    except Exception:
+        pass
+
 
 def fix_legacy_grain_scale():
     """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
@@ -385,6 +390,49 @@ def fix_grain_scale_v2():
     set_setting("grain_scale_fixed_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
     if changed:
         print(f"[grain-migration-v2] {changed} country grain stocks capped to weekly scale.")
+
+
+def fix_refinery_oil_production():
+    """مایگریشن v3: ترمیم تولید نفت از دست‌رفته.
+
+    باگ قدیمی rebalance (قبل از اصلاح) با هر ری‌استارت، oil_production کشورها را
+    به مقدار پایه کانفیگ برمی‌گرداند؛ برای کشورهای بدون نفت مانند سوئد (پایه صفر)
+    این یعنی تولیدِ پالایشگاه‌های خریداری‌شده بازیکن همیشه پاک می‌شد.
+    این تابع یک بار اجرا می‌شود و تولید هر کشور را به
+    (پایه کانفیگ + مجموع oil_prod_add ساختمان‌های موجود) ارتقا می‌دهد — فقط به بالا.
+    """
+    if get_setting("oil_prod_repair_v1"):
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key, oil_production FROM countries")
+            rows = cur.fetchall()
+            repaired = 0
+            for r in rows:
+                overrides = config.COUNTRY_STARTING_OVERRIDES.get(r["country_key"], config.STARTING_VALUES)
+                base_prod = overrides.get("oil_production", 0)
+                bonus = 0
+                cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (r["id"],))
+                for eq in cur.fetchall():
+                    bonus += config.ALL_SHOP_ITEMS.get(eq["item_key"], {}).get("oil_prod_add", 0) * eq["quantity"]
+                target = base_prod + bonus
+                if (r["oil_production"] or 0) < target:
+                    cur.execute("UPDATE countries SET oil_production = ? WHERE id = ?", (target, r["id"]))
+                    repaired += 1
+        conn.close()
+        if repaired:
+            print(f"[oil-prod-repair] {repaired} country oil production restored from owned refineries.")
+        # فلگ باید بیرون از تراکنشِ کانکشن اصلی ست شود (نباید کانکشن دوم داخل قفل باز شود)
+        set_setting("oil_prod_repair_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+    except Exception as e:
+        print(f"Error in fix_refinery_oil_production: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ---------- کشورها ----------
