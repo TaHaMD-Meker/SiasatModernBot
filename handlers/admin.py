@@ -5,6 +5,7 @@
 """
 
 import math
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
@@ -1307,6 +1308,9 @@ async def war_view_callback_handler(update: Update, context: ContextTypes.DEFAUL
         await query.answer("❌ اطلاعات سناریوی این نبرد در دیتابیس یافت نشد.", show_alert=True)
         return
 
+    user_id = query.from_user.id
+    user_is_adm = is_admin(user_id)
+
     nav_keyboard = [
         [
             InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
@@ -1319,6 +1323,11 @@ async def war_view_callback_handler(update: Update, context: ContextTypes.DEFAUL
         [InlineKeyboardButton("🌐 خلاصه ارزیابی نبرد", callback_data=f"war_view:summary:{war_id}")],
     ]
 
+    if user_is_adm:
+        nav_keyboard.append([InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")])
+        nav_keyboard.append([InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")])
+        nav_keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
+
     if section == "timeline":
         display_text = war_data["timeline_text"]
     elif section == "targets":
@@ -1330,14 +1339,43 @@ async def war_view_callback_handler(update: Update, context: ContextTypes.DEFAUL
             losses_meta = json.loads(war_data["losses_json"])
             receipt_att = losses_meta.get("receipt_att", "")
             receipt_def = losses_meta.get("receipt_def", "")
+
+            # Fallback on-the-fly generation if receipts were not pre-stored
+            if not receipt_att or not receipt_def:
+                att_k = losses_meta.get("att_key") or war_data.get("att_key")
+                def_k = losses_meta.get("def_key") or war_data.get("def_key")
+                losses_dict = losses_meta.get("losses", {})
+                op_t = losses_meta.get("op_type") or war_data.get("operation_type", "air_missile")
+
+                if att_k and losses_dict:
+                    receipt_att = war_analyzer.build_detailed_loss_receipt(
+                        att_k, losses_dict.get("att_losses", []),
+                        losses_dict.get("att_military_loss", 0), losses_dict.get("att_civilian_loss", 0),
+                        "عملیات تهاجمی اخیر", is_attacker=True, op_type=op_t
+                    )
+                if def_k and losses_dict:
+                    receipt_def = war_analyzer.build_detailed_loss_receipt(
+                        def_k, losses_dict.get("def_losses", []),
+                        losses_dict.get("def_military_loss", 0), losses_dict.get("def_civilian_loss", 0),
+                        "عملیات دفاعی اخیر", is_attacker=False, op_type=op_t
+                    )
+
             if receipt_att or receipt_def:
                 display_text = f"{receipt_att}\n\n━━━━━━━━━━━━━━━━━━\n\n{receipt_def}".strip()
             else:
                 display_text = "📋 اطلاعات فاکتورهای تلفات در دسترس نمی‌باشد."
-        except Exception:
-            display_text = "📋 اطلاعات فاکتورهای تلفات در دسترس نمی‌باشد."
+        except Exception as e:
+            display_text = f"📋 اطلاعات فاکتورهای تلفات در دسترس نمی‌باشد. ({e})"
     else:
         display_text = war_data["summary_text"]
+
+    try:
+        await query.edit_message_text(display_text, reply_markup=InlineKeyboardMarkup(nav_keyboard), parse_mode="Markdown")
+    except Exception:
+        try:
+            await query.edit_message_text(display_text, reply_markup=InlineKeyboardMarkup(nav_keyboard))
+        except Exception as ex:
+            print(f"Failed to edit message in war_view_callback_handler: {ex}")
 
     try:
         await query.edit_message_text(display_text, reply_markup=InlineKeyboardMarkup(nav_keyboard), parse_mode="Markdown")

@@ -259,18 +259,23 @@ def calculate_weapon_breakdown(att_losses, balance):
 
     for item in att_losses:
         cat = item.get("category", "")
-        if cat not in ["Missiles", "UAV", "Aircraft"]:
+        # فقط پرتابه‌ها، موشک‌ها و پهپادهای انتحاری (بدون هواپیما، بالگرد و هواپیمای ترابری)
+        if cat not in ["Missiles", "UAV"]:
             continue
 
         total_fired = item["amount"]
         name = item["equipment_name"]
-
         name_lower = name.lower()
+
+        # استثنا کردن هواپیماها و بالگردهای شناسایی/ترابری که ممکن است در دسته UAV ثبت شده باشند
+        if any(ex in name_lower for ex in ["c-130", "c-17", "awacs", "ترابری", "سوخت‌رسان", "بالگرد", "هواپیما"]):
+            continue
+
         if any(k in name_lower for k in ["هایپرسونیک", "فتاح", "خیبرشکن", "fattah"]):
             weapon_intercept = max(0.10, intercept_rate - 0.25)
         elif any(k in name_lower for k in ["کروز", "پاوه", "هویزه", "سومار", "کالیبر"]):
             weapon_intercept = max(0.15, intercept_rate - 0.10)
-        elif any(k in name_lower for k in ["پهپاد", "شاهد", "مهاجر", "geran", "uav"]):
+        elif any(k in name_lower for k in ["پهپاد", "شاهد", "مهاجر", "geran", "uav", "انتحاری"]):
             weapon_intercept = min(0.88, intercept_rate + 0.10)
         else:
             weapon_intercept = intercept_rate
@@ -618,8 +623,16 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     c_name = c_info.get("name", country_key)
 
     country = db.get_country_by_key(country_key)
+    if not country:
+        db.create_country(1000000 + random.randint(1, 999999), c_name, c_flag, country_key)
+        country = db.get_country_by_key(country_key)
+
     cid = country["id"] if country else None
-    db_assets = {a["equipment_key"]: a for a in db.get_country_assets(cid)} if cid else {}
+    if cid:
+        db.seed_country_assets(cid, country_key)
+        db_assets = {a["equipment_key"]: a for a in db.get_country_assets(cid)}
+    else:
+        db_assets = {}
 
     catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(country_key, [])
     catalog_map = {item["key"]: item for item in catalog}
