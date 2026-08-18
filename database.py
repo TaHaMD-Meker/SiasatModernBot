@@ -331,6 +331,11 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_india_oil_reserves()
+    except Exception:
+        pass
+
 
 def fix_legacy_grain_scale():
     """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
@@ -482,6 +487,37 @@ def fix_refinery_oil_production_v2():
         return
     except Exception as e:
         print(f"Error in fix_refinery_oil_production_v2: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fix_india_oil_reserves():
+    """مایگریشن v5: به‌روزرسانی ذخیره نفت هند مطابق رتبه جهانی (تنها کشورِ تغییرکرده).
+
+    ذخایر اثبات‌شده واقعی هند ~۵ میلیارد بشکه (رتبه ۲۲ جهان) است که در مقیاس بازی
+    و با توجه به جایگاهش (زیر چین، هم‌رده قطر) معادل ۵۰ میلیون بشکه در نظر گرفته شد.
+    فقط اگر ذخیره فعلی بازیکن هند کمتر از مقدار جدید باشد، به بالا ارتقا می‌یابد.
+    """
+    if get_setting("india_oil_v1"):
+        return
+    target = config.COUNTRY_STARTING_OVERRIDES.get("india", {}).get("oil_reserves")
+    if not target:
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, oil_reserves FROM countries WHERE country_key = 'india'")
+            rows = cur.fetchall()
+            for r in rows:
+                if (r["oil_reserves"] or 0) < target:
+                    cur.execute("UPDATE countries SET oil_reserves = ? WHERE id = ?", (target, r["id"]))
+        conn.close()
+        set_setting("india_oil_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    except Exception as e:
+        print(f"Error in fix_india_oil_reserves: {e}")
         try:
             conn.close()
         except Exception:
