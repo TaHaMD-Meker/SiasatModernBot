@@ -34,9 +34,13 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_c = db.get_country_by_player(user_id)
     un_btn = [InlineKeyboardButton("🇺🇳 اتاق ویژه دبیرکل سازمان ملل متحد", callback_data="un:menu")] if (admin_c and admin_c.get("country_key") == "un") else [InlineKeyboardButton("🇺🇳 فعال‌سازی کشور / نقش سازمان ملل", callback_data="admin:claim_un")]
 
+    pending_reqs = db.get_all_pending_country_requests()
+    pending_count = len(pending_reqs)
+
     text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         un_btn,
+        [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({pending_count})", callback_data="admin:pending_countries")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
@@ -469,6 +473,29 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 lines.append(f"{idx}. {c['flag']} *{c['name']}* | 🏦 خزانه: {format_money(c['treasury'])} | 🪙 طلا: {c['gold']} | 🛢️ نفت: {format_oil(c['oil_reserves'])}\n")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:pending_countries":
+        pending_reqs = db.get_all_pending_country_requests()
+        text = "📥 **درخواست‌های معلق انتخاب کشور (در انتظار تایید ادمین)**\n━━━━━━━━━━━━━━━━━━\n\n"
+
+        keyboard = []
+        if not pending_reqs:
+            text += "✅ هیچ درخواست معلقی در حال حاضر وجود ندارد."
+        else:
+            text += "لطفاً برای بررسی و تعیین تکلیف، درخواست مد نظر را انتخاب بفرمایید:\n"
+            for req in pending_reqs:
+                c_info = config.COUNTRIES.get(req["country_key"], {})
+                flag = c_info.get("flag", "🏴")
+                c_name = c_info.get("name", req["country_key"])
+                u_name = f"@{req['username']}" if req.get("username") else f"ID: {req['player_id']}"
+
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ تایید {flag} {c_name} ({u_name})", callback_data=f"admin:approve_country:{req['id']}"),
+                    InlineKeyboardButton("❌ رد", callback_data=f"admin:reject_country:{req['id']}")
+                ])
+
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:pending_roles":
         roles = db.get_pending_roleplays()

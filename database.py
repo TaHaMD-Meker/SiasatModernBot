@@ -829,6 +829,15 @@ def get_pending_request_by_player(player_id: int):
     return dict(row) if row else None
 
 
+def get_all_pending_country_requests():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_country_requests WHERE status = 'pending' ORDER BY id DESC")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def delete_pending_country_request(request_id: int):
     conn = get_connection()
     cur = conn.cursor()
