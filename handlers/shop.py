@@ -321,6 +321,7 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     ]
 
     desc_text = item.get("desc", f"🏗️ *پروژه:* {item['name']}\n\n💰 *هزینه احداث:* {format_money(item['price'])}")
+    desc_text += f"\n📊 *تعداد احداث‌شده فعلی شما:* {curr_qty}/{max_limit} واحد"
 
     await query.edit_message_text(
         desc_text,
