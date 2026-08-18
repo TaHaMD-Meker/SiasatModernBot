@@ -279,6 +279,24 @@ def init_db():
     )
     """)
 
+    # جدول ثبت نتایج نبردها جهت مشاهده تعاملی با دکمه‌های شیشه‌ای
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS war_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        attacker_id INTEGER NOT NULL,
+        defender_id INTEGER NOT NULL,
+        operation_type TEXT NOT NULL,
+        summary_text TEXT NOT NULL,
+        timeline_text TEXT NOT NULL,
+        targets_text TEXT NOT NULL,
+        territory_text TEXT NOT NULL,
+        losses_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(attacker_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(defender_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1860,3 +1878,39 @@ def close_un_resolution(resolution_id: int, final_status: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+# ---------- ثبت و بازیابی سناریوهای نبرد ----------
+
+def save_war_result(attacker_id: int, defender_id: int, operation_type: str, summary_text: str, timeline_text: str, targets_text: str, territory_text: str, losses_json: str) -> int:
+    """ذخیره سناریوی کامل نبرد جهت نمایش تعاملی با دکمه‌های شیشه‌ای."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now().isoformat()
+    cur.execute("""
+        INSERT INTO war_results
+        (attacker_id, defender_id, operation_type, summary_text, timeline_text, targets_text, territory_text, losses_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (attacker_id, defender_id, operation_type, summary_text, timeline_text, targets_text, territory_text, losses_json, now_str))
+    war_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return war_id
+
+
+def get_war_result_by_id(war_id: int) -> dict:
+    """بازیابی داده‌های کامل نبرد با شناسه جنگ."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT w.*,
+               a.name as att_name, a.flag as att_flag, a.country_key as att_key,
+               d.name as def_name, d.flag as def_flag, d.country_key as def_key
+        FROM war_results w
+        JOIN countries a ON w.attacker_id = a.id
+        JOIN countries d ON w.defender_id = d.id
+        WHERE w.id = ?
+    """, (war_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None

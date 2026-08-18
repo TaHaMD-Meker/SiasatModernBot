@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-ماژول تحلیل هوشمند سناریوی نبرد و شبیه‌ساز جنگ‌ها (AI War & Battle Simulator Engine v5.0)
-دارای سیستم شبیه‌سازی هوشمند و ترکیبی (Combined Arms / Ground / Air / Missile Engine):
-- تشخیص هوشمند نوع عملیات: ترکیبی (زمینی + موشکی + پهپادی)، تهاجم زمینی، یا حمله موشکی/هوایی.
-- تفکیک موشک‌به‌موشک (Weapon Breakdown) نرخ شلیک، رهگیری پدافند و عبور موثر برای هر سلاح.
-- تحلیل جغرافیایی، خطوط تماس مرزی، مناطق پیشروی زمینی و تثبیت مواضع در سناریوهای ترکیبی و زمینی.
-- محاسبه تلفات سنگین و واقع‌گرایانه پرسنل و نیروهای زرهی در تهاجم‌های زمینی.
-- نگارش بسیار رسمی، کارشناسی، سنگین، بدون ایموجی‌های اضافی و کاملاً خوانا.
+ماژول تحلیل هوشمند سناریوی نبرد و شبیه‌ساز جنگ‌ها (AI War & Battle Simulator Engine v6.0)
+پشتیبانی از مشاهده تعاملی جزئیات نبرد با دکمه‌های شیشه‌ای:
+- [📋 گاه‌شماری نبرد] [💥 آسیب‌های زیرساختی] [🗺️ وضعیت خطوط مرزی] [📊 فاکتور تلفات]
+- اعمال اثر مستقیم استراتژیک بر دیتابیس (پالایشگاه‌ها، نیروگاه‌های برق، رادارها).
+- نگارش کاملاً کارشناسی، سنگین، بدون ایموجی‌های اضافی و مرتب.
 """
 
 import os
@@ -57,11 +55,11 @@ def detect_operation_type(attacker_key: str, defender_key: str, attacker_role: s
     air_score = sum(1 for kw in air_keywords if kw in text)
 
     if ground_score > 0 and air_score > 0:
-        return "combined_arms" # ترکیبی (هم زمینی هم موشکی/هوایی)
+        return "combined_arms"
     elif ground_score > 0:
-        return "ground_invasion" # تهاجم زمینی
+        return "ground_invasion"
     else:
-        return "air_missile" # حمله موشکی/هوایی
+        return "air_missile"
 
 
 def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets: list, country_key: str) -> list:
@@ -257,7 +255,6 @@ def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att
 def calculate_weapon_breakdown(att_losses, balance):
     """محاسبه تفکیکی شلیک، رهگیری پدافند و عبور موثر برای هر سلاح تهاجمی."""
     breakdown = []
-
     intercept_rate = balance.get("intercept_rate", 0.5)
 
     for item in att_losses:
@@ -268,7 +265,6 @@ def calculate_weapon_breakdown(att_losses, balance):
         total_fired = item["amount"]
         name = item["equipment_name"]
 
-        # Adjust interception probability by weapon tech type
         name_lower = name.lower()
         if any(k in name_lower for k in ["هایپرسونیک", "فتاح", "خیبرشکن", "fattah"]):
             weapon_intercept = max(0.10, intercept_rate - 0.25)
@@ -307,6 +303,14 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
     att_country = db.get_country_by_key(attacker_key)
     def_country = db.get_country_by_key(defender_key)
 
+    if not att_country:
+        db.create_country(1000000 + random.randint(1, 999999), att_name, att_flag, attacker_key)
+        att_country = db.get_country_by_key(attacker_key)
+
+    if not def_country:
+        db.create_country(1000000 + random.randint(1, 999999), def_name, def_flag, defender_key)
+        def_country = db.get_country_by_key(defender_key)
+
     att_cid = att_country["id"] if att_country else None
     def_cid = def_country["id"] if def_country else None
 
@@ -340,12 +344,163 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
 
     weapon_breakdown = calculate_weapon_breakdown(losses["att_losses"], balance)
 
-    # موتور داخلی شبیه‌ساز نبرد
-    report_text = build_comprehensive_war_report_text(
-        att_flag, att_name, def_flag, def_name, attacker_role, defender_role, losses, att_assets, def_assets, att_country, def_country, balance, op_type, weapon_breakdown
+    # ۱. کارت خلاصه اصلی گزارش نبرد
+    summary_text = build_war_summary_card(
+        att_flag, att_name, def_flag, def_name, losses, balance, op_type
     )
 
-    return report_text, losses
+    # ۲. متن گاه‌شماری نبرد (Timeline)
+    timeline_text = build_war_timeline_text(
+        att_flag, att_name, def_flag, def_name, balance, op_type, weapon_breakdown
+    )
+
+    # ۳. متن آسیب‌های زیرساختی و اهداف استراتژیک (Targets)
+    targets_text = build_war_targets_text(
+        att_flag, att_name, def_flag, def_name, balance, op_type
+    )
+
+    # ۴. متن تغییرات خطوط مرزی و جغرافیا (Territory)
+    territory_text = build_war_territory_text(
+        att_flag, att_name, def_flag, def_name, balance, op_type
+    )
+
+    # ۵. فاکتورهای تلفات
+    receipt_att = build_detailed_loss_receipt(attacker_key, losses["att_losses"], losses["att_military_loss"], losses["att_civilian_loss"], "عملیات تهاجمی اخیر", is_attacker=True, op_type=op_type)
+    receipt_def = build_detailed_loss_receipt(defender_key, losses["def_losses"], losses["def_military_loss"], losses["def_civilian_loss"], "عملیات دفاعی اخیر", is_attacker=False, op_type=op_type)
+
+    losses_json = json.dumps({
+        "att_key": attacker_key,
+        "def_key": defender_key,
+        "losses": losses,
+        "receipt_att": receipt_att,
+        "receipt_def": receipt_def,
+        "op_type": op_type,
+        "targets_text": targets_text
+    })
+
+    # ذخیره در دیتابیس جهت فعال‌سازی دکمه‌های شیشه‌ای تعاملی
+    war_id = 0
+    if att_cid and def_cid:
+        war_id = db.save_war_result(
+            att_cid, def_cid, op_type,
+            summary_text, timeline_text, targets_text, territory_text, losses_json
+        )
+
+    return summary_text, losses, war_id, timeline_text, targets_text, territory_text
+
+
+def build_war_summary_card(att_flag, att_name, def_flag, def_name, losses, balance, op_type):
+    """کارت خلاصه اصلی سناریوی نبرد."""
+    op_labels = {
+        "combined_arms": "عملیات ترکیبی (تهاجم زمینی + موشکی/هوایی)",
+        "ground_invasion": "تهاجم زمینی و نبرد مرزی",
+        "air_missile": "حمله موشکی، پهپادی و هوایی"
+    }
+
+    pen_pct = int(balance["penetration_rate"] * 100)
+    intercept_pct = int(balance["intercept_rate"] * 100)
+
+    lines = []
+    lines.append(f"⚔️ *گزارش ارزیابی نبرد ژئوپلیتیک — {att_flag} {att_name} در برابر {def_flag} {def_name}*")
+    lines.append(f"پرونده: {op_labels.get(op_type, op_type)}")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    lines.append("■ *خلاصه نتایج نبرد:*")
+    lines.append(f"• **نرخ عبور پرتابه‌ها/اصابت:** {pen_pct}٪")
+    lines.append(f"• **نرخ رهگیری پدافند:** {intercept_pct}٪")
+    lines.append(f"• **تلفات نیروهای مسلح {att_name}:** {losses['att_military_loss']:,} نفر")
+    lines.append(f"• **تلفات نیروهای مسلح {def_name}:** {losses['def_military_loss']:,} نفر")
+    lines.append(f"• **تلفات غیرنظامی:** {losses['def_civilian_loss']:,} نفر\n")
+
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    lines.append("👇 *جهت مشاهده جزئیات کامل، روی دکمه‌های شیشه‌ای زیر کلیک کنید:*")
+
+    return "\n".join(lines)
+
+
+def build_war_timeline_text(att_flag, att_name, def_flag, def_name, balance, op_type, weapon_breakdown):
+    """متن گاه‌شماری نبرد (Timeline)."""
+    intercept_pct = int(balance["intercept_rate"] * 100)
+    pen_pct = int(balance["penetration_rate"] * 100)
+
+    lines = []
+    lines.append(f"📋 *گاه‌شماری و شرح مراحل درگیری — {att_flag} {att_name} و {def_flag} {def_name}*")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    if weapon_breakdown:
+        lines.append("■ *ارزیابی شلیک و رهگیری تفکیکی تسلیحات:*\n")
+        for wb in weapon_breakdown:
+            lines.append(f"• **{wb['name']}:** شلیک {wb['total_fired']:,} | رهگیری پدافند: {wb['intercepted']:,} | عبور موفق: **{wb['penetrated']:,} فروند** (نرخ عبور: {wb['pen_pct']}٪)")
+        lines.append("\n━━━━━━━━━━━━━━━━━━\n")
+
+    lines.append("■ *گاه‌شماری نبرد:*\n")
+    lines.append(f"⏱️ **ساعت ۰۳:۰۰ — حملات اولیه و جنگ الکترونیک:**")
+    lines.append(f"> اختلالات راداری موقت در خطوط مواصلاتی {def_name} به ثبت رسید.\n")
+
+    if op_type in ["combined_arms", "air_missile"]:
+        lines.append(f"⏱️ **ساعت ۰۳:۳۰ تا ۰۵:۰۰ — شلیک موج اول پرتابه‌ها:**")
+        lines.append(f"> پرتاب موشک‌های بالستیک، کروز و پهپادها به سمت پایگاه‌ها و رادارهای {def_name}.")
+        lines.append(f"> _پاسخ پدافندی:_ شبکه پدافند چندلایه {def_name} موفق به انهدام {intercept_pct}٪ پرتابه‌ها شد و {pen_pct}٪ عبور کردند.\n")
+
+    if op_type in ["combined_arms", "ground_invasion"]:
+        lines.append(f"⏱️ **ساعت ۰۶:۰۰ — ورود ستون‌های زرهی:**")
+        lines.append(f"> پیشروی تانک‌ها و نفربرهای زرهی {att_name} در محورهای مرزی.")
+        lines.append(f"> مواجهه با کمین‌های ضدزره و پهپادهای انتحاری FPV مدافع.\n")
+        lines.append(f"⏱️ **ساعت ۱۲:۰۰ — سازماندهی مجدد خطوط:**")
+        lines.append(f"> ورود یگان‌های ذخیره و تثبیت نسبی خطوط تماس.\n")
+
+    lines.append("━━━━━━━━━━━━━━━━━━")
+
+    return "\n".join(lines)
+
+
+def build_war_targets_text(att_flag, att_name, def_flag, def_name, balance, op_type):
+    """متن آسیب‌های زیرساختی و اهداف استراتژیک (Strategic Targets)."""
+    pen_pct = int(balance["penetration_rate"] * 100)
+
+    lines = []
+    lines.append(f"💥 *ارزیابی آسیب‌های زیرساختی و اهداف استراتژیک {def_flag} {def_name}*")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    lines.append("■ *اهداف اصابت‌شده و برآورد آسیب‌ها:*\n")
+
+    if pen_pct > 50:
+        lines.append(f"• **پایگاه‌های هوایی و باندهای پرواز:** خسارت سنگین به سوله‌های نگهداری جنگنده‌ها و خزانه‌های سوخت {def_name}.")
+        lines.append(f"• **پالایشگاه‌ها و تاسیسات نفتی:** ایجاد آتش‌سوزی در بخش فرآوری و کاهش موقت نرخ تولید نفت.")
+        lines.append(f"• **شبکه برق و نیروگاه‌ها:** اخلال در پست‌های انتقال برق و قطعی موقت در منطقه درگیری.")
+        lines.append(f"• **سامانه‌های راداری و C4I:** تخریب رادارهای هشدار زودهنگام و اخلال در شبکه ارتباطی.")
+    elif pen_pct > 25:
+        lines.append(f"• **پایگاه‌های هوایی:** خسارت متوسط به سوله‌های پشتیبانی {def_name}.")
+        lines.append(f"• **سامانه‌های پدافند هوایی:** مصرف بخش قابل‌توجهی از موشک‌های ذخیره رهگیر.")
+        lines.append(f"• **مراکز ارتباطی:** اختلال کوتاه‌مدت در شبکه اطلاعاتی.")
+    else:
+        lines.append(f"• **خسارات محدود زیرساختی:** اکثر پرتابه‌ها توسط پدافند هوایی {def_name} در آسمان منهدم شدند.")
+        lines.append(f"• **مصرف ذخایر پدافند:** فشار سنگین بر ذخایر موشک‌های رهگیر مدافع.")
+
+    lines.append("\n━━━━━━━━━━━━━━━━━━")
+
+    return "\n".join(lines)
+
+
+def build_war_territory_text(att_flag, att_name, def_flag, def_name, balance, op_type):
+    """متن تغییرات خطوط مرزی و جغرافیا (Territory & Frontline)."""
+    lines = []
+    lines.append(f"🗺️ *وضعیت خطوط تماس مرزی و جغرافیا — نبرد {att_name} و {def_name}*")
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    if op_type in ["combined_arms", "ground_invasion"]:
+        lines.append("■ *تغییرات مواضع و عمق پیشروی:*\n")
+        lines.append(f"• **مناطق پیشروی اولیه:** تصرف چند پاسگاه مرزی و مناطق روستایی حائل توسط نیروهای {att_name}.")
+        lines.append(f"• **شهرهای اصلی درگیر:** شکل‌گیری نبرد سنگین زرهی در حومه شهرها (توقف پیشروی سریع به دلیل دفاع شهری و کمین‌های ضدزره).")
+        lines.append(f"• **تثبیت خطوط درگیری:** ثبت خط تماس جدید در عمق ۵ الی ۱۵ کیلومتری مرز.")
+    else:
+        lines.append("■ *وضعیت خطوط مرزی:*\n")
+        lines.append("• **تغییرات مرزی:** به دلیل عدم ورود یگان‌های پیاده و زرهی زمینی، خطوط مرزی دست‌نخورده باقی مانده است.")
+        lines.append("• **حریم هوایی:** درگیری کاملاً در قالب حملات موشکی، پهپادی و هوایی دوربرد اجرا گردید.")
+
+    lines.append("\n━━━━━━━━━━━━━━━━━━")
+
+    return "\n".join(lines)
 
 
 def calculate_simulated_losses(att_assets, def_assets, att_country, def_country, op_type, attacker_key, defender_key, attacker_role="", defender_role="", balance=None):
@@ -414,14 +569,12 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
 
         return result_losses
 
-    # ۱. استخراج دقیق تسلیحات از متن رول مهاجم
     att_parsed = parse_weapon_mentions_from_roleplay_text(attacker_role, att_assets, attacker_key)
     if att_parsed:
         att_losses = att_parsed
     else:
         att_losses = pick_losses_from_assets(att_assets, True, op_type, balance)
 
-    # ۲. استخراج دقیق تسلیحات از متن رول مدافع
     def_parsed = parse_weapon_mentions_from_roleplay_text(defender_role, def_assets, defender_key)
     if def_parsed:
         def_losses = def_parsed
@@ -437,7 +590,6 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
         def_military_loss = max(5, int(random.randint(20, 80) * pen_rate + tech_diff * 4))
         def_civilian_loss = max(0, int(random.randint(2, 25) * pen_rate))
     elif op_type == "combined_arms":
-        # سنگین‌ترین تلفات برای عملیات ترکیبی (زمینی + موشکی)
         att_military_loss = max(120, int(random.randint(250, 680) - tech_diff * 20))
         att_civilian_loss = max(0, random.randint(5, 30))
         def_military_loss = max(180, int(random.randint(380, 950) * pen_rate + tech_diff * 30))
@@ -456,82 +608,6 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
         "def_military_loss": def_military_loss,
         "def_civilian_loss": def_civilian_loss,
     }
-
-
-def build_comprehensive_war_report_text(att_flag, att_name, def_flag, def_name, attacker_role, defender_role, losses, att_assets, def_assets, att_country, def_country, balance, op_type, weapon_breakdown):
-    """گزارش بسیار دقیق، کارشناسی و ارزیابی هوشمند نبرد."""
-
-    att_tech = att_country.get("tech_level", 1) if att_country else 1
-    def_tech = def_country.get("tech_level", 1) if def_country else 1
-
-    intercept_pct = int(balance["intercept_rate"] * 100)
-    pen_pct = int(balance["penetration_rate"] * 100)
-
-    lines = []
-    op_labels = {
-        "combined_arms": "عملیات ترکیبی (تهاجم زمینی + موشکی/هوایی)",
-        "ground_invasion": "تهاجم زمینی و نبرد مرزی",
-        "air_missile": "حمله موشکی، پهپادی و هوایی"
-    }
-
-    lines.append(f"*نتیجه سناریوی جنگی — ارزیابی عملیات {att_name} در برابر دفاع {def_name}*")
-    lines.append(f"پرونده: {op_labels.get(op_type, op_type)} {att_flag} {att_name} / دفاع {def_flag} {def_name}")
-    lines.append("━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("■ *ارزیابی موازنه قوا و سطح فناوری (Tech Level)*")
-    lines.append(f"• **کشور مهاجم ({att_name}):** سطح فناوری {att_tech} | شاخص توان هجومی: {balance['att_strike_power']:,}")
-    lines.append(f"• **کشور مدافع ({def_name}):** سطح فناوری {def_tech} | پوشش پدافندی: {balance['def_airdef_qty']} سامانه | شاخص سپری: {balance['def_shield_power']:,}\n")
-
-    lines.append("━━━━━━━━━━━━━━━━━━\n")
-
-    if weapon_breakdown:
-        lines.append("■ *ارزیابی رهگیری تفکیکی تسلیحات تهاجمی شلیک‌شده*")
-        for wb in weapon_breakdown:
-            lines.append(f"• **{wb['name']}:** شلیک {wb['total_fired']:,} فروند | رهگیری پدافند: {wb['intercepted']:,} | عبور موفق: **{wb['penetrated']:,} فروند** (نرخ عبور: {wb['pen_pct']}٪)")
-        lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("■ *گاه‌شماری و شرح مراحل درگیری*")
-    lines.append(f"• **ساعت ۰۳:۰۰ — آغاز حملات سایبری و آتش‌پایه‌ها:** حملات اولیه و اختلالات راداری آغاز شد.")
-    
-    if op_type in ["combined_arms", "air_missile"]:
-        lines.append(f"• **ساعت ۰۳:۳۰ تا ۰۵:۰۰ — موج اول پرتابه‌ها:** شلیک موشک‌های بالستیک، کروز و پهپادها به سمت پایگاه‌های هوایی، رادارها و انبارها.")
-        lines.append(f"  _نتیجه درگیری پدافندی:_ شبکه پدافند چندلایه {def_name} موفق به رهگیری **{intercept_pct}٪** پرتابه‌ها گردید و **{pen_pct}٪** پرتابه‌ها به مواضع آسیب وارد کردند.")
-
-    if op_type in ["combined_arms", "ground_invasion"]:
-        lines.append(f"• **ساعت ۰۶:۰۰ — ورود ستون‌های زرهی:** پیشروی تانک‌ها و نفربرهای زرهی {att_name} در محورهای مرزی.")
-        lines.append(f"  _درگیری مرزی:_ مواجهه با کمین‌های ضدزره و پهپادهای انتحاری مدافع.")
-        lines.append(f"• **ساعت ۱۲:۰۰ — ورود نیروهای پشتیبانی:** ورود یگان‌های ذخیره {def_name} و کاهش سرعت پیشروی اولیه.")
-
-    lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-
-    if op_type in ["combined_arms", "ground_invasion"]:
-        lines.append("■ *تثبیت مواضع و تغییرات خطوط مرزی*")
-        lines.append(f"• **مناطق پیشروی اولیه:** تصرف چند مواضع مرزی، پاسگاه‌ها و مناطق روستایی حائل توسط نیروهای {att_name}.")
-        lines.append(f"• **شهرهای اصلی درگیر:** شکل‌گیری نبرد سنگین زرهی در حومه شهرها (توقف پیشروی سریع به دلیل دفاع شهری و کمین‌های ضدزره).")
-        lines.append(f"• **وضعیت خطوط تماس:** تثبیت خطوط درگیری در عمق ۵ الی ۱۵ کیلومتری مرز.\n")
-        lines.append("━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("■ *برآورد تلفات انسانی اولیه*\n")
-
-    lines.append(f"تلفات کشور مهاجم ({att_flag} {att_name}):")
-    lines.append(f"• پرسنل نظامی: **{losses['att_military_loss']:,} نفر**")
-    lines.append(f"• تلفات غیرنظامی: **{losses['att_civilian_loss']:,} نفر**")
-
-    lines.append(f"\nتلفات کشور مدافع ({def_flag} {def_name}):")
-    lines.append(f"• پرسنل نظامی: **{losses['def_military_loss']:,} نفر**")
-    lines.append(f"• تلفات غیرنظامی: **{losses['def_civilian_loss']:,} نفر**\n")
-
-    lines.append("━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("■ *جمع‌بندی و ارزیابی نهایی کارشناسان ژئوپلیتیک:*")
-    if op_type == "combined_arms":
-        lines.append(f"عملیات ترکیبی {att_name} موجب پیشروی محدود زمینی و آسیب به بخشی از زیرساخت‌های هوایی گردید، اما پدافند و یگان‌های ضدزره {def_name} با مقاومت در حومه شهرهای اصلی، مانع از فروپاشی کامل خطوط پدافندی شدند.")
-    elif op_type == "ground_invasion":
-        lines.append(f"تهاجم زمینی {att_name} منجر به نبرد سنگین زرهی و تلفات پرسنلی قابل‌توجه برای هر دو طرف گردید.")
-    else:
-        lines.append(f"عملیات موشکی/هوایی {att_name} موجب آسیب به اهداف زیرساختی شد و شبکه پدافند {def_name} بخشی از اهداف را رهگیری نمود.")
-
-    return "\n".join(lines)
 
 
 def build_detailed_loss_receipt(country_key: str, item_losses: list, military_loss: int, civilian_loss: int, operation_name: str = "عملیات اخیر", is_attacker: bool = False, op_type: str = "air_missile"):
@@ -677,8 +753,8 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     return "\n".join(lines)
 
 
-def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
-    """اعمال کسر تلفات و خسارات از دیتابیس هر دو کشور."""
+def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, targets_text: str = ""):
+    """اعمال کسر تلفات و خسارات از دیتابیس هر دو کشور و اعمال آسیب به پالایشگاه‌ها و نیروگاه‌ها."""
     att_country = db.get_country_by_key(attacker_key)
     def_country = db.get_country_by_key(defender_key)
 
@@ -713,6 +789,12 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict):
                         UPDATE country_assets SET amount = MAX(0, amount - ?)
                         WHERE country_id = ? AND equipment_key = ?
                     """, (item["amount"], def_cid, item["equipment_key"]))
+
+                # اثر استراتژیک آسیب به پالایشگاه و نیروگاه برق مدافع در صورت لزوم
+                if "پالایشگاه" in targets_text or "نفتی" in targets_text:
+                    cur.execute("UPDATE countries SET oil_production = MAX(0, oil_production - 100000) WHERE id = ?", (def_cid,))
+                if "نیروگاه" in targets_text or "برق" in targets_text:
+                    cur.execute("UPDATE countries SET electricity = MAX(10, electricity - 20) WHERE id = ?", (def_cid,))
 
         return True
     except Exception as e:

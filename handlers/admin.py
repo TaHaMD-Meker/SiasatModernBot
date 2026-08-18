@@ -648,37 +648,42 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
-        report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
+        summary_text, losses, war_id, timeline_text, targets_text, territory_text = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
 
         war_data["defender_key"] = def_key
         war_data["losses"] = losses
-        war_data["report_text"] = report_text
+        war_data["report_text"] = summary_text
+        war_data["targets_text"] = targets_text
+        war_data["war_id"] = war_id
         ACTIVE_WAR_ANALYSES[user_id] = war_data
         context.user_data["war_analysis"] = war_data
 
         keyboard = [
+            [
+                InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
+                InlineKeyboardButton("💥 آسیب‌های زیرساختی", callback_data=f"war_view:targets:{war_id}"),
+            ],
+            [
+                InlineKeyboardButton("🗺️ وضعیت خطوط مرزی", callback_data=f"war_view:territory:{war_id}"),
+                InlineKeyboardButton("📊 فاکتور تلفات", callback_data=f"war_view:losses:{war_id}"),
+            ],
             [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
             [InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")],
             [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
         ]
 
-        if len(report_text) > 4000:
-            part1 = report_text[:3800]
-            part2 = report_text[3800:]
-            await query.message.reply_text(part1, parse_mode="Markdown")
-            await query.message.reply_text(part2, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        else:
-            await query.edit_message_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_apply":
         war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
         att_key = war_data.get("attacker_key")
         def_key = war_data.get("defender_key")
         losses = war_data.get("losses", {})
+        targets_text = war_data.get("targets_text", "")
 
         if att_key and def_key and losses:
-            # 1. Deduct losses from DB
-            war_analyzer.apply_war_losses_to_db(att_key, def_key, losses)
+            # 1. Deduct losses from DB & apply strategic target impacts
+            war_analyzer.apply_war_losses_to_db(att_key, def_key, losses, targets_text)
 
             # 2. Build detailed loss receipts
             receipt_att = war_analyzer.build_detailed_loss_receipt(
@@ -1142,26 +1147,31 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
-        report_text, losses = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
+        summary_text, losses, war_id, timeline_text, targets_text, territory_text = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
 
         war_data["losses"] = losses
-        war_data["report_text"] = report_text
+        war_data["report_text"] = summary_text
+        war_data["targets_text"] = targets_text
+        war_data["war_id"] = war_id
         ACTIVE_WAR_ANALYSES[user_id] = war_data
         context.user_data["war_analysis"] = war_data
+        LATEST_WAR_ANALYSIS.update(war_data)
 
         keyboard = [
+            [
+                InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
+                InlineKeyboardButton("💥 آسیب‌های زیرساختی", callback_data=f"war_view:targets:{war_id}"),
+            ],
+            [
+                InlineKeyboardButton("🗺️ وضعیت خطوط مرزی", callback_data=f"war_view:territory:{war_id}"),
+                InlineKeyboardButton("📊 فاکتور تلفات", callback_data=f"war_view:losses:{war_id}"),
+            ],
             [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
             [InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")],
             [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
         ]
 
-        if len(report_text) > 4000:
-            part1 = report_text[:3800]
-            part2 = report_text[3800:]
-            await update.message.reply_text(part1, parse_mode="Markdown")
-            await update.message.reply_text(part2, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        else:
-            await update.message.reply_text(report_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await update.message.reply_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif input_type == "set_channel":
         db.set_setting("channel_id", text)
@@ -1259,3 +1269,61 @@ async def listcountries(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{c['flag']} {c['name']} — player_id: `{c['player_id']}` — خزانه: {format_money(c['treasury'])}")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def war_view_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش کلیک روی دکمه‌های شیشه‌ای تعاملی گزارش نبرد."""
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        return
+
+    section = parts[1]
+    war_id = int(parts[2])
+
+    war_data = db.get_war_result_by_id(war_id)
+    if not war_data:
+        await query.answer("❌ اطلاعات سناریوی این نبرد در دیتابیس یافت نشد.", show_alert=True)
+        return
+
+    nav_keyboard = [
+        [
+            InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
+            InlineKeyboardButton("💥 آسیب‌های زیرساختی", callback_data=f"war_view:targets:{war_id}"),
+        ],
+        [
+            InlineKeyboardButton("🗺️ وضعیت خطوط مرزی", callback_data=f"war_view:territory:{war_id}"),
+            InlineKeyboardButton("📊 فاکتور تلفات و تجهیزات", callback_data=f"war_view:losses:{war_id}"),
+        ],
+        [InlineKeyboardButton("🌐 خلاصه ارزیابی نبرد", callback_data=f"war_view:summary:{war_id}")],
+    ]
+
+    if section == "timeline":
+        display_text = war_data["timeline_text"]
+    elif section == "targets":
+        display_text = war_data["targets_text"]
+    elif section == "territory":
+        display_text = war_data["territory_text"]
+    elif section == "losses":
+        try:
+            losses_meta = json.loads(war_data["losses_json"])
+            receipt_att = losses_meta.get("receipt_att", "")
+            receipt_def = losses_meta.get("receipt_def", "")
+            if receipt_att or receipt_def:
+                display_text = f"{receipt_att}\n\n━━━━━━━━━━━━━━━━━━\n\n{receipt_def}".strip()
+            else:
+                display_text = "📋 اطلاعات فاکتورهای تلفات در دسترس نمی‌باشد."
+        except Exception:
+            display_text = "📋 اطلاعات فاکتورهای تلفات در دسترس نمی‌باشد."
+    else:
+        display_text = war_data["summary_text"]
+
+    try:
+        await query.edit_message_text(display_text, reply_markup=InlineKeyboardMarkup(nav_keyboard), parse_mode="Markdown")
+    except Exception:
+        try:
+            await query.edit_message_text(display_text, reply_markup=InlineKeyboardMarkup(nav_keyboard))
+        except Exception:
+            pass

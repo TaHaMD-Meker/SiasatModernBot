@@ -33,7 +33,7 @@ from handlers.shop import (
     confirm_civilian_purchase, execute_civilian_purchase
 )
 from handlers.admin import (
-    admin_panel, admin_callback_handler, admin_input_text_handler,
+    admin_panel, admin_callback_handler, admin_input_text_handler, war_view_callback_handler,
     addmoney, removemoney, listcountries
 )
 
@@ -193,6 +193,7 @@ def main():
     # پنل پیشرفته ادمین (مخصوص آیدی 8052987465)
     app.add_handler(CommandHandler(["admin", "panel"], admin_panel))
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern=r"^admin:"))
+    app.add_handler(CallbackQueryHandler(war_view_callback_handler, pattern=r"^war_view:"))
 
     async def ignore_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.callback_query:
