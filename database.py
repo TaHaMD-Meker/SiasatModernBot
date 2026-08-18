@@ -609,14 +609,14 @@ def rebalance_existing_countries_income():
 
                 new_total_daily = base_daily + civ_income
 
+                # نکته بالانس: oil_reserves و oil_production عمداً دست نمی‌خشوند تا
+                # خریدهای بازیکن‌ها و خسارت جنگی با ری‌استارت پاک نشود.
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
-                    daily_income = ?,
-                    oil_reserves = ?,
-                    oil_production = ?
+                    daily_income = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, base_oil_res, base_oil_prod, c_id))
+                """, (base_tax, new_total_daily, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
@@ -1422,7 +1422,7 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
     conn.close()
 
     raw_assets_maint = sum(r["amount"] * (r["maintenance_cost"] or 0) for r in asset_rows)
-    scaled_maint = int(raw_assets_maint * 0.02)
+    scaled_maint = int(raw_assets_maint * 0.01)  # بالانس v2: نصف شدن هزینه نگهداری
     assets_maint = int(scaled_maint * (1 - (discount_pct / 100.0)))
 
     personnel_maint = int(active_p * 0.5)
