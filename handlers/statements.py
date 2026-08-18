@@ -335,11 +335,17 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
         polished_text = generate_diplomatic_statement(country['name'], raw_text)
 
     # Output ONLY polished text in 1 message for easy copying
-    await update.message.reply_text(
-        f"`{polished_text}`",
-        parse_mode="Markdown",
-        reply_markup=get_main_keyboard(update.effective_user.id)
-    )
+    if "`" not in polished_text:
+        await update.message.reply_text(
+            f"`{polished_text}`",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(update.effective_user.id)
+        )
+    else:
+        await update.message.reply_text(
+            polished_text,
+            reply_markup=get_main_keyboard(update.effective_user.id)
+        )
 
 
 async def process_official_tweet_input(update: Update, context: ContextTypes.DEFAULT_TYPE, country: dict):

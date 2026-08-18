@@ -15,17 +15,39 @@ import urllib.request
 import database as db
 import config
 
-NON_CONTIGUOUS_PAIRS = {
-    ("iran", "israel"), ("israel", "iran"),
-    ("usa", "russia"), ("russia", "usa"),
-    ("usa", "iran"), ("iran", "usa"),
-    ("usa", "china"), ("china", "usa"),
-    ("uk", "iran"), ("iran", "uk"),
-    ("france", "iran"), ("iran", "france"),
-    ("qatar", "israel"), ("israel", "qatar"),
-    ("saudi", "israel"), ("israel", "saudi"),
-    ("usa", "israel"), ("israel", "usa"),
+# نقشه مرز زمینی مشترک — تهاجم زمینی فقط بین همسایه‌های واقعی مجاز است
+# (کشورهای جزیره‌ای مانند انگلستان، ژاپن، تایوان، سوئد و کوبا مرز زمینی ندارند)
+GROUND_ADJACENCY = {
+    "iran": {"iraq", "turkey", "pakistan"},
+    "iraq": {"iran", "turkey", "saudi", "kuwait"},
+    "saudi": {"iraq", "kuwait", "uae", "qatar", "oman"},
+    "qatar": {"saudi"},
+    "uae": {"saudi", "oman"},
+    "oman": {"saudi", "uae"},
+    "kuwait": {"iraq", "saudi"},
+    "israel": {"egypt", "hezbollah"},
+    "egypt": {"israel"},
+    "hezbollah": {"israel"},
+    "turkey": {"iran", "iraq"},
+    "russia": {"ukraine", "poland", "china", "north_korea"},
+    "ukraine": {"russia", "poland"},
+    "poland": {"germany", "ukraine", "russia"},
+    "germany": {"poland", "france"},
+    "france": {"germany", "italy"},
+    "italy": {"france"},
+    "china": {"russia", "north_korea", "pakistan", "india"},
+    "north_korea": {"china", "russia", "south_korea"},
+    "south_korea": {"north_korea"},
+    "india": {"pakistan", "china"},
+    "pakistan": {"iran", "india", "china"},
+    "usa": {"canada"},
+    "canada": {"usa"},
+    "brazil": {"venezuela"},
+    "venezuela": {"brazil"},
 }
+
+def has_ground_border(a: str, b: str) -> bool:
+    return b in GROUND_ADJACENCY.get(a, set())
 
 
 def convert_farsi_digits(text: str) -> str:
@@ -37,7 +59,8 @@ def convert_farsi_digits(text: str) -> str:
 
 def detect_operation_type(attacker_key: str, defender_key: str, attacker_role: str, defender_role: str):
     """تشخیص هوشمند نوع عملیات: ترکیبی (زمینی+موشکی)، تهاجم زمینی، یا حمله موشکی/هوایی."""
-    if (attacker_key, defender_key) in NON_CONTIGUOUS_PAIRS or (defender_key, attacker_key) in NON_CONTIGUOUS_PAIRS:
+    # بدون مرز زمینی مشترک، تهاجم زمینی غیرممکن است
+    if not has_ground_border(attacker_key, defender_key):
         return "air_missile"
 
     text = convert_farsi_digits((attacker_role + " " + defender_role).lower())
@@ -63,7 +86,12 @@ def detect_operation_type(attacker_key: str, defender_key: str, attacker_role: s
 
 
 def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets: list, country_key: str) -> list:
-    """استخراج هوشمند دقیق نام تسلیحات و تعداد شلیک‌شده/استفاده‌شده از متن رول بازیکن."""
+    """استخراج هوشمند تسلیحات به‌کاررفته (استفاده‌شده) از متن رول بازیکن.
+
+    نسخه ۲: هر عبارت متن فقط یک‌بار و فقط به یک تجهیز نسبت داده می‌شود تا
+    واریانت‌های هم‌نام (مثل M1A1 و M1A2 آبرامز) دوباره‌شماری نشوند.
+    خروجی = فهرست تسلیحات درگیر (نه تلفات نهایی).
+    """
     if not roleplay_text or len(roleplay_text.strip()) < 5:
         return []
 
@@ -79,11 +107,8 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
         e_price = a.get("buy_price", a.get("price", 1_000_000))
         if e_key:
             assets_map[e_key] = {
-                "equipment_key": e_key,
-                "equipment_name": e_name,
-                "amount": e_amt,
-                "category": e_cat,
-                "price": e_price
+                "equipment_key": e_key, "equipment_name": e_name,
+                "amount": e_amt, "category": e_cat, "price": e_price
             }
 
     for cat_item in catalog:
@@ -97,8 +122,6 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
                 "price": cat_item.get("price", 1_000_000)
             }
 
-    parsed_losses = {}
-
     alias_dict = {
         "hoveyzeh": ["هویزه", "hoveyzeh"],
         "noor": ["نور", "noor"],
@@ -109,7 +132,7 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
         "fattah": ["فتاح", "fattah"],
         "kalibr": ["کالیبر", "kalibr"],
         "iskander": ["اسکندر", "iskander"],
-        "geran": ["جران", "گرن", "geran", "شاهد-۱۳۶"],
+        "geran": ["جران", "گرن", "geran"],
         "shahed136": ["شاهد ۱۳۶", "شاهد-۱۳۶", "شاهد۱۳۶"],
         "shahed129": ["شاهد ۱۲۹", "شاهد-۱۲۹", "شاهد۱۲۹"],
         "shahed191": ["شاهد ۱۹۱", "شاهد-۱۹۱", "شاهد۱۹۱"],
@@ -141,7 +164,9 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
         "fpv": ["fpv", "اف‌پیوِی", "پهپاد انتحاری"],
     }
 
-    for e_key, item in assets_map.items():
+    # گزینش حریصانه مبتنی بر موقعیت: هر بازه متن فقط به یک تجهیز نسبت داده می‌شود
+    candidates = []  # (start, length, order, e_key, qty)
+    for order, (e_key, item) in enumerate(assets_map.items()):
         name = item["equipment_name"].lower()
         key = e_key.lower()
 
@@ -161,40 +186,45 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
 
         valid_keywords = sorted([kw for kw in keywords if len(kw) >= 2], key=len, reverse=True)
 
-        found_qty = None
         for kw in valid_keywords:
             esc_kw = re.escape(kw)
+            patterns = [
+                r'(\d+)\s*(?:فروند|عدد|دستگاه|سامانه|آتشبار|واحد|دست)?\s*(?:موشک|پهپاد|جنگنده|کروز|تانک|نفربر)?\s*' + esc_kw,
+                esc_kw + r'\s*(?:\([^)]*\))?\s*(?:برد\s*\d+\s*کیلومتر)?\s*(?:با|تعداد|به تعداد)?\s*(\d+)\s*(?:فروند|عدد|دستگاه|واحد)?',
+                esc_kw + r'\s*\(\s*(\d+)\s*\)',
+                r'\(\s*(\d+)\s*' + esc_kw + r'\s*\)',
+            ]
+            for pat in patterns:
+                m = re.search(pat, text_clean, re.IGNORECASE)
+                if m and m.group(1):
+                    qty = int(m.group(1))
+                    if 0 < qty < 50000:
+                        candidates.append((m.start(), m.end() - m.start(), order, e_key, qty))
+                    break
 
-            p1 = r'(\d+)\s*(?:فروند|عدد|دستگاه|سامانه|آتشبار|واحد|دست)?\s*(?:موشک|پهپاد|جنگنده|کروز|تانک|نفربر)?\s*' + esc_kw
-            p2 = esc_kw + r'\s*(?:\([^)]*\))?\s*(?:برد\s*\d+\s*کیلومتر)?\s*(?:با|تعداد|به تعداد)?\s*(\d+)\s*(?:فروند|عدد|دستگاه|واحد)?'
-            p3 = esc_kw + r'\s*\(\s*(\d+)\s*\)'
-            p4 = r'\(\s*(\d+)\s*' + esc_kw + r'\s*\)'
+    candidates.sort(key=lambda x: (x[0], -x[1], x[2]))
 
-            m1 = re.search(p1, text_clean, re.IGNORECASE)
-            m3 = re.search(p3, text_clean, re.IGNORECASE)
-            m4 = re.search(p4, text_clean, re.IGNORECASE)
-            m2 = re.search(p2, text_clean, re.IGNORECASE)
+    claimed_ranges = []
+    chosen = {}
+    for start, length, order, e_key, qty in candidates:
+        end = start + length
+        if any(s < end and start < e for s, e in claimed_ranges):
+            continue  # این بازه متن قبلاً به تجهیز دیگری اختصاص یافته
+        if e_key in chosen:
+            continue
+        claimed_ranges.append((start, end))
+        chosen[e_key] = qty
 
-            if m1:
-                found_qty = int(m1.group(1))
-            elif m3:
-                found_qty = int(m3.group(1))
-            elif m4:
-                found_qty = int(m4.group(1))
-            elif m2:
-                found_qty = int(m2.group(1))
-
-            if found_qty and found_qty > 0 and found_qty < 50000:
-                parsed_losses[e_key] = {
-                    "equipment_key": e_key,
-                    "equipment_name": item["equipment_name"],
-                    "amount": found_qty,
-                    "category": item["category"],
-                    "price": item["price"]
-                }
-                break
-
-    return list(parsed_losses.values())
+    return [
+        {
+            "equipment_key": e_key,
+            "equipment_name": assets_map[e_key]["equipment_name"],
+            "amount": qty,
+            "category": assets_map[e_key]["category"],
+            "price": assets_map[e_key]["price"],
+        }
+        for e_key, qty in chosen.items()
+    ]
 
 
 def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att_app=80, def_app=80, op_type='air_missile'):
@@ -305,16 +335,22 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
     def_flag = defender_info.get("flag", "")
     def_name = defender_info.get("name", defender_key)
 
+    # نسخه ۲: دیگر کشور فیک ساخته نمی‌شود؛ تحلیل کشورهای بدون بازیکن از کاتالوگ انجام
+    # می‌شود و اعمال دیتابیسی تلفات فقط برای کشورهای بازیکن‌دار صورت می‌گیرد.
     att_country = db.get_country_by_key(attacker_key)
     def_country = db.get_country_by_key(defender_key)
 
-    if not att_country:
-        db.create_country(1000000 + random.randint(1, 999999), att_name, att_flag, attacker_key)
-        att_country = db.get_country_by_key(attacker_key)
-
-    if not def_country:
-        db.create_country(1000000 + random.randint(1, 999999), def_name, def_flag, defender_key)
-        def_country = db.get_country_by_key(defender_key)
+    def _catalog_assets(key):
+        out = []
+        for it in config.COUNTRY_EQUIPMENT_CATALOG.get(key, []):
+            out.append({
+                "equipment_key": it.get("key"),
+                "equipment_name": it.get("name"),
+                "amount": it.get("initial", 50),
+                "category": it.get("category", "Ground Forces"),
+                "buy_price": it.get("price", 1_000_000),
+            })
+        return out
 
     att_cid = att_country["id"] if att_country else None
     def_cid = def_country["id"] if def_country else None
@@ -323,13 +359,13 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         db.seed_country_assets(att_cid, attacker_key)
         att_assets = db.get_country_assets(att_cid)
     else:
-        att_assets = config.COUNTRY_EQUIPMENT_CATALOG.get(attacker_key, [])
+        att_assets = _catalog_assets(attacker_key)
 
     if def_cid:
         db.seed_country_assets(def_cid, defender_key)
         def_assets = db.get_country_assets(def_cid)
     else:
-        def_assets = config.COUNTRY_EQUIPMENT_CATALOG.get(defender_key, [])
+        def_assets = _catalog_assets(defender_key)
 
     op_type = detect_operation_type(attacker_key, defender_key, attacker_role, defender_role)
 
@@ -347,7 +383,7 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         attacker_key, defender_key, attacker_role, defender_role, balance
     )
 
-    weapon_breakdown = calculate_weapon_breakdown(losses["att_losses"], balance)
+    weapon_breakdown = calculate_weapon_breakdown(losses.get("att_fired") or losses["att_losses"], balance)
 
     # ۱. کارت خلاصه اصلی گزارش نبرد
     summary_text = build_war_summary_card(
@@ -390,6 +426,8 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
             att_cid, def_cid, op_type,
             summary_text, timeline_text, targets_text, territory_text, losses_json
         )
+    else:
+        summary_text += "\n\nℹ️ _یکی از طرف‌های نبرد کشور بازیکن‌دار نیست؛ اعمال دیتابیسی تلفات فقط برای کشورهای دارای بازیکن انجام می‌شود._"
 
     return summary_text, losses, war_id, timeline_text, targets_text, territory_text
 
@@ -517,8 +555,40 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
     if not balance:
         balance = calculate_battle_balance(att_assets, def_assets, att_tech, def_tech, op_type=op_type)
 
-    def pick_losses_from_assets(assets_list, is_attacker, op_type, balance):
-        result_losses = []
+    # ---------- موتور تبدیل «تسلیحات درگیر» به «تلفات واقعی» (نسخه ۲) ----------
+    # موشک و پهپادِ شلیک‌شده کامل مصرف می‌شوند؛ اما تانک/جنگنده/پدافند فقط درصدی تلفات می‌دهند
+    def compute_actual_losses(engaged_list, is_attacker, balance):
+        att_risk = balance.get("att_risk_rate", 0.1)
+        pen_rate = balance.get("penetration_rate", 0.5)
+        if is_attacker:
+            air_rate = max(0.02, min(0.12, att_risk * 0.25))
+            other_rate = max(0.03, min(0.15, att_risk * 0.35))
+        else:
+            air_rate = max(0.02, min(0.10, pen_rate * 0.12))
+            other_rate = max(0.02, min(0.12, pen_rate * 0.15))
+        result = []
+        for it in engaged_list:
+            cat = it.get("category", "Ground Forces")
+            used = it.get("amount", 0)
+            if cat in ("Missiles", "UAV"):
+                loss_qty = used
+            elif cat == "Aircraft":
+                loss_qty = int(round(used * air_rate))
+                if used >= 5:
+                    loss_qty = max(loss_qty, 1)
+            else:
+                loss_qty = int(round(used * other_rate))
+                if used >= 10:
+                    loss_qty = max(loss_qty, 1)
+            if loss_qty > 0:
+                result.append({
+                    "equipment_key": it["equipment_key"], "equipment_name": it["equipment_name"],
+                    "amount": loss_qty, "category": cat, "price": it.get("price", 0)
+                })
+        return result
+
+    def pick_engaged_from_assets(assets_list, op_type):
+        """انتخاب تصادفی تسلیحات درگیر وقتی رول بازیکن مقدار دقیق نداده است."""
         by_cat = {}
         for item in assets_list:
             eq_key = item.get("equipment_key") or item.get("key")
@@ -528,86 +598,59 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
             buy_price = item.get("buy_price", item.get("price", 1_000_000))
             if eq_key and amount > 0:
                 by_cat.setdefault(cat, []).append({
-                    "key": eq_key, "name": eq_name, "amount": amount, "category": cat, "price": buy_price
+                    "equipment_key": eq_key, "equipment_name": eq_name,
+                    "amount": amount, "category": cat, "price": buy_price
                 })
+        result = []
+        strike_cats = ["Missiles", "UAV"] if op_type == "air_missile" else ["Missiles", "UAV", "Aircraft", "Ground Forces", "Artillery"]
+        for cat in strike_cats:
+            items = by_cat.get(cat)
+            if not items:
+                continue
+            for it in random.sample(items, min(len(items), random.randint(1, 3))):
+                fired_qty = max(1, min(it["amount"], random.randint(2, 12)))
+                result.append({
+                    "equipment_key": it["equipment_key"], "equipment_name": it["equipment_name"],
+                    "amount": fired_qty, "category": cat, "price": it["price"]
+                })
+        return result
 
-        intercept_rate = balance.get("intercept_rate", 0.5)
-        pen_rate = balance.get("penetration_rate", 0.5)
-        att_risk = balance.get("att_risk_rate", 0.1)
+    att_fired = parse_weapon_mentions_from_roleplay_text(attacker_role, att_assets, attacker_key) or pick_engaged_from_assets(att_assets, op_type)
+    att_losses = compute_actual_losses(att_fired, True, balance)
 
-        for cat, items in by_cat.items():
-            if is_attacker:
-                if cat in ["Missiles", "UAV"]:
-                    selected = random.sample(items, min(len(items), random.randint(1, 4)))
-                    for it in selected:
-                        curr_amt = it["amount"]
-                        loss_qty = max(1, min(curr_amt, random.randint(2, 12)))
-                        result_losses.append({
-                            "equipment_key": it["key"], "equipment_name": it["name"],
-                            "amount": loss_qty, "category": cat, "price": it["price"]
-                        })
-                elif cat in ["Aircraft", "Ground Forces"]:
-                    if random.random() < att_risk or op_type in ["ground_invasion", "combined_arms"]:
-                        selected = random.sample(items, min(len(items), random.randint(1, 3)))
-                        for it in selected:
-                            curr_amt = it["amount"]
-                            loss_qty = max(1, min(curr_amt, random.randint(2, 8)))
-                            result_losses.append({
-                                "equipment_key": it["key"], "equipment_name": it["name"],
-                                "amount": loss_qty, "category": cat, "price": it["price"]
-                            })
-            else:
-                selected = random.sample(items, min(len(items), random.randint(1, 4)))
-                for it in selected:
-                    curr_amt = it["amount"]
-                    if cat in ["Air Defense", "Missiles", "UAV"]:
-                        loss_qty = max(1, min(curr_amt, int(random.randint(2, 8) * (1.0 + intercept_rate))))
-                    elif cat == "Aircraft":
-                        loss_qty = max(1, min(curr_amt, int(random.randint(1, 3) * pen_rate) or 1))
-                    else:
-                        loss_qty = max(1, min(curr_amt, int(random.randint(3, 12) * pen_rate) or 1))
-
-                    result_losses.append({
-                        "equipment_key": it["key"], "equipment_name": it["name"],
-                        "amount": loss_qty, "category": cat, "price": it["price"]
-                    })
-
-        return result_losses
-
-    att_parsed = parse_weapon_mentions_from_roleplay_text(attacker_role, att_assets, attacker_key)
-    if att_parsed:
-        att_losses = att_parsed
-    else:
-        att_losses = pick_losses_from_assets(att_assets, True, op_type, balance)
-
-    def_parsed = parse_weapon_mentions_from_roleplay_text(defender_role, def_assets, defender_key)
-    if def_parsed:
-        def_losses = def_parsed
-    else:
-        def_losses = pick_losses_from_assets(def_assets, False, op_type, balance)
+    def_fired = parse_weapon_mentions_from_roleplay_text(defender_role, def_assets, defender_key) or pick_engaged_from_assets(def_assets, op_type)
+    def_losses = compute_actual_losses(def_fired, False, balance)
 
     tech_diff = att_tech - def_tech
     pen_rate = balance.get("penetration_rate", 0.5)
 
+    # تلفات انسانی متناسب با اندازه ارتش (کشورهای پرنفراتر تلفات بیشتری می‌دهند)
+    att_army = (att_country or {}).get("active_personnel", 200_000)
+    def_army = (def_country or {}).get("active_personnel", 200_000)
+    att_scale = max(0.5, min(4.0, att_army / 200_000))
+    def_scale = max(0.5, min(4.0, def_army / 200_000))
+
     if op_type == "air_missile":
-        att_military_loss = max(0, int(random.randint(0, 15) * balance.get("att_risk_rate", 0.1)))
+        att_military_loss = max(0, int(random.randint(0, 15) * balance.get("att_risk_rate", 0.1) * att_scale))
         att_civilian_loss = 0
-        def_military_loss = max(5, int(random.randint(20, 80) * pen_rate + tech_diff * 4))
+        def_military_loss = max(5, int((random.randint(20, 80) * pen_rate + tech_diff * 4) * def_scale))
         def_civilian_loss = max(0, int(random.randint(2, 25) * pen_rate))
     elif op_type == "combined_arms":
-        att_military_loss = max(120, int(random.randint(250, 680) - tech_diff * 20))
+        att_military_loss = max(120, int((random.randint(250, 680) - tech_diff * 20) * att_scale))
         att_civilian_loss = max(0, random.randint(5, 30))
-        def_military_loss = max(180, int(random.randint(380, 950) * pen_rate + tech_diff * 30))
+        def_military_loss = max(180, int((random.randint(380, 950) * pen_rate + tech_diff * 30) * def_scale))
         def_civilian_loss = max(10, int(random.randint(25, 90) * pen_rate))
     else: # ground_invasion
-        att_military_loss = max(100, int(random.randint(200, 550) - tech_diff * 15))
+        att_military_loss = max(100, int((random.randint(200, 550) - tech_diff * 15) * att_scale))
         att_civilian_loss = max(0, random.randint(5, 25))
-        def_military_loss = max(150, int(random.randint(300, 800) * pen_rate + tech_diff * 25))
+        def_military_loss = max(150, int((random.randint(300, 800) * pen_rate + tech_diff * 25) * def_scale))
         def_civilian_loss = max(10, int(random.randint(20, 80) * pen_rate))
 
     return {
         "att_losses": att_losses,
         "def_losses": def_losses,
+        "att_fired": att_fired,
+        "def_fired": def_fired,
         "att_military_loss": att_military_loss,
         "att_civilian_loss": att_civilian_loss,
         "def_military_loss": def_military_loss,
@@ -623,9 +666,7 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     c_name = c_info.get("name", country_key)
 
     country = db.get_country_by_key(country_key)
-    if not country:
-        db.create_country(1000000 + random.randint(1, 999999), c_name, c_flag, country_key)
-        country = db.get_country_by_key(country_key)
+    # نسخه ۲: ساخت کشور فیک ممنوع؛ برای کشورهای بدون بازیکن از کاتالوگ استفاده می‌شود
 
     cid = country["id"] if country else None
     if cid:
@@ -804,10 +845,15 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
                     """, (item["amount"], def_cid, item["equipment_key"]))
 
                 # اثر استراتژیک آسیب به پالایشگاه و نیروگاه برق مدافع در صورت لزوم
+                # آسیب استراتژیک نسبی (۸٪ ظرفیت با کف مشخص) — منصفانه برای همه اندازه‌های کشور
                 if "پالایشگاه" in targets_text or "نفتی" in targets_text:
-                    cur.execute("UPDATE countries SET oil_production = MAX(0, oil_production - 100000) WHERE id = ?", (def_cid,))
+                    cur.execute("""UPDATE countries SET oil_production =
+                        MAX(0, oil_production - MAX(5000, CAST(oil_production * 0.08 AS INTEGER)))
+                        WHERE id = ?""", (def_cid,))
                 if "نیروگاه" in targets_text or "برق" in targets_text:
-                    cur.execute("UPDATE countries SET electricity = MAX(10, electricity - 20) WHERE id = ?", (def_cid,))
+                    cur.execute("""UPDATE countries SET electricity =
+                        MAX(5, electricity - MAX(2, CAST(electricity * 0.08 AS INTEGER)))
+                        WHERE id = ?""", (def_cid,))
 
         return True
     except Exception as e:
