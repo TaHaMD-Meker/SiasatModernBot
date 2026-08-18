@@ -774,6 +774,25 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:war_broadcast":
         war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
         report_text = war_data.get("report_text")
+        try:
+            war_id = int(war_data.get("war_id", 0))
+        except (TypeError, ValueError):
+            war_id = 0
+
+        player_nav_keyboard = None
+        if war_id > 0:
+            player_nav_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
+                    InlineKeyboardButton("💥 آسیب‌های زیرساختی", callback_data=f"war_view:targets:{war_id}"),
+                ],
+                [
+                    InlineKeyboardButton("🗺️ وضعیت خطوط مرزی", callback_data=f"war_view:territory:{war_id}"),
+                    InlineKeyboardButton("📊 فاکتور تلفات و تجهیزات", callback_data=f"war_view:losses:{war_id}"),
+                ],
+                [InlineKeyboardButton("🌐 خلاصه ارزیابی نبرد", callback_data=f"war_view:summary:{war_id}")],
+            ])
+
         if report_text:
             users = db.get_all_countries()
             sent_count = 0
@@ -783,9 +802,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                     try:
                         if len(report_text) > 4000:
                             await context.bot.send_message(chat_id=p_id, text=report_text[:3800], parse_mode="Markdown")
-                            await context.bot.send_message(chat_id=p_id, text=report_text[3800:], parse_mode="Markdown")
+                            await context.bot.send_message(chat_id=p_id, text=report_text[3800:], reply_markup=player_nav_keyboard, parse_mode="Markdown")
                         else:
-                            await context.bot.send_message(chat_id=p_id, text=report_text, parse_mode="Markdown")
+                            await context.bot.send_message(chat_id=p_id, text=report_text, reply_markup=player_nav_keyboard, parse_mode="Markdown")
                         sent_count += 1
                     except Exception:
                         pass
