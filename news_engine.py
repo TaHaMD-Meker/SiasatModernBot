@@ -17,20 +17,33 @@ async def post_breaking_news(bot, news_title: str, news_body: str, event_categor
 
     today_str = datetime.date.today().isoformat()
 
-    card_text = (
+    card_text_md = (
         f"🚨 **«{event_category} — {news_title}»**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f'> "{news_body}"\n\n'
+        f"{news_body}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📌 **خبرگزاری رسمی ژئوپلیتیک «سیاست مدرن»** | {today_str}"
+    )
+
+    card_text_plain = (
+        f"🚨 «{event_category} — {news_title}»\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{news_body}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"📌 خبرگزاری رسمی ژئوپلیتیک «سیاست مدرن» | {today_str}"
     )
 
     try:
-        await bot.send_message(chat_id=channel_id, text=card_text, parse_mode="Markdown")
+        await bot.send_message(chat_id=channel_id, text=card_text_md, parse_mode="Markdown")
         return True
-    except Exception as e:
-        print(f"Failed to post breaking news to channel {channel_id}: {e}")
-        return False
+    except Exception as e1:
+        print(f"Failed to post breaking news (Markdown) to channel {channel_id}: {e1}")
+        try:
+            await bot.send_message(chat_id=channel_id, text=card_text_plain)
+            return True
+        except Exception as e2:
+            print(f"Failed to post breaking news (Plain) to channel {channel_id}: {e2}")
+            return False
 
 
 async def trigger_blockade_news(bot, blockader_c: dict, target_c: dict):

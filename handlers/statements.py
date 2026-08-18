@@ -133,35 +133,77 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     photo_file_id = update.message.photo[-1].file_id
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # Build exact channel statement card matching requested layout
-    channel_card = (
-        "📑 «سازمان جهانی بیانیه»\n"
+    # Build exact channel statement card with Markdown & Plain text fallbacks
+    channel_card_md = (
+        "📑 **«بیانیه رسمی کشوری»**\n"
+        f"🪐 **کشور:** {country['flag']} {country['name']}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{caption}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📌 **صادرکننده:** {user_name_str} | **تاریخ:** {datetime.date.today().isoformat()}"
+    )
+
+    channel_card_plain = (
+        "📑 «بیانیه رسمی کشوری»\n"
         f"🪐 کشور: {country['flag']} {country['name']}\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f'> "{caption}"\n\n'
+        f"{caption}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"📌 صادرکننده: {user_name_str} | تاریخ: {datetime.date.today().isoformat()}"
     )
 
-    # Post to Channel
+    # Multi-tier resilient post to Channel
     posted_to_channel = False
-    try:
-        await context.bot.send_photo(
-            chat_id=config.get_channel_id(),
-            photo=photo_file_id,
-            caption=channel_card,
-            parse_mode="Markdown"
-        )
-        posted_to_channel = True
-    except Exception as e:
-        print(f"Channel post error: {e}")
+    channel_err_str = ""
+    channel_id = config.get_channel_id()
+
+    if channel_id:
+        try:
+            await context.bot.send_photo(
+                chat_id=channel_id,
+                photo=photo_file_id,
+                caption=channel_card_md,
+                parse_mode="Markdown"
+            )
+            posted_to_channel = True
+        except Exception as e1:
+            print(f"Channel statement send_photo Markdown error: {e1}")
+            try:
+                await context.bot.send_photo(
+                    chat_id=channel_id,
+                    photo=photo_file_id,
+                    caption=channel_card_plain
+                )
+                posted_to_channel = True
+            except Exception as e2:
+                print(f"Channel statement send_photo Plain error: {e2}")
+                channel_err_str = str(e2)
 
     # Confirm to player
     conf_msg = f"✅ *بیانیه رسمی کشور {country['flag']} {country['name']} با موفقیت ثبت شد!*\n\n"
     if posted_to_channel:
         conf_msg += "📢 این بیانیه مستقیماً در کانال رسمی بازی منتشر گردید."
     else:
-        conf_msg += "📋 بیانیه شما در سیستم ثبت گردید."
+        conf_msg += (
+            "📋 **بیانیه در سیستم ثبت گردید.**\n\n"
+            "⚠️ *توجه:* انتشار مستقیم در کانال تلگرام انجام نشد! "
+            "لطفاً مطمئن شوید ربات در کانال تلگرام عضو و دارای دسترسی ادمین است."
+        )
+        try:
+            for admin_id in config.ADMIN_IDS:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=(
+                        f"⚠️ **خطای عدم انتشار بیانیه در کانال تلگرام:**\n\n"
+                        f"• **کشور:** {country['flag']} {country['name']}\n"
+                        f"• **شناسه کانال:** `{channel_id}`\n"
+                        f"• **جزئیات خطا:** `{channel_err_str or 'عدم دسترسی مدیریت ربات در کانال'}`\n\n"
+                        "💡 لطفاً ربات را به‌عنوان ادمین با دسترسی ارسال پیام در کانال اضافه فرمایید."
+                    ),
+                    parse_mode="Markdown"
+                )
+        except Exception as adm_e:
+            print(f"Failed to notify admin of statement channel error: {adm_e}")
 
     await update.message.reply_text(conf_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
 
@@ -225,33 +267,74 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     tweet_text = update.message.text.strip()
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # Build Tweet Card
-    tweet_card = (
+    # Build Tweet Card with Markdown & Plain text fallbacks
+    tweet_card_md = (
+        "🐦 **«توییت رسمی کشوری»**\n"
+        f"🪐 **کشور:** {country['flag']} {country['name']}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{tweet_text}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📌 **صادرکننده:** {user_name_str} | **تاریخ:** {datetime.date.today().isoformat()}"
+    )
+
+    tweet_card_plain = (
         "🐦 «توییت رسمی کشوری»\n"
         f"🪐 کشور: {country['flag']} {country['name']}\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f'> "{tweet_text}"\n\n'
+        f"{tweet_text}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"📌 صادرکننده: {user_name_str} | تاریخ: {datetime.date.today().isoformat()}"
     )
 
-    # Post to Channel
+    # Multi-tier resilient post to Channel
     posted_to_channel = False
-    try:
-        await context.bot.send_message(
-            chat_id=config.get_channel_id(),
-            text=tweet_card,
-            parse_mode="Markdown"
-        )
-        posted_to_channel = True
-    except Exception as e:
-        print(f"Channel tweet error: {e}")
+    channel_err_str = ""
+    channel_id = config.get_channel_id()
+
+    if channel_id:
+        try:
+            await context.bot.send_message(
+                chat_id=channel_id,
+                text=tweet_card_md,
+                parse_mode="Markdown"
+            )
+            posted_to_channel = True
+        except Exception as e1:
+            print(f"Channel tweet Markdown error: {e1}")
+            try:
+                await context.bot.send_message(
+                    chat_id=channel_id,
+                    text=tweet_card_plain
+                )
+                posted_to_channel = True
+            except Exception as e2:
+                print(f"Channel tweet Plain error: {e2}")
+                channel_err_str = str(e2)
 
     conf_msg = f"✅ *توییت رسمی کشور {country['flag']} {country['name']} منتشر گردید!*\n\n"
     if posted_to_channel:
-        conf_msg += "📢 توییت شما در کانال رسمی بازی قرار گرفت."
+        conf_msg += "📢 توییت شما مستقیماً در کانال رسمی بازی منتشر گردید."
     else:
-        conf_msg += "📋 توییت در سیستم ثبت گردید."
+        conf_msg += (
+            "📋 **توییت در سیستم ثبت گردید.**\n\n"
+            "⚠️ *توجه:* انتشار مستقیم در کانال تلگرام انجام نشد! "
+            "لطفاً مطمئن شوید ربات در کانال تلگرام عضو و دارای دسترسی ادمین است."
+        )
+        try:
+            for admin_id in config.ADMIN_IDS:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=(
+                        f"⚠️ **خطای عدم انتشار توییت در کانال تلگرام:**\n\n"
+                        f"• **کشور:** {country['flag']} {country['name']}\n"
+                        f"• **شناسه کانال:** `{channel_id}`\n"
+                        f"• **جزئیات خطا:** `{channel_err_str or 'عدم دسترسی مدیریت ربات در کانال'}`\n\n"
+                        "💡 لطفاً ربات را به‌عنوان ادمین با دسترسی ارسال پیام در کانال اضافه فرمایید."
+                    ),
+                    parse_mode="Markdown"
+                )
+        except Exception as adm_e:
+            print(f"Failed to notify admin of tweet channel error: {adm_e}")
 
     await update.message.reply_text(conf_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
 
