@@ -133,8 +133,12 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     photo_file_id = update.message.photo[-1].file_id
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # ارسال مستقیم متن بیانیه بازیکن بدون هیچ قالب اضافی (درخواست مدیریت)
-    channel_card_md = caption
+    # ارسال مستقیم متن بیانیه بازیکن بدون قالب اضافی + حفظ فرمت‌بندی خود بازیکن
+    # (بولد، ایتالیک، نقل‌قول، اسپویلر، خط خوردن و... از entity های پیام اصلی بازیکن)
+    try:
+        channel_card_md = update.message.caption_html or caption
+    except Exception:
+        channel_card_md = caption
     channel_card_plain = caption
 
     # Multi-tier resilient post to Channel
@@ -148,7 +152,7 @@ async def process_official_statement_input(update: Update, context: ContextTypes
                 chat_id=channel_id,
                 photo=photo_file_id,
                 caption=channel_card_md,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             posted_to_channel = True
         except Exception as e1:
@@ -354,8 +358,11 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     tweet_text = update.message.text.strip()
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # ارسال مستقیم متن توییت بازیکن بدون هیچ قالب اضافی (درخواست مدیریت)
-    tweet_card_md = tweet_text
+    # ارسال مستقیم متن توییت بازیکن بدون قالب اضافی + حفظ فرمت‌بندی خود بازیکن
+    try:
+        tweet_card_md = update.message.text_html or tweet_text
+    except Exception:
+        tweet_card_md = tweet_text
     tweet_card_plain = tweet_text
 
     # Multi-tier resilient post to Channel
@@ -368,7 +375,7 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
             await context.bot.send_message(
                 chat_id=channel_id,
                 text=tweet_card_md,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             posted_to_channel = True
         except Exception as e1:
