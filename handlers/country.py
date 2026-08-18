@@ -34,6 +34,9 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     app_val = c.get('approval_rating', 80)
     app_icon = "🟢" if app_val >= 75 else ("🟡" if app_val >= 50 else ("🟠" if app_val >= 40 else "🔴"))
 
+    badges = approval_system.get_country_badges(c)
+    badges_str = ("\n\n🏆 **نشان‌های افتخار و دستاوردهای ملی:**\n" + "\n".join(badges)) if badges else ""
+
     text = (
         f"{c['flag']} *وضعیت کشور {c['name']}*\n\n"
         f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
@@ -47,12 +50,17 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🌾 غلات: {format_number(c['grain'])}\n"
         f"⚡ برق: {c['electricity']}٪\n\n"
         f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
-        f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}"
+        f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}{badges_str}"
     )
 
     inline_keyboard = [
         [InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")],
         [InlineKeyboardButton("🔬 مرکز تحقیق و توسعه فناوری (R&D)", callback_data="research:menu")],
+        [
+            InlineKeyboardButton("🏪 بورس کالا", callback_data="market:menu"),
+            InlineKeyboardButton("🎖️ دارایی‌ها", callback_data="assets_back"),
+            InlineKeyboardButton("🤝 دیپلماسی", callback_data="dip:menu"),
+        ]
     ]
 
     if update.message:

@@ -243,14 +243,17 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             "❓ **انتشار در اخبار رسمی:** آیا تمایل دارید خبر این ترانزیت/معامله در کانال رسمی اخبار منتشر شود؟"
         )
 
-        # Send Private Receipt to Seller
+        # Send Live Sale Alert & Receipt to Seller
         if seller.get("player_id"):
             try:
+                seller_updated = db.get_country_by_id(seller["id"])
+                seller_treasury = seller_updated["treasury"] if seller_updated else seller.get("treasury", 0) + meta["commodity_cost"]
                 seller_msg = (
-                    f"💰 **واریز وجه معامله بورس کالا!**\n"
+                    f"💰 **اعلان زنده معامله و واریز وجه در بورس کالا!**\n"
                     "━━━━━━━━━━━━━━━━━━\n\n"
-                    f"کشور {country['flag']} **{country['name']}** تعداد {qty:,} واحد **{res_label}** شما را در بورس جهانی خریداری نمود.\n\n"
-                    f"💵 **مبلغ واریزی به خزانه شما:** +**{format_money(meta['commodity_cost'])}**"
+                    f"کشور {country['flag']} **{country['name']}** تعداد {qty:,} واحد **{res_label}** شما را در بازار بورس جهانی خریداری نمود.\n\n"
+                    f"• **مبلغ واریزی به خزانه شما:** +**{format_money(meta['commodity_cost'])}**\n"
+                    f"• **موجودی جدید خزانه شما:** **{format_money(seller_treasury)}**"
                 )
                 await context.bot.send_message(chat_id=seller["player_id"], text=seller_msg, parse_mode="Markdown")
             except Exception:

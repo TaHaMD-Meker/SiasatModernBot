@@ -342,3 +342,50 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     lines.append(f'"{narrative}"')
 
     return "\n".join(lines)
+
+
+def get_country_badges(c: dict) -> list[str]:
+    """محاسبه و دریافت مدال‌ها و نشان‌های افتخار ملی کشور بر اساس دستاوردهای اقتصادی و نظامی."""
+    cid = c.get("id")
+    badges = []
+
+    treasury = c.get("treasury", 0)
+    oil_res = c.get("oil_reserves", 0)
+    oil_prod = c.get("oil_production", 0)
+    tech_lvl = c.get("tech_level", 1)
+    ckey = c.get("country_key", "")
+
+    # 1. Economic Superpower
+    if treasury >= 150_000_000:
+        badges.append("🥇 **ابرقدرت اقتصادی** (خزانه بالای ۱۵۰M $)")
+
+    # 2. Global Energy Giant
+    if oil_res >= 100_000_000 or oil_prod >= 2_000_000:
+        badges.append("🛢️ **غول انرژی جهان** (تولید نفت بالای ۲M بشکه/روز)")
+
+    # 3. Technology Pioneer
+    if tech_lvl >= 3:
+        badges.append("🔬 **پیشگام فناوری** (سطح فناوری بالای ۳)")
+
+    # 4. Military Branch Badges based on assets
+    if cid:
+        try:
+            assets = db.get_country_assets(cid)
+            missile_qty = sum(a.get("amount", 0) for a in assets if a.get("category") == "Missiles")
+            airdef_qty = sum(a.get("amount", 0) for a in assets if a.get("category") == "Air Defense")
+            navy_qty = sum(a.get("amount", 0) for a in assets if a.get("category") == "Navy")
+
+            if missile_qty >= 100:
+                badges.append("🚀 **قدرت موشکی برتر** (بیش از ۱۰۰ موشک)")
+            if airdef_qty >= 25:
+                badges.append("🛡️ **دژ تسخیرناپذیر** (شبکه پدافند هوایی متراکم)")
+            if navy_qty >= 30:
+                badges.append("⚓ **سالار دریاها** (ناوگان دریایی قدرتمند)")
+        except Exception:
+            pass
+
+    # 5. United Nations Leader
+    if ckey == "un":
+        badges.append("🕊️ **خادم صلح بین‌الملل** (دبیرکل سازمان ملل متحد)")
+
+    return badges
