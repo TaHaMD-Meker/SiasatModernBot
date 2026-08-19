@@ -418,16 +418,7 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         attacker_key, defender_key, attacker_role, defender_role, balance
     )
 
-    # تعیین تلفات توسط هوش مصنوعی واقعی (اختیاری) — همیشه درون بازه‌های امن
-    try:
-        ai_loss = ai_war_losses(
-            att_name, def_name, op_type, balance, att_assets, def_assets,
-            losses.get("att_fired", []), attacker_role, defender_role, losses
-        )
-    except Exception:
-        ai_loss = None
-    if ai_loss:
-        losses = apply_ai_loss_guardrails(losses, ai_loss, att_assets, def_assets)
+
 
     weapon_breakdown = calculate_weapon_breakdown(losses.get("att_fired") or losses["att_losses"], balance)
 
@@ -494,6 +485,111 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
 
 
 _LAST_GOOD_AI_MODEL = None
+
+
+def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakdown, attacker_role, defender_role):
+    """روایت گزارش نبرد با هوش مصنوعی واقعی (اختیاری).
+
+    نیازمند یکی از کلیدهای OPENAI_API_KEY / AI_API_KEY / OPENROUTER_API_KEY در متغیرهای محیطی.
+    اعداد قطعی نبرد همیشه توسط موتور داخلی تولید می‌شوند؛ هوش مصنوعی فقط «روایت» سه بخش
+    گاه‌شماری، آسیب زیرساختی و خطوط مرزی را می‌نویسد. در صورت خطا None برمی‌گردد و
+    قالب‌های داخلی جایگزین می‌شوند.
+    """
+    openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = openai_key or openrouter_key
+    if not api_key:
+        return None
+
+    if not openai_key and openrouter_key:
+        api_base = "https://openrouter.ai/api/v1"
+        model_candidates = [
+            os.environ.get("AI_MODEL") or "z-ai/glm-5.2:free",
+            "openai/gpt-oss-20b:free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+        ]
+    else:
+        api_base = "https://api.openai.com/v1"
+        model_candidates = [os.environ.get("AI_MODEL") or "gpt-4o-mini"]
+
+    op_labels = {
+        "combined_arms": "عملیات ترکیبی (زمینی + موشکی/هوایی)",
+        "ground_invasion": "تهاجم زمینی",
+        "air_missile": "حمله موشکی/پهپادی/هوایی",
+    }
+
+    wb_summary = "\n".join(
+        f"- {wb['name']}: شلیک {wb['total_fired']}, رهگیری {wb['intercepted']}, عبور {wb['penetrated']}"
+        for wb in (weapon_breakdown or [])
+    ) or "- (بدون تفکیک)"
+    att_fired = ", ".join(f"{x['equipment_name']} ×{x['amount']}" for x in losses.get("att_fired", [])[:14]) or "-"
+    def_fired = ", ".join(f"{x['equipment_name']} ×{x['amount']}" for x in losses.get("def_fired", [])[:14]) or "-"
+
+    prompt = f"""شما یک تحلیلگر ارشد نظامی هستید. بر اساس «اعداد قطعی» زیر، گزارش کارشناسی فارسی بنویس.
+اعداد را هرگز تغییر نده یا جدید از خودت نساز؛ فقط روایت کن. لحن رسمی، فاخر و بدون ایموجی اضافی.
+قواعد الزامی زبان: فقط و فقط فارسی روان و رسمی؛ به کار بردن هر واژه انگلیسی/لاتین ممنوع است و به جای آن معادل فارسی دقیق بنویس.
+
+نبرد: {att_name} علیه {def_name} — نوع: {op_labels.get(op_type, op_type)}
+نرخ عبور پرتابه‌ها: {int(balance['penetration_rate']*100)}٪ | نرخ رهگیری پدافند: {int(balance['intercept_rate']*100)}٪
+تلفات نظامی مهاجم: {losses['att_military_loss']:,} | مدافع: {losses['def_military_loss']:,} | غیرنظامی مدافع: {losses['def_civilian_loss']:,}
+تفکیک شلیک/رهگیری:
+{wb_summary}
+نیروهای درگیر مهاجم: {att_fired}
+نیروهای درگیر مدافع: {def_fired}
+خلاصه رول مهاجم (حداکثر ۸۰۰ کلمه):
+{(attacker_role or '')[:1500]}
+خلاصه رول مدافع:
+{(defender_role or '')[:800] or '(مدافع رولی نفرستاده است)'}
+
+تلفات نهایی ثبت‌شده (این اعداد قطعی هستند و باید در روایت منعکس شوند):
+- مهاجم: {losses.get('att_military_loss', 0):,} نظامی
+- مدافع: {losses.get('def_military_loss', 0):,} نظامی و {losses.get('def_civilian_loss', 0):,} غیرنظامی
+- تجهیزات منهدم‌شده مدافع: {", ".join(f"{x['equipment_name']} ({x['amount']} عدد)" for x in losses.get('def_losses', [])[:10]) or '-'}
+
+قواعد نگارش: هر بخش را با عنوان «■ *عنوان:*» شروع کن و جزئیات را با «> » بیاور (مطابق قالب بازی). فقط فارسی روان و رسمی.
+
+فقط و فقط یک JSON معتبر با این ساختار بازگردان (بدون هیچ توضیح اضافی):
+{{"timeline": "متن گاه‌شماری نبرد با ساعت‌های فرضی متفاوت (۸ تا ۱۲ سطر)", "targets": "متن آسیب‌های زیرساختی و اهداف استراتژیک متناسب با نرخ عبور (۶ تا ۹ سطر)", "territory": "متن وضعیت خطوط مرزی و عمق پیشروی متناسب با نوع عملیات و نرخ عبور (۴ تا ۶ سطر)", "assessment": "ارزیابی راهبردی کوتاه دو تا سه سطری درباره پیامد این نبرد برای معادلات منطقه‌ای"}}"""
+
+    global _LAST_GOOD_AI_MODEL
+    if _LAST_GOOD_AI_MODEL and _LAST_GOOD_AI_MODEL in model_candidates:
+        model_candidates = [_LAST_GOOD_AI_MODEL] + [m for m in model_candidates if m != _LAST_GOOD_AI_MODEL]
+
+    for model_name in model_candidates:
+        try:
+            data = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": "You are a senior military analyst writing formal Persian battle reports. Always answer with strict JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+            }
+            req = urllib.request.Request(
+                api_base + "/chat/completions",
+                data=json.dumps(data).encode("utf-8"),
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as response:
+                res = json.loads(response.read().decode("utf-8"))
+            content = res["choices"][0]["message"]["content"].strip()
+            # حذف بلوک کد احتمالی و استخراج مقاوم JSON
+            if content.startswith("```"):
+                content = content.strip("`").lstrip("json").strip()
+            try:
+                parsed = json.loads(content)
+            except Exception:
+                m_json = re.search(r"\{.*\}", content, re.S)
+                parsed = json.loads(m_json.group(0)) if m_json else None
+            if isinstance(parsed, dict) and parsed.get("timeline"):
+                _LAST_GOOD_AI_MODEL = model_name
+                return parsed
+        except Exception as e:
+            print(f"AI war narrative error ({model_name}, trying next): {e}")
+            continue
+    return None
 
 
 def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakdown, attacker_role, defender_role):
@@ -979,82 +1075,30 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
     def_fired = parse_weapon_mentions_from_roleplay_text(defender_role, def_assets, defender_key) or pick_engaged_from_assets(def_assets, op_type)
     def_losses = compute_actual_losses(def_fired, False, balance)
 
-    tech_diff = att_tech - def_tech
+    # ---------- نسخه ۸: فرمول ساده و شفاف تلفات ----------
+    # ضریب موازنه: تلفات مدافع با نرخ نفوذ بالا می‌رود؛ تلفات مهاجم با ریسک دفاع مدافع
     pen_rate = balance.get("penetration_rate", 0.5)
-
-    # تلفات انسانی متناسب با اندازه ارتش (کشورهای پرنفراتر تلفات بیشتری می‌دهند)
-    att_army = (att_country or {}).get("active_personnel", 200_000)
-    def_army = (def_country or {}).get("active_personnel", 200_000)
-    att_scale = max(0.5, min(4.0, att_army / 200_000))
-    def_scale = max(0.5, min(4.0, def_army / 200_000))
+    def_mult = 0.5 + 1.5 * pen_rate
+    att_mult = 0.5 + 1.5 * balance.get("att_risk_rate", 0.1)
 
     if op_type == "air_missile":
-        att_military_loss = max(0, int(random.randint(0, 15) * balance.get("att_risk_rate", 0.1) * att_scale))
-        att_civilian_loss = 0
-        def_military_loss = max(5, int((random.randint(20, 80) * pen_rate + tech_diff * 4) * def_scale))
-        def_civilian_loss = max(0, int(random.randint(2, 25) * pen_rate))
-    elif op_type == "combined_arms":
-        att_military_loss = max(120, int((random.randint(250, 680) - tech_diff * 20) * att_scale))
-        att_civilian_loss = max(0, random.randint(5, 30))
-        def_military_loss = max(180, int((random.randint(380, 950) * pen_rate + tech_diff * 30) * def_scale))
-        def_civilian_loss = max(10, int(random.randint(25, 90) * pen_rate))
-    else: # ground_invasion
-        att_military_loss = max(100, int((random.randint(200, 550) - tech_diff * 15) * att_scale))
-        att_civilian_loss = max(0, random.randint(5, 25))
-        def_military_loss = max(150, int((random.randint(300, 800) * pen_rate + tech_diff * 25) * def_scale))
-        def_civilian_loss = max(10, int(random.randint(20, 80) * pen_rate))
+        att_base = random.randint(10, 60)
+        def_base = random.randint(20, 180)
+        civ_base = random.randint(0, 30)
+    elif op_type == "ground_invasion":
+        att_base = random.randint(100, 400)
+        def_base = random.randint(150, 550)
+        civ_base = random.randint(10, 60)
+    else:  # combined_arms
+        att_base = random.randint(80, 350)
+        def_base = random.randint(100, 450)
+        civ_base = random.randint(5, 50)
 
-    # ---------- نسخه ۷.۲: خسارت مدافع متناسب با قدرت ضربتی نفوذکرده‌ی مهاجم ----------
-    try:
-        ratio = balance.get("att_strike_power", 1) / max(1.0, balance.get("def_shield_power", 1))
-        power_mult = 1.0 + min(4.0, ratio / 2.0)
-
-        pen_units = 0
-        for _it in att_fired:
-            pen_units += (_it.get("amount", 0) or 0) * pen_rate
-
-        # ۱) تلفات انسانی اضافه‌ی مدافع از آتش نفوذکرده
-        if op_type in ("ground_invasion", "combined_arms"):
-            extra_personnel = int(pen_units * random.uniform(1.2, 2.4) * power_mult)
-        else:
-            extra_personnel = int(pen_units * random.uniform(0.8, 1.6) * power_mult)
-        def_military_loss += min(35_000, extra_personnel)
-
-        # ۲) بودجه انهدام تجهیزات مدافع بر اساس شدت ضربه
-        destroy_budget = int(pen_units * random.uniform(0.08, 0.16) * power_mult)
-        if destroy_budget > 0 and def_assets:
-            priority = {"Air Defense": 0.40, "Ground Forces": 0.25, "Artillery": 0.20, "UAV": 0.10, "Missiles": 0.05}
-            pools = {}
-            for item in def_assets:
-                cat = item.get("category")
-                amt = item.get("amount", item.get("initial", 0)) or 0
-                if cat in priority and amt > 0:
-                    pools.setdefault(cat, []).append((item, amt))
-            for cat, share in priority.items():
-                budget = int(destroy_budget * share)
-                if budget <= 0 or cat not in pools:
-                    continue
-                cat_pool = pools[cat][:]
-                random.shuffle(cat_pool)
-                for item, amt in cat_pool:
-                    if budget <= 0:
-                        break
-                    max_kill = max(1, int(amt * 0.30))  # هر آیتم حداکثر ۳۰٪ موجودی‌اش آسیب می‌بیند
-                    kill = min(budget, max_kill)
-                    k = item.get("equipment_key") or item.get("key")
-                    nm = item.get("equipment_name") or item.get("name") or k
-                    pr = item.get("buy_price", item.get("price", 1_000_000)) or 1_000_000
-                    existing = next((x for x in def_losses if x["equipment_key"] == k), None)
-                    if existing:
-                        existing["amount"] = max(existing["amount"], kill)
-                    else:
-                        def_losses.append({
-                            "equipment_key": k, "equipment_name": nm,
-                            "amount": kill, "category": cat, "price": pr,
-                        })
-                    budget -= kill
-    except Exception as _e:
-        print(f"defender damage scaling error: {_e}")
+    # سقف‌های قطعی: تلفات هرگز از این حدود خارج نمی‌شود
+    att_military_loss = min(400, int(att_base * att_mult))
+    def_military_loss = min(800, int(def_base * def_mult))
+    att_civilian_loss = 0 if op_type == "air_missile" else random.randint(0, 15)
+    def_civilian_loss = min(150, int(civ_base * pen_rate))
 
     return {
         "att_losses": att_losses,
