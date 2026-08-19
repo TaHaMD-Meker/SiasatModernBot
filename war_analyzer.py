@@ -484,11 +484,15 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
 
     if not openai_key and openrouter_key:
         api_base = "https://openrouter.ai/api/v1"
-        default_model = "deepseek/deepseek-chat-v3-0324:free"
+        model_candidates = [
+            os.environ.get("AI_MODEL") or "z-ai/glm-5.2:free",
+            "openai/gpt-oss-20b:free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+        ]
     else:
         api_base = "https://api.openai.com/v1"
-        default_model = "gpt-4o-mini"
-    model_name = os.environ.get("AI_MODEL") or default_model
+        model_candidates = [os.environ.get("AI_MODEL") or "gpt-4o-mini"]
 
     op_labels = {
         "combined_arms": "عملیات ترکیبی (زمینی + موشکی/هوایی)",
@@ -519,34 +523,35 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
 فقط و فقط یک JSON معتبر با این ساختار بازگردان (بدون هیچ توضیح اضافی):
 {{"timeline": "متن گاه‌شماری نبرد با ساعت‌های فرضی متفاوت (۸ تا ۱۲ سطر)", "targets": "متن آسیب‌های زیرساختی و اهداف استراتژیک متناسب با نرخ عبور (۶ تا ۹ سطر)", "territory": "متن وضعیت خطوط مرزی و عمق پیشروی متناسب با نوع عملیات و نرخ عبور (۴ تا ۶ سطر)"}}"""
 
-    try:
-        data = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": "You are a senior military analyst writing formal Persian battle reports. Always answer with strict JSON only."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.85,
-        }
-        req = urllib.request.Request(
-            api_base + "/chat/completions",
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=25) as response:
-            res = json.loads(response.read().decode("utf-8"))
-        content = res["choices"][0]["message"]["content"].strip()
-        # حذف بلوک کد احتمالی
-        if content.startswith("```"):
-            content = content.strip("`").lstrip("json").strip()
-        parsed = json.loads(content)
-        if isinstance(parsed, dict) and parsed.get("timeline"):
-            return parsed
-        return None
-    except Exception as e:
-        print(f"AI war narrative error (fallback to templates): {e}")
-        return None
+    for model_name in model_candidates:
+        try:
+            data = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": "You are a senior military analyst writing formal Persian battle reports. Always answer with strict JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.85,
+            }
+            req = urllib.request.Request(
+                api_base + "/chat/completions",
+                data=json.dumps(data).encode("utf-8"),
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                res = json.loads(response.read().decode("utf-8"))
+            content = res["choices"][0]["message"]["content"].strip()
+            # حذف بلوک کد احتمالی
+            if content.startswith("```"):
+                content = content.strip("`").lstrip("json").strip()
+            parsed = json.loads(content)
+            if isinstance(parsed, dict) and parsed.get("timeline"):
+                return parsed
+        except Exception as e:
+            print(f"AI war narrative error ({model_name}, trying next): {e}")
+            continue
+    return None
 
 
 def build_war_summary_card(att_flag, att_name, def_flag, def_name, losses, balance, op_type):

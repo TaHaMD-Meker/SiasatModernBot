@@ -296,15 +296,21 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
     polished_text = None
 
     if api_key:
-        try:
-            # فیکس: کلید OpenRouter قبلاً به آدرس OpenAI وصل می‌شد؛ اکنون درست تشخیص داده می‌شود
-            if not openai_key and openrouter_key:
-                api_base = "https://openrouter.ai/api/v1"
-                default_model = "deepseek/deepseek-chat-v3-0324:free"
-            else:
-                api_base = "https://api.openai.com/v1"
-                default_model = "gpt-4o-mini"
-            model_name = os.environ.get("AI_MODEL") or default_model
+        # فیکس: کلید OpenRouter قبلاً به آدرس OpenAI وصل می‌شد؛ اکنون درست تشخیص داده می‌شود
+        if not openai_key and openrouter_key:
+            api_base = "https://openrouter.ai/api/v1"
+            model_candidates = [
+                os.environ.get("AI_MODEL") or "z-ai/glm-5.2:free",
+                "openai/gpt-oss-20b:free",
+                "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3-super-120b-a12b:free",
+            ]
+        else:
+            api_base = "https://api.openai.com/v1"
+            model_candidates = [os.environ.get("AI_MODEL") or "gpt-4o-mini"]
+        polished_text = None
+        for model_name in model_candidates:
+          try:
             prompt = f"""شما یک دیپلمات ارشد بین‌المللی و سخنگوی دولت {country['name']} هستید.
 متن خام/محاوره‌ای زیر را به یک بیانیه رسمی، فاخر، سنگین و کارشناسی (حداقل در ۳ سطر) تبدیل کن.
 در هر بار نگارش، لحن و جمله‌بندی کاملاً متفاوتی به کار ببر (دیپلماتیک، قاطع، هشدارآمیز، همبستگی‌محور و...) و از کلیشه‌های تکراری پرهیز کن.
@@ -328,11 +334,13 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:
                 res = json.loads(response.read().decode("utf-8"))
                 polished_text = res["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            print(f"AI Rewriter error: {e}")
+                break
+          except Exception as e:
+            print(f"AI Rewriter error ({model_name}): {e}")
+            continue
 
     if not polished_text:
         # موتور بیانیه‌ساز دیپلماتیک نسخه ۲ (متنوع و بدون تکرار)
