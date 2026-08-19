@@ -33,6 +33,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     app_val = c.get('approval_rating', 80)
     app_icon = "🟢" if app_val >= 75 else ("🟡" if app_val >= 50 else ("🟠" if app_val >= 40 else "🔴"))
+    readiness_val = c.get('combat_readiness', 70)
 
     badges = approval_system.get_country_badges(c)
     badges_str = ("\n\n🏆 **نشان‌های افتخار و دستاوردهای ملی:**\n" + "\n".join(badges)) if badges else ""
@@ -40,6 +41,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"{c['flag']} *وضعیت کشور {c['name']}*\n\n"
         f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
+        f"🪖 آمادگی رزمی نیروها: ⚔️ {readiness_val}٪\n"
         f"👥 جمعیت: {format_number(c['population'])}\n"
         f"💰 درآمد مالیاتی: {format_money(c['tax_income'])}\n"
         f"🏦 خزانه: {format_money(c['treasury'])}\n"

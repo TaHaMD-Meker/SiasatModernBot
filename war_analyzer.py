@@ -197,7 +197,7 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
     return list(parsed_losses.values())
 
 
-def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att_app=80, def_app=80, op_type='air_missile'):
+def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att_app=80, def_app=80, att_readiness=70, def_readiness=70, op_type='air_missile'):
     """محاسبه موازنه توان هجومی، شبکه پدافندی و نرخ‌های احتمالی رهگیری/عبور/خسارت مهاجم."""
     
     att_missiles = sum(a.get("amount", 0) for a in att_assets if a.get("category") == "Missiles")
@@ -207,13 +207,14 @@ def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att
 
     att_tech_mult = 1.0 + (att_tech - 1) * 0.15
     att_app_mult = 0.85 + (att_app / 100.0) * 0.3
+    att_readiness_mult = 0.80 + (att_readiness / 100.0) * 0.30
 
     if op_type == "air_missile":
-        att_strike_power = (att_missiles * 1.5 + att_uavs * 0.8 + att_aircraft * 3.0) * att_tech_mult * att_app_mult
+        att_strike_power = (att_missiles * 1.5 + att_uavs * 0.8 + att_aircraft * 3.0) * att_tech_mult * att_app_mult * att_readiness_mult
     elif op_type == "ground_invasion":
-        att_strike_power = (att_ground * 2.5 + att_aircraft * 1.5 + att_missiles * 1.0) * att_tech_mult * att_app_mult
+        att_strike_power = (att_ground * 2.5 + att_aircraft * 1.5 + att_missiles * 1.0) * att_tech_mult * att_app_mult * att_readiness_mult
     else: # combined_arms
-        att_strike_power = (att_ground * 2.0 + att_missiles * 1.5 + att_uavs * 1.0 + att_aircraft * 2.5) * att_tech_mult * att_app_mult
+        att_strike_power = (att_ground * 2.0 + att_missiles * 1.5 + att_uavs * 1.0 + att_aircraft * 2.5) * att_tech_mult * att_app_mult * att_readiness_mult
 
     def_airdef = sum(d.get("amount", 0) for d in def_assets if d.get("category") == "Air Defense")
     def_aircraft = sum(d.get("amount", 0) for d in def_assets if d.get("category") == "Aircraft")
@@ -222,13 +223,14 @@ def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att
 
     def_tech_mult = 1.0 + (def_tech - 1) * 0.15
     def_app_mult = 0.85 + (def_app / 100.0) * 0.3
+    def_readiness_mult = 0.80 + (def_readiness / 100.0) * 0.30
 
     if op_type == "air_missile":
-        def_shield_power = (def_airdef * 4.5 + def_aircraft * 1.5) * def_tech_mult * def_app_mult
+        def_shield_power = (def_airdef * 4.5 + def_aircraft * 1.5) * def_tech_mult * def_app_mult * def_readiness_mult
     elif op_type == "ground_invasion":
-        def_shield_power = (def_ground * 2.5 + def_airdef * 1.5) * def_tech_mult * def_app_mult
+        def_shield_power = (def_ground * 2.5 + def_airdef * 1.5) * def_tech_mult * def_app_mult * def_readiness_mult
     else: # combined_arms
-        def_shield_power = (def_ground * 2.0 + def_airdef * 3.5 + def_aircraft * 1.5) * def_tech_mult * def_app_mult
+        def_shield_power = (def_ground * 2.0 + def_airdef * 3.5 + def_aircraft * 1.5) * def_tech_mult * def_app_mult * def_readiness_mult
 
     base_ratio = def_shield_power / max(1.0, att_strike_power)
     tactical_variance = random.uniform(-0.10, 0.10)
@@ -339,6 +341,8 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         def_tech=def_country.get("tech_level", 1) if def_country else 1,
         att_app=att_country.get("approval_rating", 80) if att_country else 80,
         def_app=def_country.get("approval_rating", 80) if def_country else 80,
+        att_readiness=att_country.get("combat_readiness", 70) if att_country else 70,
+        def_readiness=def_country.get("combat_readiness", 70) if def_country else 70,
         op_type=op_type
     )
 

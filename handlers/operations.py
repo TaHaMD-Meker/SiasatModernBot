@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ماژول ثبت و ابلاغ عملیات‌ها و رول‌های نظامی توسط بازیکنان (Player Roleplay Submission)
-سقف مجاز روزانه ۲ رول (تهاجمی/پدافندی) و ارسال مستقیم به ستاد ادمین.
+همراه با سامانه جدید برگزاری مانورهای نظامی و ارتقای آمادگی رزمی نیروها.
 """
 
 import datetime
@@ -10,7 +10,8 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 
 import database as db
 import config
-from utils import get_main_keyboard
+import news_engine
+from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
 async def require_country(update: Update):
@@ -36,17 +37,23 @@ async def operations_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     daily_count = db.get_daily_roleplay_count(c["id"], today_str)
     remaining_roles = max(0, 2 - daily_count)
 
+    readiness = c.get("combat_readiness", 70)
+    last_drill_date = c.get("last_drill_date")
+    daily_drill_count = c.get("daily_drill_count", 0) if last_drill_date == today_str else 0
+    remaining_drills = max(0, 3 - daily_drill_count)
+
     text = (
         f"🎯 *ستاد فرماندهی و ابلاغ عملیات {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "شما می‌توانید طرح‌ها و رول‌های نظامی خود را ثبت و جهت بررسی ادمین ارسال فرمایید.\n\n"
-        f"• *سقف مجاز روزانه:* ۲ رول (استفاده‌شده امروز: {daily_count} از ۲)\n"
-        f"• *امکان ثبت باقی‌مانده:* {remaining_roles} رول\n\n"
-        "نوع رول مد نظر خود را انتخاب کنید:"
+        f"🪖 *شاخص آمادگی رزمی نیروها:* ⚔️ `{readiness}٪`\n"
+        f"• *رول‌های نظامی ثبت‌شده امروز:* {daily_count} از ۲ (باقی‌مانده: {remaining_roles})\n"
+        f"• *مانورهای رزمی برگزارشده امروز:* {daily_drill_count} از ۳ (باقی‌مانده: {remaining_drills})\n\n"
+        "لطفاً یکی از بخش‌های زیر را انتخاب کنید:"
     )
 
     keyboard = [
         [InlineKeyboardButton("📝 ثبت رول تهاجمی (حمله)", callback_data="op:submit:attack"), InlineKeyboardButton("🛡️ ثبت رول پدافندی (دفاع)", callback_data="op:submit:defense")],
+        [InlineKeyboardButton("🪖 برگزاری مانور نظامی (آمادگی رزمی +۴٪)", callback_data="op:military_drill")],
         [InlineKeyboardButton("📋 مشاهده رول‌های ثبت‌شده من", callback_data="op:my_roles")],
     ]
 
@@ -72,6 +79,108 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
 
     if data == "op:menu":
         await operations_menu(update, context)
+
+    elif data == "op:military_drill":
+        today_str = datetime.date.today().isoformat()
+        last_drill_date = country.get("last_drill_date")
+        daily_drill_count = country.get("daily_drill_count", 0) if last_drill_date == today_str else 0
+        readiness = country.get("combat_readiness", 70)
+
+        DRILL_MONEY_COST = 1_000_000
+        DRILL_OIL_COST = 100_000
+
+        text = (
+            f"🪖 *ستاد برگزاری مانور و تمرینات رزمی — {country['flag']} {country['name']}*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• *شاخص آمادگی رزمی فعلی:* ⚔️ `{readiness}٪`\n"
+            f"• *تعداد مانورهای برگزارشده امروز:* `{daily_drill_count} از ۳`\n\n"
+            "⚠️ **هزینه‌ها و دستاوردهای برگزاری مانور رزمی:**\n"
+            f"💵 **هزینه پشتیبانی و لجستیک:** {format_money(DRILL_MONEY_COST)}\n"
+            f"🛢️ **سوخت مصرفی ناودسته‌ها و یگان‌ها:** {format_oil(DRILL_OIL_COST)}\n\n"
+            "🏆 **دستاوردهای مانور:**\n"
+            "📈 **ارتقای آمادگی رزمی نیروها:** +۴٪ (افزایش توان در شبیه‌ساز نبرد)\n"
+            "📊 **افزایش رضایت عمومی و روحیه ملی:** +۲٪\n"
+            "⭐ **تعداد مجاز:** ۳ بار در روز\n\n"
+            "آیا مایل به آغاز مانور رزمی نیروهای مسلح هستید؟"
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("✅ آغاز و اجرای مانور رزمی", callback_data="op:do_military_drill")],
+            [InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]
+        ]
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "op:do_military_drill":
+        today_str = datetime.date.today().isoformat()
+        last_drill_date = country.get("last_drill_date")
+        daily_drill_count = country.get("daily_drill_count", 0) if last_drill_date == today_str else 0
+
+        DRILL_MONEY_COST = 1_000_000
+        DRILL_OIL_COST = 100_000
+
+        if daily_drill_count >= 3:
+            await query.edit_message_text(
+                "⛔ **سقف روزانه مانور رزمی پر شده است!**\n\nشما امروز سقف ۳ بار مانور نظامی خود را برگزار کرده‌اید. جهت استراحت یگان‌ها، مانور بعدی فردا امکان‌پذیر است.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        if country.get("treasury", 0) < DRILL_MONEY_COST:
+            await query.edit_message_text(
+                f"❌ **عدم تکافوی منابع مالی:**\n\nبرای برگزاری مانور نیاز به {format_money(DRILL_MONEY_COST)} دارید. خزانه شما کافی نمی‌باشد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        if country.get("oil_reserves", 0) < DRILL_OIL_COST:
+            await query.edit_message_text(
+                f"❌ **عدم تکافوی سوخت:**\n\nبرای سوخت‌رسانی به یگان‌های زرهی و هوایی مانور نیاز به {format_oil(DRILL_OIL_COST)} نفت دارید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        # Deduct costs
+        db.adjust_treasury(country["id"], -DRILL_MONEY_COST)
+        db.adjust_oil(country["id"], -DRILL_OIL_COST)
+        db.add_transaction(country["id"], "military_drill", "هزینه لجستیک و سوخت برگزاری مانور نظامی", -DRILL_MONEY_COST)
+
+        # Increment readiness and approval
+        curr_readiness = country.get("combat_readiness", 70)
+        new_readiness = min(100, curr_readiness + 4)
+        db.update_country_field(country["id"], "combat_readiness", new_readiness)
+
+        curr_app = country.get("approval_rating", 80)
+        new_app = min(100, curr_app + 2)
+        db.update_country_field(country["id"], "approval_rating", new_app)
+
+        # Update drill counts
+        new_drill_count = daily_drill_count + 1
+        db.update_country_field(country["id"], "last_drill_date", today_str)
+        db.update_country_field(country["id"], "daily_drill_count", new_drill_count)
+
+        # Trigger Breaking News
+        await news_engine.post_breaking_news(
+            context.bot,
+            f"برگزاری مانور اقتدار رزمی نیروهای مسلح {country['name']}",
+            f"یگان‌های زرهی، هوایی، موشکی و پدافندی کشور {country['flag']} {country['name']} با موفقیت مانور رزمی اقتدار را برگزار نمودند. شاخص آمادگی رزمی این کشور به {new_readiness}٪ ارتقا یافت.",
+            "اقتدار دفاعی"
+        )
+
+        await query.edit_message_text(
+            f"🪖 **مانور نظامی کشور {country['flag']} {country['name']} با موفقیت کامل برگزار شد!**\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"• **شاخص آمادگی رزمی جدید:** ⚔️ `{new_readiness}٪` (+۴٪ افزایش)\n"
+            f"• **رضایت عمومی:** `{new_app}٪` (+۲٪ افزایش)\n"
+            f"• **هزینه پرداختی خزانه:** {format_money(DRILL_MONEY_COST)}\n"
+            f"• **سوخت مصرفی:** {format_oil(DRILL_OIL_COST)}\n"
+            f"• **مانورهای باقی‌مانده امروز:** `{3 - new_drill_count} از ۳`\n\n"
+            "📢 خبر موفقیت مانور نظامی در کانال رسمی بازی منتشر گردید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+            parse_mode="Markdown"
+        )
 
     elif data.startswith("op:submit:"):
         role_type = data.split(":")[2] # 'attack' or 'defense'
