@@ -225,7 +225,6 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
-        [InlineKeyboardButton("⚔️ تحلیل نبرد (خط تولید دستی هوشمند)", callback_data="admin:war_start")],
         [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
@@ -804,6 +803,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_start":
+        await query.edit_message_text("🔒 این بخش به تصمیم مدیریت غیرفعال شده است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
+        return
+    elif data == "admin:war_start_disabled":
         text = "⚔️ *بخش تحلیل نبرد — خط تولید دستی هوشمند*\n\nرول‌ها را می‌گیری، پرامپت آماده را به هوش مصنوعی دلخواه می‌دهی و بلوک نتیجه را برمی‌گردانی.\n\nلطفاً *کشور مهاجم* را انتخاب کنید:"
         keyboard = []
         row = []
