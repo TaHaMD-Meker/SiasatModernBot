@@ -265,7 +265,19 @@ def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att
     else: # combined_arms
         att_strike_power = (att_ground * 2.0 + att_missiles * 1.5 + att_uavs * 1.0 + att_aircraft * 2.5) * att_tech_mult * att_app_mult * att_readiness_mult
 
-    def_airdef = sum(d.get("amount", 0) for d in def_assets if d.get("category") == "Air Defense")
+    # کانال رهگیری ارزش‌محور: هر ۸ میلیون دلار سامانه پدافندی ~ یک کانال اثربخش
+    # (باتری گنبد آهنین/پاتریوت ده‌ها کانال دارد، مپادس ارزان تقریباً هیچ در برابر موشک)
+    def_ad_channels = 0.0
+    _ad_types = 0
+    for d in def_assets:
+        if d.get("category") == "Air Defense":
+            amt = d.get("amount", 0) or 0
+            if amt > 0:
+                _ad_types += 1
+            price = d.get("buy_price", d.get("price", 0)) or 0
+            def_ad_channels += amt * (price / 8_000_000.0)
+    def_ad_channels += _ad_types * 2
+    def_airdef = def_ad_channels
     def_aircraft = sum(d.get("amount", 0) for d in def_assets if d.get("category") == "Aircraft")
     def_uavs = sum(d.get("amount", 0) for d in def_assets if d.get("category") == "UAV")
     def_ground = sum(d.get("amount", 0) for d in def_assets if d.get("category") == "Ground Forces")
@@ -275,7 +287,7 @@ def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att
     def_readiness_mult = 0.80 + (def_readiness / 100.0) * 0.30
 
     if op_type == "air_missile":
-        def_shield_power = (def_airdef * 4.5 + def_aircraft * 1.5) * def_tech_mult * def_app_mult * def_readiness_mult
+        def_shield_power = (def_airdef * 15 + def_aircraft * 0.8) * def_tech_mult * def_app_mult * def_readiness_mult
     elif op_type == "ground_invasion":
         def_shield_power = (def_ground * 2.5 + def_airdef * 1.5) * def_tech_mult * def_app_mult * def_readiness_mult
     else: # combined_arms
@@ -284,8 +296,8 @@ def calculate_battle_balance(att_assets, def_assets, att_tech=1, def_tech=1, att
     base_ratio = def_shield_power / max(1.0, att_strike_power)
     tactical_variance = random.uniform(-0.10, 0.10)
     
-    raw_intercept = 0.38 + (base_ratio - 0.8) * 0.22 + tactical_variance
-    intercept_rate = round(max(0.18, min(0.85, raw_intercept)), 2)
+    raw_intercept = 0.42 + (base_ratio - 0.8) * 0.25 + tactical_variance
+    intercept_rate = round(max(0.20, min(0.85, raw_intercept)), 2)
     penetration_rate = round(1.0 - intercept_rate, 2)
 
     raw_att_risk = (def_shield_power / max(100.0, att_strike_power)) * 0.22 + random.uniform(-0.03, 0.03)
