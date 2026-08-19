@@ -55,7 +55,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
         # 1. Deposit income & gold minus maintenance
         maint_info = db.calculate_country_maintenance_cost(c["id"])
-        net_income = c["daily_income"] - maint_info["total_maint"]
+        tax_income = c.get("tax_income", 0) or 0
+        net_income = c["daily_income"] + tax_income - maint_info["total_maint"]
 
         db.adjust_treasury(c["id"], net_income)
         db.adjust_gold(c["id"], c["gold_daily"])
@@ -64,7 +65,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         app_res = approval_system.process_daily_approval_and_emigration(c)
 
         db.update_country_field(c["id"], "last_income_date", today)
-        db.add_transaction(c["id"], "daily_income", "درآمد روزانه و واریز منابع", c["daily_income"])
+        db.add_transaction(c["id"], "daily_income", "درآمد روزانه + مالیات (منهای نگهداری)", net_income)
 
         # 3. Send Daily Country Report Message to player
         updated_c = db.get_country_by_id(c["id"])

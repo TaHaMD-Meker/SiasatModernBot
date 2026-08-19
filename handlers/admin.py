@@ -681,6 +681,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         att_key = war_data.get("attacker_key")
         att_role = war_data.get("attacker_role", "")
 
+        if def_key == att_key:
+            await query.edit_message_text(
+                "❌ **خطا:** کشور مهاجم و مدافع نمی‌توانند یکسان باشند!\nلطفاً مدافع دیگری انتخاب کنید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
         if not att_key or not att_role:
             await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
             return
@@ -715,6 +723,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:war_apply":
         war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
+        if war_data.get("applied"):
+            await query.answer("⚠️ تلفات این نبرد قبلاً اعمال شده است!", show_alert=True)
+            return
         att_key = war_data.get("attacker_key")
         def_key = war_data.get("defender_key")
         losses = war_data.get("losses", {})
@@ -723,6 +734,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if att_key and def_key and losses:
             # 1. Deduct losses from DB & apply strategic target impacts
             war_analyzer.apply_war_losses_to_db(att_key, def_key, losses, targets_text)
+            war_data["applied"] = True  # قفل اعمال مجدد (جلوگیری از کسر دوباره تلفات)
 
             # 2. Build detailed loss receipts
             receipt_att = war_analyzer.build_detailed_loss_receipt(
@@ -1199,6 +1211,10 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
         att_key = war_data.get("attacker_key")
         att_role = war_data.get("attacker_role", "")
+
+        if att_key and def_key == att_key:
+            await update.message.reply_text("❌ **خطا:** کشور مهاجم و مدافع نمی‌توانند یکسان باشند!", parse_mode="Markdown")
+            return
 
         war_data["defender_key"] = def_key
         war_data["defender_role"] = def_role

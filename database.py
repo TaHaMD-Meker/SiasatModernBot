@@ -331,6 +331,218 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_legacy_grain_scale()
+    except Exception:
+        pass
+
+    try:
+        fix_grain_scale_v2()
+    except Exception:
+        pass
+
+    try:
+        fix_refinery_oil_production()
+    except Exception:
+        pass
+
+    try:
+        fix_refinery_oil_production_v2()
+    except Exception:
+        pass
+
+    try:
+        fix_india_oil_reserves()
+    except Exception:
+        pass
+
+
+def fix_legacy_grain_scale():
+    """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
+
+    واحد رسمی غلات در بازی «تن» است، اما کشورهای قدیمی با مقادیر ۱۵ تا ۱۰۰ تن
+    (کمتر از یک روز نیاز!) ساخته شده بودند و برای همیشه در حالت قحطی می‌ماندند.
+    این تابع فقط یک بار اجرا می‌شود و ذخیره کشورها را در صورت کمتر بودن از
+    مقدار استاندارد جدید (بر اساس کانفیگ)، به بالا ارتقا می‌دهد.
+    """
+    if get_setting("grain_scale_fixed_v1"):
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, country_key, population, grain FROM countries")
+    rows = cur.fetchall()
+    fixed_count = 0
+    for row in rows:
+        cid = row[0]
+        ckey = row[1]
+        pop = row[2] or 10_000_000
+        grain = row[3] or 0
+        need_daily = max(10, int((pop / 1_000_000) * 100))
+        preset = config.COUNTRY_STARTING_OVERRIDES.get(ckey, {}) if ckey else {}
+        target = preset.get("grain") or (need_daily * 25)
+        if grain < target:
+            cur.execute("UPDATE countries SET grain = ? WHERE id = ?", (target, cid))
+            fixed_count += 1
+    conn.commit()
+    conn.close()
+    set_setting("grain_scale_fixed_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if fixed_count:
+        print(f"[grain-migration] {fixed_count} country grain stocks upgraded to ton-scale.")
+
+
+def fix_grain_scale_v2():
+    """مایگریشن v2: فشرده‌سازی ذخایر غلات به مقیاس هفته‌ای بازی (۳ تا ۱۰ روز ذخیره).
+
+    طبق بازطراحی بالانس، ذخیره غلات کشورها باید در بازه‌ی ریتم هفته‌ای بازی باشد.
+    این تابع یک بار اجرا می‌شود و ذخایر بالاتر از سقف استاندارد جدید را فقط تا سقف
+    پایین می‌آورد (کشورهایی که ذخیره‌شان کمتر از سقف است دست نمی‌خورند).
+    """
+    if get_setting("grain_scale_fixed_v2"):
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, country_key, population, grain FROM countries")
+    rows = cur.fetchall()
+    changed = 0
+    for row in rows:
+        cid = row[0]
+        ckey = row[1]
+        pop = row[2] or 10_000_000
+        grain = row[3] or 0
+        need_daily = max(10, int((pop / 1_000_000) * 100))
+        preset = config.COUNTRY_STARTING_OVERRIDES.get(ckey, {}) if ckey else {}
+        cap = preset.get("grain") or (need_daily * 7)
+        if grain > cap:
+            cur.execute("UPDATE countries SET grain = ? WHERE id = ?", (cap, cid))
+            changed += 1
+    conn.commit()
+    conn.close()
+    set_setting("grain_scale_fixed_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if changed:
+        print(f"[grain-migration-v2] {changed} country grain stocks capped to weekly scale.")
+
+
+def fix_refinery_oil_production():
+    """مایگریشن v3: ترمیم تولید نفت از دست‌رفته.
+
+    باگ قدیمی rebalance (قبل از اصلاح) با هر ری‌استارت، oil_production کشورها را
+    به مقدار پایه کانفیگ برمی‌گرداند؛ برای کشورهای بدون نفت مانند سوئد (پایه صفر)
+    این یعنی تولیدِ پالایشگاه‌های خریداری‌شده بازیکن همیشه پاک می‌شد.
+    این تابع یک بار اجرا می‌شود و تولید هر کشور را به
+    (پایه کانفیگ + مجموع oil_prod_add ساختمان‌های موجود) ارتقا می‌دهد — فقط به بالا.
+    """
+    if get_setting("oil_prod_repair_v1"):
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key, oil_production FROM countries")
+            rows = cur.fetchall()
+            repaired = 0
+            for r in rows:
+                overrides = config.COUNTRY_STARTING_OVERRIDES.get(r["country_key"], config.STARTING_VALUES)
+                base_prod = overrides.get("oil_production", 0)
+                bonus = 0
+                cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (r["id"],))
+                for eq in cur.fetchall():
+                    bonus += config.ALL_SHOP_ITEMS.get(eq["item_key"], {}).get("oil_prod_add", 0) * eq["quantity"]
+                target = base_prod + bonus
+                if (r["oil_production"] or 0) < target:
+                    cur.execute("UPDATE countries SET oil_production = ? WHERE id = ?", (target, r["id"]))
+                    repaired += 1
+        conn.close()
+        if repaired:
+            print(f"[oil-prod-repair] {repaired} country oil production restored from owned refineries.")
+        # فلگ باید بیرون از تراکنشِ کانکشن اصلی ست شود (نباید کانکشن دوم داخل قفل باز شود)
+        set_setting("oil_prod_repair_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+    except Exception as e:
+        print(f"Error in fix_refinery_oil_production: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fix_refinery_oil_production_v2():
+    """مایگریشن v4: اعمال تمایز نفتی/غیرنفتی روی تولید پالایشگاه‌های موجود.
+
+    کشورهای غیرنفتی از هر پالایشگاه فقط +۲۵هزار بشکه می‌گیرند؛ اگر ترمیم قبلی
+    به آن‌ها +۱۰۰هزار داده باشد (فرمول قدیمی)، به مقدار درست جدید اصلاح می‌شود.
+    مقادیر آسیب‌دیده از جنگ که با فرمول‌ها مطابقت ندارند، دست نمی‌خورند.
+    """
+    if get_setting("oil_prod_repair_v2"):
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key, oil_production FROM countries")
+            rows = cur.fetchall()
+            changed = 0
+            for r in rows:
+                cur.execute(
+                    "SELECT COALESCE(SUM(quantity), 0) AS q FROM equipment WHERE country_id = ? AND item_key = 'oil_refinery'",
+                    (r["id"],),
+                )
+                qty = cur.fetchone()["q"]
+                if not qty:
+                    continue
+                base = config.get_country_base_oil_production(r["country_key"])
+                eff = config.get_refinery_effect(r["country_key"])
+                expected_new = base + eff["oil_prod"] * qty
+                expected_old = base + 100_000 * qty
+                current = r["oil_production"] or 0
+                if not config.is_oil_country(r["country_key"]) and current == expected_old:
+                    cur.execute("UPDATE countries SET oil_production = ? WHERE id = ?", (expected_new, r["id"]))
+                    changed += 1
+                elif current < expected_new:
+                    cur.execute("UPDATE countries SET oil_production = ? WHERE id = ?", (expected_new, r["id"]))
+                    changed += 1
+        conn.close()
+        if changed:
+            print(f"[oil-prod-repair-v2] {changed} countries adjusted for oil/non-oil refinery rules.")
+        set_setting("oil_prod_repair_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+    except Exception as e:
+        print(f"Error in fix_refinery_oil_production_v2: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fix_india_oil_reserves():
+    """مایگریشن v5: به‌روزرسانی ذخیره نفت هند مطابق رتبه جهانی (تنها کشورِ تغییرکرده).
+
+    ذخایر اثبات‌شده واقعی هند ~۵ میلیارد بشکه (رتبه ۲۲ جهان) است که در مقیاس بازی
+    و با توجه به جایگاهش (زیر چین، هم‌رده قطر) معادل ۵۰ میلیون بشکه در نظر گرفته شد.
+    فقط اگر ذخیره فعلی بازیکن هند کمتر از مقدار جدید باشد، به بالا ارتقا می‌یابد.
+    """
+    if get_setting("india_oil_v1"):
+        return
+    target = config.COUNTRY_STARTING_OVERRIDES.get("india", {}).get("oil_reserves")
+    if not target:
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, oil_reserves FROM countries WHERE country_key = 'india'")
+            rows = cur.fetchall()
+            for r in rows:
+                if (r["oil_reserves"] or 0) < target:
+                    cur.execute("UPDATE countries SET oil_reserves = ? WHERE id = ?", (target, r["id"]))
+        conn.close()
+        set_setting("india_oil_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    except Exception as e:
+        print(f"Error in fix_india_oil_reserves: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 # ---------- کشورها ----------
 
@@ -550,18 +762,21 @@ def rebalance_existing_countries_income():
                     i_key = eq["item_key"]
                     qty = eq["quantity"]
                     item = config.ALL_SHOP_ITEMS.get(i_key, {})
-                    civ_income += item.get("income_add", 0) * qty
+                    inc = item.get("income_add", 0)
+                    if i_key == "oil_refinery":
+                        inc = config.get_refinery_effect(c_key).get("income", inc)
+                    civ_income += inc * qty
 
                 new_total_daily = base_daily + civ_income
 
+                # نکته بالانس: oil_reserves و oil_production عمداً دست نمی‌خشوند تا
+                # خریدهای بازیکن‌ها و خسارت جنگی با ری‌استارت پاک نشود.
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
-                    daily_income = ?,
-                    oil_reserves = ?,
-                    oil_production = ?
+                    daily_income = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, base_oil_res, base_oil_prod, c_id))
+                """, (base_tax, new_total_daily, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
@@ -693,10 +908,16 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             grain_daily_add = item.get("grain_daily_add", 0) * quantity
             grain_bonus = item.get("grain_bonus", 0) * quantity
 
-            cur.execute("SELECT treasury, oil_reserves FROM countries WHERE id = ?", (country_id,))
+            cur.execute("SELECT treasury, oil_reserves, country_key FROM countries WHERE id = ?", (country_id,))
             row = cur.fetchone()
             if not row:
                 return False, "کشور پیدا نشد."
+
+            # تمایز نفتی/غیرنفتی: اثر پالایشگاه به نوع کشور بستگی دارد
+            if item_key == "oil_refinery" and row["country_key"]:
+                eff = config.get_refinery_effect(row["country_key"])
+                income_add = eff["income"] * quantity
+                oil_prod_add = eff["oil_prod"] * quantity
 
             if row["treasury"] < total_price:
                 return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_price:,} دلار\nخزانه فعلی: {row['treasury']:,} دلار"
@@ -1367,7 +1588,7 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
     conn.close()
 
     raw_assets_maint = sum(r["amount"] * (r["maintenance_cost"] or 0) for r in asset_rows)
-    scaled_maint = int(raw_assets_maint * 0.02)
+    scaled_maint = int(raw_assets_maint * 0.01)  # بالانس v2: نصف شدن هزینه نگهداری
     assets_maint = int(scaled_maint * (1 - (discount_pct / 100.0)))
 
     personnel_maint = int(active_p * 0.5)
