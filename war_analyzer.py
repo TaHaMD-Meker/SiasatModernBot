@@ -58,31 +58,43 @@ def convert_farsi_digits(text: str) -> str:
 
 
 def detect_operation_type(attacker_key: str, defender_key: str, attacker_role: str, defender_role: str):
-    """تشخیص هوشمند نوع عملیات: ترکیبی (زمینی+موشکی)، تهاجم زمینی، یا حمله موشکی/هوایی."""
+    """تشخیص هوشمند نوع عملیات: ترکیبی (زمینی+موشکی)، تهاجم زمینی، یا حمله موشکی/هوایی.
+
+    نسخه ۲: فقط رول مهاجم ملاک است (رول مدافع توصیف دفاع است نه نوع عملیات) و
+    تشخیص زمینی نیازمند «نشانگر قوی» است که واقعاً به معنای پیشروی/اشغال باشد؛
+    صفت‌های توصیفی مانند «مرزی»، «شهر» یا «شهرک» دیگر حمله را زمینی نمی‌کنند.
+    """
     # بدون مرز زمینی مشترک، تهاجم زمینی غیرممکن است
     if not has_ground_border(attacker_key, defender_key):
         return "air_missile"
 
-    text = convert_farsi_digits((attacker_role + " " + defender_role).lower())
-    
-    ground_keywords = [
-        "پیشروی", "تانک", "نفربر", "پیاده", "تصرف", "عبور از مرز", "مرزی",
-        "محور", "زرهی", "زمینی", "ورود به خاک", "تسخیر", "روستا", "شهر", "خط مرزی"
+    text = convert_farsi_digits((attacker_role or "").lower())
+
+    # نشانگرهای قوی: فقط این‌ها یعنی عملیات زمینی واقعی در جریان است
+    strong_ground = [
+        "پیشروی", "ورود به خاک", "عبور از مرز", "تهاجم زمینی", "حمله زمینی",
+        "عملیات زمینی", "نبرد زمینی", "حمله زرهی", "تسخیر", "اشغال", "تصرف",
+        "ستون زرهی", "نبرد شهری", "گسترش قلمرو", "عبور زمینی", "پایگاه اشغالی",
+        "حمله پیاده", "تهاجم پیاده", "عملیات هوابرد", "پیاده‌سازی نیرو",
     ]
+    # نشانگرهای ضعیف: به‌تنهایی زمینی نمی‌کنند (ممکن است هدف حمله هوایی باشند)
+    weak_ground = ["تانک", "نفربر", "زرهی", "پیاده‌نظام", "پیاده نظام", "محور"]
     air_keywords = [
         "موشک", "شلیک", "پرتاب", "پهپاد", "جنگنده", "پدافند", "سایبری",
-        "پایگاه هوایی", "رادار", "سوله", "کروز", "بالستیک", "هایپرسونیک", "فتاح", "کالیبر", "اسکندر"
+        "پایگاه هوایی", "رادار", "سوله", "کروز", "بالستیک", "هایپرسونیک", "فتاح", "کالیبر", "اسکندر",
+        "ضربتی هوایی", "سرکوب پدافند", "حمله هوایی", "ضربه هوایی",
     ]
 
-    ground_score = sum(1 for kw in ground_keywords if kw in text)
+    has_strong = any(kw in text for kw in strong_ground)
+    weak_score = sum(1 for kw in weak_ground if kw in text)
     air_score = sum(1 for kw in air_keywords if kw in text)
 
-    if ground_score > 0 and air_score > 0:
-        return "combined_arms"
-    elif ground_score > 0:
+    if has_strong:
+        return "combined_arms" if air_score >= 2 else "ground_invasion"
+    # فقط وقتی هیچ نشانه هوایی نیست و حداقل دو نشانگر ضعیف زمینی وجود دارد
+    if weak_score >= 2 and air_score == 0:
         return "ground_invasion"
-    else:
-        return "air_missile"
+    return "air_missile"
 
 
 def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets: list, country_key: str) -> list:
