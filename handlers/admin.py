@@ -20,6 +20,193 @@ ACTIVE_WAR_ANALYSES = {}
 LATEST_WAR_ANALYSIS = {}
 
 
+# ==================== خط تولید تحلیل دستی (کپی-پیست هوشمند) ====================
+
+WAR_CAPS = {"att_mil": 400, "def_mil": 800, "civ": 150}
+
+
+def _war_catalog_assets(key):
+    out = []
+    for it in config.COUNTRY_EQUIPMENT_CATALOG.get(key, []):
+        out.append({
+            "equipment_key": it.get("key"), "equipment_name": it.get("name"),
+            "amount": it.get("initial", 50), "category": it.get("category", "Ground Forces"),
+            "price": it.get("price", 1_000_000),
+        })
+    return out
+
+
+def _war_assets(key):
+    c = db.get_country_by_key(key)
+    if c:
+        db.seed_country_assets(c["id"], key)
+        return db.get_country_assets(c["id"]) or []
+    return _war_catalog_assets(key)
+
+
+def _stock_lines(key, limit=16):
+    items = sorted(_war_assets(key), key=lambda a: -(a.get("amount", 0) or 0))
+    lines = []
+    for a in items[:limit]:
+        lines.append(f"- {a.get('equipment_name')} | {a.get('category')} | موجودی {max(1, (a.get('amount', 0) or 0)):,}")
+    return "\n".join(lines) if lines else "- (بدون موجودی)"
+
+
+def _ad_lines(key):
+    import war_stats as _ws
+    lines = []
+    for a in _war_assets(key):
+        if a.get("category") != "Air Defense" or (a.get("amount", 0) or 0) <= 0:
+            continue
+        rates = _ws.ad_rates_for(a.get("equipment_key") or "", a.get("equipment_name") or "")
+        r = ", ".join(f"{k} {int(v*100)}٪" for k, v in rates.items())
+        lines.append(f"- {a.get('equipment_name')} ×{a['amount']:,} → {r}")
+    return "\n".join(lines) if lines else "- (پدافند قابل توجهی ندارد)"
+
+
+def build_war_prompt(att_key, def_key, att_role, def_role):
+    a = config.COUNTRIES.get(att_key, {})
+    d = config.COUNTRIES.get(def_key, {})
+    return f"""شما یک تحلیلگر ارشد نظامی هستید. نبرد زیر را بر اساس داده‌های واقعی تحلیل کن و دقیقاً فقط بلوک نتیجه را با فرمت خواسته‌شده برگردان.
+
+⚔️ نبرد: {a.get('flag','')} {a.get('name', att_key)} (مهاجم) علیه {d.get('flag','')} {d.get('name', def_key)} (مدافع)
+
+📦 موجودی کلیدی مهاجم:
+{_stock_lines(att_key)}
+
+📦 موجودی کلیدی مدافع:
+{_stock_lines(def_key)}
+
+🛡️ پدافند هوایی مدافع (نرخ‌های رهگیری واقعی هر سامانه):
+{_ad_lines(def_key)}
+
+📝 رول/برنامه عملیاتی مهاجم:
+{(att_role or "مهاجم رولی نفرستاده است؛ حمله‌ای متوسط فرض کن.")[:1800]}
+
+🛡️ رول دفاعی مدافع:
+{(def_role or "مدافع رولی نفرستاده است؛ دفاع متعارف فرض کن.")[:900]}
+
+⚖️ قوانین الزامی:
+- تلفات نظامی مهاجم حداکثر {WAR_CAPS['att_mil']}, مدافع حداکثر {WAR_CAPS['def_mil']}, غیرنظامی هر طرف حداکثر {WAR_CAPS['civ']}.
+- تجهیزاتِ انهدام‌شده فقط از فهرست موجودی‌های بالا و نه بیشتر از ۳۰٪ موجودی همان آیتم.
+- موشک و پهپادِ شلیک‌شده توسط مهاجم کاملاً مصرف می‌شود (در ATT_LOSS بیاور).
+- واقع‌گرایی نظامی: پدافند قوی = رهگیری بالا؛ اشباع آتش = عبور بیشتر.
+
+دقیقاً همین قالب را برگردان (بدون هیچ متن اضافه):
+#WAR
+ATT_MIL: عدد
+ATT_CIV: عدد
+DEF_MIL: عدد
+DEF_CIV: عدد
+ATT_LOSS: نام دقیق تجهیز=تعداد
+DEF_LOSS: نام دقیق تجهیز=تعداد
+NOTE: یک تا دو جمله روایت نتیجه
+#END"""
+
+
+def _norm_war_text(t):
+    import re as _re
+    t = str(t).lower().replace("\u200c", " ").replace("_", " ").strip()
+    return _re.sub(r"\s+", " ", t)
+
+
+def match_equipment(query, assets):
+    """تطبیق نام تجهیز در بلوک نتیجه با موجودی واقعی (بلندترین تطبیق برنده)."""
+    q = _norm_war_text(query)
+    if len(q) < 2:
+        return None
+    best, best_len = None, 0
+    for a in assets:
+        for field in (a.get("equipment_name") or "", a.get("equipment_key") or ""):
+            f = _norm_war_text(field)
+            if not f:
+                continue
+            if (q in f or f in q) and len(f) > best_len:
+                best, best_len = a, len(f)
+    return best
+
+
+def parse_war_block(text):
+    """پارس بلوک نتیجه #WAR ... #END — خروجی: (result, error)."""
+    import re as _re
+    t = war_analyzer.convert_farsi_digits(str(text))
+    if "#WAR" not in t:
+        return None, "بلوک #WAR پیدا نشد. مطمئن شو کل خروجی هوش مصنوعی را کپی کرده‌ای."
+    res = {"att_mil": 0, "att_civ": 0, "def_mil": 0, "def_civ": 0, "att_losses": [], "def_losses": [], "note": ""}
+    got_any = False
+    for line in t.splitlines():
+        line = line.strip()
+        m = _re.match(r"^ATT_MIL\s*:\s*(\d+)", line, _re.I)
+        if m:
+            res["att_mil"] = int(m.group(1)); got_any = True; continue
+        m = _re.match(r"^ATT_CIV\s*:\s*(\d+)", line, _re.I)
+        if m:
+            res["att_civ"] = int(m.group(1)); got_any = True; continue
+        m = _re.match(r"^DEF_MIL\s*:\s*(\d+)", line, _re.I)
+        if m:
+            res["def_mil"] = int(m.group(1)); got_any = True; continue
+        m = _re.match(r"^DEF_CIV\s*:\s*(\d+)", line, _re.I)
+        if m:
+            res["def_civ"] = int(m.group(1)); got_any = True; continue
+        m = _re.match(r"^(ATT|DEF)_LOSS\s*:\s*(.+?)\s*=\s*(\d+)$", line, _re.I)
+        if m:
+            side = "att_losses" if m.group(1).upper() == "ATT" else "def_losses"
+            res[side].append((m.group(2).strip(), int(m.group(3))))
+            got_any = True; continue
+        m = _re.match(r"^NOTE\s*:\s*(.*)$", line, _re.I)
+        if m:
+            res["note"] = m.group(1).strip()[:500]; continue
+    if not got_any:
+        return None, "هیچ خط قابل شناسایی در بلوک نبود. قالب را دقیقاً مثل نمونه رعایت کن."
+    return res, None
+
+
+def build_losses_from_block(parsed, att_key, def_key):
+    """تبدیل بلوک پارس‌شده به ساختار تلفات معتبر (کلیپ به سقف‌ها و موجودی)."""
+    att_assets = _war_assets(att_key)
+    def_assets = _war_assets(def_key)
+    notes = []
+
+    att_mil = min(WAR_CAPS["att_mil"], max(0, parsed["att_mil"]))
+    def_mil = min(WAR_CAPS["def_mil"], max(0, parsed["def_mil"]))
+    att_civ = min(WAR_CAPS["civ"], max(0, parsed["att_civ"]))
+    def_civ = min(WAR_CAPS["civ"], max(0, parsed["def_civ"]))
+    if (att_mil, def_mil, att_civ, def_civ) != (parsed["att_mil"], parsed["def_mil"], parsed["att_civ"], parsed["def_civ"]):
+        notes.append("تلفات خارج از سقف بازی به سقف تنظیم شد.")
+
+    def resolve(entries, assets, side_label):
+        out, unmatched = [], []
+        for name, qty in entries:
+            a = match_equipment(name, assets)
+            if not a:
+                unmatched.append(name)
+                continue
+            stock = a.get("amount", 0) or 0
+            cap = max(1, int(stock * 0.30)) if stock >= 3 else max(1, stock)
+            k = min(max(1, qty), cap)
+            out.append({
+                "equipment_key": a.get("equipment_key") or a.get("key"),
+                "equipment_name": a.get("equipment_name") or name,
+                "amount": k, "category": a.get("category", ""),
+                "price": a.get("buy_price", a.get("price", 1_000_000)) or 1_000_000,
+            })
+        return out, unmatched
+
+    att_losses, un1 = resolve(parsed["att_losses"], att_assets, "مهاجم")
+    def_losses, un2 = resolve(parsed["def_losses"], def_assets, "مدافع")
+    if un1 or un2:
+        notes.append("تجهیزات نامعتبر حذف شدند: " + ", ".join(un1 + un2))
+
+    losses = {
+        "att_losses": att_losses, "def_losses": def_losses,
+        "att_fired": [], "def_fired": [],
+        "att_military_loss": att_mil, "att_civilian_loss": att_civ,
+        "def_military_loss": def_mil, "def_civilian_loss": def_civ,
+    }
+    return losses, notes
+
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
@@ -45,7 +232,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
-        [InlineKeyboardButton("🧠 تحلیل نبرد و سناریو (AI War Analysis)", callback_data="admin:war_start")],
+        [InlineKeyboardButton("⚔️ تحلیل نبرد (خط تولید دستی هوشمند)", callback_data="admin:war_start")],
         [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
@@ -624,7 +811,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:war_start":
-        text = "🧠 *بخش تحلیل هوشمند نبرد و سناریو (AI War Analysis)*\n\nلطفاً *کشور مهاجم* را انتخاب کنید:"
+        text = "⚔️ *بخش تحلیل نبرد — خط تولید دستی هوشمند*\n\nرول‌ها را می‌گیری، پرامپت آماده را به هوش مصنوعی دلخواه می‌دهی و بلوک نتیجه را برمی‌گردانی.\n\nلطفاً *کشور مهاجم* را انتخاب کنید:"
         keyboard = []
         row = []
         for k, c in config.COUNTRIES.items():
@@ -678,49 +865,95 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data.startswith("admin:war_def:"):
         def_key = data.split(":")[2]
+        c_info = config.COUNTRIES.get(def_key, {})
+        flag = c_info.get("flag", "")
+        name = c_info.get("name", def_key)
+
         war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
-        att_key = war_data.get("attacker_key")
-        att_role = war_data.get("attacker_role", "")
-
-        if def_key == att_key:
-            await query.edit_message_text(
-                "❌ **خطا:** کشور مهاجم و مدافع نمی‌توانند یکسان باشند!\nلطفاً مدافع دیگری انتخاب کنید.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]),
-                parse_mode="Markdown"
-            )
-            return
-
-        if not att_key or not att_role:
-            await query.edit_message_text("❌ اطلاعات رول مهاجم معتبر نیست. لطفاً مجدداً از منوی تحلیل اقدام کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]), parse_mode="Markdown")
-            return
-
-        await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
-
-        summary_text, losses, war_id, timeline_text, targets_text, territory_text = await asyncio.to_thread(war_analyzer.generate_war_analysis_report, att_key, def_key, att_role)
-
         war_data["defender_key"] = def_key
-        war_data["losses"] = losses
-        war_data["report_text"] = summary_text
-        war_data["targets_text"] = targets_text
-        war_data["war_id"] = war_id
         ACTIVE_WAR_ANALYSES[user_id] = war_data
         context.user_data["war_analysis"] = war_data
+        context.user_data["admin_awaiting_input"] = {"type": "war_role_def", "defender_key": def_key}
+
+        text = (
+            f"🛡️ *طرح و رول دفاعی / پدافندی کشور مدافع ({flag} {name})*\n\n"
+            "لطفاً *رول یا طرح دفاع هوایی / پدافندی* ارسال‌شده توسط بازیکن مدافع را ارسال فرمایید:\n"
+            "*(در صورت عدم ارسال رول توسط بازیکن مدافع، عدد ۰ یا کلمه 'هیچ' را بفرستید)*"
+        )
+        keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="admin:menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:war_manual_prompt":
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
+        att_key = war_data.get("attacker_key")
+        def_key = war_data.get("defender_key")
+        if not att_key or not def_key:
+            await query.edit_message_text("❌ اطلاعات نبرد یافت نشد. از /admin شروع کنید.", parse_mode="Markdown")
+            return
+        prompt = war_data.get("war_prompt") or build_war_prompt(att_key, def_key, war_data.get("attacker_role", ""), war_data.get("defender_role", ""))
+        war_data["war_prompt"] = prompt
+        context.user_data["admin_awaiting_input"] = {"type": "war_manual_paste", "attacker_key": att_key, "defender_key": def_key}
+        await query.edit_message_text("🧠 *پرامپت تحلیل (مجدداً ارسال شد)*\n\nکپی کن → به هوش مصنوعی بده → بلوک #WAR تا #END را همین‌جا بفرست.", parse_mode="Markdown")
+        for i in range(0, len(prompt), 3800):
+            await context.bot.send_message(chat_id=user_id, text=f"```\n{prompt[i:i+3800]}\n```", parse_mode="Markdown")
+
+    elif data == "admin:war_manual_apply":
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
+        if war_data.get("applied"):
+            await query.answer("⚠️ تلفات این نبرد قبلاً اعمال شده است!", show_alert=True)
+            return
+        att_key = war_data.get("attacker_key")
+        def_key = war_data.get("defender_key")
+        losses = war_data.get("losses")
+        if not att_key or not def_key or not losses:
+            await query.edit_message_text("❌ داده نبرد ناقص است. از /admin شروع کنید.", parse_mode="Markdown")
+            return
+
+        note = war_data.get("targets_text", "")
+        ok = war_analyzer.apply_war_losses_to_db(att_key, def_key, losses, note)
+        war_data["applied"] = True
+
+        a_info = config.COUNTRIES.get(att_key, {})
+        d_info = config.COUNTRIES.get(def_key, {})
+        report = (
+            f"⚔️ *گزارش رسمی نبرد*\n"
+            f"{a_info.get('flag','')} *{a_info.get('name', att_key)}* علیه {d_info.get('flag','')} *{d_info.get('name', def_key)}*\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"• تلفات نظامی مهاجم: {losses['att_military_loss']:,} نفر\n"
+            f"• تلفات نظامی مدافع: {losses['def_military_loss']:,} نفر\n"
+            f"• تلفات غیرنظامی: مهاجم {losses['att_civilian_loss']:,} | مدافع {losses['def_civilian_loss']:,}\n"
+            f"• تجهیزات مهاجم: {len(losses['att_losses'])} قلم | مدافع: {len(losses['def_losses'])} قلم"
+        )
+        if note:
+            report += f"\n\n■ *ارزیابی:*\n> {note}"
+        war_data["report_text"] = report
+        ACTIVE_WAR_ANALYSES[user_id] = war_data
+        context.user_data["war_analysis"] = war_data
+        LATEST_WAR_ANALYSIS.update(war_data)
+
+        receipt_att = war_analyzer.build_detailed_loss_receipt(
+            att_key, losses.get("att_losses", []), losses.get("att_military_loss", 0), losses.get("att_civilian_loss", 0),
+            "عملیات تهاجمی اخیر", is_attacker=True
+        )
+        receipt_def = war_analyzer.build_detailed_loss_receipt(
+            def_key, losses.get("def_losses", []), losses.get("def_military_loss", 0), losses.get("def_civilian_loss", 0),
+            "عملیات دفاعی اخیر", is_attacker=False
+        )
+        war_data["receipt_att"] = receipt_att
+        war_data["receipt_def"] = receipt_def
 
         keyboard = [
-            [
-                InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
-                InlineKeyboardButton("💥 آسیب‌های زیرساختی", callback_data=f"war_view:targets:{war_id}"),
-            ],
-            [
-                InlineKeyboardButton("🗺️ وضعیت خطوط مرزی", callback_data=f"war_view:territory:{war_id}"),
-                InlineKeyboardButton("📊 فاکتور تلفات", callback_data=f"war_view:losses:{war_id}"),
-            ],
-            [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
             [InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")],
-            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+            [InlineKeyboardButton("📄 ارسال فاکتور تلفات به بازیکنان", callback_data="admin:war_broadcast_receipts")],
+            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
         ]
-
-        await query.edit_message_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(
+            ("✅ *تلفات با موفقیت از دیتابیس کسر شد!*\n\n" if ok else "⚠️ *خطا در کسر تلفات — لاگ را بررسی کن.*\n\n") + report,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        await context.bot.send_message(chat_id=user_id, text=receipt_att, parse_mode="Markdown")
+        await context.bot.send_message(chat_id=user_id, text=receipt_def, parse_mode="Markdown")
 
     elif data == "admin:war_apply":
         war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis") or LATEST_WAR_ANALYSIS
@@ -1204,6 +1437,59 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         await update.message.reply_text(text_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+    elif input_type == "war_manual_paste":
+        parsed, err = parse_war_block(text)
+        if err or not parsed:
+            await update.message.reply_text(
+                f"❌ *بلوک نامعتبر است:* {err or 'خطای ناشناخته'}\n\n"
+                "بلوک کامل (از #WAR تا #END) را دوباره بفرستید، یا از دکمه پرامپت مجدد استفاده کنید.",
+                parse_mode="Markdown"
+            )
+            return
+
+        war_data = ACTIVE_WAR_ANALYSES.get(user_id) or context.user_data.get("war_analysis", {})
+        att_key = war_data.get("attacker_key")
+        def_key = war_data.get("defender_key")
+        if not att_key or not def_key:
+            await update.message.reply_text("❌ اطلاعات نبرد یافت نشد. از /admin شروع کنید.", parse_mode="Markdown")
+            return
+
+        losses, notes = build_losses_from_block(parsed, att_key, def_key)
+        war_data["losses"] = losses
+        war_data["targets_text"] = parsed.get("note", "")
+        ACTIVE_WAR_ANALYSES[user_id] = war_data
+        context.user_data["war_analysis"] = war_data
+
+        a_info = config.COUNTRIES.get(att_key, {})
+        d_info = config.COUNTRIES.get(def_key, {})
+        prev = (
+            f"📋 *پیش‌نمایش تحلیل نبرد*\n"
+            f"{a_info.get('flag','')} *{a_info.get('name', att_key)}* ⚔️ {d_info.get('flag','')} *{d_info.get('name', def_key)}*\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"• تلفات نظامی مهاجم: *{losses['att_military_loss']:,}*\n"
+            f"• تلفات نظامی مدافع: *{losses['def_military_loss']:,}*\n"
+            f"• غیرنظامی: مهاجم {losses['att_civilian_loss']:,} | مدافع {losses['def_civilian_loss']:,}\n"
+        )
+        if losses["att_losses"]:
+            prev += "\n🔻 *تجهیزات مهاجم (مصرف/تلفات):*\n" + "\n".join(
+                f"  • {x['equipment_name']} → {x['amount']:,}" for x in losses["att_losses"][:12])
+        if losses["def_losses"]:
+            prev += "\n\n🔻 *تجهیزات مدافع (منهدم‌شده):*\n" + "\n".join(
+                f"  • {x['equipment_name']} → {x['amount']:,}" for x in losses["def_losses"][:12])
+        if parsed.get("note"):
+            prev += f"\n\n📝 _{parsed['note']}_"
+        if notes:
+            prev += "\n\n⚠️ " + "\n⚠️ ".join(notes)
+        prev += "\n\n✅ در صورت تایید، تلفات از دیتابیس کسر می‌شود."
+
+        keyboard = [
+            [InlineKeyboardButton("✅ تایید و کسر تلفات", callback_data="admin:war_manual_apply")],
+            [InlineKeyboardButton("🔁 دریافت مجدد پرامپت", callback_data="admin:war_manual_prompt")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")],
+        ]
+        await update.message.reply_text(prev, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
+
     elif input_type == "war_role_def":
         def_key = input_state["defender_key"]
         def_role_raw = update.message.text.strip()
@@ -1219,34 +1505,24 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         war_data["defender_key"] = def_key
         war_data["defender_role"] = def_role
-
-        await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
-
-        summary_text, losses, war_id, timeline_text, targets_text, territory_text = await asyncio.to_thread(war_analyzer.generate_war_analysis_report, att_key, def_key, att_role, def_role)
-
-        war_data["losses"] = losses
-        war_data["report_text"] = summary_text
-        war_data["targets_text"] = targets_text
-        war_data["war_id"] = war_id
         ACTIVE_WAR_ANALYSES[user_id] = war_data
         context.user_data["war_analysis"] = war_data
-        LATEST_WAR_ANALYSIS.update(war_data)
 
-        keyboard = [
-            [
-                InlineKeyboardButton("📋 گاه‌شماری نبرد", callback_data=f"war_view:timeline:{war_id}"),
-                InlineKeyboardButton("💥 آسیب‌های زیرساختی", callback_data=f"war_view:targets:{war_id}"),
-            ],
-            [
-                InlineKeyboardButton("🗺️ وضعیت خطوط مرزی", callback_data=f"war_view:territory:{war_id}"),
-                InlineKeyboardButton("📊 فاکتور تلفات", callback_data=f"war_view:losses:{war_id}"),
-            ],
-            [InlineKeyboardButton("✅ تایید و کسر آنی تلفات از دیتابیس", callback_data="admin:war_apply")],
-            [InlineKeyboardButton("📢 برودکست گزارش به بازیکنان", callback_data="admin:war_broadcast")],
-            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
-        ]
+        # خط تولید دستی: پرامپت آماده برای هوش مصنوعی خارجی
+        prompt = build_war_prompt(att_key, def_key, att_role, def_role)
+        war_data["war_prompt"] = prompt
+        context.user_data["admin_awaiting_input"] = {"type": "war_manual_paste", "attacker_key": att_key, "defender_key": def_key}
 
-        await update.message.reply_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await update.message.reply_text(
+            "🧠 *تحلیل نبرد — خط تولید دستی هوشمند*\n\n"
+            "۱️⃣ پرامپت زیر را کامل کپی کن و به هر هوش مصنوعی‌ای که دوست داری بده "
+            "(ChatGPT، Claude، Gemini و...).\n"
+            "۲️⃣ بلوک نتیجه‌ای که برمی‌گرداند (از #WAR تا #END) را عیناً همین‌جا بفرست.\n\n"
+            "_بات آن را اعتبارسنجی می‌کند، پیش‌نمایش می‌دهد و با تایید تو از دیتابیس کسر می‌کند._",
+            parse_mode="Markdown"
+        )
+        for i in range(0, len(prompt), 3800):
+            await update.message.reply_text(f"```\n{prompt[i:i+3800]}\n```", parse_mode="Markdown")
 
     elif input_type == "set_channel":
         db.set_setting("channel_id", text)
