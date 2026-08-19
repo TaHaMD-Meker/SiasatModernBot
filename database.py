@@ -596,8 +596,16 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
     try:
         with conn:
             cur = conn.cursor()
-            valid_items = [it for it in items if int(it.get("qty", 0) or 0) > 0]
+            # اقلام ویژه‌ی انسانی: mil_kia از نیروی فعال کسر می‌شود؛ wounded/civ فقط ثبت هستند
+            valid_items = [it for it in items if int(it.get("qty", 0) or 0) > 0 and it.get("special") != "wounded" and it.get("special") != "civ_kia"]
             for it in valid_items:
+                if it.get("special") == "mil_kia":
+                    cur.execute("SELECT active_personnel FROM countries WHERE id = ?", (country_id,))
+                    prow = cur.fetchone()
+                    ap = (prow["active_personnel"] or 0) if prow else 0
+                    if int(it["qty"]) > ap:
+                        raise ValueError(f"تلفات نظامی ({int(it['qty']):,}) بیشتر از نیروی فعال کشور ({ap:,}) است.")
+                    continue
                 cur.execute(
                     "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
                     (country_id, it["key"]),
@@ -610,6 +618,9 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                         f"تلفات «{it.get('name', it['key'])}» ({it['qty']:,}) بیشتر از موجودی ({(row['amount'] or 0):,}) است."
                     )
             for it in valid_items:
+                if it.get("special") == "mil_kia":
+                    cur.execute("UPDATE countries SET active_personnel = active_personnel - ? WHERE id = ?", (int(it["qty"]), country_id))
+                    continue
                 cur.execute(
                     "UPDATE country_assets SET amount = amount - ? WHERE country_id = ? AND equipment_key = ?",
                     (int(it["qty"]), country_id, it["key"]),
@@ -672,6 +683,9 @@ def revert_loss_report(report_id: int):
             items = json.loads(row["items_json"])
             for it in items:
                 if int(it.get("qty", 0) or 0) > 0:
+                    if it.get("special") == "mil_kia":
+                        cur.execute("UPDATE countries SET active_personnel = active_personnel + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
+                        continue
                     cur.execute(
                         "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
                         (int(it["qty"]), row["country_id"], it["key"]),
@@ -696,6 +710,9 @@ def delete_loss_report(report_id: int):
                 items = json.loads(row["items_json"])
                 for it in items:
                     if int(it.get("qty", 0) or 0) > 0:
+                        if it.get("special") == "mil_kia":
+                            cur.execute("UPDATE countries SET active_personnel = active_personnel + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
+                            continue
                         cur.execute(
                             "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
                             (int(it["qty"]), row["country_id"], it["key"]),

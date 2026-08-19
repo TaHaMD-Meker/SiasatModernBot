@@ -107,10 +107,10 @@ def match_asset_by_name(name: str, assets: list):
 
 
 def parse_loss_report_text(text: str):
-    """استخراج کشور، نام عملیات و اقلام (نام، تعداد، واحد) از متن گزارش استاندارد."""
+    """استخراج کشور، عملیات، اقلام تجهیزاتی و تلفات انسانی از متن گزارش استاندارد."""
     t = to_english_digits(str(text))
     lines = [ln.strip() for ln in t.splitlines()]
-    result = {"country": None, "op": "", "items": []}
+    result = {"country": None, "op": "", "items": [], "human": {"mil": 0, "wounded": 0, "civilians": 0}}
 
     # هدر: 📄 تلفات تجهیزات [پرچم] کشور — عملیات «نام»
     for ln in lines[:6]:
@@ -118,7 +118,7 @@ def parse_loss_report_text(text: str):
         if not m:
             continue
         rest = m.group(1)
-        mo = re.search(r"عملیات\s*[«\x27\x22]([^»\x27\x22]+)[»\x27\x22]", rest)
+        mo = re.search(r"عملیات\s*[«'\x22]([^»'\x22]+)[»'\x22]", rest)
         if mo:
             result["op"] = mo.group(1).strip()
         country_part = re.split(r"عملیات|—|–|-", rest)[0]
@@ -127,9 +127,18 @@ def parse_loss_report_text(text: str):
         result["country"] = country_part or None
         break
 
-    # اقلام: خط «تلفات: N واحد» + نزدیک‌ترین خط قبلی معتبر به‌عنوان نام تجهیز
-    for i, ln in enumerate(lines):
-        m = re.match(r"^[*•]?\s*تلفات\s*:?\s*([\d,٬]+)\s*(.*)$", ln)
+    # محل شروع بخش انسانی (اقلام تجهیزاتی قبل از آن می‌مانند)
+    human_start = len(lines)
+    for idx, ln in enumerate(lines):
+        if "تلفات انسانی" in ln:
+            human_start = idx
+            break
+
+    # اقلام تجهیزاتی: «تلفات: [حدود] N واحد» + نزدیک‌ترین خط قبلی معتبر = نام تجهیز
+    qty_pat = re.compile(r"^[*•]?\s*تلفات\s*:?\s*(?:حدود|تقریبا[ً]?|نزدیک|~|≈)?\s*([\d,٬]+)\s*(.*)$")
+    skip_markers = ("جمع تلفات", "وضعیت", "📄", "📌", "━━", "👥")
+    for i, ln in enumerate(lines[:human_start]):
+        m = qty_pat.match(ln)
         if not m:
             continue
         qty = int(m.group(1).replace(",", "").replace("٬", ""))
@@ -138,23 +147,41 @@ def parse_loss_report_text(text: str):
             prev = lines[j]
             if not prev or set(prev) <= {"-", "—", "━", " ", "*"}:
                 continue
-            if re.match(r"^[*•]?\s*تلفات\s*:", prev):
+            if qty_pat.match(prev):
                 continue
-            if any(k in prev for k in ("جمع تلفات", "وضعیت", "📄", "📌", "━━")):
+            if any(k in prev for k in skip_markers):
                 continue
-            cleaned = re.sub(r"^[^\wآ-ی]+", "", prev)  # حذف ایموجی/بولت ابتدای خط
+            cleaned = re.sub(r"^[^\wآ-ی]+", "", prev)
             cleaned = cleaned.replace("*", "").strip()
             if cleaned:
                 name = cleaned
                 break
         if name:
-            unit = (m.group(2) or "").strip()
-            result["items"].append((name, qty, unit))
+            result["items"].append((name, qty, (m.group(2) or "").strip()))
+
+    # بخش تلفات انسانی
+    if human_start < len(lines):
+        htxt = " ".join(lines[human_start:])
+
+        def _num_after(pat):
+            mm = re.search(pat, htxt)
+            if mm:
+                return int(mm.group(1).replace(",", "").replace("٬", ""))
+            return 0
+
+        result["human"]["wounded"] = _num_after(r"مجروح[^0-9]{0,50}(?:حدود|تقریبا[ً]?|نزدیک)?\s*([\d,٬]+)")
+        result["human"]["civilians"] = _num_after(r"(?:غیر\s?نظامی|شهروند)[^0-9]{0,50}(?:حدود|تقریبا[ً]?)?\s*([\d,٬]+)")
+        result["human"]["mil"] = _num_after(r"(?<!غیر)(?<!غیر )(?:نظامی|سرباز|کشته)[^0-9]{0,50}(?:حدود|تقریبا[ً]?)?\s*([\d,٬]+)")
+        if result["human"]["civilians"] and result["human"]["mil"] == result["human"]["civilians"]:
+            result["human"]["mil"] = 0
     return result
+
 
 # ---------- ساخت گزارش استاندارد ----------
 def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 وضعیت: تلفات ثبت شد.", note=None):
     from collections import OrderedDict
+    human_items = [it for it in items if it.get("special")]
+    items = [it for it in items if not it.get("special")]
     groups = OrderedDict()
     for it in items:
         groups.setdefault((it.get("subcat", "تجهیزات"), it.get("emoji", "📦")), []).append(it)
@@ -181,8 +208,12 @@ def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 و�
         lines.append(f"{emo} {sub}: {format_number(t)} {units[sub]}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━")
+    if human_items:
+        lines.append("\n👥 تلفات انسانی\n")
+        for it in human_items:
+            lines.append(f"{it.get('emoji', '👤')} {it.get('name')}: {format_number(int(it.get('qty', 0) or 0))} {it.get('unit', 'نفر')}")
     if note:
-        lines.append(f"📝 {note}")
+        lines.append(f"\n📝 {note}")
     lines.append(status_line)
     return "\n".join(lines)
 
@@ -625,6 +656,16 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_markup=_kb([[InlineKeyboardButton("🔁 دوباره", callback_data="ls:fast")]]),
             )
             return
+        h = parsed.get("human") or {}
+        if h.get("mil", 0) and h["mil"] > 0:
+            matched.append({"key": "__personnel_mil__", "name": "نیروهای نظامی (کشته)", "special": "mil_kia",
+                            "category": "Personnel", "subcat": "تلفات انسانی", "emoji": "🪖", "unit": "نفر", "qty": int(h["mil"])})
+        if h.get("wounded", 0) and h["wounded"] > 0:
+            matched.append({"key": "__personnel_wounded__", "name": "مجروحان", "special": "wounded",
+                            "category": "Personnel", "subcat": "تلفات انسانی", "emoji": "🏥", "unit": "نفر", "qty": int(h["wounded"])})
+        if h.get("civilians", 0) and h["civilians"] > 0:
+            matched.append({"key": "__personnel_civ__", "name": "غیرنظامیان (کشته)", "special": "civ_kia",
+                            "category": "Personnel", "subcat": "تلفات انسانی", "emoji": "👤", "unit": "نفر", "qty": int(h["civilians"])})
         draft = {
             "cid": country["id"], "cname": country["name"], "cflag": country["flag"],
             "op": parsed["op"], "note": "", "items": matched,
