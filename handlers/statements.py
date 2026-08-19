@@ -5,7 +5,6 @@
 """
 
 import os
-import asyncio
 import datetime
 import urllib.request
 import json
@@ -199,7 +198,6 @@ async def process_official_statement_input(update: Update, context: ContextTypes
 
 
 
-_LAST_GOOD_AI_MODEL = None
 
 # ---------- موتور بیانیه‌ساز دیپلماتیک نسخه ۲ (بدون تکرار) ----------
 
@@ -291,75 +289,8 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
     """رسمی‌سازی هوشمند متن محاوره‌ای به بیانیه ۳ سطری دیپلماتیک."""
     
     raw_text = update.message.text.strip()
-    await update.message.reply_text("✍️ **در حال رسمی‌سازی متن و نگارش بیانیه فاخر دیپلماتیک...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
+    polished_text = generate_diplomatic_statement(country['name'], raw_text)
 
-    openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY")
-    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-    api_key = openai_key or openrouter_key
-    polished_text = None
-
-    if api_key:
-        # فیکس: کلید OpenRouter قبلاً به آدرس OpenAI وصل می‌شد؛ اکنون درست تشخیص داده می‌شود
-        if not openai_key and openrouter_key:
-            api_base = "https://openrouter.ai/api/v1"
-            model_candidates = [
-                os.environ.get("AI_MODEL") or "z-ai/glm-5.2:free",
-                "openai/gpt-oss-20b:free",
-                "google/gemma-4-31b-it:free",
-                "nvidia/nemotron-3-super-120b-a12b:free",
-            ]
-        else:
-            api_base = "https://api.openai.com/v1"
-            model_candidates = [os.environ.get("AI_MODEL") or "gpt-4o-mini"]
-        global _LAST_GOOD_AI_MODEL
-        if _LAST_GOOD_AI_MODEL and _LAST_GOOD_AI_MODEL in model_candidates:
-            model_candidates = [_LAST_GOOD_AI_MODEL] + [m for m in model_candidates if m != _LAST_GOOD_AI_MODEL]
-        polished_text = None
-        for model_name in model_candidates:
-          try:
-            prompt = f"""شما یک دیپلمات ارشد بین‌المللی و سخنگوی دولت {country['name']} هستید.
-متن خام/محاوره‌ای زیر را به یک بیانیه رسمی، فاخر، سنگین و کارشناسی (حداقل در ۳ سطر) تبدیل کن.
-
-قواعد الزامی زبان:
-- فقط و فقط فارسیِ روان و رسمی بنویس؛ به کار بردن حتی یک کلمه انگلیسی یا لاتین بهشدت ممنوع است.
-- به جای واژه‌های خارجی، معادل دقیق فارسی به کار ببر (مثلاً «کمک بشردوستانه» به جای aid یا «مداخله» به جای intervention).
-- جمله‌بندی طبیعی و بومی فارسی باشد، نه ترجمه تحت‌اللفظی از زبان دیگر.
-
-در هر بار نگارش، لحن و جمله‌بندی متفاوتی به کار ببر (دیپلماتیک، قاطع، هشدارآمیز، همبستگی‌محور و...) و از کلیشه‌های تکراری پرهیز کن.
-
-متن خام:
-"{raw_text}"
-
-نکته مهم: فقط و فقط متن رسمی بازنویسی‌شده را بازگردان بدون هیچ توضیحات اضافی یا کلمات مقدماتی.
-"""
-            url = api_base + "/chat/completions"
-            data = {
-                "model": model_name,
-                "messages": [{"role": "system", "content": "You are a senior diplomatic speechwriter. Vary tone, structure and vocabulary every time; never repeat your previous phrasings."}, {"role": "user", "content": prompt}],
-                "temperature": 0.7
-            }
-            def _ai_call():
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(data).encode("utf-8"),
-                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=20) as response:
-                    return json.loads(response.read().decode("utf-8"))
-
-            # اجرا در نخ جدا تا حلقه‌ی رویداد بات فریز نشود
-            res = await asyncio.to_thread(_ai_call)
-            polished_text = res["choices"][0]["message"]["content"].strip()
-            _LAST_GOOD_AI_MODEL = model_name
-            break
-          except Exception as e:
-            print(f"AI Rewriter error ({model_name}): {e}")
-            continue
-
-    if not polished_text:
-        # موتور بیانیه‌ساز دیپلماتیک نسخه ۲ (متنوع و بدون تکرار)
-        polished_text = generate_diplomatic_statement(country['name'], raw_text)
 
     # Output ONLY polished text in 1 message for easy copying
     if "`" not in polished_text:
