@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 
 import database as db
 import config
+import asyncio
 import war_analyzer
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
@@ -695,7 +696,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         await query.edit_message_text("🧠 **در حال پردازش سناریوی نبرد و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
-        summary_text, losses, war_id, timeline_text, targets_text, territory_text = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role)
+        summary_text, losses, war_id, timeline_text, targets_text, territory_text = await asyncio.to_thread(war_analyzer.generate_war_analysis_report, att_key, def_key, att_role)
 
         war_data["defender_key"] = def_key
         war_data["losses"] = losses
@@ -1221,7 +1222,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
         await update.message.reply_text("🧠 **در حال پردازش سناریوی نبرد بر اساس رول هر دو طرف و برآورد هوشمند تلفات...**\nلطفاً شکیبا باشید...", parse_mode="Markdown")
 
-        summary_text, losses, war_id, timeline_text, targets_text, territory_text = war_analyzer.generate_war_analysis_report(att_key, def_key, att_role, def_role)
+        summary_text, losses, war_id, timeline_text, targets_text, territory_text = await asyncio.to_thread(war_analyzer.generate_war_analysis_report, att_key, def_key, att_role, def_role)
 
         war_data["losses"] = losses
         war_data["report_text"] = summary_text

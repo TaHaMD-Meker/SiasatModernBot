@@ -5,6 +5,7 @@
 """
 
 import os
+import asyncio
 import datetime
 import urllib.request
 import json
@@ -337,17 +338,21 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
                 "messages": [{"role": "system", "content": "You are a senior diplomatic speechwriter. Vary tone, structure and vocabulary every time; never repeat your previous phrasings."}, {"role": "user", "content": prompt}],
                 "temperature": 0.7
             }
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(data).encode("utf-8"),
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=20) as response:
-                res = json.loads(response.read().decode("utf-8"))
-                polished_text = res["choices"][0]["message"]["content"].strip()
-                _LAST_GOOD_AI_MODEL = model_name
-                break
+            def _ai_call():
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(data).encode("utf-8"),
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=20) as response:
+                    return json.loads(response.read().decode("utf-8"))
+
+            # اجرا در نخ جدا تا حلقه‌ی رویداد بات فریز نشود
+            res = await asyncio.to_thread(_ai_call)
+            polished_text = res["choices"][0]["message"]["content"].strip()
+            _LAST_GOOD_AI_MODEL = model_name
+            break
           except Exception as e:
             print(f"AI Rewriter error ({model_name}): {e}")
             continue
