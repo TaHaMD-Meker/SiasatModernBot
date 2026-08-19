@@ -312,12 +312,29 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     tweet_text = update.message.text.strip()
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
-    # ارسال مستقیم متن توییت بازیکن بدون قالب اضافی + حفظ فرمت‌بندی خود بازیکن
+    # قالب استاندارد توییت + حفظ فرمت‌بندی خود بازیکن (بولد/نقل‌قول/اسپویلر و...)
+    user_handle = f"@{update.effective_user.username}" if update.effective_user.username else (update.effective_user.first_name or "حساب رسمی")
     try:
-        tweet_card_md = update.message.text_html or tweet_text
+        body_html = update.message.text_html or tweet_text
     except Exception:
-        tweet_card_md = tweet_text
-    tweet_card_plain = tweet_text
+        body_html = tweet_text
+
+    tweet_card_md = (
+        "🐦 <b>«توییت رسمی کشوری»</b>\n"
+        f"🪐 کشور: {country['flag']} {country['name']}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{body_html}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🔹 {user_handle} | حساب رسمی"
+    )
+    tweet_card_plain = (
+        "🐦 «توییت رسمی کشوری»\n"
+        f"🪐 کشور: {country['flag']} {country['name']}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{tweet_text}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🔹 {user_handle} | حساب رسمی"
+    )
 
     # Multi-tier resilient post to Channel
     posted_to_channel = False
