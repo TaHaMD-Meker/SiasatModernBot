@@ -406,6 +406,17 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         attacker_key, defender_key, attacker_role, defender_role, balance
     )
 
+    # تعیین تلفات توسط هوش مصنوعی واقعی (اختیاری) — همیشه درون بازه‌های امن
+    try:
+        ai_loss = ai_war_losses(
+            att_name, def_name, op_type, balance, att_assets, def_assets,
+            losses.get("att_fired", []), attacker_role, defender_role, losses
+        )
+    except Exception:
+        ai_loss = None
+    if ai_loss:
+        losses = apply_ai_loss_guardrails(losses, ai_loss, att_assets, def_assets)
+
     weapon_breakdown = calculate_weapon_breakdown(losses.get("att_fired") or losses["att_losses"], balance)
 
     # ۱. کارت خلاصه اصلی گزارش نبرد
@@ -559,6 +570,166 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
                 return parsed
         except Exception as e:
             print(f"AI war narrative error ({model_name}, trying next): {e}")
+            continue
+    return None
+
+
+def apply_ai_loss_guardrails(base: dict, ai: dict, att_assets, def_assets) -> dict:
+    """اعمال تلفات پیشنهادی هوش مصنوعی درون بازه‌های امن.
+
+    موتور بازی baseline می‌سازد؛ هوش مصنوعی اعداد را با خواندن رول واقعی دو طرف
+    واقعی‌تر تنظیم می‌کند و این تابع خروجی را به بازه‌های منطقی محدود می‌کند تا
+    خطای مدل هرگز اقتصاد بازی را نابود نکند.
+    """
+    def clamp(v, lo, hi):
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            return lo
+        return max(lo, min(hi, v))
+
+    out = dict(base)
+    out["att_military_loss"] = clamp(ai.get("att_military_loss", base["att_military_loss"]), 0, base["att_military_loss"] * 3 + 50)
+    out["def_military_loss"] = clamp(ai.get("def_military_loss", base["def_military_loss"]), int(base["def_military_loss"] * 0.4), base["def_military_loss"] * 3 + 200)
+    out["att_civilian_loss"] = clamp(ai.get("att_civilian_loss", 0), 0, base["att_civilian_loss"] * 3 + 30)
+    out["def_civilian_loss"] = clamp(ai.get("def_civilian_loss", 0), 0, base["def_civilian_loss"] * 4 + 60)
+
+    def fix_equipment(ai_list, base_list, assets, is_attacker):
+        stock, info = {}, {}
+        for a in assets:
+            k = a.get("equipment_key") or a.get("key")
+            if k:
+                stock[k] = a.get("amount", a.get("initial", 0)) or 0
+                info[k] = (
+                    a.get("equipment_name") or a.get("name") or k,
+                    a.get("category", ""),
+                    a.get("buy_price", a.get("price", 1_000_000)) or 1_000_000,
+                )
+        base_map = {x["equipment_key"]: x["amount"] for x in base_list}
+        out_list = []
+        # مصرف پرتابه‌های مهاجم (موشک/پهپاد) فیزیک عملیات است و دست‌نخورده می‌ماند
+        if is_attacker:
+            for x in base_list:
+                if x.get("category") in ("Missiles", "UAV"):
+                    out_list.append(dict(x))
+        for it in (ai_list or []):
+            k = it.get("key") or it.get("equipment_key")
+            try:
+                amt = int(it.get("amount", 0))
+            except (TypeError, ValueError):
+                continue
+            if not k or k not in stock or amt <= 0:
+                continue
+            name, cat, price = info[k]
+            if is_attacker and cat in ("Missiles", "UAV"):
+                continue
+            cap = min(stock[k], max(int(stock[k] * 0.35), base_map.get(k, 0) * 3, 3))
+            amt = max(1, min(amt, cap))
+            out_list.append({"equipment_key": k, "equipment_name": name, "amount": amt, "category": cat, "price": price})
+        if not out_list:
+            out_list = [dict(x) for x in base_list]
+        return out_list
+
+    out["att_losses"] = fix_equipment(ai.get("att_losses"), base["att_losses"], att_assets, True)
+    out["def_losses"] = fix_equipment(ai.get("def_losses"), base["def_losses"], def_assets, False)
+    return out
+
+
+def ai_war_losses(att_name, def_name, op_type, balance, att_assets, def_assets, att_fired, attacker_role, defender_role, base_losses):
+    """تعیین تلفات نبرد توسط هوش مصنوعی واقعی (اختیاری — همان زنجیره مدل‌ها).
+
+    موتور بازی baseline تولید می‌کند؛ هوش مصنوعی با خواندن رول‌های واقعی دو طرف،
+    اعداد را واقعی‌تر تنظیم می‌کند. خروجی همیشه از apply_ai_loss_guardrails عبور می‌کند.
+    در نبود کلید یا خطا None برمی‌گردد و baseline باقی می‌ماند.
+    """
+    openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = openai_key or openrouter_key
+    if not api_key:
+        return None
+    if not openai_key and openrouter_key:
+        api_base = "https://openrouter.ai/api/v1"
+        model_candidates = [
+            os.environ.get("AI_MODEL") or "z-ai/glm-5.2:free",
+            "openai/gpt-oss-20b:free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+        ]
+    else:
+        api_base = "https://api.openai.com/v1"
+        model_candidates = [os.environ.get("AI_MODEL") or "gpt-4o-mini"]
+
+    def summarize(assets, limit):
+        items = sorted(assets, key=lambda a: -(a.get("amount", a.get("initial", 0)) or 0))
+        return "\n".join(
+            f"{(a.get('equipment_key') or a.get('key'))}: {(a.get('equipment_name') or a.get('name') or '')[:28]} | {a.get('category', '')} | موجودی {max(1, (a.get('amount', a.get('initial', 0)) or 0)):,}"
+            for a in items[:limit]
+        )
+
+    fired_str = ", ".join(f"{x['equipment_name']}×{x['amount']}" for x in (att_fired or [])[:16]) or "-"
+
+    prompt = f"""شما تحلیلگر ارشد نظامی هستید. بر اساس رول‌های واقعی دو طرف، تلفات نهایی این نبرد را تعیین کن.
+
+نبرد: {att_name} (مهاجم) علیه {def_name} (مدافع) | نرخ عبور پرتابه‌ها: {int(balance['penetration_rate']*100)}٪ | نرخ رهگیری: {int(balance['intercept_rate']*100)}٪
+
+نیروهای درگیر مهاجم (در رول ذکر شده): {fired_str}
+موجودی کلیدی مهاجم:
+{summarize(att_assets, 14)}
+موجودی کلیدی مدافع:
+{summarize(def_assets, 22)}
+
+رول مهاجم (خلاصه):
+{(attacker_role or '')[:1400]}
+رول مدافع (خلاصه):
+{(defender_role or '')[:600]}
+
+برآورد اولیه موتور بازی (پایه و میزان):
+- تلفات نظامی مهاجم: {base_losses['att_military_loss']:,} | مدافع: {base_losses['def_military_loss']:,}
+- غیرنظامی (مدافع): {base_losses['def_civilian_loss']:,}
+- تجهیزات مهاجم (کلید: مقدار): {', '.join(f"{x['equipment_key']}:{x['amount']}" for x in base_losses['att_losses'][:14]) or '-'}
+- تجهیزات مدافع (کلید: مقدار): {', '.join(f"{x['equipment_key']}:{x['amount']}" for x in base_losses['def_losses'][:18]) or '-'}
+
+قواعد الزامی:
+- فقط از کلیدهای تجهیزات داده‌شده استفاده کن و از موجودی بیشتر کسر نکن.
+- مصرف موشک/پهپاد مهاجم قبلاً ثابت شده؛ آن را تغییر نده (فقط تلفات تجهیزات دیگر و انسانی).
+- تلفات باید با شدت عملیات، نرخ عبور و نسبت قوا سازگار و واقع‌گرایانه باشد.
+- همه اعداد صحیح و غیرمنفی.
+
+فقط و فقط JSON معتبر بازگردان:
+{{"att_military_loss": 0, "att_civilian_loss": 0, "def_military_loss": 0, "def_civilian_loss": 0,
+ "att_losses": [{{"key": "...", "amount": 0}}], "def_losses": [{{"key": "...", "amount": 0}}]}}"""
+
+    global _LAST_GOOD_AI_MODEL
+    if _LAST_GOOD_AI_MODEL and _LAST_GOOD_AI_MODEL in model_candidates:
+        model_candidates = [_LAST_GOOD_AI_MODEL] + [m for m in model_candidates if m != _LAST_GOOD_AI_MODEL]
+
+    for model_name in model_candidates:
+        try:
+            data = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": "You are a rigorous military casualty analyst. Always answer with strict JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.55,
+            }
+            req = urllib.request.Request(
+                api_base + "/chat/completions",
+                data=json.dumps(data).encode("utf-8"),
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=25) as response:
+                res = json.loads(response.read().decode("utf-8"))
+            content = res["choices"][0]["message"]["content"].strip()
+            if content.startswith("```"):
+                content = content.strip("`").lstrip("json").strip()
+            parsed = json.loads(content)
+            if isinstance(parsed, dict) and ("def_military_loss" in parsed or "def_losses" in parsed):
+                _LAST_GOOD_AI_MODEL = model_name
+                return parsed
+        except Exception as e:
+            print(f"AI war losses error ({model_name}, trying next): {e}")
             continue
     return None
 
