@@ -806,6 +806,58 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
         def_military_loss = max(150, int((random.randint(300, 800) * pen_rate + tech_diff * 25) * def_scale))
         def_civilian_loss = max(10, int(random.randint(20, 80) * pen_rate))
 
+    # ---------- نسخه ۷.۲: خسارت مدافع متناسب با قدرت ضربتی نفوذکرده‌ی مهاجم ----------
+    try:
+        ratio = balance.get("att_strike_power", 1) / max(1.0, balance.get("def_shield_power", 1))
+        power_mult = 1.0 + min(4.0, ratio / 2.0)
+
+        pen_units = 0
+        for _it in att_fired:
+            pen_units += (_it.get("amount", 0) or 0) * pen_rate
+
+        # ۱) تلفات انسانی اضافه‌ی مدافع از آتش نفوذکرده
+        if op_type in ("ground_invasion", "combined_arms"):
+            extra_personnel = int(pen_units * random.uniform(1.2, 2.4) * power_mult)
+        else:
+            extra_personnel = int(pen_units * random.uniform(0.8, 1.6) * power_mult)
+        def_military_loss += min(35_000, extra_personnel)
+
+        # ۲) بودجه انهدام تجهیزات مدافع بر اساس شدت ضربه
+        destroy_budget = int(pen_units * random.uniform(0.08, 0.16) * power_mult)
+        if destroy_budget > 0 and def_assets:
+            priority = {"Air Defense": 0.40, "Ground Forces": 0.25, "Artillery": 0.20, "UAV": 0.10, "Missiles": 0.05}
+            pools = {}
+            for item in def_assets:
+                cat = item.get("category")
+                amt = item.get("amount", item.get("initial", 0)) or 0
+                if cat in priority and amt > 0:
+                    pools.setdefault(cat, []).append((item, amt))
+            for cat, share in priority.items():
+                budget = int(destroy_budget * share)
+                if budget <= 0 or cat not in pools:
+                    continue
+                cat_pool = pools[cat][:]
+                random.shuffle(cat_pool)
+                for item, amt in cat_pool:
+                    if budget <= 0:
+                        break
+                    max_kill = max(1, int(amt * 0.30))  # هر آیتم حداکثر ۳۰٪ موجودی‌اش آسیب می‌بیند
+                    kill = min(budget, max_kill)
+                    k = item.get("equipment_key") or item.get("key")
+                    nm = item.get("equipment_name") or item.get("name") or k
+                    pr = item.get("buy_price", item.get("price", 1_000_000)) or 1_000_000
+                    existing = next((x for x in def_losses if x["equipment_key"] == k), None)
+                    if existing:
+                        existing["amount"] = max(existing["amount"], kill)
+                    else:
+                        def_losses.append({
+                            "equipment_key": k, "equipment_name": nm,
+                            "amount": kill, "category": cat, "price": pr,
+                        })
+                    budget -= kill
+    except Exception as _e:
+        print(f"defender damage scaling error: {_e}")
+
     return {
         "att_losses": att_losses,
         "def_losses": def_losses,
