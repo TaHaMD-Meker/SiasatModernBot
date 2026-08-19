@@ -313,7 +313,13 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
           try:
             prompt = f"""شما یک دیپلمات ارشد بین‌المللی و سخنگوی دولت {country['name']} هستید.
 متن خام/محاوره‌ای زیر را به یک بیانیه رسمی، فاخر، سنگین و کارشناسی (حداقل در ۳ سطر) تبدیل کن.
-در هر بار نگارش، لحن و جمله‌بندی کاملاً متفاوتی به کار ببر (دیپلماتیک، قاطع، هشدارآمیز، همبستگی‌محور و...) و از کلیشه‌های تکراری پرهیز کن.
+
+قواعد الزامی زبان:
+- فقط و فقط فارسیِ روان و رسمی بنویس؛ به کار بردن حتی یک کلمه انگلیسی یا لاتین بهشدت ممنوع است.
+- به جای واژه‌های خارجی، معادل دقیق فارسی به کار ببر (مثلاً «کمک بشردوستانه» به جای aid یا «مداخله» به جای intervention).
+- جمله‌بندی طبیعی و بومی فارسی باشد، نه ترجمه تحت‌اللفظی از زبان دیگر.
+
+در هر بار نگارش، لحن و جمله‌بندی متفاوتی به کار ببر (دیپلماتیک، قاطع، هشدارآمیز، همبستگی‌محور و...) و از کلیشه‌های تکراری پرهیز کن.
 
 متن خام:
 "{raw_text}"
@@ -324,9 +330,7 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
             data = {
                 "model": model_name,
                 "messages": [{"role": "system", "content": "You are a senior diplomatic speechwriter. Vary tone, structure and vocabulary every time; never repeat your previous phrasings."}, {"role": "user", "content": prompt}],
-                "temperature": 0.95,
-                "presence_penalty": 0.6,
-                "frequency_penalty": 0.5
+                "temperature": 0.7
             }
             req = urllib.request.Request(
                 url,

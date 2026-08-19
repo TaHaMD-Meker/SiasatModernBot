@@ -509,6 +509,7 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
 
     prompt = f"""شما یک تحلیلگر ارشد نظامی هستید. بر اساس «اعداد قطعی» زیر، گزارش کارشناسی فارسی بنویس.
 اعداد را هرگز تغییر نده یا جدید از خودت نساز؛ فقط روایت کن. لحن رسمی، فاخر و بدون ایموجی اضافی.
+قواعد الزامی زبان: فقط و فقط فارسی روان و رسمی؛ به کار بردن هر واژه انگلیسی/لاتین ممنوع است و به جای آن معادل فارسی دقیق بنویس.
 
 نبرد: {att_name} علیه {def_name} — نوع: {op_labels.get(op_type, op_type)}
 نرخ عبور پرتابه‌ها: {int(balance['penetration_rate']*100)}٪ | نرخ رهگیری پدافند: {int(balance['intercept_rate']*100)}٪
@@ -531,7 +532,7 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
                     {"role": "system", "content": "You are a senior military analyst writing formal Persian battle reports. Always answer with strict JSON only."},
                     {"role": "user", "content": prompt},
                 ],
-                "temperature": 0.85,
+                "temperature": 0.7,
             }
             req = urllib.request.Request(
                 api_base + "/chat/completions",
