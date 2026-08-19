@@ -340,7 +340,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 "📌 **تنگه‌های استراتژیک بازی:**\n"
                 "• **تنگه هرمز:** تحت تسلط 🇮🇷 ایران\n"
                 "• **کانال سوئز:** تحت تسلط 🇪🇬 مصر\n"
-                "• **تنگه باب‌المندب:** تحت تسلط 🇾🇪 حزب‌الله و جبهه مقاومت\n"
+                "• **تنگه باب‌المندب:** تحت تسلط 🇾🇪 یمن (کشور غیرقابل بازی فعلاً — قابل انسداد نیست)\n"
                 "• **تنگه بسفر (مونترو):** تحت تسلط 🇹🇷 ترکیه\n"
                 "• **تنگه مالاکا:** تحت تسلط 🇮🇳 هند\n"
                 "• **تنگه تایوان:** تحت تسلط 🇨🇳 چین و 🇹🇼 تایوان"
@@ -386,6 +386,22 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         s_key = strait_info["strait_key"]
         s_name = strait_info["name"]
+
+        # گارد واقع‌گرایی: برای انسداد یا عوارض، داشتن نیروی دریایی فعال الزامی است
+        if act in ("block", "toll"):
+            navy_assets = db.get_country_assets(country["id"], category="Navy") or []
+            navy_strength = sum((a.get("amount", 0) or 0) for a in navy_assets)
+            navy_value = sum((a.get("amount", 0) or 0) * (a.get("buy_price", 0) or 0) for a in navy_assets)
+            if navy_strength < 3 or navy_value < 2_000_000:
+                await query.edit_message_text(
+                    "❌ **امکان اعمال اقتدار دریایی وجود ندارد.**\n\n"
+                    "برای مسدودسازی یا اخذ عوارض از یک تنگه‌ی استراتژیک، کشور شما باید حداقل "
+                    "**۳ شناور رزمی فعال** با ارزش مجموع **۲ میلیون دلار** در نیروی دریایی داشته باشد.\n\n"
+                    "💡 از فروشگاه → نیروی دریایی، ناوگان خود را تقویت کنید.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                    parse_mode="Markdown"
+                )
+                return
 
         if act == "block":
             db.set_strait_status(s_key, "blocked")

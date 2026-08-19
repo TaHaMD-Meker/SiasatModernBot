@@ -356,6 +356,11 @@ def init_db():
     except Exception:
         pass
 
+    try:
+        fix_bab_el_mandeb_status()
+    except Exception:
+        pass
+
 
 def fix_legacy_grain_scale():
     """مایگریشن یک‌باره (v1): اصلاح موجودی غلات کشورهای ساخته‌شده با مقیاس قدیمی.
@@ -542,6 +547,20 @@ def fix_india_oil_reserves():
             conn.close()
         except Exception:
             pass
+
+
+def fix_bab_el_mandeb_status():
+    """مایگریشن v6: بازگردانی باب‌المندب.
+
+    مالکیت اشتباه باب‌المندب به حزب‌الله داده شده بود (کشور بدون ساحل دریای سرخ)؛
+    با حذف آن مالکیت، هر وضعیت انسداد/عوارض باقی‌مانده از آن دوران یک‌بار بازنشانی می‌شود.
+    """
+    if get_setting("bab_el_mandeb_reset_v1"):
+        return
+    if get_setting("strait_status_bab_el_mandeb") in ("blocked", "toll"):
+        set_setting("strait_status_bab_el_mandeb", "open")
+        print("[bab-el-mandeb] strait status reset to open (invalid owner removed).")
+    set_setting("bab_el_mandeb_reset_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 
 # ---------- کشورها ----------
@@ -1690,12 +1709,6 @@ STRAITS_MAPPING = {
         "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
         "desc": "گلوگاه ترانزیت دریای سرخ و باب‌المندب (کلید امنیت کشتیرانی تجاری به کانال سوئز)",
         "affected_keys": ["israel", "usa", "uk", "france", "germany", "egypt", "saudi"]
-    },
-    "hezbollah": {
-        "strait_key": "bab_el_mandeb",
-        "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
-        "desc": "گلوگاه امنیت دریای سرخ و باب‌المندب",
-        "affected_keys": ["israel", "usa", "uk", "france", "germany"]
     },
     "turkey": {
         "strait_key": "bosphorus",
