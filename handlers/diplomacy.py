@@ -213,7 +213,16 @@ async def dip_blockade_start(query, context, country):
     countries = db.get_all_countries()
     other_countries = [c for c in countries if c["id"] != country["id"]]
 
-    text = f"⚓ **عملیات محاصره دریایی بین‌المللی — ناوگان {country['flag']} {country['name']}**\n\nلطفاً کشور هدف جهت مسدودسازی بنادر و خطوط دریایی را انتخاب کنید:"
+    text = (
+        f"⚓ **عملیات محاصره دریایی بین‌المللی — ناوگان {country['flag']} {country['name']}**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "⚠️ **شرایط و هزینه‌های استقرار محاصره دریایی:**\n"
+        f"• **هزینه اولیه اعزام ناوگان:** {format_money(10_000_000)}\n"
+        f"• **سوخت اولیه ناوگان:** {format_oil(500_000)}\n"
+        "• **سقف مجاز روزانه:** ۱ عملیات محاصره جدید در هر روز (۲۴ ساعت)\n"
+        "• **برتری نظامی:** قدرت رزمی ناوگان شما باید حداقل ۱۲۰٪ ناوگان هدف باشد.\n\n"
+        "لطفاً کشور هدف جهت مسدودسازی بنادر و خطوط دریایی را انتخاب کنید:"
+    )
 
     row = []
     for c in other_countries:
@@ -471,6 +480,42 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_text("❌ کشور هدف پیدا نشد.", parse_mode="Markdown")
             return
 
+        today_str = datetime.date.today().isoformat()
+        if country.get("last_blockade_date") == today_str:
+            await query.edit_message_text(
+                "⏳ **سقف مجاز روزانه عملیات دریایی:**\n━━━━━━━━━━━━━━━━━━\n\n"
+                "کشور شما امروز یک بار اقدام به اجرای محاصره دریایی نموده است.\n"
+                "جهت حفظ تعادل ژئوپلیتیک و جلوگیری از اسپم عملیاتی، هر کشور در هر روز تنها **۱ بار** مجاز به آغاز محاصره جدید دریایی می‌باشد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        BLOCKADE_MONEY_COST = 10_000_000
+        BLOCKADE_OIL_COST = 500_000
+
+        if country.get("treasury", 0) < BLOCKADE_MONEY_COST:
+            await query.edit_message_text(
+                f"💰 **عدم تکافوی تمکن مالی:**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **هزینه اولیه اعزام ناوگان محاصره:** {format_money(BLOCKADE_MONEY_COST)}\n"
+                f"• **موجودی خزانه شما:** {format_money(country.get('treasury', 0))}\n\n"
+                "برای استقرار ناودسته‌ها و پشتیبانی لجستیک، خزانه شما کافی نمی‌باشد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        if country.get("oil_reserves", 0) < BLOCKADE_OIL_COST:
+            await query.edit_message_text(
+                f"🛢️ **عدم تکافوی ذخایر سوخت و نفت:**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **سوخت اولیه مورد نیاز ناوگان:** {format_oil(BLOCKADE_OIL_COST)}\n"
+                f"• **ذخایر نفت فعلی شما:** {format_oil(country.get('oil_reserves', 0))}\n\n"
+                "برای سوخت‌رسانی سنگین به ناوشکن‌ها و شناورهای ناوگان محاصره‌کننده، به ذخایر نفت بیشتری نیاز دارید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
         blockader_power = db.calculate_naval_power(country["id"])
         target_power = db.calculate_naval_power(target_id)
         required_power = int(target_power * 1.2)
@@ -487,6 +532,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        # Deduct deployment costs & log
+        db.adjust_treasury(country["id"], -BLOCKADE_MONEY_COST)
+        db.adjust_oil(country["id"], -BLOCKADE_OIL_COST)
+        db.add_transaction(country["id"], "blockade_deploy", f"هزینه اولیه اعزام ناوگان و سوخت محاصره بنادر {target_c['name']}", -BLOCKADE_MONEY_COST)
+
+        # Update last blockade date
+        db.update_country_field(country["id"], "last_blockade_date", today_str)
+
+        # Execute naval blockade
         db.create_naval_blockade(country["id"], target_id)
 
         new_app = max(0, target_c.get("approval_rating", 80) - 15)
@@ -509,7 +563,9 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 pass
 
         await query.edit_message_text(
-            f"⚓ **عملیات محاصره دریایی علیه کشور {target_c['flag']} {target_c['name']} با موفقیت اجرا شد.**\n\n"
+            f"⚓ **عملیات محاصره دریایی علیه کشور {target_c['flag']} {target_c['name']} با موفقیت اجرا شد.**\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"• **هزینه پرداختی خزانه:** {format_money(BLOCKADE_MONEY_COST)}\n"
+            f"• **سوخت مصرفی ناوگان:** {format_oil(BLOCKADE_OIL_COST)}\n"
             f"• **قدرت ناوگان شما:** {blockader_power:,} امتیاز\n"
             f"• **قدرت ناوگان هدف:** {target_power:,} امتیاز\n\n"
             "📢 خبر فوری این حادثه ژئوپلیتیک در کانال رسمی منتشر گردید.",
