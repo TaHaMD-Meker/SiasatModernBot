@@ -123,7 +123,14 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 def main():
     db.init_db()
 
-    app = Application.builder().token(config.BOT_TOKEN).build()
+    # concurrent_updates: پردازش موازی پیام‌ها — یک درخواست کند (مثل تحلیل AI)
+    # نباید بقیه‌ی بازیکن‌ها را در صف قفل کند
+    app = (
+        Application.builder()
+        .token(config.BOT_TOKEN)
+        .concurrent_updates(True)
+        .build()
+    )
 
     # هاندرهای ثبت‌نام و انتخاب کشور
     for handler in get_start_handlers():
