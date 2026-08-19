@@ -198,6 +198,8 @@ async def process_official_statement_input(update: Update, context: ContextTypes
 
 
 
+_LAST_GOOD_AI_MODEL = None
+
 # ---------- موتور بیانیه‌ساز دیپلماتیک نسخه ۲ (بدون تکرار) ----------
 
 import random
@@ -308,6 +310,9 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
         else:
             api_base = "https://api.openai.com/v1"
             model_candidates = [os.environ.get("AI_MODEL") or "gpt-4o-mini"]
+        global _LAST_GOOD_AI_MODEL
+        if _LAST_GOOD_AI_MODEL and _LAST_GOOD_AI_MODEL in model_candidates:
+            model_candidates = [_LAST_GOOD_AI_MODEL] + [m for m in model_candidates if m != _LAST_GOOD_AI_MODEL]
         polished_text = None
         for model_name in model_candidates:
           try:
@@ -338,9 +343,10 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=20) as response:
                 res = json.loads(response.read().decode("utf-8"))
                 polished_text = res["choices"][0]["message"]["content"].strip()
+                _LAST_GOOD_AI_MODEL = model_name
                 break
           except Exception as e:
             print(f"AI Rewriter error ({model_name}): {e}")

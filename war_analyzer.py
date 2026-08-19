@@ -468,6 +468,9 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
     return summary_text, losses, war_id, timeline_text, targets_text, territory_text
 
 
+_LAST_GOOD_AI_MODEL = None
+
+
 def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakdown, attacker_role, defender_role):
     """روایت گزارش نبرد با هوش مصنوعی واقعی (اختیاری).
 
@@ -524,6 +527,10 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
 فقط و فقط یک JSON معتبر با این ساختار بازگردان (بدون هیچ توضیح اضافی):
 {{"timeline": "متن گاه‌شماری نبرد با ساعت‌های فرضی متفاوت (۸ تا ۱۲ سطر)", "targets": "متن آسیب‌های زیرساختی و اهداف استراتژیک متناسب با نرخ عبور (۶ تا ۹ سطر)", "territory": "متن وضعیت خطوط مرزی و عمق پیشروی متناسب با نوع عملیات و نرخ عبور (۴ تا ۶ سطر)"}}"""
 
+    global _LAST_GOOD_AI_MODEL
+    if _LAST_GOOD_AI_MODEL and _LAST_GOOD_AI_MODEL in model_candidates:
+        model_candidates = [_LAST_GOOD_AI_MODEL] + [m for m in model_candidates if m != _LAST_GOOD_AI_MODEL]
+
     for model_name in model_candidates:
         try:
             data = {
@@ -540,7 +547,7 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=20) as response:
                 res = json.loads(response.read().decode("utf-8"))
             content = res["choices"][0]["message"]["content"].strip()
             # حذف بلوک کد احتمالی
@@ -548,6 +555,7 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
                 content = content.strip("`").lstrip("json").strip()
             parsed = json.loads(content)
             if isinstance(parsed, dict) and parsed.get("timeline"):
+                _LAST_GOOD_AI_MODEL = model_name
                 return parsed
         except Exception as e:
             print(f"AI war narrative error ({model_name}, trying next): {e}")
