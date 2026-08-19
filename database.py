@@ -673,7 +673,8 @@ def update_country_field(country_id: int, field: str, value):
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
         "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
-        "approval_rating", "grain_daily", "tech_level"
+        "approval_rating", "grain_daily", "tech_level",
+        "combat_readiness", "last_drill_date", "daily_drill_count", "username", "country_key"
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
