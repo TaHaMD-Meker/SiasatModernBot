@@ -1253,9 +1253,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await menu_oil(query, c_id)
 
     elif data.startswith("admin:asset_cat:"):
-        parts = data.split(":", 2)
-        if len(parts) == 3:
-            await menu_assets_category(query, int(parts[1]), parts[2])
+        parts = data.split(":")
+        if len(parts) >= 4:
+            await menu_assets_category(query, int(parts[2]), ":".join(parts[3:]))
         return
 
     elif data.startswith("admin:menu_assets:"):
