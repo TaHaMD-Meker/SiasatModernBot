@@ -450,21 +450,59 @@ async def menu_oil(query, country_id: int):
 
 
 async def menu_assets(query, country_id: int):
+    """فهرست دسته‌بندی‌های دارایی‌های نظامی (دکمه‌های شیشه‌ای به تفکیک نیرو)."""
     c = db.get_country_by_id(country_id)
     if not c:
         return
 
     assets = db.get_country_assets(country_id)
-    text = f"🎖️ *مدیریت دارایی‌های نظامی اختصاصی {c['flag']} {c['name']}*\n\nیک سلاح/تجهیز را برای تغییر تعداد انتخاب کنید:"
+    by_cat = {}
+    for a in assets:
+        by_cat.setdefault(a['category'], []).append(a)
+
+    text = f"🎖️ *مدیریت دارایی‌های نظامی {c['flag']} {c['name']}*\n\nیکی از نیروها/دسته‌ها را انتخاب کنید:"
+
+    keyboard = []
+    row = []
+    for cat, (label, unit) in config.ASSET_CATEGORIES.items():
+        items = by_cat.get(cat)
+        if not items:
+            continue
+        row.append(InlineKeyboardButton(f"{label} ({len(items)})", callback_data=f"admin:asset_cat:{country_id}:{cat}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    for cat in [c_ for c_ in by_cat if c_ not in config.ASSET_CATEGORIES]:
+        keyboard.append([InlineKeyboardButton(f"📦 {cat} ({len(by_cat[cat])})", callback_data=f"admin:asset_cat:{country_id}:{cat}")])
+
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin:c:{c['id']}")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def menu_assets_category(query, country_id: int, category: str):
+    """فهرست تجهیزات یک دسته برای ویرایش."""
+    c = db.get_country_by_id(country_id)
+    if not c:
+        return
+
+    cat_label, unit = config.ASSET_CATEGORIES.get(category, (category, "عدد"))
+    assets = [a for a in db.get_country_assets(country_id) if a['category'] == category]
+    total = sum((a.get("amount", 0) or 0) for a in assets)
+
+    text = (
+        f"🎖️ *{cat_label} — {c['flag']} {c['name']}*\n"
+        f"قلم‌ها: {len(assets)} | مجموع: {format_number(total)} {unit}\n\n"
+        "تجهیز مورد نظر را برای تغییر تعداد انتخاب کنید:"
+    )
 
     keyboard = []
     for a in assets:
-        unit = config.ASSET_CATEGORIES.get(a['category'], ("", "عدد"))[1]
-        prod_mark = "✅" if a.get("producible", 1) == 1 else "🌐وارداتی"
-        btn_label = f"{a['equipment_name']} ({format_number(a['amount'])} {unit}) [{prod_mark}]"
-        keyboard.append([InlineKeyboardButton(btn_label, callback_data=f"admin:asset_item:{c['id']}:{a['equipment_key']}")])
+        prod_mark = "✅" if a.get("producible", 1) == 1 else "🌐"
+        keyboard.append([InlineKeyboardButton(f"{a['equipment_name']} ({format_number(a['amount'])}) {prod_mark}", callback_data=f"admin:asset_item:{country_id}:{a['equipment_key']}")])
 
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin:c:{c['id']}")])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data=f"admin:menu_assets:{country_id}")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
@@ -501,7 +539,8 @@ async def menu_single_asset_item(query, country_id: int, equipment_key: str):
             InlineKeyboardButton("🗑️ صفر کردن", callback_data=f"admin:set_asset:{country_id}:{equipment_key}:0"),
         ],
         [
-            InlineKeyboardButton("🔙 بازگشت به لیست دارایی‌ها", callback_data=f"admin:menu_assets:{country_id}"),
+            InlineKeyboardButton("🔙 دسته‌ها", callback_data=f"admin:menu_assets:{country_id}"),
+            InlineKeyboardButton("📂 همین دسته", callback_data=f"admin:asset_cat:{country_id}:{asset['category']}"),
         ]
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -1212,6 +1251,12 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("admin:menu_oil:"):
         c_id = int(data.split(":")[2])
         await menu_oil(query, c_id)
+
+    elif data.startswith("admin:asset_cat:"):
+        parts = data.split(":", 2)
+        if len(parts) == 3:
+            await menu_assets_category(query, int(parts[1]), parts[2])
+        return
 
     elif data.startswith("admin:menu_assets:"):
         c_id = int(data.split(":")[2])
