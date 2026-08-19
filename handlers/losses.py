@@ -241,8 +241,8 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             "یک گزینه را انتخاب کنید:"
         )
         await query.edit_message_text(text, reply_markup=_kb([
-            [InlineKeyboardButton("➕ ثبت تلفات جدید", callback_data="ls:new")],
-            [InlineKeyboardButton("📄 ثبت سریع با متن گزارش (پیست/فوروارد)", callback_data="ls:fast")],
+            [InlineKeyboardButton("📄 ثبت تلفات (پیست گزارش آماده) — روش اصلی", callback_data="ls:fast")],
+            [InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")],
             [InlineKeyboardButton("📋 تاریخچه تلفات", callback_data="ls:histpick")],
             [InlineKeyboardButton("🔎 جستجوی تلفات", callback_data="ls:search")],
             [InlineKeyboardButton("📊 آمار تلفات کشور", callback_data="ls:statpick")],
@@ -386,8 +386,8 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             f"✅ *تلفات ثبت شد (گزارش #{rid})*\n\n{report}",
             reply_markup=_kb([
                 [InlineKeyboardButton("📋 تاریخچه این کشور", callback_data=f"ls:history:{draft['cid']}")],
-                [InlineKeyboardButton("➕ ثبت تلفات جدید", callback_data="ls:new")],
-            [InlineKeyboardButton("📄 ثبت سریع با متن گزارش (پیست/فوروارد)", callback_data="ls:fast")],
+                [InlineKeyboardButton("📄 ثبت تلفات (پیست گزارش آماده) — روش اصلی", callback_data="ls:fast")],
+            [InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")],
                 [InlineKeyboardButton("🔙 منوی تلفات", callback_data="ls:menu")],
             ]),
             parse_mode="Markdown",
