@@ -50,13 +50,10 @@ _CAT_SHORT = {
 }
 
 
-def _stock_lines(key, limit=9):
+def _stock_line(key, limit=5):
     items = sorted(_war_assets(key), key=lambda a: -(a.get("amount", 0) or 0))
-    lines = []
-    for a in items[:limit]:
-        cat = _CAT_SHORT.get(a.get("category", ""), "")
-        lines.append(f"- {a.get('equipment_name')} ×{max(1, (a.get('amount', 0) or 0)):,}" + (f" [{cat}]" if cat else ""))
-    return "\n".join(lines) if lines else "- (بدون موجودی)"
+    parts = [f"{a.get('equipment_name')}×{max(1, (a.get('amount', 0) or 0)):,}" for a in items[:limit]]
+    return "، ".join(parts) if parts else "(بدون موجودی)"
 
 
 def _ad_lines(key):
@@ -76,36 +73,27 @@ def _ad_lines(key):
 def build_war_prompt(att_key, def_key, att_role, def_role):
     a = config.COUNTRIES.get(att_key, {})
     d = config.COUNTRIES.get(def_key, {})
-    return f"""نبرد زیر را واقع‌گرایانه تحلیل کن و فقط بلوک نتیجه را با همین قالب برگردان.
+    return f"""تحلیل نظامی واقع‌گرایانه نبرد زیر و پاسخ فقط با همین قالب:
 
-⚔️ {a.get('flag','')} {a.get('name', att_key)} (مهاجم) علیه {d.get('flag','')} {d.get('name', def_key)} (مدافع)
-
-📦 انبار مهاجم:
-{_stock_lines(att_key)}
-
-📦 انبار مدافع:
-{_stock_lines(def_key)}
-
-🛡️ پدافند مدافع:
-{_ad_lines(def_key)}
+⚔️ {a.get('flag','')} {a.get('name', att_key)} (مهاجم، انبار: {_stock_line(att_key)})
+🛡️ {d.get('flag','')} {d.get('name', def_key)} (مدافع، انبار: {_stock_line(def_key)})
 
 📝 رول مهاجم:
-{(att_role or "رولی نفرستاده؛ حمله متوسط فرض کن.")[:1200]}
+{(att_role or "حمله متوسط فرض کن.")[:900]}
 
-🛡️ رول مدافع:
-{(def_role or "رولی نفرستاده؛ دفاع متعارف فرض کن.")[:600]}
+📝 رول مدافع:
+{(def_role or "دفاع متعارف فرض کن.")[:400]}
 
-⚖️ قوانین: تلفات مهاجم حداکثر {WAR_CAPS['att_mil']}، مدافع حداکثر {WAR_CAPS['def_mil']}، غیرنظامی حداکثر {WAR_CAPS['civ']}. تجهیزاتِ انهدام‌شده فقط از فهرست‌های بالا، حداکثر ۳۰٪ موجودی هر آیتم. موشک/پهپاد شلیک‌شده مهاجم کاملاً مصرف می‌شود (در ATT_LOSS بیاور).
+⚖️ سقف تلفات: مهاجم {WAR_CAPS['att_mil']}/مدافع {WAR_CAPS['def_mil']}/غیرنظامی {WAR_CAPS['civ']}. انهدام فقط از انبارِ همان طرف، حداکثر ۳۰٪ هر آیتم. موشک/پهپاد مهاجم کاملاً مصرف می‌شود.
 
-قالب خروجی (بدون هیچ متن دیگر):
 #WAR
 ATT_MIL: عدد
 ATT_CIV: عدد
 DEF_MIL: عدد
 DEF_CIV: عدد
-ATT_LOSS: نام تجهیز=تعداد
-DEF_LOSS: نام تجهیز=تعداد
-NOTE: یک جمله روایت
+ATT_LOSS: نام=تعداد
+DEF_LOSS: نام=تعداد
+NOTE: یک جمله
 #END"""
 
 
