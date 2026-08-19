@@ -463,6 +463,8 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
             targets_text = ai_narr["targets"]
         if ai_narr.get("territory"):
             territory_text = ai_narr["territory"]
+        if ai_narr.get("assessment"):
+            summary_text += f"\n\n■ *ارزیابی راهبردی کارشناسان:*\n> {str(ai_narr['assessment']).strip()}"
 
     # ۶. فاکتورهای تلفات
     receipt_att = build_detailed_loss_receipt(attacker_key, losses["att_losses"], losses["att_military_loss"], losses["att_civilian_loss"], "عملیات تهاجمی اخیر", is_attacker=True, op_type=op_type)
@@ -546,9 +548,18 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
 نیروهای درگیر مدافع: {def_fired}
 خلاصه رول مهاجم (حداکثر ۸۰۰ کلمه):
 {(attacker_role or '')[:1500]}
+خلاصه رول مدافع:
+{(defender_role or '')[:800] or '(مدافع رولی نفرستاده است)'}
+
+تلفات نهایی ثبت‌شده (این اعداد قطعی هستند و باید در روایت منعکس شوند):
+- مهاجم: {losses.get('att_military_loss', 0):,} نظامی
+- مدافع: {losses.get('def_military_loss', 0):,} نظامی و {losses.get('def_civilian_loss', 0):,} غیرنظامی
+- تجهیزات منهدم‌شده مدافع: {", ".join(f"{x['equipment_name']} ({x['amount']} عدد)" for x in losses.get('def_losses', [])[:10]) or '-'}
+
+قواعد نگارش: هر بخش را با عنوان «■ *عنوان:*» شروع کن و جزئیات را با «> » بیاور (مطابق قالب بازی). فقط فارسی روان و رسمی.
 
 فقط و فقط یک JSON معتبر با این ساختار بازگردان (بدون هیچ توضیح اضافی):
-{{"timeline": "متن گاه‌شماری نبرد با ساعت‌های فرضی متفاوت (۸ تا ۱۲ سطر)", "targets": "متن آسیب‌های زیرساختی و اهداف استراتژیک متناسب با نرخ عبور (۶ تا ۹ سطر)", "territory": "متن وضعیت خطوط مرزی و عمق پیشروی متناسب با نوع عملیات و نرخ عبور (۴ تا ۶ سطر)"}}"""
+{{"timeline": "متن گاه‌شماری نبرد با ساعت‌های فرضی متفاوت (۸ تا ۱۲ سطر)", "targets": "متن آسیب‌های زیرساختی و اهداف استراتژیک متناسب با نرخ عبور (۶ تا ۹ سطر)", "territory": "متن وضعیت خطوط مرزی و عمق پیشروی متناسب با نوع عملیات و نرخ عبور (۴ تا ۶ سطر)", "assessment": "ارزیابی راهبردی کوتاه دو تا سه سطری درباره پیامد این نبرد برای معادلات منطقه‌ای"}}"""
 
     global _LAST_GOOD_AI_MODEL
     if _LAST_GOOD_AI_MODEL and _LAST_GOOD_AI_MODEL in model_candidates:
@@ -573,10 +584,14 @@ def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakd
             with urllib.request.urlopen(req, timeout=20) as response:
                 res = json.loads(response.read().decode("utf-8"))
             content = res["choices"][0]["message"]["content"].strip()
-            # حذف بلوک کد احتمالی
+            # حذف بلوک کد احتمالی و استخراج مقاوم JSON
             if content.startswith("```"):
                 content = content.strip("`").lstrip("json").strip()
-            parsed = json.loads(content)
+            try:
+                parsed = json.loads(content)
+            except Exception:
+                m_json = re.search(r"\{.*\}", content, re.S)
+                parsed = json.loads(m_json.group(0)) if m_json else None
             if isinstance(parsed, dict) and parsed.get("timeline"):
                 _LAST_GOOD_AI_MODEL = model_name
                 return parsed
