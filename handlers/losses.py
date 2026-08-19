@@ -65,6 +65,93 @@ def to_english_digits(text: str) -> str:
     return str(text).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
 
 
+
+
+# ---------- پارسر متن گزارش استاندارد (ثبت سریع) ----------
+def _norm_name(t):
+    t = str(t).lower().replace("\u200c", " ").replace("_", " ").replace("*", "").strip()
+    return re.sub(r"\s+", " ", t)
+
+
+def match_country_by_name(name_part: str):
+    """تطبیق نام کشور از متن گزارش با کشورهای واقعی بازی."""
+    if not name_part:
+        return None
+    q = _norm_name(name_part)
+    if len(q) < 2:
+        return None
+    best, best_len = None, 0
+    for c in db.get_all_countries():
+        n = _norm_name(c["name"])
+        if not n:
+            continue
+        if (q in n or n in q) and len(n) > best_len:
+            best, best_len = c, len(n)
+    return best
+
+
+def match_asset_by_name(name: str, assets: list):
+    """تطبیق نام تجهیز گزارش با موجودی انبار (بلندترین تطبیق برنده)."""
+    q = _norm_name(name)
+    if len(q) < 2:
+        return None
+    best, best_len = None, 0
+    for a in assets:
+        for field in (a.get("equipment_name") or "", a.get("equipment_key") or ""):
+            f = _norm_name(field)
+            if not f:
+                continue
+            if (q in f or f in q) and len(f) > best_len:
+                best, best_len = a, len(f)
+    return best
+
+
+def parse_loss_report_text(text: str):
+    """استخراج کشور، نام عملیات و اقلام (نام، تعداد، واحد) از متن گزارش استاندارد."""
+    t = to_english_digits(str(text))
+    lines = [ln.strip() for ln in t.splitlines()]
+    result = {"country": None, "op": "", "items": []}
+
+    # هدر: 📄 تلفات تجهیزات [پرچم] کشور — عملیات «نام»
+    for ln in lines[:6]:
+        m = re.search(r"تلفات\s*تجهیزات\s*(.*)", ln)
+        if not m:
+            continue
+        rest = m.group(1)
+        mo = re.search(r"عملیات\s*[«\x27\x22]([^»\x27\x22]+)[»\x27\x22]", rest)
+        if mo:
+            result["op"] = mo.group(1).strip()
+        country_part = re.split(r"عملیات|—|–|-", rest)[0]
+        country_part = re.sub(r"[^\w\s]", " ", country_part, flags=re.UNICODE)
+        country_part = re.sub(r"\s+", " ", country_part).strip()
+        result["country"] = country_part or None
+        break
+
+    # اقلام: خط «تلفات: N واحد» + نزدیک‌ترین خط قبلی معتبر به‌عنوان نام تجهیز
+    for i, ln in enumerate(lines):
+        m = re.match(r"^[*•]?\s*تلفات\s*:?\s*([\d,٬]+)\s*(.*)$", ln)
+        if not m:
+            continue
+        qty = int(m.group(1).replace(",", "").replace("٬", ""))
+        name = None
+        for j in range(i - 1, -1, -1):
+            prev = lines[j]
+            if not prev or set(prev) <= {"-", "—", "━", " ", "*"}:
+                continue
+            if re.match(r"^[*•]?\s*تلفات\s*:", prev):
+                continue
+            if any(k in prev for k in ("جمع تلفات", "وضعیت", "📄", "📌", "━━")):
+                continue
+            cleaned = re.sub(r"^[^\wآ-ی]+", "", prev)  # حذف ایموجی/بولت ابتدای خط
+            cleaned = cleaned.replace("*", "").strip()
+            if cleaned:
+                name = cleaned
+                break
+        if name:
+            unit = (m.group(2) or "").strip()
+            result["items"].append((name, qty, unit))
+    return result
+
 # ---------- ساخت گزارش استاندارد ----------
 def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 وضعیت: تلفات ثبت شد.", note=None):
     from collections import OrderedDict
@@ -155,6 +242,7 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         )
         await query.edit_message_text(text, reply_markup=_kb([
             [InlineKeyboardButton("➕ ثبت تلفات جدید", callback_data="ls:new")],
+            [InlineKeyboardButton("📄 ثبت سریع با متن گزارش (پیست/فوروارد)", callback_data="ls:fast")],
             [InlineKeyboardButton("📋 تاریخچه تلفات", callback_data="ls:histpick")],
             [InlineKeyboardButton("🔎 جستجوی تلفات", callback_data="ls:search")],
             [InlineKeyboardButton("📊 آمار تلفات کشور", callback_data="ls:statpick")],
@@ -166,6 +254,20 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     if data == "ls:new":
         t, kb = _country_picker("1️⃣ کشور متحمل‌شده تلفات را انتخاب کنید:", "ls:country")
         await query.edit_message_text(t, reply_markup=kb)
+        return
+
+    if data == "ls:fast":
+        context.user_data["admin_awaiting_input"] = {"type": "ls_report_text"}
+        await query.edit_message_text(
+            "📄 *ثبت سریع تلفات با متن گزارش*\n\n"
+            "کل متن گزارش استاندارد را ارسال یا فوروارد کنید.\n"
+            "بات به‌صورت خودکار کشور، عملیات، تجهیزات و تعدادها را تشخیص می‌دهد،"
+            " با انبار واقعی تطبیق می‌دهد و پیش‌نمایش می‌آورد.\n\n"
+            "_خط اول باید شامل نام کشور باشد، مثلاً:_\n"
+            "`📄 تلفات تجهیزات 🇦🇪 امارات — عملیات «سایه‌های خاکستری»`",
+            reply_markup=_kb([[InlineKeyboardButton("❌ انصراف", callback_data="ls:menu")]]),
+            parse_mode="Markdown",
+        )
         return
 
     if data.startswith("ls:country:"):
@@ -285,6 +387,7 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=_kb([
                 [InlineKeyboardButton("📋 تاریخچه این کشور", callback_data=f"ls:history:{draft['cid']}")],
                 [InlineKeyboardButton("➕ ثبت تلفات جدید", callback_data="ls:new")],
+            [InlineKeyboardButton("📄 ثبت سریع با متن گزارش (پیست/فوروارد)", callback_data="ls:fast")],
                 [InlineKeyboardButton("🔙 منوی تلفات", callback_data="ls:menu")],
             ]),
             parse_mode="Markdown",
@@ -477,6 +580,64 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["admin_awaiting_input"] = None
         await update.message.reply_text(_preview_text(draft), reply_markup=_kb([
             [InlineKeyboardButton("✅ تأیید نهایی و اعمال تلفات", callback_data="ls:confirm")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="ls:menu")],
+        ]), parse_mode="Markdown")
+        return
+
+    if t == "ls_report_text":
+        context.user_data["admin_awaiting_input"] = None
+        parsed = parse_loss_report_text(text)
+        if not parsed["items"]:
+            await update.message.reply_text(
+                "❌ هیچ قلم تلفاتی در متن پیدا نشد. هر قلم باید به شکل زیر باشد:\n"
+                "«نام تجهیز» در یک خط و «تلفات: عدد واحد» در خط بعدی.",
+                reply_markup=_kb([[InlineKeyboardButton("🔙", callback_data="ls:menu")]]),
+            )
+            return
+        country = match_country_by_name(parsed["country"])
+        if not country:
+            await update.message.reply_text(
+                f"❌ کشور «{parsed['country'] or '?'}» در بازی شناسایی نشد.\n"
+                "مطمئن شو نام کشور در خط اول گزارش آمده است.",
+                reply_markup=_kb([[InlineKeyboardButton("🔁 دوباره متن بفرست", callback_data="ls:fast")]]),
+            )
+            return
+        assets = db.get_country_assets(country["id"])
+        matched, unmatched = [], []
+        for name, qty, unit in parsed["items"]:
+            a = match_asset_by_name(name, assets)
+            if not a:
+                unmatched.append(name)
+                continue
+            existing = next((x for x in matched if x["key"] == a["equipment_key"]), None)
+            if existing:
+                existing["qty"] += qty
+                continue
+            sub, emo = classify_subcat(a)
+            matched.append({
+                "key": a["equipment_key"], "name": a["equipment_name"], "category": a["category"],
+                "subcat": sub, "emoji": emo,
+                "unit": _UNIT_BY_CATEGORY.get(a["category"], "عدد"), "qty": qty,
+            })
+        if not matched:
+            await update.message.reply_text(
+                "❌ هیچ‌کدام از تجهیزات متن، در انبار این کشور پیدا نشد:\n" + "\n".join(f"• {n}" for n in unmatched),
+                reply_markup=_kb([[InlineKeyboardButton("🔁 دوباره", callback_data="ls:fast")]]),
+            )
+            return
+        draft = {
+            "cid": country["id"], "cname": country["name"], "cflag": country["flag"],
+            "op": parsed["op"], "note": "", "items": matched,
+        }
+        if unmatched:
+            draft["note"] = "اقلام شناخته‌نشده (ثبت نشد): " + "، ".join(unmatched)
+        context.user_data["ls_draft"] = draft
+        preview = _preview_text(draft)
+        if unmatched:
+            preview += "\n\n⚠️ *تجهیزات زیر در انبار پیدا نشد و ثبت نخواهند شد:*\n" + "\n".join(f"• {n}" for n in unmatched)
+        await update.message.reply_text(preview, reply_markup=_kb([
+            [InlineKeyboardButton("✅ تأیید و اعمال تلفات", callback_data="ls:confirm")],
+            [InlineKeyboardButton("🔁 متن جدید", callback_data="ls:fast")],
             [InlineKeyboardButton("❌ انصراف", callback_data="ls:menu")],
         ]), parse_mode="Markdown")
         return
