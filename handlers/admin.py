@@ -44,63 +44,68 @@ def _war_assets(key):
     return _war_catalog_assets(key)
 
 
-def _stock_lines(key, limit=16):
+_CAT_SHORT = {
+    "Missiles": "موشک", "UAV": "پهپاد", "Aircraft": "هواپیما", "Ground Forces": "زرهی",
+    "Artillery": "توپ", "Navy": "دریا", "Air Defense": "پدافند",
+}
+
+
+def _stock_lines(key, limit=9):
     items = sorted(_war_assets(key), key=lambda a: -(a.get("amount", 0) or 0))
     lines = []
     for a in items[:limit]:
-        lines.append(f"- {a.get('equipment_name')} | {a.get('category')} | موجودی {max(1, (a.get('amount', 0) or 0)):,}")
+        cat = _CAT_SHORT.get(a.get("category", ""), "")
+        lines.append(f"- {a.get('equipment_name')} ×{max(1, (a.get('amount', 0) or 0)):,}" + (f" [{cat}]" if cat else ""))
     return "\n".join(lines) if lines else "- (بدون موجودی)"
 
 
 def _ad_lines(key):
     import war_stats as _ws
+    _cls_fa = {"rocket": "راکت", "drone": "پهپاد", "cruise": "کروز", "ballistic": "بالستیک", "aircraft": "هواپیما"}
+    ads = [a for a in _war_assets(key) if a.get("category") == "Air Defense" and (a.get("amount", 0) or 0) > 0]
+    ads.sort(key=lambda a: -((a.get("amount", 0) or 0) * (a.get("buy_price", a.get("price", 0)) or 0)))
     lines = []
-    for a in _war_assets(key):
-        if a.get("category") != "Air Defense" or (a.get("amount", 0) or 0) <= 0:
-            continue
+    for a in ads[:3]:
         rates = _ws.ad_rates_for(a.get("equipment_key") or "", a.get("equipment_name") or "")
-        r = ", ".join(f"{k} {int(v*100)}٪" for k, v in rates.items())
-        lines.append(f"- {a.get('equipment_name')} ×{a['amount']:,} → {r}")
+        top = sorted(rates.items(), key=lambda kv: -kv[1])[:3]
+        r = " ".join(f"{_cls_fa.get(k, k)}{int(v*100)}٪" for k, v in top)
+        lines.append(f"- {a.get('equipment_name')} ×{a['amount']:,}: {r}")
     return "\n".join(lines) if lines else "- (پدافند قابل توجهی ندارد)"
 
 
 def build_war_prompt(att_key, def_key, att_role, def_role):
     a = config.COUNTRIES.get(att_key, {})
     d = config.COUNTRIES.get(def_key, {})
-    return f"""شما یک تحلیلگر ارشد نظامی هستید. نبرد زیر را بر اساس داده‌های واقعی تحلیل کن و دقیقاً فقط بلوک نتیجه را با فرمت خواسته‌شده برگردان.
+    return f"""نبرد زیر را واقع‌گرایانه تحلیل کن و فقط بلوک نتیجه را با همین قالب برگردان.
 
-⚔️ نبرد: {a.get('flag','')} {a.get('name', att_key)} (مهاجم) علیه {d.get('flag','')} {d.get('name', def_key)} (مدافع)
+⚔️ {a.get('flag','')} {a.get('name', att_key)} (مهاجم) علیه {d.get('flag','')} {d.get('name', def_key)} (مدافع)
 
-📦 موجودی کلیدی مهاجم:
+📦 انبار مهاجم:
 {_stock_lines(att_key)}
 
-📦 موجودی کلیدی مدافع:
+📦 انبار مدافع:
 {_stock_lines(def_key)}
 
-🛡️ پدافند هوایی مدافع (نرخ‌های رهگیری واقعی هر سامانه):
+🛡️ پدافند مدافع:
 {_ad_lines(def_key)}
 
-📝 رول/برنامه عملیاتی مهاجم:
-{(att_role or "مهاجم رولی نفرستاده است؛ حمله‌ای متوسط فرض کن.")[:1800]}
+📝 رول مهاجم:
+{(att_role or "رولی نفرستاده؛ حمله متوسط فرض کن.")[:1200]}
 
-🛡️ رول دفاعی مدافع:
-{(def_role or "مدافع رولی نفرستاده است؛ دفاع متعارف فرض کن.")[:900]}
+🛡️ رول مدافع:
+{(def_role or "رولی نفرستاده؛ دفاع متعارف فرض کن.")[:600]}
 
-⚖️ قوانین الزامی:
-- تلفات نظامی مهاجم حداکثر {WAR_CAPS['att_mil']}, مدافع حداکثر {WAR_CAPS['def_mil']}, غیرنظامی هر طرف حداکثر {WAR_CAPS['civ']}.
-- تجهیزاتِ انهدام‌شده فقط از فهرست موجودی‌های بالا و نه بیشتر از ۳۰٪ موجودی همان آیتم.
-- موشک و پهپادِ شلیک‌شده توسط مهاجم کاملاً مصرف می‌شود (در ATT_LOSS بیاور).
-- واقع‌گرایی نظامی: پدافند قوی = رهگیری بالا؛ اشباع آتش = عبور بیشتر.
+⚖️ قوانین: تلفات مهاجم حداکثر {WAR_CAPS['att_mil']}، مدافع حداکثر {WAR_CAPS['def_mil']}، غیرنظامی حداکثر {WAR_CAPS['civ']}. تجهیزاتِ انهدام‌شده فقط از فهرست‌های بالا، حداکثر ۳۰٪ موجودی هر آیتم. موشک/پهپاد شلیک‌شده مهاجم کاملاً مصرف می‌شود (در ATT_LOSS بیاور).
 
-دقیقاً همین قالب را برگردان (بدون هیچ متن اضافه):
+قالب خروجی (بدون هیچ متن دیگر):
 #WAR
 ATT_MIL: عدد
 ATT_CIV: عدد
 DEF_MIL: عدد
 DEF_CIV: عدد
-ATT_LOSS: نام دقیق تجهیز=تعداد
-DEF_LOSS: نام دقیق تجهیز=تعداد
-NOTE: یک تا دو جمله روایت نتیجه
+ATT_LOSS: نام تجهیز=تعداد
+DEF_LOSS: نام تجهیز=تعداد
+NOTE: یک جمله روایت
 #END"""
 
 
@@ -1514,11 +1519,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         context.user_data["admin_awaiting_input"] = {"type": "war_manual_paste", "attacker_key": att_key, "defender_key": def_key}
 
         await update.message.reply_text(
-            "🧠 *تحلیل نبرد — خط تولید دستی هوشمند*\n\n"
-            "۱️⃣ پرامپت زیر را کامل کپی کن و به هر هوش مصنوعی‌ای که دوست داری بده "
-            "(ChatGPT، Claude، Gemini و...).\n"
-            "۲️⃣ بلوک نتیجه‌ای که برمی‌گرداند (از #WAR تا #END) را عیناً همین‌جا بفرست.\n\n"
-            "_بات آن را اعتبارسنجی می‌کند، پیش‌نمایش می‌دهد و با تایید تو از دیتابیس کسر می‌کند._",
+            "🧠 *خط تولید دستی:* پرامپت زیر را به هر هوش مصنوعی‌ای بده؛ بلوک `#WAR تا #END` که برگرداند را همین‌جا بفرست تا اعمال شود.",
             parse_mode="Markdown"
         )
         for i in range(0, len(prompt), 3800):
