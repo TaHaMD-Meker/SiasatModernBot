@@ -5,6 +5,7 @@
 """
 
 import os
+import json
 import sqlite3
 import datetime
 import config
@@ -301,6 +302,20 @@ def init_db():
 
     # جدول ثبت نتایج نبردها جهت مشاهده تعاملی با دکمه‌های شیشه‌ای
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS loss_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        operation_name TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        admin_id INTEGER,
+        status TEXT DEFAULT 'applied',
+        items_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+        )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS war_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         attacker_id INTEGER NOT NULL,
@@ -561,6 +576,160 @@ def fix_bab_el_mandeb_status():
         set_setting("strait_status_bab_el_mandeb", "open")
         print("[bab-el-mandeb] strait status reset to open (invalid owner removed).")
     set_setting("bab_el_mandeb_reset_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+
+
+
+# ==================== سیستم مدیریت تلفات تجهیزات (Losses System) ====================
+# معماری ماژولار: بات فقط ثبت/اعمال/بازگردانی می‌کند؛ تعیین تلفات با مدیریت بازی است.
+# برای افزودن «خسارت زیرساخت/اقتصادی/مصرف مهمات» در آینده، همین الگو با ستون type قابل توسعه است.
+
+def create_loss_report(country_id: int, items: list, operation_name: str = "", note: str = "", admin_id=None):
+    """ثبت و اعمال تراکنشیِ گزارش تلفات — همه یا هیچ.
+
+    items = [{key, name, category, subcat, emoji, unit, qty}, ...]
+    اعتبارسنجی کامل همه‌ی اقلام قبل از اعمال انجام می‌شود؛ اگر حتی یک قلم
+    نامعتبر باشد (ناموجود یا بیش از موجودی)، هیچ تغییری اعمال نمی‌شود.
+    قلم با qty=0 فقط در گزارش ثبت می‌شود و تغییری در موجودی نمی‌دهد.
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            valid_items = [it for it in items if int(it.get("qty", 0) or 0) > 0]
+            for it in valid_items:
+                cur.execute(
+                    "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
+                    (country_id, it["key"]),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"تجهیز «{it.get('name', it['key'])}» در انبار این کشور یافت نشد.")
+                if int(it["qty"]) > (row["amount"] or 0):
+                    raise ValueError(
+                        f"تلفات «{it.get('name', it['key'])}» ({it['qty']:,}) بیشتر از موجودی ({(row['amount'] or 0):,}) است."
+                    )
+            for it in valid_items:
+                cur.execute(
+                    "UPDATE country_assets SET amount = amount - ? WHERE country_id = ? AND equipment_key = ?",
+                    (int(it["qty"]), country_id, it["key"]),
+                )
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute(
+                "INSERT INTO loss_reports (country_id, operation_name, note, admin_id, status, items_json, created_at) VALUES (?,?,?,?,?,?,?)",
+                (country_id, operation_name or "", note or "", admin_id, "applied", json.dumps(items, ensure_ascii=False), now_str),
+            )
+            report_id = cur.lastrowid
+        return True, report_id, None
+    except Exception as e:
+        return False, None, str(e)
+
+
+def get_loss_reports(country_id: int = None, limit: int = 15, query: str = None):
+    """تاریخچه تلفات (اختیاراً برای یک کشور یا با جستجو)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    sql = "SELECT l.*, c.name AS country_name, c.flag AS country_flag FROM loss_reports l LEFT JOIN countries c ON c.id = l.country_id WHERE l.status != 'deleted'"
+    params = []
+    if country_id:
+        sql += " AND l.country_id = ?"
+        params.append(country_id)
+    if query:
+        sql += " AND (l.operation_name LIKE ? OR l.items_json LIKE ? OR l.note LIKE ?)"
+        params.extend([f"%{query}%"] * 3)
+    sql += " ORDER BY l.id DESC LIMIT ?"
+    params.append(limit)
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_loss_report_by_id(report_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT l.*, c.name AS country_name, c.flag AS country_flag FROM loss_reports l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = ?",
+        (report_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def revert_loss_report(report_id: int):
+    """بازگردانی یک گزارش: تجهیزات به موجودی برمی‌گردند و وضعیت reverted می‌شود."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT status, items_json, country_id FROM loss_reports WHERE id = ?", (report_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("گزارش یافت نشد.")
+            if row["status"] != "applied":
+                raise ValueError("این گزارش قبلاً بازگردانی شده است.")
+            items = json.loads(row["items_json"])
+            for it in items:
+                if int(it.get("qty", 0) or 0) > 0:
+                    cur.execute(
+                        "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
+                        (int(it["qty"]), row["country_id"], it["key"]),
+                    )
+            cur.execute("UPDATE loss_reports SET status = 'reverted' WHERE id = ?", (report_id,))
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def delete_loss_report(report_id: int):
+    """حذف گزارش از تاریخچه؛ اگر اعمال‌شده باشد ابتدا موجودی بازگردانی می‌شود."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT status, items_json, country_id FROM loss_reports WHERE id = ?", (report_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("گزارش یافت نشد.")
+            if row["status"] == "applied":
+                items = json.loads(row["items_json"])
+                for it in items:
+                    if int(it.get("qty", 0) or 0) > 0:
+                        cur.execute(
+                            "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
+                            (int(it["qty"]), row["country_id"], it["key"]),
+                        )
+            cur.execute("UPDATE loss_reports SET status = 'deleted' WHERE id = ?", (report_id,))
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def get_loss_stats(country_id: int):
+    """آمار تلفات یک کشور: تعداد گزارش‌ها و مجموع تلفات به تفکیک تجهیز/دسته."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT items_json, status FROM loss_reports WHERE country_id = ?", (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    from collections import Counter
+    by_equip = Counter()
+    by_subcat = Counter()
+    reports = 0
+    reverted = 0
+    for r in rows:
+        if r["status"] == "deleted":
+            continue
+        reports += 1
+        if r["status"] == "reverted":
+            reverted += 1
+            continue
+        for it in json.loads(r["items_json"]):
+            if int(it.get("qty", 0) or 0) > 0:
+                by_equip[it.get("name", it.get("key", "?"))] += int(it["qty"])
+                by_subcat[it.get("subcat", it.get("category", "?"))] += int(it["qty"])
+    return {"reports": reports, "reverted": reverted, "by_equip": by_equip, "by_subcat": by_subcat}
 
 
 # ---------- کشورها ----------

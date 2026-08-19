@@ -223,6 +223,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         un_btn,
         [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({pending_count})", callback_data="admin:pending_countries")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
+        [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
         [InlineKeyboardButton("📝 رول‌های دریافتی (تاییدنشده)", callback_data="admin:pending_roles")],
         [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
@@ -1401,6 +1402,11 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
     text = update.message.text.strip()
     input_type = input_state.get("type")
+
+    if input_type and str(input_type).startswith("ls_"):
+        from handlers.losses import handle_losses_input
+        await handle_losses_input(update, context, user_id, input_state)
+        return
 
     del context.user_data["admin_awaiting_input"]
 

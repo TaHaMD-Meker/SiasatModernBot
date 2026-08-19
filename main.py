@@ -220,6 +220,11 @@ def main():
     for handler in get_un_handlers():
         app.add_handler(handler)
 
+    # سیستم مدیریت تلفات تجهیزات (ماژول مستقل)
+    from handlers.losses import get_losses_handlers
+    for handler in get_losses_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
