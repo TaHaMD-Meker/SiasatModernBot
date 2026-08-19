@@ -185,6 +185,10 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
         keywords = set()
         keywords.add(name)
         keywords.add(key)
+        # توکن اول کلید (مثل namer از namer_apc) برای تطبیق نام‌های عام در رول
+        first_tok = key.split('_')[0]
+        if len(first_tok) >= 4:
+            keywords.add(first_tok)
 
         clean_name = re.sub(r'^(موشک|کروز|پدافند|ضدکشتی|تپ|راکت|تانک|شناور|ناوچه|پهپاد|سامانه|ناو)\s+', '', name)
         keywords.add(clean_name)
@@ -201,6 +205,9 @@ def parse_weapon_mentions_from_roleplay_text(roleplay_text: str, country_assets:
         for kw in valid_keywords:
             esc_kw = re.escape(kw)
             patterns = [
+                # فرمت رول‌نویسی استاندارد: «نام ×عدد» یا «عدد× نام» (با اجازه پسوند مدل تا ۱۸ نویسه)
+                esc_kw + r'\s*[\w.\- ]{0,18}?\s*[\u00d7xX\*]\s*(\d+)',
+                r'(\d+)\s*[\u00d7xX\*]\s*[\w.\- ]{0,4}?\s*' + esc_kw,
                 r'(\d+)\s*(?:فروند|عدد|دستگاه|سامانه|آتشبار|واحد|دست)?\s*(?:موشک|پهپاد|جنگنده|کروز|تانک|نفربر)?\s*' + esc_kw,
                 esc_kw + r'\s*(?:\([^)]*\))?\s*(?:برد\s*\d+\s*کیلومتر)?\s*(?:با|تعداد|به تعداد)?\s*(\d+)\s*(?:فروند|عدد|دستگاه|واحد)?',
                 esc_kw + r'\s*\(\s*(\d+)\s*\)',
@@ -421,7 +428,20 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         att_flag, att_name, def_flag, def_name, balance, op_type
     )
 
-    # ۵. فاکتورهای تلفات
+    # ۵. روایت هوش مصنوعی (اختیاری — در صورت وجود کلید API، جایگزین قالب‌های متنی می‌شود)
+    try:
+        ai_narr = ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakdown, attacker_role, defender_role)
+    except Exception:
+        ai_narr = None
+    if ai_narr:
+        if ai_narr.get("timeline"):
+            timeline_text = ai_narr["timeline"]
+        if ai_narr.get("targets"):
+            targets_text = ai_narr["targets"]
+        if ai_narr.get("territory"):
+            territory_text = ai_narr["territory"]
+
+    # ۶. فاکتورهای تلفات
     receipt_att = build_detailed_loss_receipt(attacker_key, losses["att_losses"], losses["att_military_loss"], losses["att_civilian_loss"], "عملیات تهاجمی اخیر", is_attacker=True, op_type=op_type)
     receipt_def = build_detailed_loss_receipt(defender_key, losses["def_losses"], losses["def_military_loss"], losses["def_civilian_loss"], "عملیات دفاعی اخیر", is_attacker=False, op_type=op_type)
 
@@ -446,6 +466,87 @@ def generate_war_analysis_report(attacker_key: str, defender_key: str, attacker_
         summary_text += "\n\nℹ️ _یکی از طرف‌های نبرد کشور بازیکن‌دار نیست؛ اعمال دیتابیسی تلفات فقط برای کشورهای دارای بازیکن انجام می‌شود._"
 
     return summary_text, losses, war_id, timeline_text, targets_text, territory_text
+
+
+def ai_war_narrative(att_name, def_name, op_type, balance, losses, weapon_breakdown, attacker_role, defender_role):
+    """روایت گزارش نبرد با هوش مصنوعی واقعی (اختیاری).
+
+    نیازمند یکی از کلیدهای OPENAI_API_KEY / AI_API_KEY / OPENROUTER_API_KEY در متغیرهای محیطی.
+    اعداد قطعی نبرد همیشه توسط موتور داخلی تولید می‌شوند؛ هوش مصنوعی فقط «روایت» سه بخش
+    گاه‌شماری، آسیب زیرساختی و خطوط مرزی را می‌نویسد. در صورت خطا None برمی‌گردد و
+    قالب‌های داخلی جایگزین می‌شوند.
+    """
+    openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = openai_key or openrouter_key
+    if not api_key:
+        return None
+
+    if not openai_key and openrouter_key:
+        api_base = "https://openrouter.ai/api/v1"
+        default_model = "deepseek/deepseek-chat-v3-0324:free"
+    else:
+        api_base = "https://api.openai.com/v1"
+        default_model = "gpt-4o-mini"
+    model_name = os.environ.get("AI_MODEL") or default_model
+
+    op_labels = {
+        "combined_arms": "عملیات ترکیبی (زمینی + موشکی/هوایی)",
+        "ground_invasion": "تهاجم زمینی",
+        "air_missile": "حمله موشکی/پهپادی/هوایی",
+    }
+
+    wb_summary = "\n".join(
+        f"- {wb['name']}: شلیک {wb['total_fired']}, رهگیری {wb['intercepted']}, عبور {wb['penetrated']}"
+        for wb in (weapon_breakdown or [])
+    ) or "- (بدون تفکیک)"
+    att_fired = ", ".join(f"{x['equipment_name']} ×{x['amount']}" for x in losses.get("att_fired", [])[:14]) or "-"
+    def_fired = ", ".join(f"{x['equipment_name']} ×{x['amount']}" for x in losses.get("def_fired", [])[:14]) or "-"
+
+    prompt = f"""شما یک تحلیلگر ارشد نظامی هستید. بر اساس «اعداد قطعی» زیر، گزارش کارشناسی فارسی بنویس.
+اعداد را هرگز تغییر نده یا جدید از خودت نساز؛ فقط روایت کن. لحن رسمی، فاخر و بدون ایموجی اضافی.
+
+نبرد: {att_name} علیه {def_name} — نوع: {op_labels.get(op_type, op_type)}
+نرخ عبور پرتابه‌ها: {int(balance['penetration_rate']*100)}٪ | نرخ رهگیری پدافند: {int(balance['intercept_rate']*100)}٪
+تلفات نظامی مهاجم: {losses['att_military_loss']:,} | مدافع: {losses['def_military_loss']:,} | غیرنظامی مدافع: {losses['def_civilian_loss']:,}
+تفکیک شلیک/رهگیری:
+{wb_summary}
+نیروهای درگیر مهاجم: {att_fired}
+نیروهای درگیر مدافع: {def_fired}
+خلاصه رول مهاجم (حداکثر ۸۰۰ کلمه):
+{(attacker_role or '')[:1500]}
+
+فقط و فقط یک JSON معتبر با این ساختار بازگردان (بدون هیچ توضیح اضافی):
+{{"timeline": "متن گاه‌شماری نبرد با ساعت‌های فرضی متفاوت (۸ تا ۱۲ سطر)", "targets": "متن آسیب‌های زیرساختی و اهداف استراتژیک متناسب با نرخ عبور (۶ تا ۹ سطر)", "territory": "متن وضعیت خطوط مرزی و عمق پیشروی متناسب با نوع عملیات و نرخ عبور (۴ تا ۶ سطر)"}}"""
+
+    try:
+        data = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "You are a senior military analyst writing formal Persian battle reports. Always answer with strict JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.85,
+        }
+        req = urllib.request.Request(
+            api_base + "/chat/completions",
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=25) as response:
+            res = json.loads(response.read().decode("utf-8"))
+        content = res["choices"][0]["message"]["content"].strip()
+        # حذف بلوک کد احتمالی
+        if content.startswith("```"):
+            content = content.strip("`").lstrip("json").strip()
+        parsed = json.loads(content)
+        if isinstance(parsed, dict) and parsed.get("timeline"):
+            return parsed
+        return None
+    except Exception as e:
+        print(f"AI war narrative error (fallback to templates): {e}")
+        return None
 
 
 def build_war_summary_card(att_flag, att_name, def_flag, def_name, losses, balance, op_type):
@@ -478,38 +579,48 @@ def build_war_summary_card(att_flag, att_name, def_flag, def_name, losses, balan
 
 
 def build_war_timeline_text(att_flag, att_name, def_flag, def_name, balance, op_type, weapon_breakdown):
-    """متن گاه‌شماری نبرد (Timeline)."""
+    """متن گاه‌شماری نبرد (Timeline) — نسخه ۲: ساعت‌ها و توصیف‌ها بر اساس داده نبرد متغیرند."""
     intercept_pct = int(balance["intercept_rate"] * 100)
     pen_pct = int(balance["penetration_rate"] * 100)
+
+    systems = len(weapon_breakdown) if weapon_breakdown else 0
+    total_fired = sum(wb.get("total_fired", 0) for wb in weapon_breakdown) if weapon_breakdown else 0
+
+    h0 = random.choice([22, 23, 0, 1, 2, 3])
+    def hh(h):
+        return f"{(h % 24):02d}:{random.choice(['05', '12', '20', '31', '40', '47', '55'])}"
 
     lines = []
     lines.append(f"📋 *گاه‌شماری و شرح مراحل درگیری — {att_flag} {att_name} و {def_flag} {def_name}*")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
-    if weapon_breakdown:
-        lines.append("■ *ارزیابی شلیک و رهگیری تفکیکی تسلیحات:*\n")
-        for wb in weapon_breakdown:
-            lines.append(f"• **{wb['name']}:** شلیک {wb['total_fired']:,} | رهگیری پدافند: {wb['intercepted']:,} | عبور موفق: **{wb['penetrated']:,} فروند** (نرخ عبور: {wb['pen_pct']}٪)")
-        lines.append("\n━━━━━━━━━━━━━━━━━━\n")
-
-    lines.append("■ *گاه‌شماری نبرد:*\n")
-    lines.append(f"⏱️ **ساعت ۰۳:۰۰ — حملات اولیه و جنگ الکترونیک:**")
-    lines.append(f"> اختلالات راداری موقت در خطوط مواصلاتی {def_name} به ثبت رسید.\n")
+    openers = [
+        f"⏱️ **ساعت {hh(h0)} — آغاز عملیات و جنگ الکترونیک:**",
+        f"⏱️ **ساعت {hh(h0)} — فعال‌سازی میدان مین دیجیتال و اخلال ارتباطی:**",
+        f"⏱️ **ساعت {hh(h0)} — موج اول جنگ الکترونیک و سایبری:**",
+    ]
+    lines.append(random.choice(openers))
+    lines.append(f"> اختلال در رادارها و شبکه مخابراتی {def_name} در ساعات نخست به ثبت رسید.\n")
 
     if op_type in ["combined_arms", "air_missile"]:
-        lines.append(f"⏱️ **ساعت ۰۳:۳۰ تا ۰۵:۰۰ — شلیک موج اول پرتابه‌ها:**")
-        lines.append(f"> پرتاب موشک‌های بالستیک، کروز و پهپادها به سمت پایگاه‌ها و رادارهای {def_name}.")
+        lines.append(f"⏱️ **ساعت {hh(h0 + random.randint(1, 2))} — موج اول ضربات موشکی و هوایی:**")
+        if systems:
+            lines.append(f"> درگیری {systems} نوع سامانه تهاجمی {att_name}" + (f" با مجموع {total_fired:,} پرتابه" if total_fired else "") + ".")
+        else:
+            lines.append(f"> شلیک موج اول پرتابه‌ها به سمت پایگاه‌ها و رادارهای {def_name}.")
         lines.append(f"> _پاسخ پدافندی:_ شبکه پدافند چندلایه {def_name} موفق به انهدام {intercept_pct}٪ پرتابه‌ها شد و {pen_pct}٪ عبور کردند.\n")
 
     if op_type in ["combined_arms", "ground_invasion"]:
-        lines.append(f"⏱️ **ساعت ۰۶:۰۰ — ورود ستون‌های زرهی:**")
-        lines.append(f"> پیشروی تانک‌ها و نفربرهای زرهی {att_name} در محورهای مرزی.")
-        lines.append(f"> مواجهه با کمین‌های ضدزره و پهپادهای انتحاری FPV مدافع.\n")
-        lines.append(f"⏱️ **ساعت ۱۲:۰۰ — سازماندهی مجدد خطوط:**")
-        lines.append(f"> ورود یگان‌های ذخیره و تثبیت نسبی خطوط تماس.\n")
+        lines.append(f"⏱️ **ساعت {hh(h0 + random.randint(3, 5))} — عبور ستون‌های زرهی از خط آبی:**")
+        lines.append(f"> حرکت تانک‌ها و نفربرهای {att_name} در محورهای موازی با پشتیبانی آتش مستقیم.")
+        lines.append(f"> مواجهه با کمین‌های ضدزره و پهپادهای انتحاری FPV مدافع در عمق {random.randint(2, 9)} کیلومتری مرز.\n")
+        lines.append(f"⏱️ **ساعت {hh(h0 + random.randint(7, 12))} — سازماندهی مجدد خطوط:**")
+        lines.append(f"> ورود یگان‌های ذخیره، پاکسازی تونل‌ها و تثبیت نسبی خطوط تماس جدید.\n")
+
+    lines.append(f"⏱️ **ساعت {hh(h0 + random.randint(13, 18))} — کاهش شدت درگیری و ارزیابی اولیه:**")
+    lines.append(f"> هر دو طرف به مواضع فعلی عقب‌نشینی تاکتیکی کردند و آتش‌بس‌های موضعی برقرار شد.")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
-
     return "\n".join(lines)
 
 
@@ -542,23 +653,38 @@ def build_war_targets_text(att_flag, att_name, def_flag, def_name, balance, op_t
 
 
 def build_war_territory_text(att_flag, att_name, def_flag, def_name, balance, op_type):
-    """متن تغییرات خطوط مرزی و جغرافیا (Territory & Frontline)."""
+    """متن تغییرات خطوط مرزی (Territory) — نسخه ۲: عمق پیشروی از موازنه واقعی نبرد محاسبه می‌شود."""
+    pen = balance.get("penetration_rate", 0.5)
+    pen_pct = int(pen * 100)
+
     lines = []
     lines.append(f"🗺️ *وضعیت خطوط تماس مرزی و جغرافیا — نبرد {att_name} و {def_name}*")
     lines.append("━━━━━━━━━━━━━━━━━━\n")
 
     if op_type in ["combined_arms", "ground_invasion"]:
+        depth = int(3 + pen * 27)
+        depth_max = int(depth * random.uniform(1.5, 2.1))
         lines.append("■ *تغییرات مواضع و عمق پیشروی:*\n")
-        lines.append(f"• **مناطق پیشروی اولیه:** تصرف چند پاسگاه مرزی و مناطق روستایی حائل توسط نیروهای {att_name}.")
-        lines.append(f"• **شهرهای اصلی درگیر:** شکل‌گیری نبرد سنگین زرهی در حومه شهرها (توقف پیشروی سریع به دلیل دفاع شهری و کمین‌های ضدزره).")
-        lines.append(f"• **تثبیت خطوط درگیری:** ثبت خط تماس جدید در عمق ۵ الی ۱۵ کیلومتری مرز.")
+        lines.append(f"• **عمق نفوذ ثبت‌شده:** خط تماس جدید در بستر {depth} الی {depth_max} کیلومتری خاک {def_name} ترسیم شد (نرخ عبور مؤثر: {pen_pct}٪).")
+        if pen >= 0.6:
+            lines.append(f"• **وضعیت محورها:** {att_name} تقاطع‌ها و ارتفاعات کلیدی را در اختیار دارد؛ مقاومت سازمان‌یافته {def_name} محدود به کانون‌های مقاومت پراکنده است.")
+            lines.append("• **پایداری خط مقدم:** تثبیت تدارکاتی در جریان است و مسیرهای لجستیک عمقی در حال گشایش‌اند.")
+        elif pen >= 0.35:
+            lines.append(f"• **وضعیت محورها:** پیشروی {att_name} در ۲ محور اصلی متوقف و به جنگ فرسایشی خط تماس تبدیل شده است.")
+            lines.append("• **پایداری خط مقدم:** ناپایدار؛ هر دو طرف تحملات سنگین در تبادل آتش ثبت می‌کنند.")
+        else:
+            lines.append(f"• **وضعیت محورها:** پیشروی {att_name} با آتش متمرکز پدافندی {def_name} شکست خورد و ستون‌های زرهی به خط آبی عقب رانده شدند.")
+            lines.append("• **پایداری خط مقدم:** خطوط مرزی عملاً به وضعیت پیش از جنگ بازگشته است.")
     else:
         lines.append("■ *وضعیت خطوط مرزی:*\n")
-        lines.append("• **تغییرات مرزی:** به دلیل عدم ورود یگان‌های پیاده و زرهی زمینی، خطوط مرزی دست‌نخورده باقی مانده است.")
-        lines.append("• **حریم هوایی:** درگیری کاملاً در قالب حملات موشکی، پهپادی و هوایی دوربرد اجرا گردید.")
+        variants = [
+            "• **تغییرات مرزی:** به دلیل اجرای کامل عملیات در قالب حملات موشکی، پهپادی و هوایی دوربرد، هیچ تغییر ارضی به ثبت نرسید.",
+            f"• **حریم هوایی:** آسمان منطقه محل درگیری شدید؛ {def_name} پوشش راداری را به حالت پراکنده درآورده است.",
+            "• **خطوط زمینی:** بدون تماس مستقیم نیروهای زمینی؛ محدود به تبادل آتش دوربرد و عملیات ویژه محدود.",
+        ]
+        lines.extend(random.sample(variants, k=min(2, len(variants))))
 
     lines.append("\n━━━━━━━━━━━━━━━━━━")
-
     return "\n".join(lines)
 
 
@@ -593,7 +719,11 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
                 if used >= 5:
                     loss_qty = max(loss_qty, 1)
             else:
-                loss_qty = int(round(used * other_rate))
+                rate = other_rate
+                # نبرد زمینی سنگین: ستون‌های زرهی و توپخانه همیشه تلفات محسوسی می‌دهند
+                if op_type in ("ground_invasion", "combined_arms") and cat in ("Ground Forces", "Artillery"):
+                    rate = max(rate, 0.06)
+                loss_qty = int(round(used * rate))
                 if used >= 10:
                     loss_qty = max(loss_qty, 1)
             if loss_qty > 0:
@@ -816,7 +946,10 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     lines.append("\n━━━━━━━━━━━━━━━━━━\n")
     lines.append("■ *ارزیابی نهایی کارشناسان نظامی:*\n")
     if is_attacker and op_type == "air_missile":
-        lines.append("> _عملیات شلیک با موفقیت کامل بدون تلفات انسانی نیروهای خودی اجرا گردید و پرتابه‌های شلیک‌شده از دیتابیس کسر شدند._")
+        if military_loss > 0:
+            lines.append(f"> _عملیات شلیک با موفقیت نسبی اجرا گردید؛ تحمل {military_loss:,} نفر تلفات نیروهای خودی و کسر پرتابه‌های مصرف‌شده از دیتابیس به ثبت رسید._")
+        else:
+            lines.append("> _عملیات شلیک بدون تلفات انسانی نیروهای خودی اجرا گردید و پرتابه‌های شلیک‌شده از دیتابیس کسر شدند._")
     else:
         lines.append("> _خسارات واردشده نیازمند جایگزینی تجهیزات و بازسازی پایگاه‌ها از طریق ساخت‌وسازهای غیرنظامی و خطوط تولید بومی می‌باشد._")
 
