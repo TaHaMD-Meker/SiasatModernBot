@@ -1449,6 +1449,12 @@ STRAITS_MAPPING = {
         "desc": "شاهراه ترانزیت دریایی آسیا به اروپا و دریای مدیترانه",
         "affected_keys": ["uk", "france", "germany", "italy", "india", "china", "israel"]
     },
+    "yemen": {
+        "strait_key": "bab_el_mandeb",
+        "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
+        "desc": "گلوگاه ترانزیت دریای سرخ و باب‌المندب (کلید امنیت کشتیرانی تجاری به کانال سوئز)",
+        "affected_keys": ["israel", "usa", "uk", "france", "germany", "egypt", "saudi"]
+    },
     "hezbollah": {
         "strait_key": "bab_el_mandeb",
         "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
