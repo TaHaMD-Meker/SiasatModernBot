@@ -44,44 +44,88 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+INCOME_INTERVAL_HOURS = 6
+INCOME_PARTS = 4
+
+
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
-    today = datetime.date.today().isoformat()
+    """پرداخت درآمد به‌صورت تقسیط‌شده: هر ۶ ساعت یک‌چهارم درآمد.
+
+    چرخه‌ی مصرف/رضایت/مهاجرت و هزینه‌ی محاصره‌های دریایی فقط در اولین پرداختِ
+    هر روز تقویمی اجرا می‌شود تا نرخ مصرف روزانه تغییر نکند.
+    force=True (توزیع فوری ادمین): پرداخت کامل + اجرای چرخه روزانه.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    today = now.date().isoformat()
     countries = db.get_all_countries()
 
     updated_count = 0
     for c in countries:
-        if not force and c["last_income_date"] == today:
+        last_raw = c.get("last_income_date") or ""
+        last_dt = None
+        try:
+            if len(last_raw) >= 19:
+                last_dt = datetime.datetime.fromisoformat(last_raw)
+            elif len(last_raw) == 10:
+                last_dt = datetime.datetime.fromisoformat(last_raw + "T00:00:00+00:00")
+        except Exception:
+            last_dt = None
+
+        first_of_day = (last_raw[:10] != today)
+        if force:
+            eligible = True
+            first_of_day = True
+        else:
+            eligible = last_dt is None or (now - last_dt).total_seconds() >= INCOME_INTERVAL_HOURS * 3600
+        if not eligible:
             continue
 
-        # 1. Deposit income & gold minus maintenance
         maint_info = db.calculate_country_maintenance_cost(c["id"])
         tax_income = c.get("tax_income", 0) or 0
-        net_income = c["daily_income"] + tax_income - maint_info["total_maint"]
+        net_full = c["daily_income"] + tax_income - maint_info["total_maint"]
+        net_payment = net_full if force else int(net_full / INCOME_PARTS)
+        gold_daily = c.get("gold_daily", 0) or 0
+        gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
 
-        db.adjust_treasury(c["id"], net_income)
-        db.adjust_gold(c["id"], c["gold_daily"])
+        db.adjust_treasury(c["id"], net_payment)
+        db.adjust_gold(c["id"], gold_payment)
 
-        # 2. Process Approval Rating, Consumption & Emigration
-        app_res = approval_system.process_daily_approval_and_emigration(c)
+        app_res = None
+        if first_of_day:
+            app_res = approval_system.process_daily_approval_and_emigration(c)
 
-        db.update_country_field(c["id"], "last_income_date", today)
-        db.add_transaction(c["id"], "daily_income", "درآمد روزانه + مالیات (منهای نگهداری)", net_income)
-
-        # 3. Send Daily Country Report Message to player
-        updated_c = db.get_country_by_id(c["id"])
-        report_msg = approval_system.build_daily_country_report_message(updated_c, app_res, today)
+        db.update_country_field(c["id"], "last_income_date", now.isoformat())
+        if force:
+            db.add_transaction(c["id"], "daily_income", "توزیع فوری درآمد روزانه (ادمین)", net_full)
+        else:
+            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد (هر {INCOME_INTERVAL_HOURS} ساعت)", net_payment)
 
         p_id = c.get("player_id")
         if p_id:
             try:
+                if first_of_day and app_res is not None:
+                    report_msg = approval_system.build_daily_country_report_message(db.get_country_by_id(c["id"]), app_res, today)
+                else:
+                    c2 = db.get_country_by_id(c["id"])
+                    report_msg = (
+                        f"💵 *واریز دوره‌ای درآمد — {c2['flag']} {c2['name']}*\n\n"
+                        f"• مبلغ واریزی: *{format_money(net_payment)}*\n"
+                        f"• طلا: +{gold_payment}\n"
+                        f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
+                        f"_درآمد روزانه در {INCOME_PARTS} پرداختِ هر {INCOME_INTERVAL_HOURS} ساعته واریز می‌شود._"
+                    )
                 await context.bot.send_message(chat_id=p_id, text=report_msg, parse_mode="Markdown")
             except Exception as e:
                 logger.warning(f"Could not send daily report to player {p_id}: {e}")
 
         updated_count += 1
 
-    # 4. Process Daily Naval Blockade Costs & Auto-Lifting
-    active_blockades = db.get_all_active_blockades()
+    # 4. هزینه روزانه محاصره‌های دریایی — فقط یک بار در هر روز تقویمی
+    if db.get_setting("blockade_cycle_date") == today:
+        active_blockades = []
+    else:
+        db.set_setting("blockade_cycle_date", today)
+        active_blockades = db.get_all_active_blockades()
     for blk in active_blockades:
         b_id = blk["blockader_id"]
         t_id = blk["target_id"]
@@ -250,7 +294,7 @@ def main():
     # درآمد روزانه: هر روز ساعت 00:05 به وقت سرور
     job_queue = app.job_queue
     if job_queue:
-        job_queue.run_daily(daily_income_job, time=datetime.time(hour=0, minute=5))
+        job_queue.run_repeating(daily_income_job, interval=900, first=10)  # چک هر ۱۵ دقیقه؛ پرداخت هر ۶ ساعت
 
     logger.info("بات در حال اجراست...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
