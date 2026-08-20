@@ -7,6 +7,7 @@
 
 import datetime
 import logging
+from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.ext import (
@@ -46,6 +47,35 @@ logger = logging.getLogger(__name__)
 
 INCOME_INTERVAL_HOURS = 6
 INCOME_PARTS = 4
+# گرید پرداخت به وقت ایران: بازه‌های ۰۳:۰۰، ۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰ تهران
+IRAN_TZ = ZoneInfo("Asia/Tehran")
+SLOT_OFFSET_HOURS = 3
+
+
+def _iran_slot_key(dt_utc):
+    """شناسه‌ی بازه‌ی ۶ ساعته به وقت ایران."""
+    local = dt_utc.astimezone(IRAN_TZ)
+    shifted = (local.hour - SLOT_OFFSET_HOURS) % 24
+    return f"{local.date().isoformat()}_{shifted // 6}"
+
+
+def _payout_due(last_raw, now_utc):
+    """آیا پرداخت جدید لازم است؟ خروجی: (eligible, first_of_day)."""
+    last_dt = None
+    try:
+        if len(last_raw) >= 19:
+            last_dt = datetime.datetime.fromisoformat(last_raw)
+        elif len(last_raw) == 10:
+            last_dt = datetime.datetime.fromisoformat(last_raw + "T00:00:00+00:00")
+    except Exception:
+        last_dt = None
+    if last_dt is None:
+        return True, True
+    local_now = now_utc.astimezone(IRAN_TZ)
+    local_last = last_dt.astimezone(IRAN_TZ)
+    first_of_day = local_last.date() != local_now.date()
+    eligible = _iran_slot_key(last_dt) != _iran_slot_key(now_utc)
+    return eligible, first_of_day
 
 
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
@@ -62,21 +92,10 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
     updated_count = 0
     for c in countries:
         last_raw = c.get("last_income_date") or ""
-        last_dt = None
-        try:
-            if len(last_raw) >= 19:
-                last_dt = datetime.datetime.fromisoformat(last_raw)
-            elif len(last_raw) == 10:
-                last_dt = datetime.datetime.fromisoformat(last_raw + "T00:00:00+00:00")
-        except Exception:
-            last_dt = None
-
-        first_of_day = (last_raw[:10] != today)
+        eligible, first_of_day = _payout_due(last_raw, now)
         if force:
             eligible = True
             first_of_day = True
-        else:
-            eligible = last_dt is None or (now - last_dt).total_seconds() >= INCOME_INTERVAL_HOURS * 3600
         if not eligible:
             continue
 
@@ -112,7 +131,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         f"• مبلغ واریزی: *{format_money(net_payment)}*\n"
                         f"• طلا: +{gold_payment}\n"
                         f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
-                        f"_درآمد روزانه در {INCOME_PARTS} پرداختِ هر {INCOME_INTERVAL_HOURS} ساعته واریز می‌شود._"
+                        f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
                     )
                 await context.bot.send_message(chat_id=p_id, text=report_msg, parse_mode="Markdown")
             except Exception as e:
