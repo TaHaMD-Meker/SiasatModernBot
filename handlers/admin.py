@@ -348,7 +348,8 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
             InlineKeyboardButton("🎖️ مدیریت دارایی‌های نظامی", callback_data=f"admin:menu_assets:{c['id']}"),
         ],
         [
-            InlineKeyboardButton("📜 تراکنش‌ها و فعالیت‌های اخیر این کشور", callback_data=f"admin:c_tx_logs:{c['id']}"),
+            InlineKeyboardButton("⚙️ اقتصاد و وضعیت داخلی", callback_data=f"admin:cstatmenu:{c['id']}"),
+            InlineKeyboardButton("📜 تراکنش‌ها", callback_data=f"admin:c_tx_logs:{c['id']}"),
         ],
         [
             InlineKeyboardButton("✉️ ارسال پیام مستقیم به بازیکن", callback_data=f"admin:msg_prompt:{c['id']}"),
@@ -505,6 +506,108 @@ async def menu_assets_category(query, country_id: int, category: str):
 
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data=f"admin:menu_assets:{country_id}")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+
+
+# ==================== ویرایش اقتصاد و وضعیت داخلی کشور ====================
+
+COUNTRY_STAT_FIELDS = {
+    "daily_income":     ("📈 درآمد روزانه", "دلار", 1_000_000, "money"),
+    "tax_income":       ("💰 درآمد مالیاتی", "دلار", 500_000, "money"),
+    "approval_rating":  ("😀 رضایت عمومی", "٪", 5, "pct"),
+    "combat_readiness": ("⚔️ آمادگی رزمی", "٪", 5, "pct"),
+    "population":       ("👥 جمعیت", "نفر", 1_000_000, "num"),
+    "active_personnel": ("🪖 نیروی فعال", "نفر", 10_000, "num"),
+    "reserve_personnel":("🎖 نیروی ذخیره", "نفر", 10_000, "num"),
+    "tech_level":       ("🔬 سطح فناوری", "سطح", 1, "num"),
+    "electricity":      ("⚡ برق", "واحد", 10, "num"),
+    "grain":            ("🌾 غلات", "تن", 10_000, "num"),
+    "gold_daily":       ("🪙 تولید روزانه طلا", "سکه", 10, "num"),
+    "oil_production":   ("🛢️ تولید روزانه نفت", "بشکه", 100_000, "num"),
+}
+
+_CSTAT_LIMITS = {"approval_rating": (0, 100), "combat_readiness": (0, 100), "tech_level": (1, 10)}
+
+
+def _fmt_stat(value, kind):
+    if kind == "money":
+        return format_money(value)
+    return f"{format_number(value)}"
+
+
+async def menu_country_stats(query, country_id: int):
+    c = db.get_country_by_id(country_id)
+    if not c:
+        return
+    rows = []
+    row = []
+    for field, (label, unit, step, kind) in COUNTRY_STAT_FIELDS.items():
+        val = _fmt_stat(c.get(field, 0) or 0, kind)
+        row.append(InlineKeyboardButton(f"{label}: {val}", callback_data=f"admin:cstat:{country_id}:{field}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{country_id}")])
+    text = (
+        f"⚙️ *اقتصاد و وضعیت داخلی — {c['flag']} {c['name']}*\n\n"
+        "مورد مورد نظر را برای ویرایش انتخاب کنید:"
+    )
+    from telegram import InlineKeyboardMarkup as _IKM
+    await query.edit_message_text(text, reply_markup=_IKM(rows), parse_mode="Markdown")
+
+
+async def menu_cstat_adjust(query, country_id: int, field: str):
+    c = db.get_country_by_id(country_id)
+    info = COUNTRY_STAT_FIELDS.get(field)
+    if not c or not info:
+        return
+    label, unit, step, kind = info
+    current = c.get(field, 0) or 0
+    note = ""
+    if field in ("daily_income", "tax_income"):
+        note = "\n\n⚠️ _این دو مورد با هر ری‌استارت بر اساس کانفیگ و ساختمان‌ها بازسازی می‌شوند._"
+    from telegram import InlineKeyboardMarkup as _IKM
+    rows = [
+        [InlineKeyboardButton(f"➖ {step*10:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-10"),
+         InlineKeyboardButton(f"➖ {step*5:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-5"),
+         InlineKeyboardButton(f"➖ {step:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-1")],
+        [InlineKeyboardButton(f"➕ {step:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:1"),
+         InlineKeyboardButton(f"➕ {step*5:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:5"),
+         InlineKeyboardButton(f"➕ {step*10:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:10")],
+        [InlineKeyboardButton("✏️ وارد کردن مقدار دقیق", callback_data=f"admin:cstatset:{country_id}:{field}")],
+        [InlineKeyboardButton("🔙 بازگشت به وضعیت داخلی", callback_data=f"admin:cstatmenu:{country_id}")],
+    ]
+    query.edit_message_text(
+        f"{label} — {c['flag']} {c['name']}\n\nمقدار فعلی: *{_fmt_stat(current, kind)}*{note}",
+        reply_markup=_IKM(rows), parse_mode="Markdown")
+
+
+def apply_cstat_delta(country_id: int, field: str, mult: int):
+    info = COUNTRY_STAT_FIELDS.get(field)
+    if not info:
+        return None, "فیلد نامعتبر"
+    _, unit, step, kind = info
+    c = db.get_country_by_id(country_id)
+    if not c:
+        return None, "کشور یافت نشد"
+    new_val = (c.get(field, 0) or 0) + mult * step
+    lo, hi = _CSTAT_LIMITS.get(field, (0, 10**15))
+    new_val = max(lo, min(hi, new_val))
+    db.update_country_field(country_id, field, new_val)
+    return new_val, None
+
+
+def apply_cstat_value(country_id: int, field: str, value: int):
+    info = COUNTRY_STAT_FIELDS.get(field)
+    if not info:
+        return None, "فیلد نامعتبر"
+    lo, hi = _CSTAT_LIMITS.get(field, (0, 10**15))
+    value = max(lo, min(hi, value))
+    db.update_country_field(country_id, field, value)
+    return value, None
 
 
 async def menu_single_asset_item(query, country_id: int, equipment_key: str):
@@ -1253,6 +1356,42 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         c_id = int(data.split(":")[2])
         await menu_oil(query, c_id)
 
+    elif data.startswith("admin:cstatadj:"):
+        parts = data.split(":")
+        if len(parts) == 5:
+            cid_, field_, mult_ = int(parts[2]), parts[3], int(parts[4])
+            new_val, err = apply_cstat_delta(cid_, field_, mult_)
+            if err:
+                await query.answer(f"❌ {err}", show_alert=True)
+                return
+            info = COUNTRY_STAT_FIELDS.get(field_)
+            await query.answer(f"✅ {info[0]} → {_fmt_stat(new_val, info[3])}", show_alert=True)
+            await menu_cstat_adjust(query, cid_, field_)
+        return
+
+    elif data.startswith("admin:cstatset:"):
+        parts = data.split(":")
+        if len(parts) == 4:
+            context.user_data["admin_awaiting_input"] = {"type": "cstat_set", "country_id": int(parts[2]), "field": parts[3]}
+            c = db.get_country_by_id(int(parts[2]))
+            info = COUNTRY_STAT_FIELDS.get(parts[3])
+            await query.edit_message_text(
+                f"✏️ *مقدار جدید برای {info[0]}* — {c['flag']} {c['name']}\n\nمقدار فعلی: {_fmt_stat(c.get(parts[3], 0) or 0, info[3])}\n\nلطفاً عدد را ارسال کنید (اعداد فارسی هم قابل قبول است):",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:cstatmenu:{parts[2]}")]]),
+                parse_mode="Markdown",
+            )
+        return
+
+    elif data.startswith("admin:cstatmenu:"):
+        await menu_country_stats(query, int(data.split(":")[2]))
+        return
+
+    elif data.startswith("admin:cstat:"):
+        parts = data.split(":")
+        if len(parts) == 4:
+            await menu_cstat_adjust(query, int(parts[2]), parts[3])
+        return
+
     elif data.startswith("admin:asset_cat:"):
         parts = data.split(":")
         if len(parts) >= 4:
@@ -1402,6 +1541,30 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
     text = update.message.text.strip()
     input_type = input_state.get("type")
+
+    if input_type == "cstat_set":
+        import re as _re
+        raw = _re.sub(r"[^0-9]", "", str(text).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")))
+        if not raw:
+            await update.message.reply_text("❌ لطفاً فقط یک عدد صحیح بفرست.", parse_mode="Markdown")
+            return
+        cid_ = input_state["country_id"]; field_ = input_state["field"]
+        new_val, err = apply_cstat_value(cid_, field_, int(raw))
+        c = db.get_country_by_id(cid_)
+        info = COUNTRY_STAT_FIELDS.get(field_)
+        context.user_data["admin_awaiting_input"] = None
+        if err:
+            await update.message.reply_text(f"❌ {err}", parse_mode="Markdown")
+            return
+        await update.message.reply_text(
+            f"✅ *{info[0]}* کشور {c['flag']} {c['name']} به *{_fmt_stat(new_val, info[3])}* تغییر یافت.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚙️ بازگشت به وضعیت داخلی", callback_data=f"admin:cstatmenu:{cid_}")],
+                [InlineKeyboardButton("🔙 داشبورد کشور", callback_data=f"admin:c:{cid_}")],
+            ]),
+            parse_mode="Markdown",
+        )
+        return
 
     if input_type and str(input_type).startswith("ls_"):
         from handlers.losses import handle_losses_input
