@@ -247,6 +247,7 @@ async def admin_locks_menu(query, context):
     blockade_lock = db.get_setting("naval_blockade_locked") == "1"
     trade_lock = db.get_setting("trade_contracts_locked") == "1"
     notes_lock = db.get_setting("diplomatic_notes_locked") == "1"
+    role_lock = db.get_setting("role_submit_locked") == "1"
 
     text = (
         "🔐 **سیستم قفل‌ها و کنترل محدودیت‌های بازی**\n"
@@ -259,6 +260,7 @@ async def admin_locks_menu(query, context):
         [InlineKeyboardButton("🔓 باز کردن محاصره دریایی" if blockade_lock else "🔒 قفل کردن محاصره دریایی", callback_data="admin:toggle_lock:naval_blockade_locked")],
         [InlineKeyboardButton("🔓 باز کردن قراردادهای تجاری" if trade_lock else "🔒 قفل کردن قراردادهای تجاری", callback_data="admin:toggle_lock:trade_contracts_locked")],
         [InlineKeyboardButton("🔓 باز کردن پیام‌های دیپلماتیک" if notes_lock else "🔒 قفل کردن پیام‌های دیپلماتیک", callback_data="admin:toggle_lock:diplomatic_notes_locked")],
+        [InlineKeyboardButton("🔓 باز کردن ارسال رول" if role_lock else "🔒 قفل کردن ارسال رول", callback_data="admin:toggle_lock:role_submit_locked")],
         [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
     ]
 

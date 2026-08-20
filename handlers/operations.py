@@ -200,6 +200,15 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             )
             return
 
+        if db.get_setting("role_submit_locked") == "1":
+            await query.edit_message_text(
+                "🔒 **ارسال رول در حال حاضر قفل است.**\n\n"
+                "برای ارسال رول می‌توانید به این آیدی پیام دهید:\n"
+                "@vfvvx",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="op:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
         context.user_data["role_submit_draft"] = {"role_type": role_type}
         context.user_data["roleplay_text_input"] = True
 
