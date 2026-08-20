@@ -1153,6 +1153,16 @@ def evict_base(base_id):
     dissolve_base(base_id, loss_pct=25)
 
 
+def get_base_daily_cost(base_id):
+    """هزینه روزانه پویا: ثابت + به‌ازای هر قلم تجهیزات مستقر."""
+    items = get_base_assets(base_id)
+    n_items = len(items)
+    cost = {}
+    for k in ("money", "grain", "oil"):
+        cost[k] = config.BASE_DAILY_FLAT.get(k, 0) + n_items * config.BASE_DAILY_PER_ITEM.get(k, 0)
+    return cost
+
+
 def process_base_daily_costs():
     """هزینه روزانه پایگاه‌ها + اجاره میزبان؛ ۳ روز پرداخت‌نشده = انحلال با ۲۵٪ تلفات."""
     events = []
@@ -1160,7 +1170,7 @@ def process_base_daily_costs():
         owner = get_country_by_id(b["owner_id"])
         if not owner:
             continue
-        cost = dict(config.BASE_DAILY_COST)
+        cost = get_base_daily_cost(b["id"])
         rent = int(b.get("daily_rent") or 0)
         total_money = cost.get("money", 0) + rent
         affordable = (

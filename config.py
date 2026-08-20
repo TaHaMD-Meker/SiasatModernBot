@@ -2016,7 +2016,8 @@ DAILY_MISSIONS = {
 
 # ===== سیستم پایگاه پیشروی (Forward Bases) =====
 BASE_BUILD_COST = {"money": 15_000_000, "gold": 300, "grain": 15_000, "oil": 1_000_000}
-BASE_DAILY_COST = {"money": 500_000, "grain": 500, "oil": 20_000}
+BASE_DAILY_FLAT = {"money": 200_000, "grain": 200, "oil": 10_000}
+BASE_DAILY_PER_ITEM = {"money": 50_000, "grain": 50, "oil": 2_000}
 BASE_UPGRADE_COST = {"money": 5_000_000, "gold": 50, "grain": 5_000, "oil": 200_000}
 BASE_DEFAULT_CAPACITY = 20
 BASE_UPGRADE_STEP = 5
