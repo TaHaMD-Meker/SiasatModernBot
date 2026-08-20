@@ -16,6 +16,10 @@ import config
 from utils import format_money, format_number, get_main_keyboard
 
 
+def _md_escape(text):
+    return str(text).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]")
+
+
 def _kb(rows):
     return InlineKeyboardMarkup(rows)
 
@@ -156,7 +160,7 @@ async def mv_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await _send(
             context.bot, host["player_id"],
             f"🏗️ *درخواست ساخت پایگاه پیشروی*\n━━━━━━━━━━━━━━━━━━\n\n"
-            f".country {country['flag']} {country['name']} درخواست ساخت پایگاه به نام:\n\n"
+            f"{country['flag']} {country['name']} درخواست ساخت پایگاه به نام:\n\n"
             f"🏠 *«{d['name']}»*\n\n"
             f"💰 اجاره پیشنهادی روزانه: *{format_money(d['rent'])}*\n\n"
             f"💬 پیام:\n_{d['msg']}_",
@@ -426,13 +430,13 @@ def _base_info_text(b):
     items = db.get_base_assets(b["id"])
     used = len(items)
     lines = [
-        f"🏠 *پایگاه «{b['name']}»*",
+        f"🏠 *پایگاه «{_md_escape(b['name'])}»*",
         f"━━━━━━━━━━━━━━━━━━",
         f"🗺️ میزبان: {b['hflag']} {b['hname']}",
         f"🏗️ صاحب: {b['oflag']} {b['oname']}",
         f"⬆️ سطح: {b['level']} | 📦 ظرفیت: {used}/{b['capacity']} قلم",
         f"💰 اجاره روزانه: {format_money(b['daily_rent'] or 0)}",
-        f"📉 هزینه روزانه: {_cost_str(config.BASE_DAILY_COST)}",
+        f"📉 هزینه روزانه: {_cost_str(config.BASE_DAILY_FLAT)}",
     ]
     if items:
         lines.append("\n*تجهیزات مستقر:*")
@@ -478,19 +482,28 @@ async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
         d["msg"] = text[:600]
         d["state"] = "mv_preview"
         host = db.get_country_by_id(d["host_id"])
-        owner = db.get_country_by_id(d["owner_id"])
-        await update.message.reply_text(
+        esc_name = _md_escape(d["name"])
+        esc_msg = _md_escape(d["msg"])
+        preview_text = (
             f"📋 *پیش‌نمایش درخواست پایگاه*\n━━━━━━━━━━━━━━━━━━\n"
-            f"🏠 نام: «{d['name']}»\n🗺️ میزبان: {host['flag']} {host['name']}\n"
+            f"🏠 نام: «{esc_name}»\n🗺 میزبان: {host['flag']} {host['name']}\n"
             f"💰 اجاره روزانه: {format_money(d['rent'])}\n\n"
-            f"💳 هزینه ساخت (پس از تأیید میزبان کسر می‌شود):\n{_cost_str(config.BASE_BUILD_COST)}\n"
-            f"📉 هزینه روزانه پایگاه:\n{_cost_str(config.BASE_DAILY_COST)}\n\n💬 پیام:\n_{d['msg']}_",
-            reply_markup=_kb([
-                [InlineKeyboardButton("📨 ارسال درخواست", callback_data="mv:nbconfirm")],
-                [InlineKeyboardButton("❌ انصراف", callback_data="mv:newbase")],
-            ]),
-            parse_mode="Markdown",
+            f"💳 هزینه ساخت:\n{_cost_str(config.BASE_BUILD_COST)}\n"
+            f"📉 هزینه روزانه (خالی): {_cost_str(config.BASE_DAILY_FLAT)}\n"
+            f"📈 + هر قلم: {_cost_str(config.BASE_DAILY_PER_ITEM)}\n\n"
+            f"💬 پیام:\n{esc_msg}"
         )
+        kb = _kb([
+            [InlineKeyboardButton("📨 ارسال درخواست", callback_data="mv:nbconfirm")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="mv:newbase")],
+        ])
+        try:
+            await update.message.reply_text(preview_text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            try:
+                await update.message.reply_text(preview_text.replace("*", ""), reply_markup=kb)
+            except Exception as e2:
+                print(f"Base preview send error: {e2}")
         return True
 
     if state == "mv_qty":
