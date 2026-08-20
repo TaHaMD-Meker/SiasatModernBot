@@ -106,6 +106,25 @@ def match_asset_by_name(name: str, assets: list):
     return best
 
 
+def match_building(name: str, country_id: int):
+    """تطبیق نام با ساختمان‌های «مالکیت‌دار» کشور از فروشگاه (جدول equipment)."""
+    q = _norm_name(name)
+    if len(q) < 2:
+        return None
+    owned = db.get_equipment(country_id) or {}
+    best, best_len = None, 0
+    for key, qty in owned.items():
+        if (qty or 0) <= 0:
+            continue
+        item = config.ALL_SHOP_ITEMS.get(key)
+        if not item:
+            continue
+        nm = _norm_name(item.get("name", key))
+        if (q in nm or nm in q) and len(nm) > best_len:
+            best, best_len = {"key": key, "name": item.get("name", key)}, len(nm)
+    return best
+
+
 def parse_loss_report_text(text: str):
     """استخراج کشور، عملیات، اقلام تجهیزاتی و تلفات انسانی از متن گزارش استاندارد."""
     t = to_english_digits(str(text))
@@ -219,6 +238,11 @@ def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 و�
         lines.append(f"{emo} {sub}: {format_number(t)} {units[sub]}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━")
+    if any(it.get("special") == "building" for it in human_items):
+        lines.append("\n🏗️ خسارت ساخت‌سازی\n")
+        for it in human_items:
+            if it.get("special") == "building":
+                lines.append(f"{it.get('name', it.get('key'))}: {format_number(int(it.get('qty', 0) or 0))} واحد")
     if any(it.get("special") in ("mil_kia", "wounded", "civ_kia") for it in human_items):
         lines.append("\n👥 تلفات انسانی\n")
         for it in human_items:
@@ -658,7 +682,13 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         for name, qty, unit in parsed["items"]:
             a = match_asset_by_name(name, assets)
             if not a:
-                unmatched.append(name)
+                b = match_building(name, country["id"])
+                if b:
+                    matched.append({"key": b["key"], "name": b["name"], "special": "building",
+                                    "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": "🏗️",
+                                    "unit": "واحد", "qty": qty})
+                else:
+                    unmatched.append(name)
                 continue
             existing = next((x for x in matched if x["key"] == a["equipment_key"]), None)
             if existing:
@@ -702,7 +732,7 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["ls_draft"] = draft
         preview = _preview_text(draft)
         if unmatched:
-            preview += "\n\n⚠️ *تجهیزات زیر در انبار پیدا نشد و ثبت نخواهند شد:*\n" + "\n".join(f"• {n}" for n in unmatched)
+            preview += "\n\nℹ️ _اقلام زیر برای این کشور یافت نشد و نادیده گرفته شدند:_\n" + "\n".join(f"• {n}" for n in unmatched)
         await update.message.reply_text(preview, reply_markup=_kb([
             [InlineKeyboardButton("✅ تأیید و اعمال تلفات", callback_data="ls:confirm")],
             [InlineKeyboardButton("🔁 متن جدید", callback_data="ls:fast")],

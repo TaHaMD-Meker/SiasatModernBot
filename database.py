@@ -661,6 +661,12 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                 (country_id, operation_name or "", note or "", admin_id, "applied", json.dumps(items, ensure_ascii=False), now_str),
             )
             report_id = cur.lastrowid
+        # تخریب ساختمان → بازسازی درآمد روزانه (کارخانه بسوزد، درآمدش قطع شود)
+        if any(it.get("special") == "building" for it in valid_items):
+            try:
+                rebalance_existing_countries_income()
+            except Exception:
+                pass
         return True, report_id, None
     except Exception as e:
         return False, None, str(e)
@@ -713,6 +719,16 @@ def revert_loss_report(report_id: int):
             items = json.loads(row["items_json"])
             for it in items:
                 if int(it.get("qty", 0) or 0) > 0:
+                    if it.get("special") == "building":
+                        cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
+                                    " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + excluded.quantity",
+                                    (row["country_id"], it["key"], int(it["qty"])))
+                        eff = it.get("effects", {})
+                        cur.execute(
+                            "UPDATE countries SET electricity = electricity + ?, gold_daily = gold_daily + ?,"
+                            " oil_production = oil_production + ?, grain_daily = grain_daily + ? WHERE id = ?",
+                            (eff.get("elec", 0), eff.get("gold_daily", 0), eff.get("oil_prod", 0), eff.get("grain_daily", 0), row["country_id"]))
+                        continue
                     if it.get("special") == "money":
                         cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
                         continue
@@ -746,6 +762,16 @@ def delete_loss_report(report_id: int):
                 items = json.loads(row["items_json"])
                 for it in items:
                     if int(it.get("qty", 0) or 0) > 0:
+                        if it.get("special") == "building":
+                            cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
+                                        " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + excluded.quantity",
+                                        (row["country_id"], it["key"], int(it["qty"])))
+                            eff = it.get("effects", {})
+                            cur.execute(
+                                "UPDATE countries SET electricity = electricity + ?, gold_daily = gold_daily + ?,"
+                                " oil_production = oil_production + ?, grain_daily = grain_daily + ? WHERE id = ?",
+                                (eff.get("elec", 0), eff.get("gold_daily", 0), eff.get("oil_prod", 0), eff.get("grain_daily", 0), row["country_id"]))
+                            continue
                         if it.get("special") == "money":
                             cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
                             continue
