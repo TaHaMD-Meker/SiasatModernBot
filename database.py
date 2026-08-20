@@ -768,6 +768,11 @@ def revert_loss_report(report_id: int):
                         (int(it["qty"]), row["country_id"], it["key"]),
                     )
             cur.execute("UPDATE loss_reports SET status = 'reverted' WHERE id = ?", (report_id,))
+        if any(it.get("special") == "building" for it in items):
+            try:
+                rebalance_existing_countries_income()
+            except Exception:
+                pass
         return True, None
     except Exception as e:
         return False, str(e)
@@ -811,6 +816,11 @@ def delete_loss_report(report_id: int):
                             (int(it["qty"]), row["country_id"], it["key"]),
                         )
             cur.execute("UPDATE loss_reports SET status = 'deleted' WHERE id = ?", (report_id,))
+        if row["status"] == "applied" and any(it.get("special") == "building" for it in items):
+            try:
+                rebalance_existing_countries_income()
+            except Exception:
+                pass
         return True, None
     except Exception as e:
         return False, str(e)
