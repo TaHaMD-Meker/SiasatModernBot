@@ -174,6 +174,17 @@ def parse_loss_report_text(text: str):
         result["human"]["mil"] = _num_after(r"(?<!غیر)(?<!غیر )(?:نظامی|سرباز|کشته)[^0-9]{0,50}(?:حدود|تقریبا[ً]?)?\s*([\d,٬]+)")
         if result["human"]["civilians"] and result["human"]["mil"] == result["human"]["civilians"]:
             result["human"]["mil"] = 0
+
+    # هزینه آماده‌سازی: مبالغ دلار و بشکه در کل متن (با پشتیبانی میلیون/میلیارد)
+    def _amounts_with_unit(unit_word):
+        total = 0
+        for mm in re.finditer(r"([\d,٬]+(?:\.\d+)?)\s*(میلیارد|میلیون)?\s*" + unit_word, t):
+            val = float(mm.group(1).replace(",", "").replace("٬", ""))
+            mult = {"میلیارد": 1_000_000_000, "میلیون": 1_000_000}.get(mm.group(2), 1)
+            total += int(val * mult)
+        return total
+
+    result["costs"] = {"money": _amounts_with_unit("دلار"), "oil": _amounts_with_unit("بشکه")}
     return result
 
 
@@ -208,10 +219,19 @@ def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 و�
         lines.append(f"{emo} {sub}: {format_number(t)} {units[sub]}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━")
-    if human_items:
+    if any(it.get("special") in ("mil_kia", "wounded", "civ_kia") for it in human_items):
         lines.append("\n👥 تلفات انسانی\n")
         for it in human_items:
+            if it.get("special") in ("money", "oil"):
+                continue
             lines.append(f"{it.get('emoji', '👤')} {it.get('name')}: {format_number(int(it.get('qty', 0) or 0))} {it.get('unit', 'نفر')}")
+    if any(it.get("special") in ("money", "oil") for it in human_items):
+        lines.append("\n💸 هزینه آماده‌سازی عملیات\n")
+        for it in human_items:
+            if it.get("special") == "money":
+                lines.append(f"💵 هزینه مالی: {format_number(int(it.get('qty', 0) or 0))} دلار")
+            elif it.get("special") == "oil":
+                lines.append(f"🛢️ سوخت مصرفی: {format_number(int(it.get('qty', 0) or 0))} بشکه")
     if note:
         lines.append(f"\n📝 {note}")
     lines.append(status_line)
@@ -656,6 +676,13 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_markup=_kb([[InlineKeyboardButton("🔁 دوباره", callback_data="ls:fast")]]),
             )
             return
+        costs = parsed.get("costs") or {}
+        if costs.get("money", 0) and costs["money"] > 0:
+            matched.append({"key": "__cost_money__", "name": "هزینه آماده‌سازی (خزانه)", "special": "money",
+                            "category": "Cost", "subcat": "هزینه عملیات", "emoji": "💵", "unit": "دلار", "qty": int(costs["money"])})
+        if costs.get("oil", 0) and costs["oil"] > 0:
+            matched.append({"key": "__cost_oil__", "name": "سوخت و لجستیک (نفت)", "special": "oil",
+                            "category": "Cost", "subcat": "هزینه عملیات", "emoji": "🛢️", "unit": "بشکه", "qty": int(costs["oil"])})
         h = parsed.get("human") or {}
         if h.get("mil", 0) and h["mil"] > 0:
             matched.append({"key": "__personnel_mil__", "name": "نیروهای نظامی (کشته)", "special": "mil_kia",
