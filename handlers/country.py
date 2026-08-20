@@ -62,6 +62,8 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}{badges_str}"
     )
 
+    text += missions_str
+
     inline_keyboard = [
         [InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")],
         [InlineKeyboardButton("🔬 مرکز تحقیق و توسعه فناوری (R&D)", callback_data="research:menu")],
@@ -163,5 +165,4 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_adm:
         text += "\n\n👑 *پنل مدیریت:* فقط برای ادمین اصلی بازی فعال است."
 
-    text += missions_str
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
