@@ -53,7 +53,6 @@ async def operations_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("📝 ثبت رول تهاجمی (حمله)", callback_data="op:submit:attack"), InlineKeyboardButton("🛡️ ثبت رول پدافندی (دفاع)", callback_data="op:submit:defense")],
-        [InlineKeyboardButton("🪖 برگزاری مانور نظامی (آمادگی رزمی +۴٪)", callback_data="op:military_drill")],
         [InlineKeyboardButton("📋 مشاهده رول‌های ثبت‌شده من", callback_data="op:my_roles")],
     ]
 

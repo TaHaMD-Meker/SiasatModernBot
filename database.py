@@ -313,6 +313,49 @@ def init_db():
     """)
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS foreign_bases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id INTEGER NOT NULL,
+        host_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        capacity INTEGER DEFAULT 20,
+        level INTEGER DEFAULT 1,
+        daily_rent INTEGER DEFAULT 0,
+        unpaid_days INTEGER DEFAULT 0,
+        created_at TEXT,
+        FOREIGN KEY(owner_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(host_id) REFERENCES countries(id) ON DELETE CASCADE
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS base_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        base_id INTEGER NOT NULL,
+        equipment_key TEXT NOT NULL,
+        equipment_name TEXT,
+        category TEXT,
+        amount INTEGER DEFAULT 0,
+        UNIQUE(base_id, equipment_key)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS base_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rtype TEXT DEFAULT 'create',
+        owner_id INTEGER NOT NULL,
+        host_id INTEGER NOT NULL,
+        base_name TEXT,
+        base_id INTEGER,
+        message TEXT,
+        daily_rent INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS loss_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         country_id INTEGER NOT NULL,
@@ -893,6 +936,261 @@ def complete_daily_mission(country_id: int, key: str):
     return True, reward
 
 
+
+
+# ==================== سیستم پایگاه پیشروی (Forward Bases) ====================
+
+def create_base_request(rtype, owner_id, host_id, base_name, base_id, message, daily_rent):
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cur.execute(
+        "INSERT INTO base_requests (rtype, owner_id, host_id, base_name, base_id, message, daily_rent, status, created_at) VALUES (?,?,?,?,?,?,?, 'pending', ?)",
+        (rtype, owner_id, host_id, base_name, base_id, message or "", int(daily_rent or 0), now_str),
+    )
+    conn.commit()
+    rid = cur.lastrowid
+    conn.close()
+    return rid
+
+
+def get_base_request(req_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM base_requests WHERE id = ?", (req_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def set_base_request_status(req_id, status):
+    conn = get_connection()
+    conn.execute("UPDATE base_requests SET status = ? WHERE id = ?", (status, req_id))
+    conn.commit()
+    conn.close()
+
+
+def _can_afford(c, cost):
+    return (
+        (c.get("treasury", 0) or 0) >= cost.get("money", 0)
+        and (c.get("gold", 0) or 0) >= cost.get("gold", 0)
+        and (c.get("grain", 0) or 0) >= cost.get("grain", 0)
+        and (c.get("oil_reserves", 0) or 0) >= cost.get("oil", 0)
+    )
+
+
+def _deduct_base_cost(cur, country_id, cost):
+    cur.execute(
+        "UPDATE countries SET treasury = treasury - ?, gold = gold - ?, grain = grain - ?, oil_reserves = oil_reserves - ? WHERE id = ?",
+        (cost.get("money", 0), cost.get("gold", 0), cost.get("grain", 0), cost.get("oil", 0), country_id),
+    )
+
+
+def approve_base_create(req_id, auto=True):
+    """اعتبارسنجی و (در صورت auto) ساخت پایگاه با کسر هزینه‌ها — اتمیک."""
+    req = get_base_request(req_id)
+    if not req or req["status"] != "pending":
+        return False, "درخواست معتبر نیست.", None
+    owner = get_country_by_id(req["owner_id"])
+    if not owner:
+        return False, "کشور درخواست‌کننده یافت نشد.", None
+    if not _can_afford(owner, config.BASE_BUILD_COST):
+        return False, "منابع کافی برای هزینه ساخت پایگاه ندارید:\n" + str(config.BASE_BUILD_COST), None
+    if not auto:
+        return True, "قابل پرداخت", None
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            _deduct_base_cost(cur, req["owner_id"], config.BASE_BUILD_COST)
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute(
+                "INSERT INTO foreign_bases (owner_id, host_id, name, capacity, level, daily_rent, unpaid_days, created_at) VALUES (?,?,?,?,?,?,0,?)",
+                (req["owner_id"], req["host_id"], req["base_name"], config.BASE_DEFAULT_CAPACITY, 1, int(req["daily_rent"] or 0), now_str),
+            )
+            base_id = cur.lastrowid
+            cur.execute("UPDATE base_requests SET status = 'accepted' WHERE id = ?", (req_id,))
+            add_transaction(req["owner_id"], "base_build", f"ساخت پایگاه «{req['base_name']}»", -int(config.BASE_BUILD_COST.get("money", 0)))
+        return True, "ساخته شد", base_id
+    except Exception as e:
+        return False, str(e), None
+
+
+def approve_base_upgrade(req_id):
+    req = get_base_request(req_id)
+    if not req or req["status"] != "pending" or req["rtype"] != "upgrade":
+        return False, "درخواست معتبر نیست."
+    owner = get_country_by_id(req["owner_id"])
+    if not owner or not _can_afford(owner, config.BASE_UPGRADE_COST):
+        return False, "صاحب پایگاه منابع کافی برای ارتقا ندارد."
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            _deduct_base_cost(cur, req["owner_id"], config.BASE_UPGRADE_COST)
+            cur.execute("UPDATE foreign_bases SET capacity = capacity + ?, level = level + 1 WHERE id = ?",
+                        (config.BASE_UPGRADE_STEP, req["base_id"]))
+            cur.execute("UPDATE base_requests SET status = 'accepted' WHERE id = ?", (req_id,))
+        return True, "ارتقا یافت"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_bases(owner_id=None, host_id=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    sql = ("SELECT b.*, o.name AS oname, o.flag AS oflag, h.name AS hname, h.flag AS hflag "
+           "FROM foreign_bases b JOIN countries o ON o.id = b.owner_id JOIN countries h ON h.id = b.host_id WHERE 1=1")
+    params = []
+    if owner_id:
+        sql += " AND b.owner_id = ?"
+        params.append(owner_id)
+    if host_id:
+        sql += " AND b.host_id = ?"
+        params.append(host_id)
+    sql += " ORDER BY b.id DESC"
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_base(base_id):
+    rows = get_bases()
+    for r in rows:
+        if r["id"] == base_id:
+            return r
+    return None
+
+
+def get_base_assets(base_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM base_assets WHERE base_id = ? AND amount > 0", (base_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def deploy_to_base(base_id, equipment_key, amount):
+    """انتقال اتمیک تجهیز از انبار صاحب پایگاه به پایگاه (با کنترل ظرفیت قلم)."""
+    b = get_base(base_id)
+    if not b:
+        return False, "پایگاه یافت نشد."
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?", (b["owner_id"], equipment_key))
+            row = cur.fetchone()
+            if not row or (row["amount"] or 0) < amount:
+                return False, "موجودی انبار شما کافی نیست."
+            cur.execute("SELECT COUNT(*) AS n FROM base_assets WHERE base_id = ? AND amount > 0", (base_id,))
+            lines = cur.fetchone()["n"]
+            cur.execute("SELECT amount FROM base_assets WHERE base_id = ? AND equipment_key = ?", (base_id, equipment_key))
+            existing = cur.fetchone()
+            if not existing and lines >= b["capacity"]:
+                return False, f"ظرفیت پایگاه پر است ({b['capacity']} قلم). اول ارتقا بده یا تجهیز برگردان."
+            cur.execute("UPDATE country_assets SET amount = amount - ? WHERE country_id = ? AND equipment_key = ?", (amount, b["owner_id"], equipment_key))
+            a = get_asset_by_key(b["owner_id"], equipment_key)
+            cur.execute(
+                "INSERT INTO base_assets (base_id, equipment_key, equipment_name, category, amount) VALUES (?,?,?,?,?)"
+                " ON CONFLICT(base_id, equipment_key) DO UPDATE SET amount = amount + ?",
+                (base_id, equipment_key, a["equipment_name"] if a else equipment_key, a["category"] if a else "", amount, amount),
+            )
+        return True, "منتقل شد"
+    except Exception as e:
+        return False, str(e)
+
+
+def recall_from_base(base_id, equipment_key, amount=None):
+    """بازگشت تجهیزات از پایگاه به انبار صاحب."""
+    b = get_base(base_id)
+    if not b:
+        return False, "پایگاه یافت نشد."
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT amount FROM base_assets WHERE base_id = ? AND equipment_key = ?", (base_id, equipment_key))
+            row = cur.fetchone()
+            if not row or (row["amount"] or 0) <= 0:
+                return False, "این تجهیز در پایگاه نیست."
+            amt = row["amount"] if amount is None else min(int(amount), row["amount"])
+            cur.execute("UPDATE base_assets SET amount = amount - ? WHERE base_id = ? AND equipment_key = ?", (amt, base_id, equipment_key))
+            cur.execute(
+                "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
+                (amt, b["owner_id"], equipment_key),
+            )
+        return True, "برگشت"
+    except Exception as e:
+        return False, str(e)
+
+
+def dissolve_base(base_id, loss_pct=0):
+    """انحلال پایگاه؛ تجهیزات با کسر loss_pct به انبار صاحب برمی‌گردد."""
+    b = get_base(base_id)
+    if not b:
+        return
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT equipment_key, amount FROM base_assets WHERE base_id = ? AND amount > 0", (base_id,))
+            for r in cur.fetchall():
+                keep = int(r["amount"] * (100 - loss_pct) / 100)
+                if keep > 0:
+                    cur.execute("UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
+                                (keep, b["owner_id"], r["equipment_key"]))
+            cur.execute("DELETE FROM base_assets WHERE base_id = ?", (base_id,))
+            cur.execute("DELETE FROM foreign_bases WHERE id = ?", (base_id,))
+    except Exception as e:
+        print(f"dissolve_base error: {e}")
+
+
+def evict_base(base_id):
+    """اخراج پایگاه توسط میزبان؛ ۲۵٪ تجهیزات تلف می‌شود."""
+    dissolve_base(base_id, loss_pct=25)
+
+
+def process_base_daily_costs():
+    """هزینه روزانه پایگاه‌ها + اجاره میزبان؛ ۳ روز پرداخت‌نشده = انحلال با ۲۵٪ تلفات."""
+    events = []
+    for b in get_bases():
+        owner = get_country_by_id(b["owner_id"])
+        if not owner:
+            continue
+        cost = dict(config.BASE_DAILY_COST)
+        rent = int(b.get("daily_rent") or 0)
+        total_money = cost.get("money", 0) + rent
+        affordable = (
+            (owner.get("treasury", 0) or 0) >= total_money
+            and (owner.get("grain", 0) or 0) >= cost.get("grain", 0)
+            and (owner.get("oil_reserves", 0) or 0) >= cost.get("oil", 0)
+        )
+        conn = get_connection()
+        if affordable:
+            with conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE countries SET treasury = treasury - ?, grain = grain - ?, oil_reserves = oil_reserves - ? WHERE id = ?",
+                            (total_money, cost.get("grain", 0), cost.get("oil", 0), owner["id"]))
+                if rent > 0:
+                    cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (rent, b["host_id"]))
+                cur.execute("UPDATE foreign_bases SET unpaid_days = 0 WHERE id = ?", (b["id"],))
+            conn.close()
+            events.append({"base": b["name"], "event": "paid", "rent": rent, "host_pid": None})
+        else:
+            with conn:
+                conn.execute("UPDATE foreign_bases SET unpaid_days = unpaid_days + 1 WHERE id = ?", (b["id"],))
+            row = conn.execute("SELECT unpaid_days FROM foreign_bases WHERE id = ?", (b["id"],)).fetchone()
+            conn.close()
+            events.append({"base": b["name"], "event": "unpaid", "days": row["unpaid_days"] if row else "?"})
+            if row and row["unpaid_days"] >= 3:
+                dissolve_base(b["id"], loss_pct=25)
+                events.append({"base": b["name"], "event": "collapsed"})
+    return events
+
+
 # ---------- کشورها ----------
 
 def create_country(player_id: int, name: str, flag: str = "🏳️", country_key: str = None, username: str = None):
@@ -1004,7 +1302,7 @@ def update_country_field(country_id: int, field: str, value):
         "oil_reserves", "oil_production", "grain", "electricity",
         "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
         "approval_rating", "grain_daily", "tech_level",
-        "combat_readiness", "last_drill_date", "daily_drill_count", "username", "country_key",
+        "combat_readiness", "last_drill_date", "daily_drill_count", "username", "country_key", "player_id",
         "last_blockade_date"
     }
     if field not in allowed:

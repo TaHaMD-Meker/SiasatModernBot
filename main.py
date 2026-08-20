@@ -112,6 +112,10 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         app_res = None
         if first_of_day:
             app_res = approval_system.process_daily_approval_and_emigration(c)
+            try:
+                db.process_base_daily_costs()
+            except Exception:
+                pass
 
         db.update_country_field(c["id"], "last_income_date", now.isoformat())
         if force:
@@ -288,6 +292,11 @@ def main():
     for handler in get_losses_handlers():
         app.add_handler(handler)
 
+    # سیستم تحرکات نظامی (مانور + پایگاه‌های پیشروی)
+    from handlers.bases import get_bases_handlers
+    for handler in get_bases_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
@@ -295,6 +304,11 @@ def main():
 
     # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها و بیانیه‌ها
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from handlers.bases import mv_text_input_handler
+        if context.user_data.get("mv_input"):
+            handled = await mv_text_input_handler(update, context)
+            if handled:
+                return
         if context.user_data.get("admin_awaiting_input"):
             await admin_input_text_handler(update, context)
         elif context.user_data.get("diplomacy_input"):
