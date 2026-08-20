@@ -19,17 +19,17 @@ import war_stats as ws
 # نقشه مرز زمینی مشترک — تهاجم زمینی فقط بین همسایه‌های واقعی مجاز است
 # (کشورهای جزیره‌ای مانند انگلستان، ژاپن، تایوان، سوئد و کوبا مرز زمینی ندارند)
 GROUND_ADJACENCY = {
-    "iran": {"iraq", "turkey", "pakistan"},
-    "iraq": {"iran", "turkey", "saudi", "kuwait"},
-    "saudi": {"iraq", "kuwait", "uae", "qatar", "oman"},
+    "iran": {"iraq", "turkey", "pakistan", "azerbaijan"},
+    "iraq": {"iran", "turkey", "saudi", "kuwait", "syria", "jordan"},
+    "saudi": {"iraq", "kuwait", "uae", "qatar", "oman", "jordan"},
     "qatar": {"saudi"},
     "uae": {"saudi", "oman"},
     "oman": {"saudi", "uae"},
     "kuwait": {"iraq", "saudi"},
-    "israel": {"egypt", "hezbollah"},
+    "israel": {"egypt", "hezbollah", "syria", "jordan"},
     "egypt": {"israel"},
     "hezbollah": {"israel"},
-    "turkey": {"iran", "iraq"},
+    "turkey": {"iran", "iraq", "syria"},
     "russia": {"ukraine", "poland", "china", "north_korea"},
     "ukraine": {"russia", "poland"},
     "poland": {"germany", "ukraine", "russia"},
@@ -45,6 +45,10 @@ GROUND_ADJACENCY = {
     "canada": {"usa"},
     "brazil": {"venezuela"},
     "venezuela": {"brazil"},
+    "syria": {"turkey", "iraq", "israel", "jordan", "lebanon"},
+    "jordan": {"syria", "israel", "iraq", "saudi"},
+    "azerbaijan": {"iran", "russia", "georgia", "armenia", "turkey"},
+    # بحرین جزیره است — مرز زمینی ندارد
 }
 
 def has_ground_border(a: str, b: str) -> bool:
