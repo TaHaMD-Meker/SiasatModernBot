@@ -38,6 +38,13 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     badges = approval_system.get_country_badges(c)
     badges_str = ("\n\n🏆 **نشان‌های افتخار و دستاوردهای ملی:**\n" + "\n".join(badges)) if badges else ""
 
+    ms = db.get_today_missions(c["id"])
+    ms_parts = []
+    for mk, (mlabel, mreward) in config.DAILY_MISSIONS.items():
+        mark = "✅" if ms.get(mk) else "⬜"
+        ms_parts.append(f"{mark} {mlabel} (+{format_money(mreward)})")
+    missions_str = ("\n\n🎯 **مأموریت‌های روزانه:**\n" + "\n".join(ms_parts)) if ms_parts else ""
+
     text = (
         f"{c['flag']} *وضعیت کشور {c['name']}*\n\n"
         f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
@@ -156,4 +163,5 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_adm:
         text += "\n\n👑 *پنل مدیریت:* فقط برای ادمین اصلی بازی فعال است."
 
+    text += missions_str
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))

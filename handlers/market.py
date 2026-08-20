@@ -226,6 +226,12 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             await query.edit_message_text(f"❌ **خطا در انجام معامله بورس:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             return
 
+        try:
+            _mok, _mrw = db.complete_daily_mission(country["id"], "trade")
+            if _mok:
+                await context.bot.send_message(chat_id=user_id, text=f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+        except Exception:
+            pass
         await query.answer("✅ معامله بورس با موفقیت انجام گردید!", show_alert=True)
 
         seller = meta["seller"]

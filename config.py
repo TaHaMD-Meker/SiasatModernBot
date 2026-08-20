@@ -2004,3 +2004,11 @@ def is_oil_country(country_key):
 def get_refinery_effect(country_key):
     """اثر هر واحد پالایشگاه بر اساس نوع کشور (نفتی/غیرنفتی)."""
     return REFINERY_BONUS["oil_country" if is_oil_country(country_key) else "non_oil_country"]
+
+
+# ===== مأموریت‌های روزانه (پاداش خودکار در اولین انجام در روز) =====
+DAILY_MISSIONS = {
+    "statement": ("ثبت بیانیه یا توییت رسمی", 100_000),
+    "drill":     ("برگزاری مانور نظامی", 80_000),
+    "trade":     ("معامله موفق در بورس", 120_000),
+}

@@ -194,6 +194,20 @@ async def process_official_statement_input(update: Update, context: ContextTypes
         except Exception as adm_e:
             print(f"Failed to notify admin of statement channel error: {adm_e}")
 
+    try:
+        _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
+        if _mok:
+            await update.message.reply_text(f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+    except Exception:
+        pass
+
+    try:
+        _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
+        if _mok:
+            await update.message.reply_text(f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+    except Exception:
+        pass
+
     await update.message.reply_text(conf_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
 
 
@@ -385,6 +399,13 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
                 )
         except Exception as adm_e:
             print(f"Failed to notify admin of tweet channel error: {adm_e}")
+
+    try:
+        _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
+        if _mok:
+            await update.message.reply_text(f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+    except Exception:
+        pass
 
     await update.message.reply_text(conf_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
 

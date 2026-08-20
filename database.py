@@ -302,6 +302,16 @@ def init_db():
 
     # جدول ثبت نتایج نبردها جهت مشاهده تعاملی با دکمه‌های شیشه‌ای
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS daily_missions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        mission_date TEXT NOT NULL,
+        missions_json TEXT NOT NULL,
+        UNIQUE(country_id, mission_date)
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS loss_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         country_id INTEGER NOT NULL,
@@ -747,6 +757,46 @@ def get_loss_stats(country_id: int):
                 by_equip[it.get("name", it.get("key", "?"))] += int(it["qty"])
                 by_subcat[it.get("subcat", it.get("category", "?"))] += int(it["qty"])
     return {"reports": reports, "reverted": reverted, "by_equip": by_equip, "by_subcat": by_subcat}
+
+
+
+
+def get_today_missions(country_id: int) -> dict:
+    """وضعیت مأموریت‌های روزانه امروز کشور (در صورت نبود، سطر جدید می‌سازد)."""
+    today = datetime.date.today().isoformat()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT missions_json FROM daily_missions WHERE country_id = ? AND mission_date = ?", (country_id, today))
+    row = cur.fetchone()
+    if row:
+        conn.close()
+        return json.loads(row["missions_json"])
+    defaults = {k: 0 for k in config.DAILY_MISSIONS}
+    cur.execute("INSERT OR IGNORE INTO daily_missions (country_id, mission_date, missions_json) VALUES (?,?,?)",
+                (country_id, today, json.dumps(defaults)))
+    conn.commit()
+    conn.close()
+    return dict(defaults)
+
+
+def complete_daily_mission(country_id: int, key: str):
+    """تکمیل مأموریت روزانه (فقط بار اول در روز) + واریز پاداش. خروجی: (انجام شد؟, مبلغ پاداش)"""
+    if key not in config.DAILY_MISSIONS:
+        return False, 0
+    today = datetime.date.today().isoformat()
+    ms = get_today_missions(country_id)
+    if ms.get(key):
+        return False, 0
+    ms[key] = 1
+    reward = int(config.DAILY_MISSIONS[key][1])
+    conn = get_connection()
+    with conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE daily_missions SET missions_json = ? WHERE country_id = ? AND mission_date = ?",
+                    (json.dumps(ms), country_id, today))
+    adjust_treasury(country_id, reward)
+    add_transaction(country_id, "mission", f"پاداش مأموریت روزانه: {config.DAILY_MISSIONS[key][0]}", reward)
+    return True, reward
 
 
 # ---------- کشورها ----------

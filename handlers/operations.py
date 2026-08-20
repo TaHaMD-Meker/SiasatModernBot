@@ -181,6 +181,12 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
             parse_mode="Markdown"
         )
+        try:
+            _mok, _mrw = db.complete_daily_mission(country["id"], "drill")
+            if _mok:
+                await context.bot.send_message(chat_id=user_id, text=f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+        except Exception:
+            pass
 
     elif data.startswith("op:submit:"):
         role_type = data.split(":")[2] # 'attack' or 'defense'
