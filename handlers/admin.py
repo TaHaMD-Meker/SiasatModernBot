@@ -580,7 +580,7 @@ async def menu_cstat_adjust(query, country_id: int, field: str):
         [InlineKeyboardButton("✏️ وارد کردن مقدار دقیق", callback_data=f"admin:cstatset:{country_id}:{field}")],
         [InlineKeyboardButton("🔙 بازگشت به وضعیت داخلی", callback_data=f"admin:cstatmenu:{country_id}")],
     ]
-    query.edit_message_text(
+    await query.edit_message_text(
         f"{label} — {c['flag']} {c['name']}\n\nمقدار فعلی: *{_fmt_stat(current, kind)}*{note}",
         reply_markup=_IKM(rows), parse_mode="Markdown")
 
