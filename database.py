@@ -609,6 +609,22 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
             # اقلام ویژه: mil_kia از نیروی فعال؛ money از خزانه؛ oil از ذخایر نفت؛ wounded/civ فقط ثبت
             valid_items = [it for it in items if int(it.get("qty", 0) or 0) > 0 and it.get("special") != "wounded" and it.get("special") != "civ_kia"]
             for it in valid_items:
+                if it.get("special") == "building":
+                    cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = ?", (country_id, it["key"]))
+                    erow = cur.fetchone()
+                    owned = (erow["quantity"] or 0) if erow else 0
+                    if owned <= 0:
+                        continue  # مالکیت ندارد → نادیده گرفته می‌شود
+                    it["qty"] = min(int(it["qty"]), owned)
+                    cfg_it = config.ALL_SHOP_ITEMS.get(it["key"], {})
+                    q = int(it["qty"])
+                    it["effects"] = {
+                        "elec": int(cfg_it.get("elec_add", 0) or 0) * q,
+                        "gold_daily": int(cfg_it.get("gold_daily_add", 0) or 0) * q,
+                        "oil_prod": int(cfg_it.get("oil_prod_add", 0) or 0) * q,
+                        "grain_daily": int(cfg_it.get("grain_daily_add", 0) or 0) * q,
+                    }
+                    continue
                 if it.get("special") == "money":
                     cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
                     trow = cur.fetchone()
@@ -642,6 +658,15 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                         f"تلفات «{it.get('name', it['key'])}» ({it['qty']:,}) بیشتر از موجودی ({(row['amount'] or 0):,}) است."
                     )
             for it in valid_items:
+                if it.get("special") == "building":
+                    cur.execute("UPDATE equipment SET quantity = quantity - ? WHERE country_id = ? AND item_key = ?",
+                                (int(it["qty"]), country_id, it["key"]))
+                    eff = it.get("effects", {})
+                    cur.execute(
+                        "UPDATE countries SET electricity = MAX(0, electricity - ?), gold_daily = MAX(0, gold_daily - ?),"
+                        " oil_production = MAX(0, oil_production - ?), grain_daily = MAX(0, grain_daily - ?) WHERE id = ?",
+                        (eff.get("elec", 0), eff.get("gold_daily", 0), eff.get("oil_prod", 0), eff.get("grain_daily", 0), country_id))
+                    continue
                 if it.get("special") == "money":
                     cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (int(it["qty"]), country_id))
                     continue
