@@ -755,21 +755,29 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
             base["amount"] = it.get("amount", 0)  # مصرف کامل
             att_losses.append(base)
         elif wclass == "aircraft":
-            rate = ws.ATTACKER_ATTRITION["aircraft"] + int_rate * 0.08
+            # واقع‌گرایی تلفات هوایی: متناسب با توان واقعی پدافند مدافع، نه نرخ ثابت
+            name = f"{it.get('equipment_name') or ''} {it.get('equipment_key') or ''}".lower()
+            is_stealth = any(k in name for k in ["f-35", "f35", "f-22", "f22", "su-57", "su57", "j-20", "j20", "b-2", "b2", "adir"])
+            is_heli = any(k in name for k in ["heli", "بالگرد", "apache", "آپاچی", "chinook", "شینوک", "ch-47", "ch-53", "uh-60", "uh-1", "ah-64", "ah-1", "cobra", "کبرا", "mi-24", "mi-8", "mi-17", "mi-26", "mi-28", "mi-35", "ka-52", "nh90", "cougar", "پوما", "puma", "yas", "yanshuf", "huey", "hind", "hip", "alligator", "آلیگاتور", "seahawk", "blackhawk", "lynx", "gazelle", "h225", "h145", "h125", "md500", "md530", "bell", "aw101", "aw109", "aw139", "tiger"])
+            base_rate = 0.004                      # سانحه/فرسودگی غیررزمی (بسیار کم)
+            combat_rate = int_rate * 0.6           # تلفات رزمی بر اساس نرخ رهگیری پدافند مدافع
+            if is_stealth:
+                combat_rate *= 0.15                # پنهان‌کار — در برابر پدافند ضعیف تقریباً صفر
+            elif not is_heli:
+                combat_rate *= 0.5                 # جنگنده ارتفاع بالا — کمتر آسیب‌پذیر
+            if is_heli:
+                combat_rate *= 1.5                 # بالگرد ارتفاع پایین — در معرض MANPADS
+            rate = min(0.35, base_rate + combat_rate)
             k = int(round((it.get("amount", 0) or 0) * rate))
-            if (it.get("amount", 0) or 0) >= 5:
-                k = max(k, 1)
             if k > 0:
                 base["amount"] = k
                 att_losses.append(base)
-                att_mil += k * 2
+                att_mil += k * (4 if is_heli else 1)
         elif wclass in ("armor", "artillery", "naval", "sam"):
             rate = ws.ATTACKER_ATTRITION.get(wclass, 0.04)
             if op_type in ("ground_invasion", "combined_arms") and wclass == "armor":
                 rate += int_rate * 0.06
             k = int(round((it.get("amount", 0) or 0) * rate))
-            if (it.get("amount", 0) or 0) >= 10:
-                k = max(k, 1)
             if k > 0:
                 base["amount"] = k
                 att_losses.append(base)
