@@ -698,7 +698,7 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
             # نبرد تماسی زمینی: تلفات مستقیم از درگیری زرهی/توپخانه
             ground_engaged += pr["amount"]
             continue
-        m_per, c_per = ws.CASUALTY_PER_HIT.get(wcls)
+        m_per, c_per = ws.CASUALTY_PER_HIT.get(wcls) or (0, 0)
         civ_factor = 0.5 if wcls in ("rocket", "drone") else 1.0  # اهداف عمدتاً نظامی‌اند
         mil += int(pr["penetrated"] * m_per * random.uniform(0.6, 1.4))
         civ += int(pr["penetrated"] * c_per * civ_factor * random.uniform(0.3, 1.0))
