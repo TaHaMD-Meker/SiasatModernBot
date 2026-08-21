@@ -164,6 +164,10 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
         if b_c["treasury"] < money_cost or avail_oil < oil_cost:
             db.lift_naval_blockade(b_id, t_id)
+            # بازیابی رضایت عمومی هدف پس از پایان کامل محاصره
+            if not db.is_country_blockaded(t_id):
+                new_app = min(100, (t_c.get("approval_rating") or 80) + 15)
+                db.update_country_field(t_id, "approval_rating", new_app)
             lift_msg = (
                 f"⚓ **لغو خودکار محاصره دریایی!**\n\n"
                 f"کشور {b_c['flag']} {b_c['name']} به دلیل عدم تامین سوخت روزانه (۱۰۰,۰۰۰ بشکه) و هزینه‌های نگهداری ناوگان ({format_money(money_cost)})، "

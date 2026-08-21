@@ -2136,6 +2136,51 @@ def break_naval_blockade(target_id: int):
     conn.commit()
     conn.close()
 
+
+ANTISHIP_TOKENS = (
+    "antiship", "noor", "qader", "qadir", "harpoon", "exocet", "yakhont",
+    "cruise", "khalij", "mandab", "almandab", "bahr", "onslow", "neptune",
+)
+
+
+def _is_antiship_key(name: str) -> bool:
+    n = (name or "").lower()
+    return any(t in n for t in ANTISHIP_TOKENS)
+
+
+def get_antiship_missile_stock(country_id: int) -> int:
+    """مجموع موشک‌های ضدکشتی/کروز دریایی موجود در انبار کشور (برای نبرد شکستن محاصره)."""
+    assets = get_country_assets(country_id, category="Missiles")
+    total = 0
+    for a in assets:
+        if _is_antiship_key(a.get("equipment_key")) or _is_antiship_key(a.get("equipment_name")):
+            total += a.get("amount") or 0
+    return total
+
+
+def consume_antiship_missiles(country_id: int, qty: int) -> int:
+    """کسر qty موشک ضدکشتی از انبار کشور (از تجهیزات دارای موجودی). خروجی: تعداد واقعی کسرشده."""
+    if qty <= 0:
+        return 0
+    assets = get_country_assets(country_id, category="Missiles")
+    targets = [
+        a for a in assets
+        if (_is_antiship_key(a.get("equipment_key")) or _is_antiship_key(a.get("equipment_name")))
+        and (a.get("amount") or 0) > 0
+    ]
+    remaining = qty
+    consumed = 0
+    for a in targets:
+        if remaining <= 0:
+            break
+        amt = a["amount"]
+        take = min(amt, remaining)
+        set_asset_amount(country_id, a["equipment_key"], amt - take)
+        remaining -= take
+        consumed += take
+    return consumed
+
+
 def get_country_transactions(country_id: int, limit: int = 20) -> list:
     conn = get_connection()
     cur = conn.cursor()
@@ -2185,6 +2230,12 @@ def calculate_naval_power(country_id: int) -> int:
         if amount <= 0:
             continue
 
+        # گارد: شناورهای سبک/گشتی/تندرو نباید با نام مشابه ناوهای بزرگ اشتباه گرفته شوند
+        # (مثلاً قایق گشتی Wasp نباید با ناو بالگردبر Wasp کلاس اشتباه شود)
+        if any(t in eq_name for t in ["boat", "craft", "شناور", "قایق", "تندرو", "گشتی", "patrol", "موشک‌انداز", "موشک انداز"]):
+            total_power += int(amount * 0.2)
+            continue
+
         if any(c in eq_name for c in ["ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "carrier", "هواپیمابر"]):
             total_power += int(amount * 500)
         elif any(l in eq_name for l in ["america", "wasp", "dokdo", "anadolu", "trieste", "lha", "lhd", "lph", "بالگردبر", "ناو بالگردبر"]):
@@ -2193,7 +2244,7 @@ def calculate_naval_power(country_id: int) -> int:
             total_power += int(amount * 80)
         elif any(s in eq_name for s in ["virginia", "ohio", "los angeles", "seawolf", "yasen", "borei", "type 094", "type 093", "astute", "vanguard", "suffren", "arihant", "dreadnought", "ssn", "ssbn", "هسته‌ای"]):
             total_power += int(amount * 70)
-        elif any(f in eq_name for f in ["frigate", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "halifax", "hobart", "miecznik", "برگامینی", "جماران", "سهند", "دنا", "دماوند", "ناوچه"]):
+        elif any(f in eq_name for f in ["frigate", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "halifax", "hobart", "miecznik", "perry", "برگامینی", "جماران", "سهند", "دنا", "دماوند", "ناوچه"]):
             total_power += int(amount * 30)
         elif any(c in eq_name for c in ["corvette", "buyan", "steregushchiy", "sa'ar", "baynunah", "soleimani", "شهید سلیمانی", "فاتح", "پیروز"]):
             total_power += int(amount * 12)

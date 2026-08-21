@@ -430,16 +430,34 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
 
     elif data == "dip:break_blk":
-        msl_assets = db.get_country_assets(country["id"], category="Missiles")
+        # گارد: فقط زمانی که واقعاً تحت محاصره باشی، امکان شکستن وجود دارد
+        if not db.is_country_blockaded(country["id"]):
+            await query.edit_message_text(
+                "❌ **کشور شما در حال حاضر تحت محاصره دریایی نیست.**\n\nمحاصره‌ای برای شکستن وجود ندارد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        active_blks = db.get_active_blockades_for_country(country["id"])
+        blockaders = [db.get_country_by_id(b["blockader_id"]) for b in active_blks if b["target_id"] == country["id"]]
+        blockaders = [c for c in blockaders if c]
+        if not blockaders:
+            await query.edit_message_text(
+                "❌ اطلاعات ناوگان محاصره‌کننده یافت نشد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        # قوی‌ترین ناوگان محاصره‌کننده ملاک نبرد است
+        blockader_c = max(blockaders, key=lambda c: db.calculate_naval_power(c["id"]))
+
         navy_assets = db.get_country_assets(country["id"], category="Navy")
-
-        has_antiship = any(
-            "antiship" in a["equipment_key"] or "cruise" in a["equipment_key"] or "harpoon" in a["equipment_key"] or "exocet" in a["equipment_key"] or "noor" in a["equipment_key"] or "qader" in a["equipment_key"] or "yakhont" in a["equipment_key"]
-            for a in msl_assets if a["amount"] > 0
-        )
         has_navy = any(n["amount"] > 0 for n in navy_assets)
+        antiship_stock = db.get_antiship_missile_stock(country["id"])
 
-        if not has_antiship and not has_navy:
+        if not has_navy and antiship_stock < 1:
             await query.edit_message_text(
                 "💥 **شکستن محاصره ناموفق بود!**\n\nکشور شما فاقد موشک‌های کروز ضدکشتی یا یگان‌های دریایی آماده به رزم در دیتابیس برای عقب راندن ناوگان محاصره‌کننده است.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
@@ -447,29 +465,47 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
-        active_blks = db.get_active_blockades_for_country(country["id"])
-        blockader_c = None
-        for b in active_blks:
-            if b["target_id"] == country["id"]:
-                blockader_c = db.get_country_by_id(b["blockader_id"])
-                break
+        # موازنه قدرت نبرد دریایی: ناوگان مدافع + موشک‌های ضدکشتی در برابر ناوگان مهاجم
+        defender_navy = db.calculate_naval_power(country["id"])
+        blockader_power = db.calculate_naval_power(blockader_c["id"])
+        defender_power = defender_navy + antiship_stock * 10
 
+        if defender_power < int(blockader_power * 0.4):
+            spent = db.consume_antiship_missiles(country["id"], max(1, antiship_stock // 10))
+            await query.edit_message_text(
+                f"💥 **شکستن محاصره ناموفق بود!**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• قدرت ناوگان مدافع شما: {defender_power:,} امتیاز\n"
+                f"• قدرت ناوگان محاصره‌کننده ({blockader_c['flag']} {blockader_c['name']}): {blockader_power:,} امتیاز\n"
+                f"• مهمات ضدکشتی مصرف‌شده در درگیری: {spent:,} فروند\n\n"
+                f"⚠️ برای درهم شکستن این محاصره، قدرت دریایی شما باید حداقل ۴۰٪ ناوگان مهاجم باشد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        spent = db.consume_antiship_missiles(country["id"], max(1, antiship_stock // 10))
         db.break_naval_blockade(country["id"])
-        new_app = min(100, country.get("approval_rating", 80) + 10)
+
+        # بازیابی رضایت عمومی ازدست‌رفته در اثر محاصره
+        new_app = min(100, (country.get("approval_rating") or 80) + 15)
         db.update_country_field(country["id"], "approval_rating", new_app)
 
-        if blockader_c:
-            await news_engine.trigger_unblockade_news(context.bot, blockader_c, country, is_broken=True)
-        else:
-            await news_engine.post_breaking_news(
-                context.bot,
-                f"شکستن محاصره دریایی بنادر {country['name']}",
-                f"نیروهای مدافع کشور {country['flag']} {country['name']} با شلیک موشک‌های ضدکشتی و یگان‌های دریایی، محاصره دریایی تحمیل‌شده را با موفقیت درهم شکستند.",
-                "نبرد و اقتدار دریایی"
-            )
+        if blockader_c.get("player_id"):
+            try:
+                await context.bot.send_message(
+                    chat_id=blockader_c["player_id"],
+                    text=f"💥 **محاصره دریایی شما درهم شکسته شد!**\n\nنیروهای مدافع کشور {country['flag']} {country['name']} با شلیک موشک‌های ضدکشتی و یگان‌های دریایی، ناوگان محاصره‌گر شما را عقب راندند.",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+        await news_engine.trigger_unblockade_news(context.bot, blockader_c, country, is_broken=True)
 
         await query.edit_message_text(
-            f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n\n📈 شاخص رضایت عمومی به میزان ۱۰٪ افزایش یافت.",
+            f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n\n"
+            f"• مهمات ضدکشتی مصرف‌شده: {spent:,} فروند\n"
+            f"📈 شاخص رضایت عمومی به سطح پیش از محاصره بازگشت (بازیابی ۱۵٪).",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
             parse_mode="Markdown"
         )
@@ -480,7 +516,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         db.lift_naval_blockade(country["id"], target_id)
 
         if target_c:
+            # بازیابی رضایت عمومی هدف پس از پایان کامل محاصره
+            if not db.is_country_blockaded(target_id):
+                new_app = min(100, (target_c.get("approval_rating") or 80) + 15)
+                db.update_country_field(target_id, "approval_rating", new_app)
             await news_engine.trigger_unblockade_news(context.bot, country, target_c, is_broken=False)
+            if target_c.get("player_id"):
+                try:
+                    await context.bot.send_message(
+                        chat_id=target_c["player_id"],
+                        text=f"🔓 **پایان محاصره دریایی**\n\nکشور {country['flag']} {country['name']} محاصره دریایی بنادر کشور شما را لغو کرد و رضایت عمومی به حالت عادی بازگشت.",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
 
         await query.edit_message_text(
             f"🔓 **محاصره دریایی علیه کشور {target_c['name'] if target_c else 'هدف'} با موفقیت لغو گردید.**",
@@ -490,11 +539,19 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data.startswith("dip:blk_target:"):
         target_id = int(data.split(":")[2])
+
+        if target_id == country["id"]:
+            await query.edit_message_text("❌ امکان محاصره دریایی کشور خودتان وجود ندارد.", parse_mode="Markdown")
+            return
+
         target_c = db.get_country_by_id(target_id)
 
         if not target_c:
             await query.edit_message_text("❌ کشور هدف پیدا نشد.", parse_mode="Markdown")
             return
+
+        # دریافت تازه از دیتابیس برای جلوگیری از استفاده از داده‌های کهنه (خزانه/نفت)
+        country = db.get_country_by_id(country["id"]) or country
 
         today_str = datetime.date.today().isoformat()
         if country.get("last_blockade_date") == today_str:
@@ -534,7 +591,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         blockader_power = db.calculate_naval_power(country["id"])
         target_power = db.calculate_naval_power(target_id)
-        required_power = int(target_power * 1.2)
+        required_power = max(int(target_power * 1.2), 1)
 
         if blockader_power < required_power:
             await query.edit_message_text(
@@ -557,10 +614,13 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         db.update_country_field(country["id"], "last_blockade_date", today_str)
 
         # Execute naval blockade
+        was_blockaded = db.is_country_blockaded(target_id)
         db.create_naval_blockade(country["id"], target_id)
 
-        new_app = max(0, target_c.get("approval_rating", 80) - 15)
-        db.update_country_field(target_id, "approval_rating", new_app)
+        # کسر رضایت عمومی فقط بار اول (نه برای هر محاصره‌کننده جدید)
+        if not was_blockaded:
+            new_app = max(0, (target_c.get("approval_rating") or 80) - 15)
+            db.update_country_field(target_id, "approval_rating", new_app)
 
         await news_engine.trigger_blockade_news(context.bot, country, target_c)
 
