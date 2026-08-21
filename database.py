@@ -1454,14 +1454,17 @@ def rebalance_existing_countries_income():
                 curr_oil_res = c["oil_reserves"] or 0
                 curr_grain = c["grain"] or 0
                 
-                # برای واردکنندگان، ذخیره ۵ روزه بحران ست می‌شود
+                # برای واردکنندگان نفت و غلات، ذخیره ۵ روزه بحران ست می‌شود
                 reqs = approval_system.calculate_country_requirements({'population': c['population'], 'id': c_id})
                 if new_oil_prod < reqs['oil_need_daily']:
                     new_oil_res = base_oil_res
                 else:
                     new_oil_res = max(curr_oil_res, base_oil_res)
 
-                new_grain = max(curr_grain, base_grain)
+                if new_grain_daily < reqs['grain_need_daily']:
+                    new_grain = base_grain
+                else:
+                    new_grain = max(curr_grain, base_grain)
 
                 cur.execute("""
                     UPDATE countries SET
