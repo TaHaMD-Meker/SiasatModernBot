@@ -111,7 +111,13 @@ async def show_countries_list(query, context, page: int = 0):
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin:menu")])
 
     text = f"📋 *لیست کشورهای فعال (تعداد کل: {len(countries)})*\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    except Exception:
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            pass
 
 
 # ==================== داشبورد اختصاصی مدیریت یک کشور ====================
@@ -176,7 +182,13 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
         ]
     ]
 
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    except Exception:
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            pass
 
 
 # ==================== زیرمنوهای تغییر خزانه، طلا، نفت و دارایی‌های نظامی ====================
