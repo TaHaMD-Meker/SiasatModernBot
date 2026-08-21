@@ -2329,26 +2329,26 @@ STRAITS_MAPPING = {
     "iran": {
         "strait_key": "hormuz",
         "name": "تنگه استراتژیک هرمز",
-        "desc": "شریان حیاتی انرژی خلیج فارس (مسیر اصلی صادرات نفت امارات، قطر، عربستان، کویت و عراق)",
-        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "israel"]
+        "desc": "شریان حیاتی انرژی خلیج فارس (مسیر اصلی صادرات نفت امارات، قطر، عربستان، کویت، عراق و بحرین)",
+        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "bahrain", "israel"]
     },
     "oman": {
         "strait_key": "hormuz_south",
         "name": "تنگه هرمز و دریای عمان (ضلع جنوبی)",
         "desc": "شاهراه ترانزیت نفت خلیج فارس به اقیانوس هند",
-        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "iran"]
+        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "bahrain", "iran"]
     },
     "egypt": {
         "strait_key": "suez",
         "name": "کانال استراتژیک سوئز",
         "desc": "شاهراه ترانزیت دریایی آسیا به اروپا و دریای مدیترانه",
-        "affected_keys": ["uk", "france", "germany", "italy", "india", "china", "israel"]
+        "affected_keys": ["uk", "france", "germany", "italy", "india", "china", "israel", "jordan"]
     },
     "yemen": {
         "strait_key": "bab_el_mandeb",
         "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
         "desc": "گلوگاه ترانزیت دریای سرخ و باب‌المندب (کلید امنیت کشتیرانی تجاری به کانال سوئز)",
-        "affected_keys": ["israel", "usa", "uk", "france", "germany", "egypt", "saudi"]
+        "affected_keys": ["israel", "usa", "uk", "france", "germany", "egypt", "saudi", "jordan"]
     },
     "turkey": {
         "strait_key": "bosphorus",
