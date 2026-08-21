@@ -82,6 +82,15 @@ COUNTRIES = {
     "un": {'name': 'سازمان ملل متحد', 'flag': '🇺🇳'},
 }
 
+# ===== کشورهای بدون دسترسی به آب‌های آزاد (محصور در خشکی یا دریای بسته) =====
+# این کشورها از سیستم محاصره دریایی بین‌المللی خارج هستند:
+# نه می‌توانند کشور دیگری را محاصره کنند و نه تحت محاصره دریایی قرار می‌گیرند.
+# سوئیس: کاملاً محصور در خشکی | آذربایجان: دریای خزر (دریای بسته بدون اتصال اقیانوسی)
+NO_SEA_ACCESS_COUNTRIES = [
+    "switzerland",
+    "azerbaijan",
+]
+
 COUNTRY_STARTING_OVERRIDES = {
 "switzerland": {'population': 8800000, 'treasury': 65000000, 'tax_income': 1800000, 'daily_income': 5200000, 'gold': 600, 'gold_daily': 40, 'oil_reserves': 5000000, 'oil_production': 0, 'grain': 30000, 'electricity': 160, 'active_personnel': 140000, 'reserve_personnel': 180000, 'approval_rating': 88, 'tech_level': 2},
 "yemen": {'population': 34000000, 'treasury': 25000000, 'tax_income': 600000, 'daily_income': 3200000, 'gold': 200, 'gold_daily': 30, 'oil_reserves': 3000000, 'oil_production': 50000, 'grain': 20000, 'electricity': 90, 'active_personnel': 250000, 'reserve_personnel': 150000, 'approval_rating': 85},

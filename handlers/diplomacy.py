@@ -185,6 +185,17 @@ async def dip_blockade_start(query, context, country):
         await query.edit_message_text("🔒 **اجرای محاصره دریایی موقتاً قفل است.**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
         return
 
+    # گارد واقع‌گرایی: کشورهای بدون دسترسی به آب‌های آزاد نمی‌توانند محاصره دریایی اجرا کنند
+    if not db.has_open_sea_access(country.get("country_key")):
+        await query.edit_message_text(
+            "⚓ **عدم امکان اجرای محاصره دریایی**\n━━━━━━━━━━━━━━━━━━\n\n"
+            "کشور شما به آب‌های آزاد و اقیانوس دسترسی ندارد (محصور در خشکی یا دریای بسته). "
+            "بنابراین امکان اعزام ناوگان برای محاصره دریایی کشورهای دیگر وجود ندارد.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
+        return
+
     assets = db.get_country_assets(country["id"], category="Navy")
     naval_count = sum(a["amount"] for a in assets)
 
@@ -211,7 +222,10 @@ async def dip_blockade_start(query, context, country):
         return
 
     countries = db.get_all_countries()
-    other_countries = [c for c in countries if c["id"] != country["id"]]
+    other_countries = [
+        c for c in countries
+        if c["id"] != country["id"] and db.has_open_sea_access(c.get("country_key"))
+    ]
 
     text = (
         f"⚓ **عملیات محاصره دریایی بین‌المللی — ناوگان {country['flag']} {country['name']}**\n"
@@ -548,6 +562,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         if not target_c:
             await query.edit_message_text("❌ کشور هدف پیدا نشد.", parse_mode="Markdown")
+            return
+
+        # گارد واقع‌گرایی: کشور بدون دسترسی به آب‌های آزاد قابل محاصره دریایی نیست
+        if not db.has_open_sea_access(target_c.get("country_key")):
+            await query.edit_message_text(
+                "❌ **امکان محاصره دریایی این کشور وجود ندارد.**\n\nاین کشور به آب‌های آزاد و اقیانوس دسترسی ندارد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
             return
 
         # دریافت تازه از دیتابیس برای جلوگیری از استفاده از داده‌های کهنه (خزانه/نفت)

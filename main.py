@@ -160,9 +160,9 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
         oil_cost = 100_000
         money_cost = 2_000_000
-        avail_oil = b_c.get("oil_reserves", 0) + b_c.get("oil_production", 0)
 
-        if b_c["treasury"] < money_cost or avail_oil < oil_cost:
+        # واقع‌گرایی: سوخت روزانه ناوگان محاصره‌گر از ذخایر نفت تأمین می‌شود (تولید روزانه مجانی نیست)
+        if b_c["treasury"] < money_cost or (b_c.get("oil_reserves", 0) or 0) < oil_cost:
             db.lift_naval_blockade(b_id, t_id)
             # بازیابی رضایت عمومی هدف پس از پایان کامل محاصره
             if not db.is_country_blockaded(t_id):
@@ -182,9 +182,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             await news_engine.trigger_unblockade_news(context.bot, b_c, t_c, is_broken=False)
         else:
             db.adjust_treasury(b_id, -money_cost)
-            deficit_oil = max(0, oil_cost - b_c.get("oil_production", 0))
-            if deficit_oil > 0:
-                db.adjust_oil(b_id, -deficit_oil)
+            db.adjust_oil(b_id, -oil_cost)
             db.add_transaction(b_id, "blockade_cost", f"هزینه روزانه محاصره بنادر {t_c['name']}", -money_cost)
 
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")

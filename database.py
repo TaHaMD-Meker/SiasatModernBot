@@ -2079,6 +2079,13 @@ def set_setting(key: str, value: str):
 
 # ---------- سیستم محاصره دریایی بین‌المللی ----------
 
+def has_open_sea_access(country_key: str) -> bool:
+    """آیا کشور به آب‌های آزاد/اقیانوس دسترسی دارد (قابل شرکت در محاصره دریایی)؟"""
+    if not country_key:
+        return True
+    return country_key not in config.NO_SEA_ACCESS_COUNTRIES
+
+
 def create_naval_blockade(blockader_id: int, target_id: int) -> int:
     conn = get_connection()
     cur = conn.cursor()
