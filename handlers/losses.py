@@ -68,47 +68,112 @@ def to_english_digits(text: str) -> str:
 
 
 # ---------- پارسر متن گزارش استاندارد (ثبت سریع) ----------
+def _clean_str(t):
+    t = to_english_digits(str(t)).translate(str.maketrans('يک', 'یک')).lower()
+    t = re.sub(r'\([^)]*\)', ' ', t)
+    t = re.sub(r'\[[^\]]*\]', ' ', t)
+    t = re.sub(r'[-_–—:،,./«»*#]', ' ', t)
+    t = t.replace('‌', ' ')
+    return re.sub(r'\s+', ' ', t).strip()
+
+_PREFIXES = [
+    'سامانه پدافندی', 'سامانه موشکی', 'سامانه پدافند', 'سامانه',
+    'موشک بالستیک میان برد', 'موشک بالستیک دوربرد', 'موشک بالستیک کوتاه برد',
+    'موشک بالستیک هایپرسونیک', 'موشک بالستیک', 'موشک کروز', 'موشک ضدکشتی', 'موشک ضدزره', 'موشک',
+    'جنگنده نسل ۵', 'جنگنده نسل پنجم', 'جنگنده بمب افکن', 'جنگنده برتری هوایی', 'جنگنده چندمنظوره', 'جنگنده',
+    'هواپیمای ترابری', 'هواپیمای سوخت رسان', 'هواپیمای شناسایی', 'هواپیمای آواکس', 'هواپیمای',
+    'بمب افکن استراتژیک', 'بمب افکن',
+    'بالگرد تهاجمی', 'بالگرد ترابری', 'بالگرد',
+    'پهپاد انتحاری', 'پهپاد شناسایی', 'پهپاد رزمی', 'پهپاد',
+    'تانک اصلی میدان نبرد', 'تانک',
+    'خودرو رزمی پیاده نظام', 'خودروی زرهی', 'خودرو رزمی', 'خودرو زرهی', 'نفربر زرهی', 'نفربر',
+    'توپ خودکششی', 'توپخانه خودکششی', 'توپخانه', 'توپ',
+    'راکت انداز چندگانه', 'راکت انداز',
+    'ناو هواپیمابر', 'ناو بالگردبر', 'ناوشکن', 'ناوچه موشک انداز', 'ناوچه', 'زیردریایی', 'شناور تندرو', 'شناور'
+]
+
+def _strip_prefix(t):
+    for p in sorted(_PREFIXES, key=len, reverse=True):
+        p_clean = _clean_str(p)
+        if t.startswith(p_clean + ' '):
+            return t[len(p_clean):].strip()
+    return t
+
 def _norm_name(t):
-    t = to_english_digits(str(t)).lower().replace("\u200c", " ").replace("_", " ").replace("*", "").strip()
-    return re.sub(r"\s+", " ", t)
+    return _clean_str(t)
 
 
 def match_country_by_name(name_part: str):
     """تطبیق نام کشور از متن گزارش با کشورهای واقعی بازی."""
     if not name_part:
         return None
-    q = _norm_name(name_part)
+    q = _clean_str(name_part)
     if len(q) < 2:
         return None
     best, best_len = None, 0
     for c in db.get_all_countries():
-        n = _norm_name(c["name"])
+        n = _clean_str(c.get('name') or '')
+        k = _clean_str(c.get('country_key') or '')
         if not n:
             continue
-        if (q in n or n in q) and len(n) > best_len:
+        if q == n or q == k:
+            return c
+        if (q in n or n in q or (k and (q in k or k in q))) and len(n) > best_len:
             best, best_len = c, len(n)
     return best
 
 
 def match_asset_by_name(name: str, assets: list):
-    """تطبیق نام تجهیز گزارش با موجودی انبار (بلندترین تطبیق برنده)."""
-    q = _norm_name(name)
-    if len(q) < 2:
+    """تطبیق هوشمند و چندلایه‌ای نام تجهیز با موجودی انبار."""
+    q_raw = _clean_str(name)
+    if len(q_raw) < 2:
         return None
-    best, best_len = None, 0
+    q_stripped = _strip_prefix(q_raw)
+    q_tokens = set(q_raw.split()) | set(q_stripped.split())
+    q_sig_tokens = {w for w in q_tokens if len(w) >= 2 and w not in ('های', 'ها', 'ای', 'در', 'به', 'با')}
+
+    best = None
+    best_score = 0
+
     for a in assets:
-        for field in (a.get("equipment_name") or "", a.get("equipment_key") or ""):
-            f = _norm_name(field)
-            if not f:
+        candidates = [
+            _clean_str(a.get('equipment_name') or ''),
+            _clean_str(a.get('equipment_key') or ''),
+        ]
+        candidates += [_strip_prefix(c) for c in candidates if c]
+
+        for c in candidates:
+            if not c:
                 continue
-            if (q in f or f in q) and len(f) > best_len:
-                best, best_len = a, len(f)
-    return best
+            # 1. تطبیق دقیق
+            if q_raw == c or q_stripped == c:
+                score = 1000 + len(c)
+            # 2. دربرگیری مستقیم زیررشته
+            elif q_stripped in c or c in q_stripped:
+                score = 500 + len(min(q_stripped, c, key=len))
+            elif q_raw in c or c in q_raw:
+                score = 400 + len(min(q_raw, c, key=len))
+            else:
+                # 3. تطبیق واژگانی و شناسه‌های حروفی-عددی (مثل F-14, 373, 136)
+                c_tokens = set(c.split())
+                c_sig_tokens = {w for w in c_tokens if len(w) >= 2 and w not in ('های', 'ها', 'ای', 'در', 'به', 'با')}
+                inter = q_sig_tokens & c_sig_tokens
+                if inter:
+                    distinctive = sum(20 for t in inter if any(ch.isalnum() for ch in t))
+                    score = len(inter) * 50 + distinctive
+                else:
+                    score = 0
+
+            if score > best_score:
+                best = a
+                best_score = score
+
+    return best if best_score >= 50 else None
 
 
 def match_building(name: str, country_id: int):
     """تطبیق نام با ساختمان‌های «مالکیت‌دار» کشور از فروشگاه (جدول equipment)."""
-    q = _norm_name(name)
+    q = _clean_str(name)
     if len(q) < 2:
         return None
     owned = db.get_equipment(country_id) or {}
@@ -119,11 +184,10 @@ def match_building(name: str, country_id: int):
         item = config.ALL_SHOP_ITEMS.get(key)
         if not item:
             continue
-        nm = _norm_name(item.get("name", key))
+        nm = _clean_str(item.get('name', key))
         if (q in nm or nm in q) and len(nm) > best_len:
-            best, best_len = {"key": key, "name": item.get("name", key)}, len(nm)
+            best, best_len = {'key': key, 'name': item.get('name', key)}, len(nm)
     return best
-
 
 def parse_loss_report_text(text: str):
     """استخراج کشور، عملیات، اقلام تجهیزاتی و تلفات انسانی از متن گزارش استاندارد."""
