@@ -682,7 +682,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
             await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
-            sorted_c = sorted(countries, key=lambda c: -( (c.get('oil_reserves', 0) or 0) + ((c.get('oil_production', 0) or 0) * 30) ))
+            sorted_c = sorted(countries, key=lambda c: -( (c.get('oil_reserves', 0) or 0) * 1000 + ((c.get('oil_production', 0) or 0)) ))
             total_pages = max(1, math.ceil(len(sorted_c) / per_page))
             page = max(0, min(page, total_pages - 1))
             start_idx = page * per_page
@@ -726,7 +726,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
             await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
-            sorted_c = sorted(countries, key=lambda c: -( (c.get('grain', 0) or 0) + ((c.get('grain_daily', 0) or 0) * 20) ))
+            sorted_c = sorted(countries, key=lambda c: -( (c.get('grain_daily', 0) or 0) * 1000 + (c.get('grain', 0) or 0) ))
             total_pages = max(1, math.ceil(len(sorted_c) / per_page))
             page = max(0, min(page, total_pages - 1))
             start_idx = page * per_page
@@ -770,7 +770,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
             await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
-            sorted_c = sorted(countries, key=lambda c: -( (c.get('treasury', 0) or 0) + ((c.get('gold', 0) or 0) * 250_000) + ((c.get('daily_income', 0) or 0) * 20) + ((c.get('tax_income', 0) or 0) * 15) ))
+            sorted_c = sorted(countries, key=lambda c: -( (c.get('treasury', 0) or 0) + ((c.get('gold', 0) or 0) * 250_000) + ((c.get('daily_income', 0) or 0) * 25) + ((c.get('tax_income', 0) or 0) * 20) ))
             total_pages = max(1, math.ceil(len(sorted_c) / per_page))
             page = max(0, min(page, total_pages - 1))
             start_idx = page * per_page
