@@ -27,7 +27,7 @@ def get_approval_badge(rating: int):
 
 
 def calculate_country_requirements(c: dict):
-    """محاسبه دقیق میزان نیازهای روزانه کشور بر اساس جمعیت و صنایع سنگین."""
+    """محاسبه دقیق میزان نیازهای روزانه کشور بر اساس جمعیت و صنایع سنگین (بالانس استراتژیک و واقع‌گرایانه)."""
     pop = c.get("population", 10_000_000)
     pop_millions = max(0.1, pop / 1_000_000)
 
@@ -47,13 +47,14 @@ def calculate_country_requirements(c: dict):
             pass
     elec_need = 100 + ind_elec_need
 
-    # 2. سوخت و نفت عمومی و صنعتی (تراز واقع‌گرایانه و متناسب با جمعیت)
-    pop_oil_need = int(30_000 + (pop_millions ** 0.65) * 12_000)
+    # 2. سوخت و نفت عمومی و صنعتی (بالانس استراتژیک ژئوپلیتیک)
+    # کشورهایی مثل چین، هند، ژاپن و آلمان کسری منطقی و چالش وارداتی دارند
+    pop_oil_need = int(40_000 + (pop_millions ** 0.77) * 19_000)
     ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
     total_oil_need_daily = pop_oil_need + ind_oil_need
 
-    # 3. مصرف روزانه غلات و امنیت غذایی (متناسب با جمعیت)
-    grain_need_daily = max(500, int(800 + (pop_millions ** 0.72) * 100))
+    # 3. مصرف روزانه غلات و امنیت غذایی (منحنی بالانس تقاضای مواد غذایی)
+    grain_need_daily = max(600, int(900 + (pop_millions ** 0.79) * 115))
 
     return {
         "pop": pop,
