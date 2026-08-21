@@ -2263,6 +2263,81 @@ def calculate_naval_power(country_id: int) -> int:
     return total_power
 
 
+# ---------- مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی) ----------
+
+def _fuel_per_unit(equipment_name: str, category: str) -> int:
+    """برآورد مصرف سوخت روزانه هر واحد تجهیز نظامی (بشکه/روز)."""
+    n = (equipment_name or "").lower()
+    if category == "Navy":
+        if any(k in n for k in ["carrier", "هواپیمابر", "بالگردبر", "lhd", "lha", "lph"]):
+            return 500
+        if any(k in n for k in ["destroyer", "cruiser", "ناوشکن", "رزم‌ناو", "aegis", "ایجیس"]):
+            return 300
+        if any(k in n for k in ["frigate", "ناوچه", "corvette", "کوروت", "برگامینی"]):
+            return 100
+        if any(k in n for k in ["sub", "زیردریایی"]):
+            return 50
+        return 10
+    if category == "Aircraft":
+        if any(k in n for k in ["heli", "بالگرد", "chinook", "apache", "cobra", "ka-52", "mi-28", "mi-35", "شینوک", "طوفان", "mi-8", "mi-17", "mi8", "mi17"]):
+            return 8
+        if any(k in n for k in ["transport", "ترابری", "c-130", "c-17", "il-76", "a400m", "awacs", "tanker", "سوخت‌رسان", "c-390", "c-295"]):
+            return 25
+        return 20
+    if category == "Ground Forces":
+        if any(k in n for k in ["tank", "تانک", "abrams", "leopard", "merkava", "challenger", "armata", "type 99", "type 90", "type 10", "t-90", "t-80", "t-72", "t-64", "t-62", "t-55"]):
+            return 12
+        return 4
+    if category == "Artillery":
+        return 3
+    if category == "Air Defense":
+        return 2
+    if category == "UAV":
+        return 1
+    return 0
+
+
+def calculate_military_fuel_consumption(country_id: int) -> int:
+    """مجموع مصرف سوخت روزانه نیروهای مسلح کشور (بشکه/روز)."""
+    assets = get_country_assets(country_id)
+    total = 0
+    for a in assets:
+        amt = a.get("amount") or 0
+        if amt <= 0:
+            continue
+        total += amt * _fuel_per_unit(a.get("equipment_name"), a.get("category"))
+    return total
+
+
+def sell_oil_to_global_market(country_id: int, amount: int) -> tuple[bool, str]:
+    """فروش مستقیم نفت خام به بازار جهانی با قیمت کف (OIL_GLOBAL_PRICE)."""
+    if amount <= 0:
+        return False, "مقدار نفت باید بزرگ‌تر از صفر باشد."
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT oil_reserves, treasury FROM countries WHERE id = ?", (country_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "کشور یافت نشد."
+            if (row["oil_reserves"] or 0) < amount:
+                return False, f"ذخیره نفت کافی نیست! (موجودی فعلی: {(row['oil_reserves'] or 0):,} بشکه)"
+            revenue = amount * config.OIL_GLOBAL_PRICE
+            cur.execute(
+                "UPDATE countries SET oil_reserves = oil_reserves - ?, treasury = treasury + ? WHERE id = ?",
+                (amount, revenue, country_id),
+            )
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute(
+                "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?,?,?,?,?)",
+                (country_id, "oil_export", f"صادرات نفت به بازار جهانی ({amount:,} بشکه × {config.OIL_GLOBAL_PRICE:,} $)", revenue, now_str),
+            )
+        return True, f"{revenue}"
+    except Exception as e:
+        return False, f"خطا در فروش به بازار جهانی: {e}"
+
+
 def has_active_oil_import_contract(country_id: int) -> bool:
     """بررسی وجود قرارداد فعال واردات نفت خام برای کشورهای صنعتی فاقد نفت."""
     conn = get_connection()
@@ -2464,6 +2539,15 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
     """ثبت یک عرضه جدید در بورس کالا. کالا از انبار فروشنده کسر شده و سپرده‌گذاری می‌شود."""
     if amount <= 0 or unit_price <= 0:
         return False, "تعداد و قیمت واحد باید بزرگتر از صفر باشند."
+
+    # قیمت کف بازار جهانی: نفت را نمی‌توان زیر قیمت پایه عرضه کرد
+    if resource_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
+        return False, (
+            f"⛔ **قیمت هر بشکه نفت نمی‌تواند کمتر از قیمت کف بازار جهانی باشد.**\n\n"
+            f"• قیمت کف بازار جهانی نفت: **{config.OIL_GLOBAL_PRICE:,} $/بشکه**\n"
+            f"• قیمت پیشنهادی شما: {unit_price:,} $/بشکه\n\n"
+            f"💡 می‌توانید نفت خود را مستقیم با قیمت پایه از گزینه «فروش به بازار جهانی» بفروشید."
+        )
 
     resource_cols = {
         "oil": "oil_reserves",

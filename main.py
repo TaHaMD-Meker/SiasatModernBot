@@ -116,6 +116,20 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 db.process_base_daily_costs()
             except Exception:
                 pass
+            # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
+            try:
+                fuel_need = db.calculate_military_fuel_consumption(c["id"])
+                if fuel_need > 0:
+                    oil_now = c.get("oil_reserves") or 0
+                    if oil_now >= fuel_need:
+                        db.adjust_oil(c["id"], -fuel_need)
+                    else:
+                        # کسری سوخت → تنزل رضایت عمومی
+                        db.adjust_oil(c["id"], -oil_now)
+                        new_app = max(0, (c.get("approval_rating") or 80) - 3)
+                        db.update_country_field(c["id"], "approval_rating", new_app)
+            except Exception:
+                pass
 
         db.update_country_field(c["id"], "last_income_date", now.isoformat())
         if force:
@@ -315,7 +329,7 @@ def main():
             await admin_input_text_handler(update, context)
         elif context.user_data.get("diplomacy_input"):
             await diplomacy_text_input_handler(update, context)
-        elif context.user_data.get("market_sell_draft"):
+        elif context.user_data.get("market_sell_draft") or context.user_data.get("market_global_sell"):
             await market_text_input_handler(update, context)
         elif context.user_data.get("un_draft"):
             await un_text_input_handler(update, context)
