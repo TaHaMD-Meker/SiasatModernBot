@@ -943,10 +943,13 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     if is_attacker:
         if prep_cost:
             lines.append("\n■ *هزینه آماده‌سازی عملیات (مهاجم):*\n")
+            details = prep_cost.get("details") or []
+            for d in details:
+                lines.append(f"> • {d}")
             if prep_cost.get("money"):
-                lines.append(f"> • هزینه مالی از خزانه: **{prep_cost['money']:,} دلار**")
+                lines.append(f"> • **جمع هزینه مالی از خزانه:** {prep_cost['money']:,} دلار")
             if prep_cost.get("oil"):
-                lines.append(f"> • سوخت و لجستیک از ذخایر: **{prep_cost['oil']:,} بشکه**")
+                lines.append(f"> • **جمع سوخت و لجستیک از ذخایر:** {prep_cost['oil']:,} بشکه")
         lines.append("> • **تغییر روحیه ملی:** +۱۰٪ (اقتدار ملی)")
         lines.append("> • **زمان آمادگی موج بعدی:** ۱۲ ساعت")
     else:
@@ -964,6 +967,43 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
         lines.append("> _خسارات واردشده نیازمند جایگزینی تجهیزات و بازسازی پایگاه‌ها از طریق ساخت‌وسازهای غیرنظامی و خطوط تولید بومی می‌باشد._")
 
     return "\n".join(lines)
+
+
+def _war_prep_cost_from_items(items) -> dict:
+    """محاسبه هزینه آماده‌سازی عملیات تهاجمی بر اساس تجهیزات استفاده‌شده در رول.
+
+    خروجی: {"money": int, "oil": int, "details": [str, ...]}"""
+    per_unit = getattr(config, "WAR_PREP_PER_UNIT", {}) or {}
+    floor = getattr(config, "WAR_PREP_MIN", {}) or {}
+    money = 0
+    oil = 0
+    details = []
+    cls_fa = {
+        "ballistic": "موشک بالستیک", "cruise": "موشک کروز", "rocket": "راکت/مهمات",
+        "drone": "پهپاد", "aircraft": "سورتی هوایی", "armor": "زرهی/تانک",
+        "artillery": "توپخانه", "naval": "شناور", "sam": "پدافند", "other": "سایر",
+    }
+    agg = {}
+    for it in items:
+        qty = int(it.get("amount", 0) or 0)
+        if qty <= 0:
+            continue
+        wclass = ws.weapon_class(it)
+        rate = per_unit.get(wclass, per_unit.get("other", {"money": 0, "oil": 0}))
+        m = qty * int(rate.get("money", 0) or 0)
+        o = qty * int(rate.get("oil", 0) or 0)
+        money += m
+        oil += o
+        key = cls_fa.get(wclass, wclass)
+        a = agg.setdefault(key, [0, 0, 0])
+        a[0] += qty
+        a[1] += m
+        a[2] += o
+    for cls, (q, m, o) in agg.items():
+        details.append(f"{cls} ×{q:,} → {m:,} دلار + {o:,} بشکه")
+    money = max(money, int(floor.get("money", 0) or 0))
+    oil = max(oil, int(floor.get("oil", 0) or 0))
+    return {"money": money, "oil": oil, "details": details}
 
 
 def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, targets_text: str = ""):
@@ -986,8 +1026,9 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
             if att_country:
                 att_cid = att_country["id"]
 
-                # هزینه آماده‌سازی عملیات تهاجمی (واقع‌گرایی اقتصادی)
-                prep = getattr(config, "WAR_PREP_COST", {}) or {}
+                # هزینه آماده‌سازی عملیات تهاجمی — بر اساس تجهیزات استفاده‌شده در رول
+                prep_items = losses.get("att_fired") or losses.get("att_losses") or []
+                prep = _war_prep_cost_from_items(prep_items)
                 prep_money = int(prep.get("money", 0) or 0)
                 prep_oil = int(prep.get("oil", 0) or 0)
                 if prep_money > 0:
@@ -1004,7 +1045,7 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
                         "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?,?,?,?,?)",
                         (att_cid, "war_prep", f"هزینه آماده‌سازی عملیات تهاجمی ({' + '.join(parts)})", -prep_money if prep_money > 0 else 0, datetime.datetime.now(datetime.timezone.utc).isoformat()),
                     )
-                    prep_info = {"money": prep_money, "oil": prep_oil}
+                    prep_info = prep
 
                 new_att_p = max(0, att_country["active_personnel"] - losses.get("att_military_loss", 0))
                 cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_att_p, att_cid))
