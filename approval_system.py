@@ -322,6 +322,10 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
 
     lines.append(f"• *تولید روزانه نفت:* +{format_oil(oil_prod)}\n")
 
+    chips_prod = c.get("microchips_daily", 0) or 0
+    if chips_prod > 0:
+        lines.append(f"• *تولید روزانه میکروچیپ:* +{format_number(chips_prod)} عدد/روز\n")
+
     # Grain
     grain_str = f"+{grain_prod:,} تن تولید / -{grain_need:,} تن مصرف" if grain_prod > 0 else f"-{grain_need:,} تن مصرف روزانه"
     if app_res["grain_ok"]:

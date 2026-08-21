@@ -648,11 +648,54 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         keyboard = [
             [InlineKeyboardButton("🛢️ رتبه‌بندی قدرت نفتی و انرژی", callback_data="admin:rank:oil:0")],
             [InlineKeyboardButton("🌾 رتبه‌بندی غلات و امنیت غذایی", callback_data="admin:rank:grain:0")],
+            [InlineKeyboardButton("💻 رتبه‌بندی فناوری و میکروچیپ", callback_data="admin:rank:chips:0")],
             [InlineKeyboardButton("🏦 رتبه‌بندی اقتصاد، خزانه و ثروت ملی", callback_data="admin:rank:economy:0")],
             [InlineKeyboardButton("🪖 رتبه‌بندی ارتش و توان نظامی (شاخه به شاخه)", callback_data="admin:rank:mil_menu")],
             [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:rank:chips"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
+        countries = db.get_all_countries()
+        
+        if not countries:
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            sorted_c = sorted(countries, key=lambda c: -( ((c.get('microchips_daily', 0) or 0) * 100) + (c.get('microchips', 0) or 0) ))
+            total_pages = max(1, math.ceil(len(sorted_c) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_c = sorted_c[start_idx:start_idx + per_page]
+
+            lines = [f"💻 *رتبه‌بندی فناوری و تولید نیمه‌هادی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, c in enumerate(slice_c, start_idx + 1):
+                lines.append(
+                    f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
+                    f"   • 💻 ذخیره تراشه: `{format_number(c.get('microchips', 0))} عدد`\n"
+                    f"   • 🏭 تولید روزانه: `+{format_number(c.get('microchips_daily', 0))} عدد/روز`\n"
+                    f"   • 🔬 سطح فناوری: `سطح {c.get('tech_level', 1)}`\n"
+                )
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:chips:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:chips:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "admin:rank:mil_menu":
         text = (

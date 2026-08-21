@@ -105,9 +105,13 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         net_payment = net_full if force else int(net_full / INCOME_PARTS)
         gold_daily = c.get("gold_daily", 0) or 0
         gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
+        chips_daily = c.get("microchips_daily", 0) or 0
+        chips_payment = chips_daily if force else int(chips_daily / INCOME_PARTS)
 
         db.adjust_treasury(c["id"], net_payment)
         db.adjust_gold(c["id"], gold_payment)
+        if chips_payment > 0:
+            db.adjust_microchips(c["id"], chips_payment)
 
         app_res = None
         if first_of_day:
@@ -144,10 +148,11 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                     report_msg = approval_system.build_daily_country_report_message(db.get_country_by_id(c["id"]), app_res, today)
                 else:
                     c2 = db.get_country_by_id(c["id"])
+                    chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""
                     report_msg = (
                         f"💵 *واریز دوره‌ای درآمد — {c2['flag']} {c2['name']}*\n\n"
                         f"• مبلغ واریزی: *{format_money(net_payment)}*\n"
-                        f"• طلا: +{gold_payment}\n"
+                        f"• طلا: +{gold_payment}{chips_line}\n"
                         f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
                         f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
                     )

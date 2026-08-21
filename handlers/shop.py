@@ -79,6 +79,7 @@ async def show_my_constructions(query, country):
         total_grain_daily_add = 0
         total_gold_daily_add = 0
         total_oil_prod_add = 0
+        total_chips_daily_add = 0
 
         for item_key, qty in civilian_items.items():
             item_data = config.ALL_SHOP_ITEMS[item_key]
@@ -86,18 +87,24 @@ async def show_my_constructions(query, country):
             inc = item_data.get("income_add", 0) * qty
             if item_key == "oil_refinery":
                 inc = config.get_refinery_effect(country.get("country_key")).get("income", inc) * qty
+            elif item_key == "chip_fab":
+                inc = config.get_chip_fab_effect(country.get("country_key")).get("income", inc) * qty
             elec = item_data.get("elec_add", 0) * qty
             grain = item_data.get("grain_daily_add", 0) * qty
             gold = item_data.get("gold_daily_add", 0) * qty
             oil = item_data.get("oil_prod_add", 0) * qty
+            chips = item_data.get("chips_daily_add", 0) * qty
             if item_key == "oil_refinery":
                 oil = config.get_refinery_effect(country.get("country_key")).get("oil_prod", oil) * qty
+            elif item_key == "chip_fab":
+                chips = config.get_chip_fab_effect(country.get("country_key")).get("chips_daily", 25) * qty
 
             total_income_add += inc
             total_elec_add += elec
             total_grain_daily_add += grain
             total_gold_daily_add += gold
             total_oil_prod_add += oil
+            total_chips_daily_add += chips
 
             extra_info = []
             if inc > 0: extra_info.append(f"+{format_money(inc)}/روز")
@@ -105,6 +112,7 @@ async def show_my_constructions(query, country):
             if grain > 0: extra_info.append(f"+{format_number(grain)} تن غلات/روز")
             if gold > 0: extra_info.append(f"+{gold} شمش طلا/روز")
             if oil > 0: extra_info.append(f"+{format_oil(oil)}")
+            if chips > 0: extra_info.append(f"+{format_number(chips)} تراشه/روز")
             info_str = f" ({' | '.join(extra_info)})" if extra_info else ""
 
             lines.append(f"• **{name}:** {qty:,} واحد{info_str}")
@@ -120,6 +128,8 @@ async def show_my_constructions(query, country):
             lines.append(f"• **تولید طلا کل معادن:** +{total_gold_daily_add} شمش/روز")
         if total_oil_prod_add > 0:
             lines.append(f"• **تولید نفت کل پالایشگاه‌ها:** +{format_oil(total_oil_prod_add)}")
+        if total_chips_daily_add > 0:
+            lines.append(f"• **تولید تراشه کل کارخانجات فب:** +{format_number(total_chips_daily_add)} عدد/روز")
 
     keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")]]
     await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -238,10 +248,16 @@ async def confirm_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     unit = config.ASSET_CATEGORIES.get(asset["category"], ("", "عدد"))[1]
+    chips_req = config.get_equipment_chips_req(asset)
+    chips_line = ""
+    if chips_req > 0:
+        curr_chips = country.get("microchips", 0) or 0
+        status_c = "✅" if curr_chips >= chips_req else "⚠️ کسری"
+        chips_line = f"\n💻 *تراشه پردازشی مورد نیاز:* {chips_req} عدد/واحد ({status_c} موجودی شما: {format_number(curr_chips)})"
 
     text = (
         f"🛒 *سفارش ساخت تجهیز نظامی بومی:* {asset['equipment_name']}\n"
-        f"💰 *هزینه تولید هر واحد:* {format_money(asset['buy_price'])}\n"
+        f"💰 *هزینه تولید هر واحد:* {format_money(asset['buy_price'])}{chips_line}\n"
         f"📦 *موجودی فعلی کشور شما:* {format_number(asset['amount'])} {unit}\n"
         f"🏦 *موجودی خزانه:* {format_money(country['treasury'])}\n\n"
         "تعداد مورد نظر برای تولید را انتخاب کنید:"
@@ -350,6 +366,13 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
             "*+۲۵,۰۰۰ بشکه/روز* تولید نفت و *+۶۰۰,۰۰۰ دلار/روز* درآمد دارد "
             "(به‌جای +۱۰۰,۰۰۰ بشکه و +۷۵۰,۰۰۰ دلار برای کشورهای نفتی)."
         )
+    elif item_key == "chip_fab" and country:
+        fab_eff = config.get_chip_fab_effect(country.get("country_key", ""))
+        desc_text += (
+            f"\n\n💻 *بازدهی فب برای کشور شما ({country['flag']} {country['name']}):*\n"
+            f"• *تولید روزانه تراشه:* +{fab_eff['chips_daily']:,} عدد/روز به ازای هر کارخانه\n"
+            f"• *درآمد روزانه:* +{format_money(fab_eff['income'])}/روز"
+        )
     desc_text += f"\n📊 *تعداد احداث‌شده فعلی شما:* {curr_qty}/{max_limit} واحد"
 
     await query.edit_message_text(
@@ -438,6 +461,9 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         benefit_lines.append(f"🪙 *تولید روزانه طلا افزوده‌شده:* +{gold_daily_add} شمش/روز")
     if oil_prod_add > 0:
         benefit_lines.append(f"🛢️ *تولید روزانه نفت افزوده‌شده:* +{format_oil(oil_prod_add)}")
+    if item_key == "chip_fab" and country.get("country_key"):
+        chips_add = config.get_chip_fab_effect(country["country_key"]).get("chips_daily", 25) * quantity
+        benefit_lines.append(f"💻 *تولید روزانه تراشه افزوده‌شده:* +{format_number(chips_add)} عدد/روز")
     if oil_req > 0:
         benefit_lines.append(f"🛢️ *سوخت مصرفی ساخت:* -{format_oil(oil_req)}")
 
@@ -452,6 +478,8 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         status_lines.append(f"🌾 *تولید روزانه غلات:* +{format_number(updated_country.get('grain_daily'))} تن/روز")
     if (updated_country.get("gold_daily") or 0) > 0:
         status_lines.append(f"🪙 *تولید روزانه طلا:* +{updated_country.get('gold_daily')} شمش/روز")
+    if (updated_country.get("microchips_daily") or 0) > 0:
+        status_lines.append(f"💻 *تولید روزانه تراشه:* +{format_number(updated_country.get('microchips_daily'))} عدد/روز")
 
     text = (
         f"✅ *پروژه با موفقیت ساخته و ثبت شد!*\n\n"

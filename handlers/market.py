@@ -33,20 +33,26 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     stats = db.get_market_stats()
-    oil_low = f"{stats['oil'].get('lowest_active'):,} $" if stats['oil'].get('lowest_active') else f"{config.OIL_GLOBAL_PRICE:,} $ (قیمت پایه جهانی)"
-    gold_low = f"{stats['gold'].get('lowest_active'):,} $" if stats['gold'].get('lowest_active') else "بدون عرضه"
-    grain_low = f"{stats['grain'].get('lowest_active'):,} $" if stats['grain'].get('lowest_active') else "بدون عرضه"
+    oil_low = f"{stats['oil'].get('lowest_active'):,} $" if stats.get('oil',{}).get('lowest_active') else f"{config.OIL_GLOBAL_PRICE:,} $ (قیمت پایه جهانی)"
+    gold_low = f"{stats['gold'].get('lowest_active'):,} $" if stats.get('gold',{}).get('lowest_active') else "بدون عرضه"
+    grain_low = f"{stats['grain'].get('lowest_active'):,} $" if stats.get('grain',{}).get('lowest_active') else "بدون عرضه"
+    chips_low = f"{stats.get('microchips',{}).get('lowest_active'):,} $" if stats.get('microchips',{}).get('lowest_active') else "بدون عرضه"
+
+    chips_res = c.get('microchips', 0) or 0
+    chips_prod = c.get('microchips_daily', 0) or 0
 
     text = (
         f"📈 **بازار بورس بین‌المللی کالاها (Global Commodities Exchange)**\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"🏦 *کشور:* {c['flag']} {c['name']}\n"
         f"💰 *موجودی خزانه:* {format_money(c['treasury'])}\n"
-        f"🛢️ *ذخیره نفت:* {format_oil(c['oil_reserves'])} | 🪙 *طلا:* {format_number(c['gold'])} | 🌾 *غلات:* {format_number(c['grain'])} تن\n\n"
+        f"🛢️ *نفت:* {format_oil(c['oil_reserves'])} | 🪙 *طلا:* {format_number(c['gold'])} | 🌾 *غلات:* {format_number(c['grain'])} تن\n"
+        f"💻 *ذخیره میکروچیپ:* {format_number(chips_res)} عدد (تولید: +{format_number(chips_prod)}/روز)\n\n"
         f"📊 **قیمت‌های کف فعلی بازار:**\n"
         f"• 🛢️ **نفت خام:** هر بشکه {oil_low}\n"
         f"• 🪙 **شمش طلا:** هر شمش {gold_low}\n"
-        f"• 🌾 **غلات:** هر تن {grain_low}\n\n"
+        f"• 🌾 **غلات:** هر تن {grain_low}\n"
+        f"• 💻 **میکروچیپ:** هر عدد {chips_low}\n\n"
         "بازار مد نظر خود جهت معامله فوری یا ثبت عرضه را انتخاب کنید:"
     )
 
@@ -54,7 +60,10 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("🛢️ بورس نفت", callback_data="market:cat:oil"),
             InlineKeyboardButton("🪙 بورس طلا", callback_data="market:cat:gold"),
+        ],
+        [
             InlineKeyboardButton("🌾 بورس غلات", callback_data="market:cat:grain"),
+            InlineKeyboardButton("💻 بورس میکروچیپ", callback_data="market:cat:microchips"),
         ],
         [
             InlineKeyboardButton("➕ ثبت عرضه و فروش جدید", callback_data="market:create_order"),
@@ -90,8 +99,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     elif data.startswith("market:cat:"):
         res_type = data.split(":")[2]
-        res_names = {"oil": "🛢️ نفت خام", "gold": "🪙 شمش طلا", "grain": "🌾 غلات و گندم"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن"}
+        res_names = {"oil": "🛢️ نفت خام", "gold": "🪙 شمش طلا", "grain": "🌾 غلات و گندم", "microchips": "💻 میکروچیپ و تراشه"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد"}
 
         orders = db.get_market_orders(res_type)
 
@@ -137,7 +146,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             return
 
         res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد"}
         r_type = order["resource_type"]
 
         text = (
@@ -184,7 +193,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
         commodity_cost = qty * order["unit_price"]
         res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد"}
         r_type = order["resource_type"]
 
         text = (
@@ -316,6 +325,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             ],
             [
                 InlineKeyboardButton("🌾 فروش غلات و گندم", callback_data="market:sell_type:grain"),
+                InlineKeyboardButton("💻 فروش میکروچیپ", callback_data="market:sell_type:microchips"),
             ],
             [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="market:menu")],
         ]
@@ -327,8 +337,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         context.user_data["market_sell_draft"] = {"step": "amount", "res_type": res_type}
 
         res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن"}
-        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد"}
+        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
 
         curr_qty = country.get(res_cols[res_type], 0)
 
@@ -355,7 +365,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             lines.append("شما در حال حاضر هیچ عرضه فعالی در بورس کالا ندارید.")
         else:
             res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات"}
-            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن"}
+            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد"}
 
             for ord_item in my_orders:
                 o_id = ord_item["id"]
@@ -441,10 +451,10 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
     step = draft.get("step")
     res_type = draft.get("res_type")
     res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات"}
-    unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن"}
+    unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد"}
 
     if step == "amount":
-        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
         curr_qty = country.get(res_cols[res_type], 0)
 
         if num_val > curr_qty:

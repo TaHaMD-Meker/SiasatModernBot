@@ -100,6 +100,16 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN microchips INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN microchips_daily INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -1213,14 +1223,16 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     cur.execute("""
         INSERT INTO countries
         (player_id, name, flag, population, treasury, tax_income, daily_income,
-         gold, gold_daily, oil_reserves, oil_production, grain, grain_daily, electricity,
+         gold, gold_daily, oil_reserves, oil_production, grain, grain_daily, microchips, microchips_daily, electricity,
          active_personnel, reserve_personnel, last_income_date, created_at, country_key, username, approval_rating)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         player_id, name, flag,
         sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
         sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
         sv["grain"], sv.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500)),
+        sv.get("microchips", config.STARTING_VALUES.get("microchips", 1000)),
+        sv.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25)),
         sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
         None, now_str, country_key, username, sv.get("approval_rating", 80)
     ))
@@ -1312,7 +1324,7 @@ def update_country_field(country_id: int, field: str, value):
         "population", "treasury", "tax_income", "daily_income", "gold", "gold_daily",
         "oil_reserves", "oil_production", "grain", "electricity",
         "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
-        "approval_rating", "grain_daily", "tech_level",
+        "approval_rating", "grain_daily", "microchips", "microchips_daily", "tech_level",
         "combat_readiness", "last_drill_date", "daily_drill_count", "username", "country_key", "player_id",
         "last_blockade_date"
     }
@@ -1329,6 +1341,14 @@ def adjust_treasury(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def adjust_microchips(country_id: int, amount: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET microchips = MAX(0, microchips + ?) WHERE id = ?", (amount, country_id))
     conn.commit()
     conn.close()
 
@@ -1398,12 +1418,12 @@ def sync_all_country_assets_to_catalog():
 
 def rebalance_existing_countries_income():
     import approval_system
-    """به‌روزرسانی و بالانس درآمد روزانه، غلات، برق، نفت و معادن تمام کشورها بر اساس مقادیر config."""
+    """به‌روزرسانی و بالانس درآمد روزانه، غلات، برق، نفت، تراشه‌ها و معادن تمام کشورها بر اساس مقادیر config."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, country_key, oil_reserves, grain, population FROM countries")
+            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips FROM countries")
             countries = cur.fetchall()
 
             for c in countries:
@@ -1419,6 +1439,8 @@ def rebalance_existing_countries_income():
                 base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 1_000_000))
                 base_oil_res = overrides.get("oil_reserves", config.STARTING_VALUES.get("oil_reserves", 50_000_000))
                 base_grain = overrides.get("grain", config.STARTING_VALUES.get("grain", 35_000))
+                base_chips = overrides.get("microchips", config.STARTING_VALUES.get("microchips", 1000))
+                base_chips_daily = overrides.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25))
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
@@ -1427,6 +1449,7 @@ def rebalance_existing_countries_income():
                 civ_grain_daily = 0
                 civ_gold_daily = 0
                 civ_oil_prod = 0
+                civ_chips_daily = 0
 
                 for eq in eq_rows:
                     i_key = eq["item_key"]
@@ -1438,6 +1461,10 @@ def rebalance_existing_countries_income():
                         eff = config.get_refinery_effect(c_key)
                         inc = eff.get("income", inc)
                         oil_p = eff.get("oil_prod", oil_p)
+                    elif i_key == "chip_fab":
+                        eff = config.get_chip_fab_effect(c_key)
+                        civ_chips_daily += eff.get("chips_daily", 25) * qty
+                    
                     civ_income += inc * qty
                     civ_oil_prod += oil_p * qty
                     civ_elec += item.get("elec_add", 0) * qty
@@ -1449,12 +1476,12 @@ def rebalance_existing_countries_income():
                 new_elec = base_elec + civ_elec
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
+                new_chips_daily = base_chips_daily + civ_chips_daily
 
-                # اگر کشور واردکننده نفت است یا ذخیره بیش از سقف کانفیگ است، با مقدار ۵ روزه هماهنگ شود
                 curr_oil_res = c["oil_reserves"] or 0
                 curr_grain = c["grain"] or 0
+                curr_chips = (c["microchips"] or 0) if "microchips" in c.keys() else 0
                 
-                # برای واردکنندگان نفت و غلات، ذخیره ۵ روزه بحران ست می‌شود
                 reqs = approval_system.calculate_country_requirements({'population': c['population'], 'id': c_id})
                 if new_oil_prod < reqs['oil_need_daily']:
                     new_oil_res = base_oil_res
@@ -1466,6 +1493,8 @@ def rebalance_existing_countries_income():
                 else:
                     new_grain = max(curr_grain, base_grain)
 
+                new_chips = max(curr_chips, base_chips)
+
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
@@ -1475,9 +1504,11 @@ def rebalance_existing_countries_income():
                     gold_daily = ?,
                     oil_production = ?,
                     oil_reserves = ?,
-                    grain = ?
+                    grain = ?,
+                    microchips = ?,
+                    microchips_daily = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, c_id))
+                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_chips, new_chips_daily, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
@@ -1558,7 +1589,11 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
 
             total_cost = asset_dict["buy_price"] * quantity
 
-            cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
+            # بررسی نیاز به میکروچیپ برای تجهیزات های‌تک
+            chips_per_unit = config.get_equipment_chips_req(asset_dict)
+            total_chips_needed = chips_per_unit * quantity
+
+            cur.execute("SELECT treasury, microchips FROM countries WHERE id = ?", (country_id,))
             c_row = cur.fetchone()
             if not c_row:
                 return False, "کشور یافت نشد.", {}
@@ -1566,7 +1601,16 @@ def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity:
             if c_row["treasury"] < total_cost:
                 return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_cost:,} دلار\nموجودی خزانه: {c_row['treasury']:,} دلار", asset_dict
 
-            cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (total_cost, country_id))
+            curr_chips = (c_row["microchips"] or 0) if "microchips" in c_row.keys() else 0
+            if total_chips_needed > 0 and curr_chips < total_chips_needed:
+                return False, (
+                    f"❌ **کسری میکروچیپ پیشرفته:**\n\n"
+                    f"برای ساخت {quantity:,} واحد از سلاح های‌تک *{asset_dict['equipment_name']}* به **{total_chips_needed:,} عدد تراشه پردازشی** نیاز دارید.\n"
+                    f"• موجودی تراشه کشور شما: `{curr_chips:,} عدد`\n\n"
+                    "💡 می‌توانید تراشه را از **بازار بورس کالا (/market)** یا **معاهدات دیپلماتیک (/trade)** از کشورهای تراشه‌ساز تهیه فرمایید."
+                ), asset_dict
+
+            cur.execute("UPDATE countries SET treasury = treasury - ?, microchips = MAX(0, microchips - ?) WHERE id = ?", (total_cost, total_chips_needed, country_id))
             cur.execute("UPDATE country_assets SET amount = amount + ? WHERE id = ?", (quantity, asset_dict["id"]))
 
             now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -1614,11 +1658,20 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             if not row:
                 return False, "کشور پیدا نشد."
 
-            # تمایز نفتی/غیرنفتی: اثر پالایشگاه به نوع کشور بستگی دارد
+            # تمایز نفتی/غیرنفتی و فب تراشه به نوع کشور بستگی دارد
+            chips_daily_add = 0
             if item_key == "oil_refinery" and row["country_key"]:
                 eff = config.get_refinery_effect(row["country_key"])
                 income_add = eff["income"] * quantity
                 oil_prod_add = eff["oil_prod"] * quantity
+            elif item_key == "chip_fab" and row["country_key"]:
+                cur.execute("SELECT tech_level FROM countries WHERE id = ?", (country_id,))
+                t_row = cur.fetchone()
+                if (t_row["tech_level"] or 1) < 2:
+                    return False, "🔬 **پیش‌نیاز فناوری نامعتبر:** برای احداث کارخانه فب ساخت نیمه‌هادی، کشور شما ابتدا باید به سطح فناوری ۲ به بالا ارتقا یابد."
+                eff = config.get_chip_fab_effect(row["country_key"])
+                income_add = eff["income"] * quantity
+                chips_daily_add = eff["chips_daily"] * quantity
 
             if row["treasury"] < total_price:
                 return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_price:,} دلار\nخزانه فعلی: {row['treasury']:,} دلار"
@@ -1635,9 +1688,10 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                 gold_daily = gold_daily + ?,
                 oil_production = oil_production + ?,
                 grain_daily = grain_daily + ?,
-                grain = grain + ?
+                grain = grain + ?,
+                microchips_daily = microchips_daily + ?
                 WHERE id = ?
-            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, grain_daily_add, grain_bonus, country_id))
+            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, grain_daily_add, grain_bonus, chips_daily_add, country_id))
 
             cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
             eq_row = cur.fetchone()
@@ -2013,7 +2067,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
 
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips"}
 
             # Handle Military Asset Transfer
             if off_type == "military_asset":
@@ -2125,7 +2179,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             d_c = dict(donor_c)
             r_c = dict(recip_c)
 
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips"}
             col_name = col_map.get(resource_type, "treasury")
 
             if d_c[col_name] < amount:
@@ -2661,7 +2715,8 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
     resource_cols = {
         "oil": "oil_reserves",
         "gold": "gold",
-        "grain": "grain"
+        "grain": "grain",
+        "microchips": "microchips"
     }
     col = resource_cols.get(resource_type)
     if not col:
@@ -2761,7 +2816,7 @@ def cancel_market_order(seller_id: int, order_id: int) -> tuple[bool, str]:
             rem_amount = ord_dict["amount"]
             res_type = ord_dict["resource_type"]
 
-            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
             col = resource_cols.get(res_type)
 
             if col and rem_amount > 0:
@@ -2790,8 +2845,8 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
             if not orders:
                 return True, 0, {"oil": 0, "gold": 0, "grain": 0, "countries_affected": 0, "player_ids": []}
 
-            refunded = {"oil": 0, "gold": 0, "grain": 0, "affected_countries": set(), "player_ids": set()}
-            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+            refunded = {"oil": 0, "gold": 0, "grain": 0, "microchips": 0, "affected_countries": set(), "player_ids": set()}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
 
             for ord_row in orders:
                 o = dict(ord_row)
@@ -2813,6 +2868,7 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
             "oil": refunded["oil"],
             "gold": refunded["gold"],
             "grain": refunded["grain"],
+            "microchips": refunded["microchips"],
             "countries_affected": len(refunded["affected_countries"]),
             "player_ids": list(refunded["player_ids"]),
             "total_orders": len(orders)
@@ -2883,7 +2939,7 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 return False, f"موجودی خزانه کافی نیست!\nارزش کالا: {format_money(commodity_cost)}\nهزینه ترابری: {format_money(t_cost)}\nمجموع هزینه: {format_money(total_buyer_cost)}\nخزانه شما: {format_money(buyer_c['treasury'])}", {}
 
             res_type = order["resource_type"]
-            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
             col = resource_cols[res_type]
 
             cur.execute(f"UPDATE countries SET treasury = treasury - ?, {col} = {col} + ? WHERE id = ?", (total_buyer_cost, buy_amount, buyer_id))
@@ -2938,7 +2994,7 @@ def get_market_stats() -> dict:
     cur = conn.cursor()
 
     stats = {}
-    for r_type in ("oil", "gold", "grain"):
+    for r_type in ("oil", "gold", "grain", "microchips"):
         cur.execute("""
             SELECT COUNT(*) as trade_count, SUM(amount) as total_volume, AVG(unit_price) as avg_price, MIN(unit_price) as min_price, MAX(unit_price) as max_price
             FROM market_history

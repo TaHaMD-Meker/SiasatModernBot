@@ -12,10 +12,10 @@ import config
 from utils import format_money, format_number, get_main_keyboard
 
 TECH_UPGRADES = {
-    1: {"cost_money": 15_000_000, "cost_gold": 50, "discount": 10, "label": "سطح ۲ (فناوری پیشرفته ۱)"},
-    2: {"cost_money": 35_000_000, "cost_gold": 100, "discount": 20, "label": "سطح ۳ (فناوری پیشرفته ۲)"},
-    3: {"cost_money": 75_000_000, "cost_gold": 200, "discount": 30, "label": "سطح ۴ (فناوری راهبردی)"},
-    4: {"cost_money": 150_000_000, "cost_gold": 400, "discount": 40, "label": "سطح ۵ (فناوری فوق‌پیشرفته بومی)"},
+    1: {"cost_money": 15_000_000, "cost_gold": 50, "cost_chips": 50, "discount": 10, "label": "سطح ۲ (فناوری پیشرفته ۱)"},
+    2: {"cost_money": 35_000_000, "cost_gold": 100, "cost_chips": 200, "discount": 20, "label": "سطح ۳ (فناوری پیشرفته ۲)"},
+    3: {"cost_money": 75_000_000, "cost_gold": 200, "cost_chips": 500, "discount": 30, "label": "سطح ۴ (فناوری راهبردی)"},
+    4: {"cost_money": 150_000_000, "cost_gold": 400, "cost_chips": 1000, "discount": 40, "label": "سطح ۵ (فناوری فوق‌پیشرفته بومی)"},
 }
 
 async def require_country(update: Update):
@@ -55,6 +55,7 @@ async def research_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🚀 *شرایط ارتقا به {up_info['label']}:*\n"
             f"• 💰 هزینه ارتقا: {format_money(up_info['cost_money'])}\n"
             f"• 🪙 طلا مورد نیاز: {up_info['cost_gold']} شمش طلا\n"
+            f"• 💻 میکروچیپ مورد نیاز: {up_info['cost_chips']} عدد تراشه\n"
             f"• 📈 تخفیف نگهداری پس از ارتقا: *{up_info['discount']}٪*\n"
         )
         keyboard = [
@@ -94,6 +95,7 @@ async def research_callback_handler(update: Update, context: ContextTypes.DEFAUL
         up_info = TECH_UPGRADES[tech_lvl]
         money_needed = up_info["cost_money"]
         gold_needed = up_info["cost_gold"]
+        chips_needed = up_info.get("cost_chips", 0)
 
         if country["treasury"] < money_needed:
             await query.edit_message_text(
@@ -109,9 +111,18 @@ async def research_callback_handler(update: Update, context: ContextTypes.DEFAUL
             )
             return
 
+        curr_chips = country.get("microchips", 0) or 0
+        if curr_chips < chips_needed:
+            await query.edit_message_text(
+                f"❌ *ارتقای فناوری انجام نشد:*\n\nتراشه نیمه‌هادی کافی نیست!\n💻 میکروچیپ مورد نیاز: {chips_needed:,} عدد | موجودی فعلی: {curr_chips:,} عدد\n\n💡 می‌توانید تراشه را از بورس کالا (/market) یا قراردادهای تجاری (/trade) تهیه فرمایید.",
+                parse_mode="Markdown"
+            )
+            return
+
         # Deduct & Upgrade
         db.adjust_treasury(country["id"], -money_needed)
         db.adjust_gold(country["id"], -gold_needed)
+        db.adjust_microchips(country["id"], -chips_needed)
         db.update_country_field(country["id"], "tech_level", tech_lvl + 1)
 
         db.add_log(actor=str(user_id), action="upgrade_tech", details=f"Level {tech_lvl + 1}")
@@ -125,7 +136,8 @@ async def research_callback_handler(update: Update, context: ContextTypes.DEFAUL
             f"📉 *تخفیف نگهداری جدید:* *{up_info['discount']}٪*\n"
             f"💰 *صرفه‌جویی روزانه در هزینه‌ها:* {format_money(maint_info['assets_maint'])}\n\n"
             f"🏦 *موجودی جدید خزانه:* {format_money(updated_c['treasury'])}\n"
-            f"🪙 *موجودی جدید طلا:* {format_number(updated_c['gold'])} شمش"
+            f"🪙 *موجودی جدید طلا:* {format_number(updated_c['gold'])} شمش\n"
+            f"💻 *موجودی جدید میکروچیپ:* {format_number(updated_c.get('microchips') or 0)} عدد"
         )
 
         await query.edit_message_text(text, parse_mode="Markdown")
