@@ -451,6 +451,11 @@ def init_db():
         print(f"[nuclear-compensation-cap] error: {e}")
 
     try:
+        nuclear_compensation_v3()
+    except Exception as e:
+        print(f"[nuclear-compensation-v3] error: {e}")
+
+    try:
         fix_legacy_grain_scale()
     except Exception:
         pass
@@ -1777,19 +1782,36 @@ def _get_nuclear_affected_ids():
     return ids
 
 
-def nuclear_compensation_v1():
-    """🎁 جبرانهٔ یک‌بارهٔ اختلال هسته‌ای — فقط برای کشورهای آسیب‌دیده از باگ.
+def _get_zeroed_country_ids():
+    """کشورهایی که خزانه‌شان با باگِ هزینه نگهداری هسته‌ای منفی/صفر شده
+    و بدهی‌شان در مایگریشن ترمیم بخشیده شد (رسید با مبلغ مثبت)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT country_id FROM transactions WHERE type = 'nuclear_bug_fix' AND amount > 0")
+    ids = [r["country_id"] for r in cur.fetchall()]
+    conn.close()
+    return ids
 
-    قانون (سقف‌محور): جبرانه خزانه را تا سقفِ NUCLEAR_COMPENSATION_CAP پر می‌کند.
-        comp = max(0, CAP − treasury)
-    یعنی خزانهٔ نهایی هر کشورِ آسیب‌دیده حداکثر CAP خواهد بود —
-    نه اینکه مبلغ ثابت به همه اضافه شود.
+
+def _nuclear_comp_amount(row):
+    """فرمول جبرانهٔ نهایی: حداقلِ سقف و (ضریب × درآمد روزانه + مالیات)."""
+    cap = int(getattr(config, "NUCLEAR_COMPENSATION_CAP", 30_000_000))
+    mult = int(getattr(config, "NUCLEAR_COMPENSATION_ECONOMY_MULT", 3))
+    economy = (row["daily_income"] or 0) + (row["tax_income"] or 0)
+    return min(cap, mult * economy)
+
+
+def nuclear_compensation_v1():
+    """🎁 جبرانهٔ اختلال هسته‌ای — فقط کشورهای صفرشده.
+
+    قانون نهایی: فقط کشورهایی که خزانه‌شان با باگ صفر/منفی شده بود مشمول جبرانه‌اند.
+    مبلغ = min(سقف، NUCLEAR_COMPENSATION_ECONOMY_MULT × درآمد روزانه + مالیات)
+    (کشورهای اقتصادی قوی به سقف می‌رسند، بقیه متناسب با اقتصادشان کمتر می‌گیرند.)
     """
     if get_setting("nuclear_compensation_v1"):
         return
-    cap = int(getattr(config, "NUCLEAR_COMPENSATION_CAP", 30_000_000))
 
-    target_ids = _get_nuclear_affected_ids()
+    target_ids = _get_zeroed_country_ids()
     if not target_ids:
         set_setting("nuclear_compensation_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
         return
@@ -1798,13 +1820,13 @@ def nuclear_compensation_v1():
     cur = conn.cursor()
     comp_list = []
     for c_id in target_ids:
-        cur.execute("SELECT id, country_key, treasury FROM countries WHERE id = ?", (c_id,))
+        cur.execute("SELECT id, country_key, treasury, daily_income, tax_income FROM countries WHERE id = ?", (c_id,))
         row = cur.fetchone()
         if not row or row["country_key"] == "un":
             continue  # حذف‌شده یا actor سیستمی
-        amount = max(0, cap - (row["treasury"] or 0))
+        amount = _nuclear_comp_amount(row)
         if amount <= 0:
-            continue  # خزانه از سقف بالاتر است — جبرانه‌ای نمی‌گیرد
+            continue
         cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (amount, c_id))
         comp_list.append((c_id, amount))
     conn.commit()
@@ -1813,28 +1835,26 @@ def nuclear_compensation_v1():
     for c_id, amt in comp_list:
         add_transaction(
             c_id, "nuclear_compensation",
-            f"🎁 جبرانهٔ اختلال هسته‌ای: {format_money(amt)} به خزانه اضافه شد (خزانه تا سقف {format_money(cap)} پر شد).",
+            f"🎁 جبرانهٔ اختلال هسته‌ای: {format_money(amt)} به خزانه اضافه شد (متناسب با اقتصاد، سقف {format_money(int(getattr(config, 'NUCLEAR_COMPENSATION_CAP', 30_000_000)))}).",
             amt
         )
 
     set_setting("nuclear_compensation_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
     if comp_list:
-        print(f"[nuclear-compensation] {len(comp_list)} affected countries compensated (top-up to cap {format_money(cap)}).")
+        print(f"[nuclear-compensation] {len(comp_list)} zeroed countries compensated (economy-based, capped).")
 
 
 def nuclear_compensation_cap_v2():
-    """♻️ تعدیل یک‌بارهٔ جبرانهٔ نسخهٔ قبل — اعمال سقف خزانه.
+    """♻️ سقف‌گذاری خزانهٔ کشورهای صفرشده (نسخهٔ محدودشده).
 
-    در نسخهٔ قبلی، جبرانه مبلغ ثابت به همهٔ آسیب‌دیده‌ها اضافه شده بود و برخی
-    (که خزانهٔ باقی‌مانده داشتند) از سقفِ موردنظر (NUCLEAR_COMPENSATION_CAP) بالاتر رفتند.
-    این مایگریشن خزانهٔ کشورهای آسیب‌دیده را فقط اگر بالای سقف باشد به سقف برمی‌گرداند
-    و مبلغ کسرشده را با رسید ثبت می‌کند. کشورهای دیگر دست نمی‌خورند.
+    فقط کشورهای صفرشده (بدهی‌بخشیده‌شده) را اگر خزانه‌شان بالای سقف جبرانه باشد
+    به سقف برمی‌گرداند. کشورهای دیگر بهیچ‌وجه دست نمی‌خورند.
     """
     if get_setting("nuclear_compensation_cap_v2"):
         return
     cap = int(getattr(config, "NUCLEAR_COMPENSATION_CAP", 30_000_000))
 
-    target_ids = _get_nuclear_affected_ids()
+    target_ids = _get_zeroed_country_ids()
     if not target_ids:
         set_setting("nuclear_compensation_cap_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
         return
@@ -1863,7 +1883,98 @@ def nuclear_compensation_cap_v2():
 
     set_setting("nuclear_compensation_cap_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
     if clamped:
-        print(f"[nuclear-compensation-cap] {len(clamped)} affected countries clamped to cap {format_money(cap)}.")
+        print(f"[nuclear-compensation-cap] {len(clamped)} zeroed countries clamped to cap {format_money(cap)}.")
+
+
+def nuclear_compensation_v3():
+    """🧮 اصلاح نهایی جبرانهٔ قدیمی (پرداخت ثابت ۳۰M به همهٔ آسیب‌دیده‌ها).
+
+    طبق تصمیم نهایی:
+      ۱) کشورهای آسیب‌دیده‌ای که صفر نشده بودند (مثل عربستان) — کل جبرانهٔ دریافتی
+         به آن‌ها برمی‌گردد (با احتساب هر مبلغی که قبلاً در تعدیل v2 کسر شده).
+      ۲) کشورهای صفرشده — جبرانه‌شان دقیقاً طبق فرمول نهایی تنظیم می‌شود:
+         min(سقف، ضریب × درآمد روزانه) — اگر کمتر از ۳۰M دریافتی‌شان باشد، مازاد کسر می‌شود.
+    تشخیص پرداختِ قدیمی از روی رسیدهای nuclear_compensation بدون واژهٔ «سقف» است؛
+    اگر چنین رسیدی وجود نداشته باشد (اجرای تازه)، این مایگریشن کاری نمی‌کند.
+    """
+    if get_setting("nuclear_compensation_v3"):
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # پرداخت‌های جبرانهٔ قدیمی (ثابت ۳۰M) — رسیدهای بدون واژهٔ «سقف»
+    cur.execute("""
+        SELECT country_id, SUM(amount) AS s FROM transactions
+        WHERE type = 'nuclear_compensation' AND description NOT LIKE '%سقف%'
+        GROUP BY country_id
+    """)
+    flat_rows = cur.fetchall()
+    if not flat_rows:
+        conn.close()
+        set_setting("nuclear_compensation_v3", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+
+    # مبالغی که قبلاً در تعدیل v2 کسر شده‌اند
+    cur.execute("""
+        SELECT country_id, SUM(amount) AS s FROM transactions
+        WHERE type = 'nuclear_compensation_cap'
+        GROUP BY country_id
+    """)
+    prev_removed = {r["country_id"]: -(r["s"] or 0) for r in cur.fetchall()}
+
+    zeroed = set(_get_zeroed_country_ids())
+    cap = int(getattr(config, "NUCLEAR_COMPENSATION_CAP", 30_000_000))
+
+    returns_count = 0
+    adjust_count = 0
+    receipts = []  # (kind, country_id, remove, target) — بعد از commit ثبت می‌شوند
+    for fr in flat_rows:
+        c_id = fr["country_id"]
+        given = fr["s"] or 0
+        cur.execute("SELECT id, country_key, treasury, daily_income, tax_income FROM countries WHERE id = ?", (c_id,))
+        row = cur.fetchone()
+        if not row or row["country_key"] == "un":
+            continue
+        tr = row["treasury"] or 0
+
+        if c_id in zeroed:
+            # ۲) تنظیم دقیق طبق فرمول (فقط اگر دریافتی بیشتر از فرمول باشد کسر می‌شود)
+            target = _nuclear_comp_amount(row)
+            excess = given - target
+            if excess > 0:
+                remove = min(excess, max(tr, 0))
+                if remove > 0:
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (remove, c_id))
+                    receipts.append(("adjust", c_id, remove, target))
+                    adjust_count += 1
+        else:
+            # ۱) برگشت کامل جبرانهٔ نادرست (منهای کسرشدهٔ قبلی)
+            to_remove = max(0, given - prev_removed.get(c_id, 0))
+            remove = min(to_remove, max(tr, 0))
+            if remove > 0:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (remove, c_id))
+                receipts.append(("return", c_id, remove, None))
+                returns_count += 1
+
+    conn.commit()
+    conn.close()
+
+    for kind, c_id, remove, target in receipts:
+        if kind == "adjust":
+            add_transaction(
+                c_id, "nuclear_compensation_adjust",
+                f"♻️ تنظیم دقیق جبرانهٔ هسته‌ای طبق اقتصاد کشور: سهم شما {format_money(target)} بود و مازاد ({format_money(remove)}) از خزانه کسر شد.",
+                -remove
+            )
+        else:
+            add_transaction(
+                c_id, "nuclear_compensation_return",
+                f"↩️ برگشت جبرانهٔ نادرست ({format_money(remove)}): فقط کشورهایی که خزانه‌شان صفر شده بود مشمول جبرانهٔ اختلال هسته‌ای هستند.",
+                -remove
+            )
+
+    set_setting("nuclear_compensation_v3", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    print(f"[nuclear-compensation-v3] {returns_count} non-zeroed comp returned, {adjust_count} zeroed adjusted to formula.")
 
 
 def seed_country_assets(country_id: int, country_key: str):
