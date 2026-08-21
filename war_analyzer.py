@@ -12,6 +12,7 @@ import re
 import random
 import json
 import urllib.request
+import datetime
 import database as db
 import config
 import war_stats as ws
@@ -807,7 +808,7 @@ def calculate_simulated_losses(att_assets, def_assets, att_country, def_country,
     }
 
 
-def build_detailed_loss_receipt(country_key: str, item_losses: list, military_loss: int, civilian_loss: int, operation_name: str = "عملیات اخیر", is_attacker: bool = False, op_type: str = "air_missile"):
+def build_detailed_loss_receipt(country_key: str, item_losses: list, military_loss: int, civilian_loss: int, operation_name: str = "عملیات اخیر", is_attacker: bool = False, op_type: str = "air_missile", prep_cost: dict = None):
     """تولید فاکتور دقیق تلفات و کاهش تجهیزات با لحن رسمی و بدون ایموجی اضافی."""
     
     c_info = config.COUNTRIES.get(country_key, {})
@@ -940,6 +941,12 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
 
     lines.append(f"> • **ارزش کل تجهیزات و خسارات:** {damage_str}")
     if is_attacker:
+        if prep_cost:
+            lines.append("\n■ *هزینه آماده‌سازی عملیات (مهاجم):*\n")
+            if prep_cost.get("money"):
+                lines.append(f"> • هزینه مالی از خزانه: **{prep_cost['money']:,} دلار**")
+            if prep_cost.get("oil"):
+                lines.append(f"> • سوخت و لجستیک از ذخایر: **{prep_cost['oil']:,} بشکه**")
         lines.append("> • **تغییر روحیه ملی:** +۱۰٪ (اقتدار ملی)")
         lines.append("> • **زمان آمادگی موج بعدی:** ۱۲ ساعت")
     else:
@@ -960,7 +967,8 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
 
 
 def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, targets_text: str = ""):
-    """اعمال کسر تلفات و خسارات از دیتابیس هر دو کشور و اعمال آسیب به پالایشگاه‌ها و نیروگاه‌ها."""
+    """اعمال کسر تلفات و خسارات از دیتابیس هر دو کشور و اعمال آسیب به پالایشگاه‌ها و نیروگاه‌ها.
+    علاوه بر تلفات، هزینه‌ی آماده‌سازی عملیات تهاجمی (پول + نفت) از مهاجم کسر می‌شود."""
     att_country = db.get_country_by_key(attacker_key)
     def_country = db.get_country_by_key(defender_key)
 
@@ -969,6 +977,7 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
     if def_country:
         db.seed_country_assets(def_country["id"], defender_key)
 
+    prep_info = {}
     conn = db.get_connection()
     try:
         with conn:
@@ -976,6 +985,27 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
 
             if att_country:
                 att_cid = att_country["id"]
+
+                # هزینه آماده‌سازی عملیات تهاجمی (واقع‌گرایی اقتصادی)
+                prep = getattr(config, "WAR_PREP_COST", {}) or {}
+                prep_money = int(prep.get("money", 0) or 0)
+                prep_oil = int(prep.get("oil", 0) or 0)
+                if prep_money > 0:
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (prep_money, att_cid))
+                if prep_oil > 0:
+                    cur.execute("UPDATE countries SET oil_reserves = MAX(0, oil_reserves - ?) WHERE id = ?", (prep_oil, att_cid))
+                if prep_money > 0 or prep_oil > 0:
+                    parts = []
+                    if prep_money > 0:
+                        parts.append(f"{prep_money:,} دلار")
+                    if prep_oil > 0:
+                        parts.append(f"{prep_oil:,} بشکه نفت")
+                    cur.execute(
+                        "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?,?,?,?,?)",
+                        (att_cid, "war_prep", f"هزینه آماده‌سازی عملیات تهاجمی ({' + '.join(parts)})", -prep_money if prep_money > 0 else 0, datetime.datetime.now(datetime.timezone.utc).isoformat()),
+                    )
+                    prep_info = {"money": prep_money, "oil": prep_oil}
+
                 new_att_p = max(0, att_country["active_personnel"] - losses.get("att_military_loss", 0))
                 cur.execute("UPDATE countries SET active_personnel = ? WHERE id = ?", (new_att_p, att_cid))
 
@@ -1007,6 +1037,8 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
                         MAX(5, electricity - MAX(2, CAST(electricity * 0.08 AS INTEGER)))
                         WHERE id = ?""", (def_cid,))
 
+        if prep_info:
+            losses["prep_cost"] = prep_info
         return True
     except Exception as e:
         print(f"Error applying war losses: {e}")

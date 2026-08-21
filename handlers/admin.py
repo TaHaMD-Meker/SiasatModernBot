@@ -1064,6 +1064,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"• تلفات غیرنظامی: مهاجم {losses['att_civilian_loss']:,} | مدافع {losses['def_civilian_loss']:,}\n"
             f"• تجهیزات مهاجم: {len(losses['att_losses'])} قلم | مدافع: {len(losses['def_losses'])} قلم"
         )
+        prep = losses.get("prep_cost") or {}
+        if prep.get("money") or prep.get("oil"):
+            parts = []
+            if prep.get("money"):
+                parts.append(f"{prep['money']:,} دلار")
+            if prep.get("oil"):
+                parts.append(f"{prep['oil']:,} بشکه نفت")
+            report += f"\n• 💸 هزینه آماده‌سازی مهاجم: {' + '.join(parts)}"
         if note:
             report += f"\n\n■ *ارزیابی:*\n> {note}"
         war_data["report_text"] = report
@@ -1073,7 +1081,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         receipt_att = war_analyzer.build_detailed_loss_receipt(
             att_key, losses.get("att_losses", []), losses.get("att_military_loss", 0), losses.get("att_civilian_loss", 0),
-            "عملیات تهاجمی اخیر", is_attacker=True
+            "عملیات تهاجمی اخیر", is_attacker=True, prep_cost=losses.get("prep_cost")
         )
         receipt_def = war_analyzer.build_detailed_loss_receipt(
             def_key, losses.get("def_losses", []), losses.get("def_military_loss", 0), losses.get("def_civilian_loss", 0),
@@ -1114,7 +1122,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             receipt_att = war_analyzer.build_detailed_loss_receipt(
                 att_key, losses.get("att_losses", []),
                 losses.get("att_military_loss", 0), losses.get("att_civilian_loss", 0),
-                "عملیات تهاجمی اخیر", is_attacker=True
+                "عملیات تهاجمی اخیر", is_attacker=True, prep_cost=losses.get("prep_cost")
             )
             receipt_def = war_analyzer.build_detailed_loss_receipt(
                 def_key, losses.get("def_losses", []),
@@ -1135,8 +1143,16 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
             confirm_msg = (
                 "✅ *تلفات و خسارات فوق با موفقیت در دیتابیس ثبت و کسر گردید.*\n\n"
-                "📋 *فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:*"
             )
+            prep = losses.get("prep_cost") or {}
+            if prep.get("money") or prep.get("oil"):
+                parts = []
+                if prep.get("money"):
+                    parts.append(f"{prep['money']:,} دلار")
+                if prep.get("oil"):
+                    parts.append(f"{prep['oil']:,} بشکه نفت")
+                confirm_msg += f"💸 *هزینه آماده‌سازی از مهاجم کسر شد:* {' + '.join(parts)}\n\n"
+            confirm_msg += "📋 *فاکتورهای دقیق قبل/تلفات/بعد هر دو کشور در زیر ارائه گردید:*"
 
             try:
                 await query.edit_message_text(confirm_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
