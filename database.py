@@ -2253,7 +2253,7 @@ def calculate_naval_power(country_id: int) -> int:
             total_power += int(amount * 70)
         elif any(f in eq_name for f in ["frigate", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "halifax", "hobart", "miecznik", "perry", "برگامینی", "جماران", "سهند", "دنا", "دماوند", "ناوچه"]):
             total_power += int(amount * 30)
-        elif any(c in eq_name for c in ["corvette", "buyan", "steregushchiy", "sa'ar", "baynunah", "soleimani", "شهید سلیمانی", "فاتح", "پیروز"]):
+        elif any(c in eq_name for c in ["corvette", "کوروت", "buyan", "steregushchiy", "sa'ar", "baynunah", "soleimani", "شهید سلیمانی", "فاتح", "پیروز"]):
             total_power += int(amount * 12)
         elif any(s in eq_name for s in ["sub", "kilo", "ghadir", "midget", "زیردریایی"]):
             total_power += int(amount * 10)
@@ -2460,11 +2460,11 @@ STRAITS_MAPPING = {
         "desc": "دروازه انحصاری عبور و مرور دریای سیاه به آب‌های آزاد",
         "affected_keys": ["russia", "ukraine", "poland"]
     },
-    "india": {
+    "indonesia": {
         "strait_key": "malacca",
         "name": "تنگه مالاکا و اقیانوس هند",
-        "desc": "مسیر اصلی ترانزیت انرژی و تجارت شرق آسیا",
-        "affected_keys": ["china", "japan", "south_korea", "taiwan"]
+        "desc": "گلوگاه ترانزیت انرژی و تجارت شرق آسیا (تحت تسلط مشترک اندونزی، مالزی و سنگاپور)",
+        "affected_keys": ["china", "japan", "south_korea", "taiwan", "india", "australia"]
     },
     "china": {
         "strait_key": "taiwan_strait_cn",
