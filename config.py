@@ -5103,3 +5103,7 @@ WARHEAD_PROD_COST_CHIPS = 500
 WARHEAD_PROD_URANIUM_ORE = 500
 WARHEAD_PROD_TECH_REQ = 5
 WARHEAD_MAX_NON_SUPERPOWER = 5
+
+# ===== 🎁 جبرانهٔ یک‌راختهٔ اختلال هسته‌ای (مایگریشن) =====
+# فقط به کشورهایی که از باگ، ذخایر هسته‌ای مجانی گرفته بودند (کلاهک/سوخت/اورانیوم)
+NUCLEAR_COMPENSATION_AMOUNT = 30_000_000

@@ -441,6 +441,11 @@ def init_db():
         print(f"[nuclear-migration] error: {e}")
 
     try:
+        nuclear_compensation_v1()
+    except Exception as e:
+        print(f"[nuclear-compensation] error: {e}")
+
+    try:
         fix_legacy_grain_scale()
     except Exception:
         pass
@@ -1688,7 +1693,8 @@ def fix_nuclear_free_grant_v1():
     rows = cur.fetchall()
     fixed_stock = 0
     fixed_debt = 0
-    affected = []  # (country_id, debt_relief) — تراکنش‌ها بعد از commit ثبت می‌شوند (جلوگیری از ددلاک)
+    affected = []       # (country_id, debt_relief) — تراکنش‌ها بعد از commit ثبت می‌شوند (جلوگیری از ددلاک)
+    affected_stock_ids = []  # کشورهایی که ذخایر هسته‌ای مجانی گرفته بودند (برای جبرانه)
     for r in rows:
         c_id = r["id"]
         had_debt = (r["treasury"] or 0) < 0
@@ -1719,6 +1725,7 @@ def fix_nuclear_free_grant_v1():
 
         if had_stock:
             fixed_stock += 1
+            affected_stock_ids.append(c_id)
         if had_debt:
             fixed_debt += 1
         if had_stock or had_debt:
@@ -1726,6 +1733,10 @@ def fix_nuclear_free_grant_v1():
 
     conn.commit()
     conn.close()
+
+    # فهرست کشورهای آسیب‌دیده برای مایگریشن جبرانه
+    if affected_stock_ids:
+        set_setting("nuclear_bug_affected_ids", json.dumps(affected_stock_ids))
 
     # ثبت رسید تراکنش برای شفافیت — خارج از ترنزکشن اصلی (بدون قفل)
     for c_id, debt_relief in affected:
@@ -1737,6 +1748,64 @@ def fix_nuclear_free_grant_v1():
     set_setting("nuclear_free_grant_fixed_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
     if fixed_stock or fixed_debt:
         print(f"[nuclear-migration] {fixed_stock} country nuclear stocks reset, {fixed_debt} negative treasuries rescued.")
+
+
+def nuclear_compensation_v1():
+    """🎁 جبرانهٔ یک‌بارهٔ اختلال هسته‌ای — فقط برای کشورهای آسیب‌دیده از باگ.
+
+    هدف: فقط کشورهایی که از باگِ اهدای مجانی، ذخایر هسته‌ای (کلاهک/سوخت/اورانیوم)
+    گرفته بودند. این فهرست از مایگریشنِ ترمیم (setting: nuclear_bug_affected_ids)
+    یا در نبودش از رسیدهای تراکنشِ nuclear_bug_fix استخراج می‌شود.
+    مبلغ: NUCLEAR_COMPENSATION_AMOUNT ثابت برای همهٔ آسیب‌دیده‌ها.
+    """
+    if get_setting("nuclear_compensation_v1"):
+        return
+    amount = int(getattr(config, "NUCLEAR_COMPENSATION_AMOUNT", 30_000_000))
+
+    # ۱) فهرست رسمی ثبت‌شده در مایگریشن ترمیم
+    raw_ids = get_setting("nuclear_bug_affected_ids")
+    target_ids = []
+    if raw_ids:
+        try:
+            target_ids = [int(x) for x in json.loads(raw_ids)]
+        except Exception:
+            target_ids = []
+    # ۲) فالبک: رسیدهای nuclear_bug_fix (اگر نسخهٔ قدیمیِ ترمیم قبلاً اجرا شده باشد)
+    if not target_ids:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT country_id FROM transactions WHERE type = 'nuclear_bug_fix'")
+        target_ids = [r["country_id"] for r in cur.fetchall()]
+        conn.close()
+
+    if not target_ids:
+        set_setting("nuclear_compensation_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+    comp_list = []
+    for c_id in target_ids:
+        cur.execute("SELECT id, country_key FROM countries WHERE id = ?", (c_id,))
+        row = cur.fetchone()
+        if not row or row["country_key"] == "un":
+            continue  # حذف‌شده یا actor سیستمی
+        cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (amount, c_id))
+        comp_list.append((c_id, amount))
+    conn.commit()
+    conn.close()
+
+    for c_id, amt in comp_list:
+        add_transaction(
+            c_id, "nuclear_compensation",
+            f"🎁 جبرانهٔ اختلال هسته‌ای: {format_money(amt)} به خزانه اضافه شد.",
+            amt
+        )
+
+    set_setting("nuclear_compensation_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if comp_list:
+        print(f"[nuclear-compensation] {len(comp_list)} affected countries compensated, "
+              f"{format_money(amount)} each.")
 
 
 def seed_country_assets(country_id: int, country_key: str):
