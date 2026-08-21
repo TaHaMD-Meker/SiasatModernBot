@@ -113,6 +113,12 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         fuel_daily = c.get("nuclear_fuel_daily", 0) or 0
         fuel_payment = fuel_daily if force else int(fuel_daily / INCOME_PARTS)
 
+        # 🛡 محافظ خزانه: هزینه نگهداری هرگز خزانه را منفی نمی‌کند.
+        # (باقی‌مانده هزینه وقتی خزانه پر شود کسر نمی‌شود — ساده و غیرقابل سوءاستفاده)
+        treasury_now = c.get("treasury", 0) or 0
+        if net_payment < 0 and treasury_now + net_payment < 0:
+            net_payment = -max(treasury_now, 0)
+
         db.adjust_treasury(c["id"], net_payment)
         db.adjust_gold(c["id"], gold_payment)
         if chips_payment > 0:

@@ -436,6 +436,11 @@ def init_db():
         pass
 
     try:
+        fix_nuclear_free_grant_v1()
+    except Exception as e:
+        print(f"[nuclear-migration] error: {e}")
+
+    try:
         fix_legacy_grain_scale()
     except Exception:
         pass
@@ -1312,11 +1317,14 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
         sv["grain"], sv.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500)),
         sv.get("microchips", config.STARTING_VALUES.get("microchips", 1000)),
         sv.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25)),
-        sv.get("uranium_ore", config.STARTING_VALUES.get("uranium_ore", 0)),
-        sv.get("uranium_ore_daily", config.STARTING_VALUES.get("uranium_ore_daily", 0)),
-        sv.get("nuclear_fuel", config.STARTING_VALUES.get("nuclear_fuel", 0)),
-        sv.get("nuclear_fuel_daily", config.STARTING_VALUES.get("nuclear_fuel_daily", 0)),
-        sv.get("warheads", config.STARTING_VALUES.get("warheads", 0)),
+        # 🧪 چرخه هسته‌ای همیشه از صفر شروع می‌شود (طراحی بازی):
+        # اورانیوم/سوخت/کلاهک فقط از مسیر بازی به دست می‌آید (معدن، غنی‌سازی، مونتاژ، بازار)
+        # و هرگز از مقادیر اولیه کانفیگ اهداء نمی‌شود.
+        0,  # uranium_ore
+        0,  # uranium_ore_daily
+        0,  # nuclear_fuel
+        0,  # nuclear_fuel_daily
+        0,  # warheads
         sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
         None, now_str, country_key, username, sv.get("approval_rating", 80)
     ))
@@ -1626,9 +1634,15 @@ def rebalance_existing_countries_income():
                     new_grain = max(curr_grain, base_grain)
 
                 new_chips = max(curr_chips, base_chips)
-                new_uranium_ore = max(curr_uranium_ore, base_uranium_ore)
-                new_nuclear_fuel = max(curr_nuclear_fuel, base_nuclear_fuel)
-                new_warheads = max(curr_warheads, base_warheads)
+                # 🧪 چرخه هسته‌ای: ذخایر هرگز از کانفیگ اهداء نمی‌شوند (فقط مقدار فعلی حفظ می‌شود)
+                # و تولید روزانه فقط از تأسیسات خریداری‌شده (معدن اورانیوم / سایت غنی‌سازی) محاسبه می‌شود.
+                # باگ قدیمی: max(curr, base) با هر ری‌استارت به‌صورت مجانی کلاهک/سوخت واقع‌گرایانه
+                # (مثل ۱۷۷۰ کلاهک آمریکا) به کشورها می‌داد و هزینه نگهداری خزانه‌ها را منفی می‌کرد.
+                new_uranium_ore = curr_uranium_ore
+                new_nuclear_fuel = curr_nuclear_fuel
+                new_warheads = curr_warheads
+                new_uranium_ore_daily = civ_uranium_ore_daily
+                new_nuclear_fuel_daily = civ_nuclear_fuel_daily
 
                 cur.execute("""
                     UPDATE countries SET
@@ -1651,6 +1665,78 @@ def rebalance_existing_countries_income():
                 """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_chips, new_chips_daily, new_uranium_ore, new_uranium_ore_daily, new_nuclear_fuel, new_nuclear_fuel_daily, new_warheads, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
+
+
+def fix_nuclear_free_grant_v1():
+    """مایگریشن اصلاح باگ اهدای مجانی ذخایر هسته‌ای.
+
+    باگ (کامیت چرخه سوخت اورانیوم): rebalance با max(curr, base) مقادیر واقع‌گرایانه‌ی
+    کانفیگ (مثل ۱۷۷۰ کلاهک آمریکا، ۹۵هزار ک‌گ سوخت روسیه) را با هر ری‌استارت به‌صورت
+    مجانی به کشورها اهداء می‌کرد؛ سپس هزینه نگهداری ۵,۰۰۰,۰۰۰ دلاریِ هر کلاهک
+    خزانه بازیکنان را تا صدها میلیون منفی می‌کرد.
+
+    اصلاح یک‌باره:
+      ۱) صفر کردن ذخایر اورانیوم/سوخت غنی‌شده/کلاهک همه کشورها (طبق طراحی: همه از صفر)
+      ۲) بازمحاسبه تولید روزانه فقط از تأسیسات خریداری‌شده (معدن/غنی‌سازی)
+      ۳) بخشیدن بدهی خزانه‌های منفیِ ناشی از هزینه نگهداری اشتباه
+    """
+    if get_setting("nuclear_free_grant_fixed_v1"):
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, treasury FROM countries")
+    rows = cur.fetchall()
+    fixed_stock = 0
+    fixed_debt = 0
+    affected = []  # (country_id, debt_relief) — تراکنش‌ها بعد از commit ثبت می‌شوند (جلوگیری از ددلاک)
+    for r in rows:
+        c_id = r["id"]
+        had_debt = (r["treasury"] or 0) < 0
+        debt_relief = abs(r["treasury"]) if had_debt else 0
+
+        # تولید روزانه فقط از تأسیسات خریداری‌شده
+        cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
+        u_daily = 0
+        f_daily = 0
+        for eq in cur.fetchall():
+            item = config.ALL_SHOP_ITEMS.get(eq["item_key"], {})
+            if eq["item_key"] == "uranium_mine":
+                u_daily += item.get("uranium_ore_daily_add", 50) * eq["quantity"]
+            elif eq["item_key"] == "enrichment_facility":
+                f_daily += item.get("nuclear_fuel_daily_add", 20) * eq["quantity"]
+
+        cur.execute("SELECT uranium_ore, nuclear_fuel, warheads FROM countries WHERE id = ?", (c_id,))
+        pre = cur.fetchone()
+        had_stock = any([(pre["uranium_ore"] or 0), (pre["nuclear_fuel"] or 0), (pre["warheads"] or 0)])
+
+        cur.execute("""
+            UPDATE countries SET
+                uranium_ore = 0, nuclear_fuel = 0, warheads = 0,
+                uranium_ore_daily = ?, nuclear_fuel_daily = ?,
+                treasury = CASE WHEN treasury < 0 THEN 0 ELSE treasury END
+            WHERE id = ?
+        """, (u_daily, f_daily, c_id))
+
+        if had_stock:
+            fixed_stock += 1
+        if had_debt:
+            fixed_debt += 1
+        if had_stock or had_debt:
+            affected.append((c_id, debt_relief))
+
+    conn.commit()
+    conn.close()
+
+    # ثبت رسید تراکنش برای شفافیت — خارج از ترنزکشن اصلی (بدون قفل)
+    for c_id, debt_relief in affected:
+        desc = "🧪 اصلاحیه باگ هسته‌ای: ذخایر اورانیوم/سوخت/کلاهک به صفر بازنشانی شد"
+        if debt_relief > 0:
+            desc += f" و بدهی خزانه ({format_money(debt_relief)}) بخشیده شد"
+        add_transaction(c_id, "nuclear_bug_fix", desc + ".", debt_relief)
+
+    set_setting("nuclear_free_grant_fixed_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if fixed_stock or fixed_debt:
+        print(f"[nuclear-migration] {fixed_stock} country nuclear stocks reset, {fixed_debt} negative treasuries rescued.")
 
 
 def seed_country_assets(country_id: int, country_key: str):
