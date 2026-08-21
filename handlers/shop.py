@@ -71,24 +71,40 @@ async def show_my_constructions(query, country):
 
     if not civilian_items:
         lines.append("❌ هنوز هیچ پروژه زیرساختی یا ساخت‌وسازی احداث نکرده‌اید.\n")
-        lines.append("💡 می‌توانید از بخش‌های مختلف فروشگاه اقدام به احداث کارخانجات، نیروگاه‌ها، بنادر، فرودگاه‌ها و معادن فرمایید.")
+        lines.append("💡 می‌توانید از بخش‌های مختلف فروشگاه اقدام به احداث کارخانجات، نیروگاه‌ها، بنادر، فرودگاه‌ها، مزارع و معادن فرمایید.")
     else:
         lines.append("📋 **لیست پروژه‌ها و زیرساخت‌های فعال شما:**\n")
         total_income_add = 0
         total_elec_add = 0
+        total_grain_daily_add = 0
+        total_gold_daily_add = 0
+        total_oil_prod_add = 0
 
         for item_key, qty in civilian_items.items():
             item_data = config.ALL_SHOP_ITEMS[item_key]
             name = item_data["name"]
             inc = item_data.get("income_add", 0) * qty
+            if item_key == "oil_refinery":
+                inc = config.get_refinery_effect(country.get("country_key")).get("income", inc) * qty
             elec = item_data.get("elec_add", 0) * qty
+            grain = item_data.get("grain_daily_add", 0) * qty
+            gold = item_data.get("gold_daily_add", 0) * qty
+            oil = item_data.get("oil_prod_add", 0) * qty
+            if item_key == "oil_refinery":
+                oil = config.get_refinery_effect(country.get("country_key")).get("oil_prod", oil) * qty
 
             total_income_add += inc
             total_elec_add += elec
+            total_grain_daily_add += grain
+            total_gold_daily_add += gold
+            total_oil_prod_add += oil
 
             extra_info = []
             if inc > 0: extra_info.append(f"+{format_money(inc)}/روز")
             if elec > 0: extra_info.append(f"+{elec}٪ برق")
+            if grain > 0: extra_info.append(f"+{format_number(grain)} تن غلات/روز")
+            if gold > 0: extra_info.append(f"+{gold} شمش طلا/روز")
+            if oil > 0: extra_info.append(f"+{format_oil(oil)}")
             info_str = f" ({' | '.join(extra_info)})" if extra_info else ""
 
             lines.append(f"• **{name}:** {qty:,} واحد{info_str}")
@@ -96,7 +112,14 @@ async def show_my_constructions(query, country):
         lines.append("\n━━━━━━━━━━━━━━━━━━\n")
         lines.append("📊 **مجموع عواید پروژه‌های احداث‌شده:**")
         lines.append(f"• **درآمد روزانه زیرساخت‌ها:** +{format_money(total_income_add)}/روز")
-        lines.append(f"• **تولید برق کل نیروگاه‌ها:** +{total_elec_add}٪")
+        if total_elec_add > 0:
+            lines.append(f"• **تولید برق کل نیروگاه‌ها:** +{total_elec_add}٪")
+        if total_grain_daily_add > 0:
+            lines.append(f"• **تولید غلات کل مزارع:** +{format_number(total_grain_daily_add)} تن/روز")
+        if total_gold_daily_add > 0:
+            lines.append(f"• **تولید طلا کل معادن:** +{total_gold_daily_add} شمش/روز")
+        if total_oil_prod_add > 0:
+            lines.append(f"• **تولید نفت کل پالایشگاه‌ها:** +{format_oil(total_oil_prod_add)}")
 
     keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی فروشگاه", callback_data="shopback")]]
     await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -392,25 +415,51 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     oil_req = item.get("oil_req", 0) * quantity
     income_add = item.get("income_add", 0) * quantity
     elec_add = item.get("elec_add", 0) * quantity
+    gold_daily_add = item.get("gold_daily_add", 0) * quantity
+    oil_prod_add = item.get("oil_prod_add", 0) * quantity
+    grain_daily_add = item.get("grain_daily_add", 0) * quantity
+    grain_bonus = item.get("grain_bonus", 0) * quantity
+
+    if item_key == "oil_refinery" and country.get("country_key"):
+        eff = config.get_refinery_effect(country["country_key"])
+        income_add = eff["income"] * quantity
+        oil_prod_add = eff["oil_prod"] * quantity
 
     benefit_lines = []
-    if oil_req > 0:
-        benefit_lines.append(f"🛢️ *نفت کسرشده:* {format_oil(oil_req)}")
     if income_add > 0:
         benefit_lines.append(f"💵 *افزایش درآمد روزانه:* +{format_money(income_add)}/روز")
     if elec_add > 0:
         benefit_lines.append(f"⚡ *تولید انرژی افزوده‌شده:* +{elec_add}٪")
+    if grain_daily_add > 0:
+        benefit_lines.append(f"🌾 *تولید روزانه غلات افزوده‌شده:* +{format_number(grain_daily_add)} تن/روز")
+    if grain_bonus > 0:
+        benefit_lines.append(f"🌾 *ذخیره فوری غلات:* +{format_number(grain_bonus)} تن")
+    if gold_daily_add > 0:
+        benefit_lines.append(f"🪙 *تولید روزانه طلا افزوده‌شده:* +{gold_daily_add} شمش/روز")
+    if oil_prod_add > 0:
+        benefit_lines.append(f"🛢️ *تولید روزانه نفت افزوده‌شده:* +{format_oil(oil_prod_add)}")
+    if oil_req > 0:
+        benefit_lines.append(f"🛢️ *سوخت مصرفی ساخت:* -{format_oil(oil_req)}")
 
     benefits_str = "\n".join(benefit_lines) if benefit_lines else "✅ پروژه با موفقیت در دیتابیس ثبت شد."
 
+    status_lines = [
+        f"🏦 *موجودی جدید خزانه:* {format_money(updated_country['treasury'])}",
+        f"⚡ *تراز جدید برق:* {updated_country['electricity']}٪",
+        f"📈 *درآمد روزانه جدید:* {format_money(updated_country['daily_income'])}",
+    ]
+    if (updated_country.get("grain_daily") or 0) > 0:
+        status_lines.append(f"🌾 *تولید روزانه غلات:* +{format_number(updated_country.get('grain_daily'))} تن/روز")
+    if (updated_country.get("gold_daily") or 0) > 0:
+        status_lines.append(f"🪙 *تولید روزانه طلا:* +{updated_country.get('gold_daily')} شمش/روز")
+
     text = (
         f"✅ *پروژه با موفقیت ساخته و ثبت شد!*\n\n"
-        f"🏗️ *نام پروژه:* {item['name']}\n"
-        f"💰 *مبلغ کسر شده از خزانه:* {format_money(total_price)}\n"
-        f"{benefits_str}\n\n"
-        f"🏦 *موجودی جدید خزانه:* {format_money(updated_country['treasury'])}\n"
-        f"⚡ *تراز جدید برق:* {updated_country['electricity']}٪\n"
-        f"📈 *درآمد روزانه جدید:* {format_money(updated_country['daily_income'])}"
+        f"🏗️ *نام پروژه:* {item['name']} (تعداد: {quantity} واحد)\n"
+        f"💰 *مبلغ کسر شده از خزانه:* {format_money(total_price)}\n\n"
+        f"📊 *دستاوردها و عواید:* \n"
+        f"{benefits_str}\n\n" +
+        "\n".join(status_lines)
     )
 
     keyboard = [

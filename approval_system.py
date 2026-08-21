@@ -31,18 +31,29 @@ def calculate_country_requirements(c: dict):
     pop = c.get("population", 10_000_000)
     pop_millions = max(0.1, pop / 1_000_000)
 
-    elec_need = max(10, int(pop_millions * 1.5))
-
-    # Base population oil need
-    pop_oil_need = max(1_000, int(pop_millions * 15_000))
-
-    # Industrial oil need from power plants, factories & refineries
+    # 1. برق: پوشش شبکه پایه ۱۰۰٪ + بار مصرفی کارخانجات و صنایع سنگین احداث‌شده
     cid = c.get("id")
-    ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
+    ind_elec_need = 0
+    if cid:
+        try:
+            equipment = db.get_equipment(cid)
+            ind_elec_need += equipment.get("small_factory", 0) * 1
+            ind_elec_need += equipment.get("medium_factory", 0) * 2
+            ind_elec_need += equipment.get("large_factory", 0) * 3
+            ind_elec_need += equipment.get("industrial_complex", 0) * 5
+            ind_elec_need += equipment.get("oil_refinery", 0) * 4
+            ind_elec_need += equipment.get("gold_mine", 0) * 3
+        except Exception:
+            pass
+    elec_need = 100 + ind_elec_need
 
+    # 2. سوخت و نفت عمومی و صنعتی (تراز واقع‌گرایانه و متناسب با جمعیت)
+    pop_oil_need = int(30_000 + (pop_millions ** 0.65) * 12_000)
+    ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
     total_oil_need_daily = pop_oil_need + ind_oil_need
 
-    grain_need_daily = max(10, int(pop_millions * 100))
+    # 3. مصرف روزانه غلات و امنیت غذایی (متناسب با جمعیت)
+    grain_need_daily = max(500, int(800 + (pop_millions ** 0.72) * 100))
 
     return {
         "pop": pop,

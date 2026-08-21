@@ -1213,15 +1213,16 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     cur.execute("""
         INSERT INTO countries
         (player_id, name, flag, population, treasury, tax_income, daily_income,
-         gold, gold_daily, oil_reserves, oil_production, grain, electricity,
-         active_personnel, reserve_personnel, last_income_date, created_at, country_key, username)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         gold, gold_daily, oil_reserves, oil_production, grain, grain_daily, electricity,
+         active_personnel, reserve_personnel, last_income_date, created_at, country_key, username, approval_rating)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         player_id, name, flag,
         sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
         sv["gold"], sv["gold_daily"], sv["oil_reserves"], sv["oil_production"],
-        sv["grain"], sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
-        None, now_str, country_key, username
+        sv["grain"], sv.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500)),
+        sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
+        None, now_str, country_key, username, sv.get("approval_rating", 80)
     ))
     country_id = cur.lastrowid
     conn.commit()
@@ -1396,7 +1397,7 @@ def sync_all_country_assets_to_catalog():
 
 
 def rebalance_existing_countries_income():
-    """به‌روزرسانی و بالانس درآمد روزانه و مالیاتی تمام کشورها بر اساس آخرین مقادیر بالانس‌شده در config."""
+    """به‌روزرسانی و بالانس درآمد روزانه، غلات، برق و معادن تمام کشورها بر اساس آخرین مقادیر بالانس‌شده در config."""
     conn = get_connection()
     try:
         with conn:
@@ -1411,12 +1412,17 @@ def rebalance_existing_countries_income():
                 overrides = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
                 base_daily = overrides.get("daily_income", config.STARTING_VALUES["daily_income"])
                 base_tax = overrides.get("tax_income", config.STARTING_VALUES["tax_income"])
-                base_oil_res = overrides.get("oil_reserves", config.STARTING_VALUES["oil_reserves"])
-                base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES["oil_production"])
+                base_grain_daily = overrides.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500))
+                base_elec = overrides.get("electricity", config.STARTING_VALUES["electricity"])
+                base_gold_daily = overrides.get("gold_daily", config.STARTING_VALUES["gold_daily"])
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
                 civ_income = 0
+                civ_elec = 0
+                civ_grain_daily = 0
+                civ_gold_daily = 0
+
                 for eq in eq_rows:
                     i_key = eq["item_key"]
                     qty = eq["quantity"]
@@ -1425,17 +1431,24 @@ def rebalance_existing_countries_income():
                     if i_key == "oil_refinery":
                         inc = config.get_refinery_effect(c_key).get("income", inc)
                     civ_income += inc * qty
+                    civ_elec += item.get("elec_add", 0) * qty
+                    civ_grain_daily += item.get("grain_daily_add", 0) * qty
+                    civ_gold_daily += item.get("gold_daily_add", 0) * qty
 
                 new_total_daily = base_daily + civ_income
+                new_grain_daily = base_grain_daily + civ_grain_daily
+                new_elec = base_elec + civ_elec
+                new_gold_daily = base_gold_daily + civ_gold_daily
 
-                # نکته بالانس: oil_reserves و oil_production عمداً دست نمی‌خشوند تا
-                # خریدهای بازیکن‌ها و خسارت جنگی با ری‌استارت پاک نشود.
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
-                    daily_income = ?
+                    daily_income = ?,
+                    grain_daily = ?,
+                    electricity = ?,
+                    gold_daily = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, c_id))
+                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
