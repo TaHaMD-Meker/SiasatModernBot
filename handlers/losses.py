@@ -540,12 +540,41 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         except Exception:
             pass
 
+        # ارسال خودکار فاکتور رسمی تلفات به بازیکن صاحب کشور
+        target_country = db.get_country_by_id(draft["cid"])
+        player_notified = False
+        if target_country and target_country.get("player_id"):
+            try:
+                player_msg = (
+                    f"🚨 **گزارش رسمی ستاد کل — ثبت تلفات و خسارات نبرد**\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    f"{report}\n\n"
+                    "⚠️ *اقلام فوق از موجودی انبار، تسلیحات و منابع کشور شما کسر گردید.*"
+                )
+                await context.bot.send_message(
+                    chat_id=target_country["player_id"],
+                    text=player_msg,
+                    parse_mode="Markdown"
+                )
+                player_notified = True
+            except Exception:
+                try:
+                    await context.bot.send_message(
+                        chat_id=target_country["player_id"],
+                        text=player_msg
+                    )
+                    player_notified = True
+                except Exception:
+                    pass
+
+        notify_status = "📩 *فاکتور رسمی تلفات برای بازیکن ارسال شد.*" if player_notified else "⚠️ *بازیکن یافت نشد یا ارسال پیام به بازیکن ناموفق بود.*"
+
         await query.edit_message_text(
-            f"✅ *تلفات ثبت شد (گزارش #{rid})*\n\n{report}",
+            f"✅ *تلفات ثبت شد (گزارش #{rid})*\n{notify_status}\n\n{report}",
             reply_markup=_kb([
                 [InlineKeyboardButton("📋 تاریخچه این کشور", callback_data=f"ls:history:{draft['cid']}")],
                 [InlineKeyboardButton("📄 ثبت تلفات (پیست گزارش آماده) — روش اصلی", callback_data="ls:fast")],
-            [InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")],
+                [InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")],
                 [InlineKeyboardButton("🔙 منوی تلفات", callback_data="ls:menu")],
             ]),
             parse_mode="Markdown",
@@ -591,10 +620,47 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             meta += f"\n📝 {r['note']}"
         rows = []
         if r["status"] == "applied":
-            rows.append([InlineKeyboardButton("↩️ بازگردانی به موجودی", callback_data=f"ls:revert:{rid}")])
+            rows.append([
+                InlineKeyboardButton("↩️ بازگردانی به موجودی", callback_data=f"ls:revert:{rid}"),
+                InlineKeyboardButton("📩 ارسال فاکتور به بازیکن", callback_data=f"ls:resend:{rid}")
+            ])
         rows.append([InlineKeyboardButton("🗑️ حذف گزارش", callback_data=f"ls:del:{rid}")])
         rows.append([InlineKeyboardButton("🔙 بازگشت به تاریخچه", callback_data=f"ls:history:{r['country_id']}")])
         await query.edit_message_text(body + meta, reply_markup=_kb(rows), parse_mode="Markdown")
+        return
+
+    if data.startswith("ls:resend:"):
+        rid = int(data.split(":")[2])
+        r = db.get_loss_report_by_id(rid)
+        if not r or r["status"] == "deleted":
+            await query.answer("❌ گزارش یافت نشد.", show_alert=True)
+            return
+
+        c = db.get_country_by_id(r["country_id"])
+        if not c or not c.get("player_id"):
+            await query.answer("❌ شناسه عددی بازیکن یافت نشد.", show_alert=True)
+            return
+
+        import json as _json
+        its = _json.loads(r["items_json"])
+        status_line = {"applied": "🟠 وضعیت: اعمال‌شده", "reverted": "↩️ وضعیت: بازگردانی‌شده"}.get(r["status"], r["status"])
+        body = build_loss_report_text(r.get("country_flag", ""), r.get("country_name", ""), r.get("operation_name", ""), its, status_line=status_line)
+        
+        player_msg = (
+            f"🚨 **گزارش رسمی ستاد کل — ثبت تلفات و خسارات نبرد**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"{body}\n\n"
+            "⚠️ *اقلام فوق از موجودی انبار، تسلیحات و منابع کشور شما کسر گردید.*"
+        )
+        try:
+            await context.bot.send_message(chat_id=c["player_id"], text=player_msg, parse_mode="Markdown")
+            await query.answer(f"✅ فاکتور با موفقیت به رهبر کشور {c['name']} ارسال شد!", show_alert=True)
+        except Exception as ex:
+            try:
+                await context.bot.send_message(chat_id=c["player_id"], text=player_msg)
+                await query.answer(f"✅ فاکتور به رهبر کشور {c['name']} ارسال شد!", show_alert=True)
+            except Exception as ex2:
+                await query.answer(f"❌ خطا در ارسال پیام به بازیکن: {ex2}", show_alert=True)
         return
 
     if data.startswith("ls:revert:"):
