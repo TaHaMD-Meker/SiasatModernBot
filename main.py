@@ -31,7 +31,8 @@ from handlers.un import un_main_menu, un_text_input_handler, get_un_handlers
 from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
     confirm_asset_purchase, execute_asset_purchase,
-    confirm_civilian_purchase, execute_civilian_purchase
+    confirm_civilian_purchase, execute_civilian_purchase,
+    execute_warhead_assembly
 )
 from handlers.admin import (
     admin_panel, admin_callback_handler, admin_input_text_handler,
@@ -107,11 +108,19 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
         chips_daily = c.get("microchips_daily", 0) or 0
         chips_payment = chips_daily if force else int(chips_daily / INCOME_PARTS)
+        u_daily = c.get("uranium_ore_daily", 0) or 0
+        u_payment = u_daily if force else int(u_daily / INCOME_PARTS)
+        fuel_daily = c.get("nuclear_fuel_daily", 0) or 0
+        fuel_payment = fuel_daily if force else int(fuel_daily / INCOME_PARTS)
 
         db.adjust_treasury(c["id"], net_payment)
         db.adjust_gold(c["id"], gold_payment)
         if chips_payment > 0:
             db.adjust_microchips(c["id"], chips_payment)
+        if u_payment > 0:
+            db.adjust_uranium_ore(c["id"], u_payment)
+        if fuel_payment > 0:
+            db.adjust_nuclear_fuel(c["id"], fuel_payment)
 
         app_res = None
         if first_of_day:
@@ -149,10 +158,12 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 else:
                     c2 = db.get_country_by_id(c["id"])
                     chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""
+                    u_line = f"\n• ☢️ کیک زرد: +{u_payment:,} تن" if u_payment > 0 else ""
+                    fuel_line = f"\n• 🧪 سوخت غنی‌شده: +{fuel_payment:,} ک‌گ" if fuel_payment > 0 else ""
                     report_msg = (
                         f"💵 *واریز دوره‌ای درآمد — {c2['flag']} {c2['name']}*\n\n"
                         f"• مبلغ واریزی: *{format_money(net_payment)}*\n"
-                        f"• طلا: +{gold_payment}{chips_line}\n"
+                        f"• طلا: +{gold_payment}{chips_line}{u_line}{fuel_line}\n"
                         f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
                         f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
                     )
@@ -275,6 +286,7 @@ def main():
     app.add_handler(CallbackQueryHandler(execute_asset_purchase, pattern=r"^do_asset_buy:"))
     app.add_handler(CallbackQueryHandler(confirm_civilian_purchase, pattern=r"^buyciv:"))
     app.add_handler(CallbackQueryHandler(execute_civilian_purchase, pattern=r"^docivbuy:"))
+    app.add_handler(CallbackQueryHandler(execute_warhead_assembly, pattern=r"^shop:do_assemble_warhead$"))
 
     # سیستم ابلاغ عملیات و رول‌های نظامی
     app.add_handler(CommandHandler("role", operations_menu))

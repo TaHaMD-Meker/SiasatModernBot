@@ -34,12 +34,13 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.seed_country_assets(country["id"], country["country_key"])
 
     buttons = [
-        [InlineKeyboardButton("📈 بازار بورس بین‌المللی کالاها (طلا، نفت، غلات)", callback_data="market:menu")],
+        [InlineKeyboardButton("📈 بازار بورس بین‌المللی کالاها (طلا، نفت، غلات، اورانیوم)", callback_data="market:menu")],
         [InlineKeyboardButton("🏗️ ساخت‌وسازها و پروژه‌های من", callback_data="shopcat:my_constructions")],
         [InlineKeyboardButton("🪖 ساخت/خرید تسلیحات نظامی بومی", callback_data="shopcat:military_assets")],
         [InlineKeyboardButton("🏠 ساختمان‌ها", callback_data="shopcat:buildings"), InlineKeyboardButton("🏭 صنعت و کارخانجات", callback_data="shopcat:factories")],
         [InlineKeyboardButton("⚡ نیروگاه‌های انرژی", callback_data="shopcat:power"), InlineKeyboardButton("🚢 حمل‌ونقل و ترابری", callback_data="shopcat:transport")],
         [InlineKeyboardButton("⛏️ منابع و معادن", callback_data="shopcat:mines"), InlineKeyboardButton("🌾 کشاورزی و غلات", callback_data="shopcat:agriculture")],
+        [InlineKeyboardButton("🚀 مرکز تسلیحات راهبردی و کلاهک بازدارنده", callback_data="shopcat:warheads")],
         [InlineKeyboardButton("🔬 مرکز تحقیق و توسعه فناوری (R&D)", callback_data="research:menu")],
     ]
 
@@ -149,6 +150,10 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if cat_key == "my_constructions":
         await show_my_constructions(query, country)
+        return
+
+    if cat_key == "warheads":
+        await show_warheads_menu(query, country)
         return
 
     if cat_key == "military_assets":
@@ -498,5 +503,77 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+async def show_warheads_menu(query, country):
+    """منوی مرکز تسلیحات راهبردی و کلاهک بازدارنده هسته‌ای."""
+    tech_lvl = country.get("tech_level", 1) or 1
+    warheads_count = country.get("warheads", 0) or 0
+    u_ore = country.get("uranium_ore", 0) or 0
+    chips = country.get("microchips", 0) or 0
+    gold = country.get("gold", 0) or 0
+    treasury = country.get("treasury", 0) or 0
+
+    equipment = db.get_equipment(country["id"])
+    has_enrichment = (equipment.get("enrichment_facility", 0) or 0) > 0
+    is_p5 = country.get("country_key") in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+
+    text = (
+        f"🚀 **مرکز تسلیحات راهبردی و بازدارندگی هسته‌ای — {country['flag']} {country['name']}**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"• **تعداد کلاهک‌های راهبردی مستقر:** ☢️ **{warheads_count:,} عدد**\n"
+        f"• **هزینه نگهداری فعلی زرادخانه:** {format_money(warheads_count * 5_000_000)}/روز + {warheads_count * 2} میکروچیپ/روز\n\n"
+        "🔬 **شرایط و الزامات مونتاژ کلاهک جدید:**\n"
+        f"• سطح فناوری: **سطح ۵** ({'✅' if tech_lvl >= 5 else '❌ سطح فعلی: ' + str(tech_lvl)})\n"
+        f"• مجتمع غنی‌سازی سانتریفیوژ: **حداقل ۱ واحد** ({'✅' if has_enrichment or is_p5 else '❌ فاقد مجتمع غنی‌سازی'})\n"
+        f"• هزینه مالی: **۱۵۰ میلیون دلار** ({'✅' if treasury >= 150_000_000 else '❌ موجودی: ' + format_money(treasury)})\n"
+        f"• شمش طلا: **۱۰۰ شمش** ({'✅' if gold >= 100 else '❌ موجودی: ' + str(gold)})\n"
+        f"• تراشه میکروچیپ: **۵۰۰ عدد** ({'✅' if chips >= 500 else '❌ موجودی: ' + str(chips)})\n"
+        f"• کیک زرد اورانیوم: **۵۰۰ تن** ({'✅' if u_ore >= 500 else '❌ موجودی: ' + str(u_ore)})\n\n"
+        "⚠️ **قوانین بازدارندگی و ایمنی بین‌المللی:**\n"
+        "۱. هرگونه مونتاژ کلاهک هسته‌ای با هشدار اطلاعاتی بین‌المللی همراه خواهد بود.\n"
+        "۲. نگهداری کلاهک روزانه ۵ میلیون دلار و ۲ تراشه هزینه مستقیم دارد.\n"
+        "۳. سقف نگهداری برای کشورهای غیرابرقدرت حداکثر ۵ کلاهک بازدارنده است."
+    )
+
+    buttons = [
+        [InlineKeyboardButton("☢️ مونتاژ و مسلح‌سازی ۱ کلاهک راهبردی", callback_data="shop:do_assemble_warhead")],
+        [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")],
+    ]
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+
+async def execute_warhead_assembly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    country = db.get_country_by_player(update.effective_user.id)
+    if not country:
+        return
+
+    ok, msg = db.assemble_nuclear_warhead_transaction(country["id"])
+    if not ok:
+        await query.edit_message_text(
+            f"❌ **عدم امکان مونتاژ کلاهک هسته‌ای:**\n\n{msg}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="shopcat:warheads")]]),
+            parse_mode="Markdown"
+        )
+        return
+
+    # Broadcast intelligence alert if appropriate
+    try:
+        import news_engine
+        await news_engine.trigger_general_broadcast(
+            context.bot,
+            f"🚨 **گزارش محرمانه اطلاعاتی و هشدار آژانس بین‌المللی انرژی اتمی**\n\n"
+            f"کشور {country['flag']} **{country['name']}** یک کلاهک راهبردی هسته‌ای جدید را با موفقیت مونتاژ و در سیلوهای راهبردی خود مستقر کرد."
+        )
+    except Exception:
+        pass
+
+    await query.edit_message_text(
+        f"{msg}\n\n🌐 کلاهک در زرادخانه استراتژیک کشور مستقر گردید.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به مرکز راهبردی", callback_data="shopcat:warheads")]]),
         parse_mode="Markdown"
     )

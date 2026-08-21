@@ -110,6 +110,31 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN uranium_ore INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN uranium_ore_daily INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN nuclear_fuel INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN nuclear_fuel_daily INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN warheads INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -677,6 +702,9 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                         "gold_daily": int(cfg_it.get("gold_daily_add", 0) or 0) * q,
                         "oil_prod": int(cfg_it.get("oil_prod_add", 0) or 0) * q,
                         "grain_daily": int(cfg_it.get("grain_daily_add", 0) or 0) * q,
+                        "uranium_ore_daily": int(cfg_it.get("uranium_ore_daily_add", 0) or 0) * q,
+                        "nuclear_fuel_daily": int(cfg_it.get("nuclear_fuel_daily_add", 0) or 0) * q,
+                        "microchips_daily": (config.get_chip_fab_effect(db.get_country_by_id(country_id).get('country_key','')).get('chips_daily', 25) if it["key"] == "chip_fab" else 0) * q,
                     }
                     continue
                 if it.get("special") == "money":
@@ -699,6 +727,41 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     ap = (prow["active_personnel"] or 0) if prow else 0
                     if int(it["qty"]) > ap:
                         raise ValueError(f"تلفات نظامی ({int(it['qty']):,}) بیشتر از نیروی فعال کشور ({ap:,}) است.")
+                    continue
+                if it.get("special") == "uranium_ore":
+                    cur.execute("SELECT uranium_ore FROM countries WHERE id = ?", (country_id,))
+                    urow = cur.fetchone()
+                    ures = (urow["uranium_ore"] or 0) if urow else 0
+                    if int(it["qty"]) > ures:
+                        raise ValueError(f"تلفات اورانیوم ({int(it['qty']):,}) بیشتر از ذخایر کشور ({ures:,}) است.")
+                    continue
+                if it.get("special") == "nuclear_fuel":
+                    cur.execute("SELECT nuclear_fuel FROM countries WHERE id = ?", (country_id,))
+                    nfrow = cur.fetchone()
+                    nfres = (nfrow["nuclear_fuel"] or 0) if nfrow else 0
+                    if int(it["qty"]) > nfres:
+                        raise ValueError(f"تلفات سوخت هسته‌ای ({int(it['qty']):,}) بیشتر از ذخایر کشور ({nfres:,}) است.")
+                    continue
+                if it.get("special") == "warheads":
+                    cur.execute("SELECT warheads FROM countries WHERE id = ?", (country_id,))
+                    whrow = cur.fetchone()
+                    whres = (whrow["warheads"] or 0) if whrow else 0
+                    if int(it["qty"]) > whres:
+                        raise ValueError(f"تلفات کلاهک هسته‌ای ({int(it['qty']):,}) بیشتر از موجودی کشور ({whres:,}) است.")
+                    continue
+                if it.get("special") == "microchips":
+                    cur.execute("SELECT microchips FROM countries WHERE id = ?", (country_id,))
+                    mcrow = cur.fetchone()
+                    mcres = (mcrow["microchips"] or 0) if mcrow else 0
+                    if int(it["qty"]) > mcres:
+                        raise ValueError(f"تلفات میکروچیپ ({int(it['qty']):,}) بیشتر از موجودی کشور ({mcres:,}) است.")
+                    continue
+                if it.get("special") == "gold":
+                    cur.execute("SELECT gold FROM countries WHERE id = ?", (country_id,))
+                    grow = cur.fetchone()
+                    gres = (grow["gold"] or 0) if grow else 0
+                    if int(it["qty"]) > gres:
+                        raise ValueError(f"تلفات طلا ({int(it['qty']):,}) بیشتر از موجودی کشور ({gres:,}) است.")
                     continue
                 cur.execute(
                     "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
@@ -729,6 +792,21 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     continue
                 if it.get("special") == "mil_kia":
                     cur.execute("UPDATE countries SET active_personnel = active_personnel - ? WHERE id = ?", (int(it["qty"]), country_id))
+                    continue
+                if it.get("special") == "uranium_ore":
+                    cur.execute("UPDATE countries SET uranium_ore = MAX(0, uranium_ore - ?) WHERE id = ?", (int(it["qty"]), country_id))
+                    continue
+                if it.get("special") == "nuclear_fuel":
+                    cur.execute("UPDATE countries SET nuclear_fuel = MAX(0, nuclear_fuel - ?) WHERE id = ?", (int(it["qty"]), country_id))
+                    continue
+                if it.get("special") == "warheads":
+                    cur.execute("UPDATE countries SET warheads = MAX(0, warheads - ?) WHERE id = ?", (int(it["qty"]), country_id))
+                    continue
+                if it.get("special") == "microchips":
+                    cur.execute("UPDATE countries SET microchips = MAX(0, microchips - ?) WHERE id = ?", (int(it["qty"]), country_id))
+                    continue
+                if it.get("special") == "gold":
+                    cur.execute("UPDATE countries SET gold = MAX(0, gold - ?) WHERE id = ?", (int(it["qty"]), country_id))
                     continue
                 cur.execute(
                     "UPDATE country_assets SET amount = amount - ? WHERE country_id = ? AND equipment_key = ?",
@@ -1223,9 +1301,10 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
     cur.execute("""
         INSERT INTO countries
         (player_id, name, flag, population, treasury, tax_income, daily_income,
-         gold, gold_daily, oil_reserves, oil_production, grain, grain_daily, microchips, microchips_daily, electricity,
-         active_personnel, reserve_personnel, last_income_date, created_at, country_key, username, approval_rating)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         gold, gold_daily, oil_reserves, oil_production, grain, grain_daily, microchips, microchips_daily,
+         uranium_ore, uranium_ore_daily, nuclear_fuel, nuclear_fuel_daily, warheads,
+         electricity, active_personnel, reserve_personnel, last_income_date, created_at, country_key, username, approval_rating)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         player_id, name, flag,
         sv["population"], sv["treasury"], sv["tax_income"], sv["daily_income"],
@@ -1233,6 +1312,11 @@ def create_country(player_id: int, name: str, flag: str = "🏳️", country_key
         sv["grain"], sv.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500)),
         sv.get("microchips", config.STARTING_VALUES.get("microchips", 1000)),
         sv.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25)),
+        sv.get("uranium_ore", config.STARTING_VALUES.get("uranium_ore", 0)),
+        sv.get("uranium_ore_daily", config.STARTING_VALUES.get("uranium_ore_daily", 0)),
+        sv.get("nuclear_fuel", config.STARTING_VALUES.get("nuclear_fuel", 0)),
+        sv.get("nuclear_fuel_daily", config.STARTING_VALUES.get("nuclear_fuel_daily", 0)),
+        sv.get("warheads", config.STARTING_VALUES.get("warheads", 0)),
         sv["electricity"], sv["active_personnel"], sv["reserve_personnel"],
         None, now_str, country_key, username, sv.get("approval_rating", 80)
     ))
@@ -1377,6 +1461,38 @@ def adjust_oil_production(country_id: int, delta: int):
     conn.close()
 
 
+def adjust_uranium_ore(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET uranium_ore = MAX(0, uranium_ore + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def adjust_nuclear_fuel(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET nuclear_fuel = MAX(0, nuclear_fuel + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def adjust_warheads(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET warheads = MAX(0, warheads + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def adjust_grain(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET grain = MAX(0, grain + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
 # ---------- همگام‌سازی و به‌روزرسانی کلی کشورها ----------
 
 def sync_all_country_assets_to_catalog():
@@ -1423,7 +1539,7 @@ def rebalance_existing_countries_income():
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips FROM countries")
+            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips, uranium_ore, nuclear_fuel, warheads FROM countries")
             countries = cur.fetchall()
 
             for c in countries:
@@ -1441,6 +1557,11 @@ def rebalance_existing_countries_income():
                 base_grain = overrides.get("grain", config.STARTING_VALUES.get("grain", 35_000))
                 base_chips = overrides.get("microchips", config.STARTING_VALUES.get("microchips", 1000))
                 base_chips_daily = overrides.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25))
+                base_uranium_ore = overrides.get("uranium_ore", config.STARTING_VALUES.get("uranium_ore", 0))
+                base_uranium_ore_daily = overrides.get("uranium_ore_daily", config.STARTING_VALUES.get("uranium_ore_daily", 0))
+                base_nuclear_fuel = overrides.get("nuclear_fuel", config.STARTING_VALUES.get("nuclear_fuel", 0))
+                base_nuclear_fuel_daily = overrides.get("nuclear_fuel_daily", config.STARTING_VALUES.get("nuclear_fuel_daily", 0))
+                base_warheads = overrides.get("warheads", config.STARTING_VALUES.get("warheads", 0))
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
@@ -1450,6 +1571,8 @@ def rebalance_existing_countries_income():
                 civ_gold_daily = 0
                 civ_oil_prod = 0
                 civ_chips_daily = 0
+                civ_uranium_ore_daily = 0
+                civ_nuclear_fuel_daily = 0
 
                 for eq in eq_rows:
                     i_key = eq["item_key"]
@@ -1464,6 +1587,10 @@ def rebalance_existing_countries_income():
                     elif i_key == "chip_fab":
                         eff = config.get_chip_fab_effect(c_key)
                         civ_chips_daily += eff.get("chips_daily", 25) * qty
+                    elif i_key == "uranium_mine":
+                        civ_uranium_ore_daily += item.get("uranium_ore_daily_add", 50) * qty
+                    elif i_key == "enrichment_facility":
+                        civ_nuclear_fuel_daily += item.get("nuclear_fuel_daily_add", 20) * qty
                     
                     civ_income += inc * qty
                     civ_oil_prod += oil_p * qty
@@ -1477,10 +1604,15 @@ def rebalance_existing_countries_income():
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
                 new_chips_daily = base_chips_daily + civ_chips_daily
+                new_uranium_ore_daily = base_uranium_ore_daily + civ_uranium_ore_daily
+                new_nuclear_fuel_daily = base_nuclear_fuel_daily + civ_nuclear_fuel_daily
 
                 curr_oil_res = c["oil_reserves"] or 0
                 curr_grain = c["grain"] or 0
                 curr_chips = (c["microchips"] or 0) if "microchips" in c.keys() else 0
+                curr_uranium_ore = (c["uranium_ore"] or 0) if "uranium_ore" in c.keys() else 0
+                curr_nuclear_fuel = (c["nuclear_fuel"] or 0) if "nuclear_fuel" in c.keys() else 0
+                curr_warheads = (c["warheads"] or 0) if "warheads" in c.keys() else 0
                 
                 reqs = approval_system.calculate_country_requirements({'population': c['population'], 'id': c_id})
                 if new_oil_prod < reqs['oil_need_daily']:
@@ -1494,6 +1626,9 @@ def rebalance_existing_countries_income():
                     new_grain = max(curr_grain, base_grain)
 
                 new_chips = max(curr_chips, base_chips)
+                new_uranium_ore = max(curr_uranium_ore, base_uranium_ore)
+                new_nuclear_fuel = max(curr_nuclear_fuel, base_nuclear_fuel)
+                new_warheads = max(curr_warheads, base_warheads)
 
                 cur.execute("""
                     UPDATE countries SET
@@ -1506,9 +1641,14 @@ def rebalance_existing_countries_income():
                     oil_reserves = ?,
                     grain = ?,
                     microchips = ?,
-                    microchips_daily = ?
+                    microchips_daily = ?,
+                    uranium_ore = ?,
+                    uranium_ore_daily = ?,
+                    nuclear_fuel = ?,
+                    nuclear_fuel_daily = ?,
+                    warheads = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_chips, new_chips_daily, c_id))
+                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_chips, new_chips_daily, new_uranium_ore, new_uranium_ore_daily, new_nuclear_fuel, new_nuclear_fuel_daily, new_warheads, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
@@ -1646,42 +1786,64 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             cur = conn.cursor()
             item = config.ALL_SHOP_ITEMS.get(item_key, {})
             oil_req = item.get("oil_req", 0) * quantity
+            gold_req = item.get("gold_req", 0) * quantity
+            chips_req = item.get("chips_req", 0) * quantity
             income_add = item.get("income_add", 0) * quantity
             elec_add = item.get("elec_add", 0) * quantity
             gold_daily_add = item.get("gold_daily_add", 0) * quantity
             oil_prod_add = item.get("oil_prod_add", 0) * quantity
             grain_daily_add = item.get("grain_daily_add", 0) * quantity
             grain_bonus = item.get("grain_bonus", 0) * quantity
+            uranium_ore_daily_add = item.get("uranium_ore_daily_add", 0) * quantity
+            nuclear_fuel_daily_add = item.get("nuclear_fuel_daily_add", 0) * quantity
 
-            cur.execute("SELECT treasury, oil_reserves, country_key FROM countries WHERE id = ?", (country_id,))
+            cur.execute("SELECT treasury, gold, microchips, oil_reserves, country_key, tech_level FROM countries WHERE id = ?", (country_id,))
             row = cur.fetchone()
             if not row:
                 return False, "کشور پیدا نشد."
 
-            # تمایز نفتی/غیرنفتی و فب تراشه به نوع کشور بستگی دارد
+            c_key = row["country_key"]
+            tech_lvl = row["tech_level"] or 1
             chips_daily_add = 0
-            if item_key == "oil_refinery" and row["country_key"]:
-                eff = config.get_refinery_effect(row["country_key"])
+
+            # بررسی پیش‌نیازهای اختصاصی معادن و صنایع خاص
+            if item_key == "oil_refinery" and c_key:
+                eff = config.get_refinery_effect(c_key)
                 income_add = eff["income"] * quantity
                 oil_prod_add = eff["oil_prod"] * quantity
-            elif item_key == "chip_fab" and row["country_key"]:
-                cur.execute("SELECT tech_level FROM countries WHERE id = ?", (country_id,))
-                t_row = cur.fetchone()
-                if (t_row["tech_level"] or 1) < 2:
+            elif item_key == "chip_fab" and c_key:
+                if tech_lvl < 2:
                     return False, "🔬 **پیش‌نیاز فناوری نامعتبر:** برای احداث کارخانه فب ساخت نیمه‌هادی، کشور شما ابتدا باید به سطح فناوری ۲ به بالا ارتقا یابد."
-                eff = config.get_chip_fab_effect(row["country_key"])
+                eff = config.get_chip_fab_effect(c_key)
                 income_add = eff["income"] * quantity
                 chips_daily_add = eff["chips_daily"] * quantity
+            elif item_key == "uranium_mine":
+                allowed = item.get("allowed_countries", [])
+                if c_key and allowed and c_key not in allowed:
+                    return False, "⛔ **عدم وجود ذخایر طبیعی اورانیوم:** طبق ارزیابی‌های زمین‌شناسی، کشور شما دارای ذخایر معدنی قابل استخراج اورانیوم نیست. می‌توانید کیک زرد را از بورس کالا یا قراردادهای تجاری تامین فرمایید."
+                if tech_lvl < item.get("tech_req", 2):
+                    return False, f"🔬 **پیش‌نیاز فناوری:** برای تجهیز معدن اورانیوم نیاز به سطح فناوری {item.get('tech_req', 2)} به بالا دارید."
+            elif item_key == "enrichment_facility":
+                if tech_lvl < item.get("tech_req", 3):
+                    return False, f"🔬 **پیش‌نیاز فناوری:** برای احداث مجتمع غنی‌سازی سانتریفیوژ نیاز به سطح فناوری {item.get('tech_req', 3)} به بالا دارید."
 
             if row["treasury"] < total_price:
                 return False, f"موجودی خزانه کافی نیست!\nقیمت کل: {total_price:,} دلار\nخزانه فعلی: {row['treasury']:,} دلار"
 
-            if oil_req > 0 and row["oil_reserves"] < oil_req:
-                return False, f"🛢️ ذخیره نفت کافی نیست!\nنفت مورد نیاز برای احداث: {oil_req:,} بشکه\nذخیره موجود: {row['oil_reserves']:,} بشکه"
+            if oil_req > 0 and (row["oil_reserves"] or 0) < oil_req:
+                return False, f"🛢️ ذخیره نفت کافی نیست!\nنفت مورد نیاز برای احداث: {oil_req:,} بشکه\nذخیره موجود: {(row['oil_reserves'] or 0):,} بشکه"
+
+            if gold_req > 0 and (row["gold"] or 0) < gold_req:
+                return False, f"🪙 طلا کافی نیست!\nطلا مورد نیاز: {gold_req:,} شمش\nموجودی فعلی: {(row['gold'] or 0):,} شمش"
+
+            if chips_req > 0 and (row["microchips"] or 0) < chips_req:
+                return False, f"💻 میکروچیپ کافی نیست!\nتراشه مورد نیاز: {chips_req:,} عدد\nموجودی فعلی: {(row['microchips'] or 0):,} عدد"
 
             cur.execute("""
                 UPDATE countries SET
                 treasury = treasury - ?,
+                gold = MAX(0, gold - ?),
+                microchips = MAX(0, microchips - ?),
                 oil_reserves = MAX(0, oil_reserves - ?),
                 daily_income = daily_income + ?,
                 electricity = electricity + ?,
@@ -1689,9 +1851,11 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                 oil_production = oil_production + ?,
                 grain_daily = grain_daily + ?,
                 grain = grain + ?,
-                microchips_daily = microchips_daily + ?
+                microchips_daily = microchips_daily + ?,
+                uranium_ore_daily = uranium_ore_daily + ?,
+                nuclear_fuel_daily = nuclear_fuel_daily + ?
                 WHERE id = ?
-            """, (total_price, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, grain_daily_add, grain_bonus, chips_daily_add, country_id))
+            """, (total_price, gold_req, chips_req, oil_req, income_add, elec_add, gold_daily_add, oil_prod_add, grain_daily_add, grain_bonus, chips_daily_add, uranium_ore_daily_add, nuclear_fuel_daily_add, country_id))
 
             cur.execute("SELECT quantity FROM equipment WHERE country_id=? AND item_key=?", (country_id, item_key))
             eq_row = cur.fetchone()
@@ -1708,11 +1872,76 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
                 VALUES (?,?,?,?,?)
             """, (country_id, "purchase", f"احداث {item_name} x{quantity}", -total_price, now_str))
 
-        return True, "پروژه احداث با موفقیت ثبت گردید."
+        return True, f"احداث {quantity} واحد **{item_name}** با موفقیت به پایان رسید و به زیرساخت‌های کشور اضافه گردید."
     except Exception as e:
         return False, f"خطا در دیتابیس: {e}"
     finally:
         conn.close()
+
+
+def assemble_nuclear_warhead_transaction(country_id: int) -> tuple[bool, str]:
+    """تولید و تسلیح ۱ کلاهک بازدارنده هسته‌ای با شرایط بسیار سخت‌گیرانه و ثبت در دیتابیس."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور یافت نشد."
+
+            tech_lvl = c["tech_level"] or 1
+            if tech_lvl < getattr(config, "WARHEAD_PROD_TECH_REQ", 5):
+                return False, f"🔬 **پیش‌نیاز فناوری نامعتبر:** برای مونتاژ کلاهک هسته‌ای، کشور شما باید به بالاترین سطح فناوری (سطح {getattr(config, 'WARHEAD_PROD_TECH_REQ', 5)}) دست یافته باشد."
+
+            cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = 'enrichment_facility'", (country_id,))
+            ef_row = cur.fetchone()
+            has_enrichment = (ef_row and (ef_row["quantity"] or 0) > 0)
+            is_p5 = c["country_key"] in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+
+            if not has_enrichment and not is_p5:
+                return False, "🔬 **عدم وجود مجتمع غنی‌سازی:** شما باید ابتدا حداقل ۱ واحد «مجتمع غنی‌سازی و سانتریفیوژ» احداث فرمایید."
+
+            curr_warheads = c["warheads"] or 0
+            if not is_p5 and curr_warheads >= getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5):
+                return False, f"⛔ **سقف مجاز بازدارندگی هسته‌ای:** طبق پیمان‌های بین‌المللی و توان ژئوپلیتیک، سقف نگهداری کلاهک فعال برای کشور شما حداکثر {getattr(config, 'WARHEAD_MAX_NON_SUPERPOWER', 5)} عدد می‌باشد."
+
+            cost_money = getattr(config, "WARHEAD_PROD_COST_MONEY", 150_000_000)
+            cost_gold = getattr(config, "WARHEAD_PROD_COST_GOLD", 100)
+            cost_chips = getattr(config, "WARHEAD_PROD_COST_CHIPS", 500)
+            cost_ore = getattr(config, "WARHEAD_PROD_URANIUM_ORE", 500)
+
+            if (c["treasury"] or 0) < cost_money:
+                return False, f"💵 موجودی خزانه کافی نیست!\nهزینه مونتاژ: {format_money(cost_money)}\nخزانه شما: {format_money(c['treasury'] or 0)}"
+
+            if (c["gold"] or 0) < cost_gold:
+                return False, f"🪙 طلا کافی نیست!\nطلا مورد نیاز: {cost_gold} شمش\nموجودی فعلی: {c['gold'] or 0} شمش"
+
+            if (c["microchips"] or 0) < cost_chips:
+                return False, f"💻 میکروچیپ فوق‌پیشرفته کافی نیست!\nتراشه مورد نیاز: {cost_chips:,} عدد\nموجودی فعلی: {(c['microchips'] or 0):,} عدد"
+
+            if (c["uranium_ore"] or 0) < cost_ore:
+                return False, f"☢️ کیک زرد اورانیوم کافی نیست!\nاورانیوم مورد نیاز: {cost_ore:,} تن\nموجودی فعلی: {(c['uranium_ore'] or 0):,} تن"
+
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                gold = gold - ?,
+                microchips = microchips - ?,
+                uranium_ore = uranium_ore - ?,
+                warheads = warheads + 1
+                WHERE id = ?
+            """, (cost_money, cost_gold, cost_chips, cost_ore, country_id))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (country_id, "warhead_assembly", "مونتاژ و تسلیح ۱ کلاهک راهبردی هسته‌ای", -cost_money, now_str))
+
+            return True, f"🚀 **پروژه ساخت و تسلیح کلاهک هسته‌ای با موفقیت انجام شد!**\n\nتعداد کلاهک‌های فعال کشور: **{curr_warheads + 1} عدد**\n⚠️ هزینه نگهداری روزانه: ۵,۰۰۰,۰۰۰ دلار و ۲ میکروچیپ/روز"
+    except Exception as e:
+        return False, f"خطای دیتابیس: {e}"
 
 
 def add_equipment(country_id: int, item_key: str, quantity: int):
@@ -2067,7 +2296,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
 
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
             # Handle Military Asset Transfer
             if off_type == "military_asset":
@@ -2179,7 +2408,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             d_c = dict(donor_c)
             r_c = dict(recip_c)
 
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col_name = col_map.get(resource_type, "treasury")
 
             if d_c[col_name] < amount:
@@ -2490,14 +2719,15 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT active_personnel, tech_level FROM countries WHERE id = ?", (country_id,))
+    cur.execute("SELECT active_personnel, tech_level, warheads FROM countries WHERE id = ?", (country_id,))
     c_row = cur.fetchone()
     if not c_row:
         conn.close()
-        return {"assets_maint": 0, "personnel_maint": 0, "total_maint": 0, "discount_pct": 0, "tech_level": 1}
+        return {"assets_maint": 0, "personnel_maint": 0, "warheads_maint": 0, "warheads_chips_maint": 0, "total_maint": 0, "discount_pct": 0, "tech_level": 1, "warheads": 0}
 
     active_p = c_row["active_personnel"] or 0
     tech_lvl = c_row["tech_level"] or 1
+    warheads_count = (c_row["warheads"] or 0) if "warheads" in c_row.keys() else 0
 
     discount_pct = min(40, (tech_lvl - 1) * 10)
 
@@ -2510,14 +2740,19 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
     assets_maint = int(scaled_maint * (1 - (discount_pct / 100.0)))
 
     personnel_maint = int(active_p * 0.5)
-    total_maint = assets_maint + personnel_maint
+    warheads_maint = int(warheads_count * getattr(config, "WARHEAD_MAINTENANCE_COST", 5_000_000))
+    warheads_chips_maint = int(warheads_count * getattr(config, "WARHEAD_CHIPS_MAINTENANCE", 2))
+    total_maint = assets_maint + personnel_maint + warheads_maint
 
     return {
         "assets_maint": assets_maint,
         "personnel_maint": personnel_maint,
+        "warheads_maint": warheads_maint,
+        "warheads_chips_maint": warheads_chips_maint,
         "total_maint": total_maint,
         "discount_pct": discount_pct,
-        "tech_level": tech_lvl
+        "tech_level": tech_lvl,
+        "warheads": warheads_count
     }
 
 
@@ -2716,7 +2951,9 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
         "oil": "oil_reserves",
         "gold": "gold",
         "grain": "grain",
-        "microchips": "microchips"
+        "microchips": "microchips",
+        "uranium_ore": "uranium_ore",
+        "nuclear_fuel": "nuclear_fuel"
     }
     col = resource_cols.get(resource_type)
     if not col:
@@ -2816,7 +3053,7 @@ def cancel_market_order(seller_id: int, order_id: int) -> tuple[bool, str]:
             rem_amount = ord_dict["amount"]
             res_type = ord_dict["resource_type"]
 
-            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col = resource_cols.get(res_type)
 
             if col and rem_amount > 0:
@@ -2846,7 +3083,7 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
                 return True, 0, {"oil": 0, "gold": 0, "grain": 0, "countries_affected": 0, "player_ids": []}
 
             refunded = {"oil": 0, "gold": 0, "grain": 0, "microchips": 0, "affected_countries": set(), "player_ids": set()}
-            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
             for ord_row in orders:
                 o = dict(ord_row)
@@ -2939,7 +3176,7 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 return False, f"موجودی خزانه کافی نیست!\nارزش کالا: {format_money(commodity_cost)}\nهزینه ترابری: {format_money(t_cost)}\nمجموع هزینه: {format_money(total_buyer_cost)}\nخزانه شما: {format_money(buyer_c['treasury'])}", {}
 
             res_type = order["resource_type"]
-            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips"}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col = resource_cols[res_type]
 
             cur.execute(f"UPDATE countries SET treasury = treasury - ?, {col} = {col} + ? WHERE id = ?", (total_buyer_cost, buy_amount, buyer_id))

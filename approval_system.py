@@ -326,6 +326,18 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     if chips_prod > 0:
         lines.append(f"• *تولید روزانه میکروچیپ:* +{format_number(chips_prod)} عدد/روز\n")
 
+    u_prod = c.get("uranium_ore_daily", 0) or 0
+    if u_prod > 0:
+        lines.append(f"• *تولید روزانه کیک زرد اورانیوم:* +{format_number(u_prod)} تن/روز\n")
+
+    fuel_prod = c.get("nuclear_fuel_daily", 0) or 0
+    if fuel_prod > 0:
+        lines.append(f"• *تولید روزانه سوخت هسته‌ای:* +{format_number(fuel_prod)} کیلوگرم/روز\n")
+
+    warheads_count = c.get("warheads", 0) or 0
+    if warheads_count > 0:
+        lines.append(f"• *زرادخانه بازدارنده هسته‌ای:* ☢️ {warheads_count:,} کلاهک مستقر (-{format_money(warheads_count * 5_000_000)}/روز)\n")
+
     # Grain
     grain_str = f"+{grain_prod:,} تن تولید / -{grain_need:,} تن مصرف" if grain_prod > 0 else f"-{grain_need:,} تن مصرف روزانه"
     if app_res["grain_ok"]:
@@ -377,6 +389,10 @@ def get_country_badges(c: dict) -> list[str]:
     # 2. Global Energy Giant
     if oil_res >= 100_000_000 or oil_prod >= 2_000_000:
         badges.append("🛢️ **غول انرژی جهان** (تولید نفت بالای ۲M بشکه/روز)")
+
+    # 2.5. Nuclear Armed State
+    if (c.get("warheads", 0) or 0) > 0:
+        badges.append(f"☢️ **قدرت بازدارندگی هسته‌ای** ({c.get('warheads')} کلاهک استراتژیک)")
 
     # 3. Technology Pioneer
     if tech_lvl >= 3:

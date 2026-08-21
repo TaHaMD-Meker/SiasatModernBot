@@ -367,6 +367,9 @@ COUNTRY_STAT_FIELDS = {
     "grain":            ("🌾 غلات", "تن", 10_000, "num"),
     "gold_daily":       ("🪙 تولید روزانه طلا", "سکه", 10, "num"),
     "oil_production":   ("🛢️ تولید روزانه نفت", "بشکه", 100_000, "num"),
+    "uranium_ore":      ("☢️ ذخیره کیک زرد", "تن", 100, "num"),
+    "nuclear_fuel":     ("🧪 سوخت هسته‌ای", "کیلوگرم", 50, "num"),
+    "warheads":         ("🚀 کلاهک هسته‌ای", "عدد", 1, "num"),
 }
 
 _CSTAT_LIMITS = {"approval_rating": (0, 100), "combat_readiness": (0, 100), "tech_level": (1, 10)}
@@ -649,11 +652,101 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("🛢️ رتبه‌بندی قدرت نفتی و انرژی", callback_data="admin:rank:oil:0")],
             [InlineKeyboardButton("🌾 رتبه‌بندی غلات و امنیت غذایی", callback_data="admin:rank:grain:0")],
             [InlineKeyboardButton("💻 رتبه‌بندی فناوری و میکروچیپ", callback_data="admin:rank:chips:0")],
+            [InlineKeyboardButton("☢️ رتبه‌بندی اورانیوم و سوخت هسته‌ای", callback_data="admin:rank:uranium:0")],
+            [InlineKeyboardButton("🚀 رتبه‌بندی زرادخانه کلاهک‌های بازدارنده", callback_data="admin:rank:nuclear:0")],
             [InlineKeyboardButton("🏦 رتبه‌بندی اقتصاد، خزانه و ثروت ملی", callback_data="admin:rank:economy:0")],
             [InlineKeyboardButton("🪖 رتبه‌بندی ارتش و توان نظامی (شاخه به شاخه)", callback_data="admin:rank:mil_menu")],
             [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+    elif data.startswith("admin:rank:uranium"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
+        countries = db.get_all_countries()
+
+        if not countries:
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            sorted_c = sorted(countries, key=lambda x: -((x.get('uranium_ore') or 0) * 10 + (x.get('uranium_ore_daily') or 0) * 1000 + (x.get('nuclear_fuel') or 0)))
+            total_pages = max(1, math.ceil(len(sorted_c) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_c = sorted_c[start_idx:start_idx + per_page]
+
+            lines = [f"☢️ *رتبه‌بندی ذخایر و تولید اورانیوم و سوخت هسته‌ای (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, c in enumerate(slice_c, start_idx + 1):
+                u_res = c.get('uranium_ore') or 0
+                u_prod = c.get('uranium_ore_daily') or 0
+                fuel_res = c.get('nuclear_fuel') or 0
+                fuel_prod = c.get('nuclear_fuel_daily') or 0
+                lines.append(
+                    f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
+                    f"   • ☢️ ذخایر کیک زرد: `{format_number(u_res)} تن` | تولید: `+{format_number(u_prod)} تن/روز`\n"
+                    f"   • 🧪 سوخت هسته‌ای: `{format_number(fuel_res)} کیلوگرم` | تولید: `+{format_number(fuel_prod)} ک‌گ/روز`\n"
+                )
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:uranium:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:uranium:{page + 1}"))
+
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("admin:rank:nuclear"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
+        countries = db.get_all_countries()
+
+        if not countries:
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            sorted_c = sorted(countries, key=lambda x: -(x.get('warheads') or 0))
+            total_pages = max(1, math.ceil(len(sorted_c) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_c = sorted_c[start_idx:start_idx + per_page]
+
+            lines = [f"🚀 *رتبه‌بندی زرادخانه کلاهک‌های بازدارنده هسته‌ای (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, c in enumerate(slice_c, start_idx + 1):
+                wh = c.get('warheads') or 0
+                lines.append(
+                    f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
+                    f"   • 🚀 کلاهک‌های راهبردی مستقر: `☢️ {format_number(wh)} عدد`\n"
+                    f"   • 💵 هزینه نگهداری روزانه: `{format_money(wh * 5_000_000)}/روز` + `{wh * 2} چیپ/روز`\n"
+                )
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:nuclear:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:nuclear:{page + 1}"))
+
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("admin:rank:chips"):
         parts = data.split(":")

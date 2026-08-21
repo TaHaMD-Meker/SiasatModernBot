@@ -171,12 +171,62 @@ def match_asset_by_name(name: str, assets: list):
     return best if best_score >= 50 else None
 
 
+def match_strategic_resource(name: str):
+    """تطبیق نام با ذخایر استراتژیک (اورانیوم، سوخت هسته‌ای، کلاهک اتمی، میکروچیپ، طلا)."""
+    q = _clean_str(name)
+    if not q or len(q) < 2:
+        return None
+
+    # کلاهک هسته‌ای / اتمی
+    if any(w in q for w in ("کلاهک هسته", "کلاهک اتم", "بمب اتم", "کلاهک بازدارنده", "کلاهک")):
+        return {"key": "__warheads__", "name": "کلاهک راهبردی هسته‌ای", "special": "warheads",
+                "category": "Strategic", "subcat": "سلاح هسته‌ای", "emoji": "🚀", "unit": "عدد"}
+
+    # کیک زرد / اورانیوم خام
+    if any(w in q for w in ("کیک زرد", "سنگ اورانیوم", "اورانیوم خام", "اورانیوم", "ذخایر اورانیوم")):
+        return {"key": "__uranium_ore__", "name": "ذخایر اورانیوم (کیک زرد)", "special": "uranium_ore",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "☢️", "unit": "تن"}
+
+    # سوخت هسته‌ای / غنی‌شده
+    if any(w in q for w in ("سوخت هسته", "میله سوخت", "اورانیوم غنی", "سوخت غنی")):
+        return {"key": "__nuclear_fuel__", "name": "سوخت هسته‌ای غنی‌شده", "special": "nuclear_fuel",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🧪", "unit": "کیلوگرم"}
+
+    # میکروچیپ / تراشه
+    if any(w in q for w in ("میکروچیپ", "تراشه", "نیمه هادی", "چیپست", "چیپ")):
+        return {"key": "__microchips__", "name": "تراشه و میکروچیپ", "special": "microchips",
+                "category": "Strategic", "subcat": "فناوری و قطعات", "emoji": "💻", "unit": "عدد"}
+
+    # طلا
+    if any(w in q for w in ("شمش طلا", "طلا")):
+        return {"key": "__gold__", "name": "شمش طلا", "special": "gold",
+                "category": "Strategic", "subcat": "ذخایر مالی", "emoji": "🪙", "unit": "شمش"}
+
+    return None
+
+
 def match_building(name: str, country_id: int):
     """تطبیق نام با ساختمان‌های «مالکیت‌دار» کشور از فروشگاه (جدول equipment)."""
     q = _clean_str(name)
     if len(q) < 2:
         return None
     owned = db.get_equipment(country_id) or {}
+
+    # نام‌های مستعار رایج زیرساخت‌ها
+    aliases = {
+        "enrichment_facility": ("غنی سازی", "سانتریفیوژ", "مجتمع غنی سازی", "فردو", "نطنز", "تاسیسات هسته ای", "تاسیسات غنی سازی"),
+        "nuclear_plant": ("نیروگاه اتمی", "نیروگاه هسته ای", "راکتور اتمی", "راکتور هسته ای", "بوشهر", "نیروگاه برق اتمی"),
+        "uranium_mine": ("معدن اورانیوم", "استخراج اورانیوم", "معدن ساغند", "معدن گچین"),
+        "chip_fab": ("کارخانه فب", "کارخانه تراشه", "کارخانه نیمه هادی", "فب نیمه هادی", "تراشه سازی"),
+        "oil_refinery": ("پالایشگاه", "پالایشگاه نفت", "تصفیه خانه نفت"),
+    }
+
+    for b_key, b_aliases in aliases.items():
+        if (owned.get(b_key, 0) or 0) > 0:
+            if any(alias in q for alias in b_aliases):
+                item = config.ALL_SHOP_ITEMS.get(b_key, {})
+                return {'key': b_key, 'name': item.get('name', b_key)}
+
     best, best_len = None, 0
     for key, qty in owned.items():
         if (qty or 0) <= 0:
@@ -830,25 +880,35 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         matched, unmatched = [], []
         for name, qty, unit in parsed["items"]:
             a = match_asset_by_name(name, assets)
-            if not a:
-                b = match_building(name, country["id"])
-                if b:
-                    matched.append({"key": b["key"], "name": b["name"], "special": "building",
-                                    "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": "🏗️",
-                                    "unit": "واحد", "qty": qty})
-                else:
-                    unmatched.append(name)
+            if a:
+                existing = next((x for x in matched if x["key"] == a["equipment_key"]), None)
+                if existing:
+                    existing["qty"] += qty
+                    continue
+                sub, emo = classify_subcat(a)
+                matched.append({
+                    "key": a["equipment_key"], "name": a["equipment_name"], "category": a["category"],
+                    "subcat": sub, "emoji": emo,
+                    "unit": _UNIT_BY_CATEGORY.get(a["category"], "عدد"), "qty": qty,
+                })
                 continue
-            existing = next((x for x in matched if x["key"] == a["equipment_key"]), None)
-            if existing:
-                existing["qty"] += qty
+
+            # تطبیق با ذخایر استراتژیک (اورانیوم، سوخت، کلاهک، میکروچیپ، طلا)
+            res_match = match_strategic_resource(name)
+            if res_match:
+                res_match["qty"] = qty
+                matched.append(res_match)
                 continue
-            sub, emo = classify_subcat(a)
-            matched.append({
-                "key": a["equipment_key"], "name": a["equipment_name"], "category": a["category"],
-                "subcat": sub, "emoji": emo,
-                "unit": _UNIT_BY_CATEGORY.get(a["category"], "عدد"), "qty": qty,
-            })
+
+            # تطبیق با ساختمان‌ها و صنایع
+            b = match_building(name, country["id"])
+            if b:
+                matched.append({"key": b["key"], "name": b["name"], "special": "building",
+                                "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": "🏗️",
+                                "unit": "واحد", "qty": qty})
+                continue
+
+            unmatched.append(name)
         if not matched:
             await update.message.reply_text(
                 "❌ هیچ‌کدام از تجهیزات متن، در انبار این کشور پیدا نشد:\n" + "\n".join(f"• {n}" for n in unmatched),
