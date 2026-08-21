@@ -199,6 +199,24 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             db.adjust_oil(b_id, -oil_cost)
             db.add_transaction(b_id, "blockade_cost", f"هزینه روزانه محاصره بنادر {t_c['name']}", -money_cost)
 
+    # 5. بررسی و بازگشایی خودکار تنگه‌ها در صورت انهدام ناوگان کشور کنترل‌کننده
+    try:
+        reopened = db.auto_check_and_reopen_straits_if_navy_destroyed()
+        for r in reopened:
+            owner = r["owner"]
+            s_info = r["strait_info"]
+            s_msg = (
+                f"🌊 **لغو خودکار کنترل بر تنگه استراتژیک!**\n\n"
+                f"کشور {owner['flag']} {owner['name']} به دلیل انهدام یا تضعیف ناوگان دریایی "
+                f"(کمتر از ۵ شناور فعال یا ۱۰ میلیون دلار ارزش)، کنترل نظامی خود بر **{s_info['name']}** را از دست داد و این آبراه فوراً بازگشایی شد."
+            )
+            if owner.get("player_id"):
+                try: await context.bot.send_message(chat_id=owner["player_id"], text=s_msg, parse_mode="Markdown")
+                except Exception: pass
+            await news_engine.trigger_strait_news(context.bot, owner, s_info["name"], "open")
+    except Exception as e:
+        logger.warning(f"Error checking strait reopening: {e}")
+
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
     return updated_count
 

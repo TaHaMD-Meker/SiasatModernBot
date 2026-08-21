@@ -2591,6 +2591,43 @@ def set_strait_status(strait_key: str, status: str, toll_amount: int = 1000000):
     set_setting(f"strait_toll_{strait_key}", str(toll_amount))
 
 
+def check_strait_navy_qualification(country_id: int) -> tuple[bool, int, int]:
+    """بررسی برخورداری از حداقل توان دریایی لازم جهت اعمال اقتدار و مسدودسازی تنگه.
+    
+    حداقل شرایط: حداقل ۵ شناور/واحد رزمی دریایی فعال و ارزش کل حداقل ۱۰ میلیون دلار.
+    """
+    assets = get_country_assets(country_id, category="Navy") or []
+    units = sum((a.get("amount", 0) or 0) for a in assets)
+    val = sum((a.get("amount", 0) or 0) * (a.get("buy_price", 0) or 0) for a in assets)
+    qualified = (units >= 5 and val >= 10_000_000)
+    return qualified, units, val
+
+
+def auto_check_and_reopen_straits_if_navy_destroyed() -> list:
+    """بررسی وضعیت تمام تنگه‌ها و بازگشایی خودکار در صورت نابودی یا تضعیف ناوگان دریایی کشور کنترل‌کننده."""
+    reopened = []
+    for owner_key, strait_info in STRAITS_MAPPING.items():
+        s_key = strait_info["strait_key"]
+        st_data = get_strait_status(s_key)
+
+        if st_data["status"] in ("blocked", "toll"):
+            owner_c = get_country_by_key(owner_key)
+            if not owner_c:
+                continue
+
+            qualified, units, val = check_strait_navy_qualification(owner_c["id"])
+            if not qualified:
+                set_strait_status(s_key, "open", 0)
+                reopened.append({
+                    "owner": owner_c,
+                    "strait_info": strait_info,
+                    "prev_status": st_data["status"],
+                    "units": units,
+                    "val": val
+                })
+    return reopened
+
+
 def delete_roleplay(role_id: int):
     conn = get_connection()
     cur = conn.cursor()

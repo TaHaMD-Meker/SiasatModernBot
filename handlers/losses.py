@@ -521,6 +521,25 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             )
             return
         report = build_loss_report_text(draft["cflag"], draft["cname"], draft.get("op", ""), draft["items"])
+
+        # بررسی و بازگشایی خودکار تنگه‌ها در صورت انهدام ناوگان کنترل‌کننده
+        try:
+            import news_engine
+            reopened = db.auto_check_and_reopen_straits_if_navy_destroyed()
+            for r in reopened:
+                owner = r["owner"]
+                s_info = r["strait_info"]
+                s_msg = (
+                    f"🌊 **لغو خودکار کنترل بر تنگه استراتژیک!**\n\n"
+                    f"کشور {owner['flag']} {owner['name']} به دلیل انهدام یا تضعیف ناوگان دریایی در نبرد "
+                    f"(کمتر از ۵ شناور فعال یا ۱۰ میلیون دلار ارزش)، کنترل نظامی خود بر **{s_info['name']}** را از دست داد و این آبراه فوراً بازگشایی شد."
+                )
+                if owner.get("player_id"):
+                    await context.bot.send_message(chat_id=owner["player_id"], text=s_msg, parse_mode="Markdown")
+                await news_engine.trigger_strait_news(context.bot, owner, s_info["name"], "open")
+        except Exception:
+            pass
+
         await query.edit_message_text(
             f"✅ *تلفات ثبت شد (گزارش #{rid})*\n\n{report}",
             reply_markup=_kb([

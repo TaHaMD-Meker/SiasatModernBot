@@ -491,15 +491,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         # گارد واقع‌گرایی: برای انسداد یا عوارض، داشتن نیروی دریایی فعال الزامی است
         if act in ("block", "toll"):
-            navy_assets = db.get_country_assets(country["id"], category="Navy") or []
-            navy_strength = sum((a.get("amount", 0) or 0) for a in navy_assets)
-            navy_value = sum((a.get("amount", 0) or 0) * (a.get("buy_price", 0) or 0) for a in navy_assets)
-            if navy_strength < 3 or navy_value < 2_000_000:
+            qualified, units, val = db.check_strait_navy_qualification(country["id"])
+            if not qualified:
                 await query.edit_message_text(
-                    "❌ **امکان اعمال اقتدار دریایی وجود ندارد.**\n\n"
-                    "برای مسدودسازی یا اخذ عوارض از یک تنگه‌ی استراتژیک، کشور شما باید حداقل "
-                    "**۳ شناور رزمی فعال** با ارزش مجموع **۲ میلیون دلار** در نیروی دریایی داشته باشد.\n\n"
-                    "💡 از فروشگاه → نیروی دریایی، ناوگان خود را تقویت کنید.",
+                    "❌ **امکان اعمال اقتدار و کنترل نظامی بر تنگه وجود ندارد.**\n\n"
+                    "برای مسدودسازی یا اخذ عوارض از این آبراه استراتژیک، کشور شما باید حداقل "
+                    "**۵ شناور رزمی فعال** با ارزش مجموع حداقل **۱۰,۰۰۰,۰۰۰ دلار** در نیروی دریایی خود داشته باشد.\n\n"
+                    f"📊 **ناوگان فعلی شما:** {units} فروند شناور (ارزش: {format_money(val)})\n\n"
+                    "💡 جهت بازپس‌گیری کنترل آبراه، از بخش **فروشگاه → نیروی دریایی** اقدام به ساخت و تقویت ناوگان فرمایید.",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
                     parse_mode="Markdown"
                 )
