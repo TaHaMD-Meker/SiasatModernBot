@@ -446,6 +446,11 @@ def init_db():
         print(f"[nuclear-compensation] error: {e}")
 
     try:
+        nuclear_compensation_cap_v2()
+    except Exception as e:
+        print(f"[nuclear-compensation-cap] error: {e}")
+
+    try:
         fix_legacy_grain_scale()
     except Exception:
         pass
@@ -1750,34 +1755,41 @@ def fix_nuclear_free_grant_v1():
         print(f"[nuclear-migration] {fixed_stock} country nuclear stocks reset, {fixed_debt} negative treasuries rescued.")
 
 
+def _get_nuclear_affected_ids():
+    """فهرست کشورهایی که از باگ ذخایر هسته‌ای مجانی گرفته بودند.
+
+    اولویت: setting مایگریشن ترمیم (nuclear_bug_affected_ids)،
+    فالبک: رسیدهای تراکنش nuclear_bug_fix (اگر نسخهٔ قدیمیِ ترمیم اجرا شده باشد).
+    """
+    raw_ids = get_setting("nuclear_bug_affected_ids")
+    if raw_ids:
+        try:
+            ids = [int(x) for x in json.loads(raw_ids)]
+            if ids:
+                return ids
+        except Exception:
+            pass
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT country_id FROM transactions WHERE type = 'nuclear_bug_fix'")
+    ids = [r["country_id"] for r in cur.fetchall()]
+    conn.close()
+    return ids
+
+
 def nuclear_compensation_v1():
     """🎁 جبرانهٔ یک‌بارهٔ اختلال هسته‌ای — فقط برای کشورهای آسیب‌دیده از باگ.
 
-    هدف: فقط کشورهایی که از باگِ اهدای مجانی، ذخایر هسته‌ای (کلاهک/سوخت/اورانیوم)
-    گرفته بودند. این فهرست از مایگریشنِ ترمیم (setting: nuclear_bug_affected_ids)
-    یا در نبودش از رسیدهای تراکنشِ nuclear_bug_fix استخراج می‌شود.
-    مبلغ: NUCLEAR_COMPENSATION_AMOUNT ثابت برای همهٔ آسیب‌دیده‌ها.
+    قانون (سقف‌محور): جبرانه خزانه را تا سقفِ NUCLEAR_COMPENSATION_CAP پر می‌کند.
+        comp = max(0, CAP − treasury)
+    یعنی خزانهٔ نهایی هر کشورِ آسیب‌دیده حداکثر CAP خواهد بود —
+    نه اینکه مبلغ ثابت به همه اضافه شود.
     """
     if get_setting("nuclear_compensation_v1"):
         return
-    amount = int(getattr(config, "NUCLEAR_COMPENSATION_AMOUNT", 30_000_000))
+    cap = int(getattr(config, "NUCLEAR_COMPENSATION_CAP", 30_000_000))
 
-    # ۱) فهرست رسمی ثبت‌شده در مایگریشن ترمیم
-    raw_ids = get_setting("nuclear_bug_affected_ids")
-    target_ids = []
-    if raw_ids:
-        try:
-            target_ids = [int(x) for x in json.loads(raw_ids)]
-        except Exception:
-            target_ids = []
-    # ۲) فالبک: رسیدهای nuclear_bug_fix (اگر نسخهٔ قدیمیِ ترمیم قبلاً اجرا شده باشد)
-    if not target_ids:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT country_id FROM transactions WHERE type = 'nuclear_bug_fix'")
-        target_ids = [r["country_id"] for r in cur.fetchall()]
-        conn.close()
-
+    target_ids = _get_nuclear_affected_ids()
     if not target_ids:
         set_setting("nuclear_compensation_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
         return
@@ -1786,10 +1798,13 @@ def nuclear_compensation_v1():
     cur = conn.cursor()
     comp_list = []
     for c_id in target_ids:
-        cur.execute("SELECT id, country_key FROM countries WHERE id = ?", (c_id,))
+        cur.execute("SELECT id, country_key, treasury FROM countries WHERE id = ?", (c_id,))
         row = cur.fetchone()
         if not row or row["country_key"] == "un":
             continue  # حذف‌شده یا actor سیستمی
+        amount = max(0, cap - (row["treasury"] or 0))
+        if amount <= 0:
+            continue  # خزانه از سقف بالاتر است — جبرانه‌ای نمی‌گیرد
         cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (amount, c_id))
         comp_list.append((c_id, amount))
     conn.commit()
@@ -1798,14 +1813,57 @@ def nuclear_compensation_v1():
     for c_id, amt in comp_list:
         add_transaction(
             c_id, "nuclear_compensation",
-            f"🎁 جبرانهٔ اختلال هسته‌ای: {format_money(amt)} به خزانه اضافه شد.",
+            f"🎁 جبرانهٔ اختلال هسته‌ای: {format_money(amt)} به خزانه اضافه شد (خزانه تا سقف {format_money(cap)} پر شد).",
             amt
         )
 
     set_setting("nuclear_compensation_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
     if comp_list:
-        print(f"[nuclear-compensation] {len(comp_list)} affected countries compensated, "
-              f"{format_money(amount)} each.")
+        print(f"[nuclear-compensation] {len(comp_list)} affected countries compensated (top-up to cap {format_money(cap)}).")
+
+
+def nuclear_compensation_cap_v2():
+    """♻️ تعدیل یک‌بارهٔ جبرانهٔ نسخهٔ قبل — اعمال سقف خزانه.
+
+    در نسخهٔ قبلی، جبرانه مبلغ ثابت به همهٔ آسیب‌دیده‌ها اضافه شده بود و برخی
+    (که خزانهٔ باقی‌مانده داشتند) از سقفِ موردنظر (NUCLEAR_COMPENSATION_CAP) بالاتر رفتند.
+    این مایگریشن خزانهٔ کشورهای آسیب‌دیده را فقط اگر بالای سقف باشد به سقف برمی‌گرداند
+    و مبلغ کسرشده را با رسید ثبت می‌کند. کشورهای دیگر دست نمی‌خورند.
+    """
+    if get_setting("nuclear_compensation_cap_v2"):
+        return
+    cap = int(getattr(config, "NUCLEAR_COMPENSATION_CAP", 30_000_000))
+
+    target_ids = _get_nuclear_affected_ids()
+    if not target_ids:
+        set_setting("nuclear_compensation_cap_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+    clamped = []
+    for c_id in target_ids:
+        cur.execute("SELECT id, country_key, treasury FROM countries WHERE id = ?", (c_id,))
+        row = cur.fetchone()
+        if not row or row["country_key"] == "un":
+            continue
+        tr = row["treasury"] or 0
+        if tr > cap:
+            cur.execute("UPDATE countries SET treasury = ? WHERE id = ?", (cap, c_id))
+            clamped.append((c_id, tr - cap))
+    conn.commit()
+    conn.close()
+
+    for c_id, excess in clamped:
+        add_transaction(
+            c_id, "nuclear_compensation_cap",
+            f"♻️ تعدیل جبرانهٔ هسته‌ای: سقف جبرانه {format_money(cap)} بود و مبلغ اضافه ({format_money(excess)}) از خزانه کسر شد.",
+            -excess
+        )
+
+    set_setting("nuclear_compensation_cap_v2", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if clamped:
+        print(f"[nuclear-compensation-cap] {len(clamped)} affected countries clamped to cap {format_money(cap)}.")
 
 
 def seed_country_assets(country_id: int, country_key: str):
