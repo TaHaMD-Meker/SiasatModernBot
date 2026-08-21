@@ -69,9 +69,10 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("📈 بازار بورس بین‌المللی کالاها (طلا، نفت، غلات)", callback_data="market:menu")],
-        [InlineKeyboardButton("✉️ ارسال یادداشت دیپلماتیک", callback_data="dip:msg_start")],
+        [InlineKeyboardButton("📋 معاهدات و قراردادهای من (پیگیری و لغو)", callback_data="dip:my_contracts")],
         [InlineKeyboardButton("📜 پیشنهاد قرارداد تجاری", callback_data="dip:trade_start")],
         [InlineKeyboardButton("🎖️ انتقال/فروش تسلیحات نظامی", callback_data="dip:mil_start")],
+        [InlineKeyboardButton("✉️ ارسال یادداشت دیپلماتیک", callback_data="dip:msg_start")],
         [InlineKeyboardButton("⚓ محاصره دریایی بین‌المللی", callback_data="dip:blockade_start")],
         [InlineKeyboardButton("🌊 مدیریت و انسداد تنگه‌ها", callback_data="dip:strait_menu")],
         [InlineKeyboardButton("🕊️ کمک خارجی و انسان‌دوستانه", callback_data="dip:aid_start")],
@@ -332,6 +333,93 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     if data == "dip:menu":
         await diplomacy_menu(update, context)
+
+    elif data == "dip:my_contracts":
+        sent = db.get_country_pending_sent_contracts(country["id"])
+        recv = db.get_country_pending_received_contracts(country["id"])
+        
+        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "military_asset": "سلاح نظامی"}
+        
+        lines = [
+            f"📋 **قراردادها و معاهدات دیپلماتیک — {country['flag']} {country['name']}**\n",
+            "━━━━━━━━━━━━━━━━━━\n"
+        ]
+        
+        keyboard = []
+        
+        # 1. پیشنهادات دریافتی معلق
+        if recv:
+            lines.append("📥 **پیشنهادات دریافتی (منتظر امضا و تصمیم شما):**\n")
+            for r in recv:
+                off_str = f"{r['offered_amount']:,} {type_map.get(r['offered_type'], r['offered_type'])}"
+                req_str = f"{r['requested_amount']:,} {type_map.get(r['requested_type'], r['requested_type'])}"
+                lines.append(f"• **از طرف:** {r['sender_flag']} {r['sender_name']}")
+                lines.append(f"  تحویلی به شما: `{off_str}` | درخواستی از شما: `{req_str}`\n")
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ قبول از {r['sender_name']}", callback_data=f"dip:trade_accept:{r['id']}"),
+                    InlineKeyboardButton(f"❌ رد", callback_data=f"dip:trade_reject:{r['id']}")
+                ])
+            lines.append("━━━━━━━━━━━━━━━━━━\n")
+            
+        # 2. پیشنهادات ارسالی معلق
+        if sent:
+            lines.append("📤 **پیشنهادات ارسالی شما (در انتظار پاسخ طرف مقابل):**\n")
+            for s in sent:
+                off_str = f"{s['offered_amount']:,} {type_map.get(s['offered_type'], s['offered_type'])}"
+                req_str = f"{s['requested_amount']:,} {type_map.get(s['requested_type'], s['requested_type'])}"
+                lines.append(f"• **به مقصد:** {s['target_flag']} {s['target_name']}")
+                lines.append(f"  پیشنهادی شما: `{off_str}` | درخواستی شما: `{req_str}`\n")
+                keyboard.append([
+                    InlineKeyboardButton(f"❌ لغو پیشنهاد به {s['target_name']}", callback_data=f"dip:cancel_contract:{s['id']}")
+                ])
+            lines.append("━━━━━━━━━━━━━━━━━━\n")
+            
+        if not sent and not recv:
+            lines.append("✅ در حال حاضر هیچ معاهده یا قرارداد معلقی ندارید.\n")
+            lines.append("💡 برای ثبت پیشنهاد جدید از دکمه‌های «پیشنهاد قرارداد تجاری» یا «انتقال تسلیحات» استفاده فرمایید.")
+            
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")])
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("dip:cancel_contract:"):
+        contract_id = int(data.split(":")[2])
+        ok, msg = db.cancel_pending_contract_by_proposer(country["id"], contract_id)
+        if ok:
+            await query.answer("✅ پیشنهاد قرارداد لغو و ابطال شد!", show_alert=True)
+            sent = db.get_country_pending_sent_contracts(country["id"])
+            recv = db.get_country_pending_received_contracts(country["id"])
+            type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "military_asset": "سلاح نظامی"}
+            lines = [f"📋 **قراردادها و معاهدات دیپلماتیک — {country['flag']} {country['name']}**\n", "━━━━━━━━━━━━━━━━━━\n"]
+            keyboard = []
+            if recv:
+                lines.append("📥 **پیشنهادات دریافتی (منتظر امضا و تصمیم شما):**\n")
+                for r in recv:
+                    off_str = f"{r['offered_amount']:,} {type_map.get(r['offered_type'], r['offered_type'])}"
+                    req_str = f"{r['requested_amount']:,} {type_map.get(r['requested_type'], r['requested_type'])}"
+                    lines.append(f"• **از طرف:** {r['sender_flag']} {r['sender_name']}")
+                    lines.append(f"  تحویلی به شما: `{off_str}` | درخواستی از شما: `{req_str}`\n")
+                    keyboard.append([
+                        InlineKeyboardButton(f"✅ قبول از {r['sender_name']}", callback_data=f"dip:trade_accept:{r['id']}"),
+                        InlineKeyboardButton(f"❌ رد", callback_data=f"dip:trade_reject:{r['id']}")
+                    ])
+                lines.append("━━━━━━━━━━━━━━━━━━\n")
+            if sent:
+                lines.append("📤 **پیشنهادات ارسالی شما (در انتظار پاسخ طرف مقابل):**\n")
+                for s in sent:
+                    off_str = f"{s['offered_amount']:,} {type_map.get(s['offered_type'], s['offered_type'])}"
+                    req_str = f"{s['requested_amount']:,} {type_map.get(s['requested_type'], s['requested_type'])}"
+                    lines.append(f"• **به مقصد:** {s['target_flag']} {s['target_name']}")
+                    lines.append(f"  پیشنهادی شما: `{off_str}` | درخواستی شما: `{req_str}`\n")
+                    keyboard.append([
+                        InlineKeyboardButton(f"❌ لغو پیشنهاد به {s['target_name']}", callback_data=f"dip:cancel_contract:{s['id']}")
+                    ])
+                lines.append("━━━━━━━━━━━━━━━━━━\n")
+            if not sent and not recv:
+                lines.append("✅ در حال حاضر هیچ معاهده یا قرارداد معلقی ندارید.\n")
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")])
+            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            await query.answer(f"❌ {msg}", show_alert=True)
 
     elif data == "dip:msg_start":
         await dip_message_start(query, context, country)
@@ -1069,7 +1157,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 pass
 
         await query.edit_message_text(
-            f"✅ **پیشنهاد قرارداد تجاری با موفقیت به کشور {target_c['name']} ارسال شد.**\nپس از تایید طرف مقابل، معاهده به طور خودکار اجرا می‌گردد.",
+            f"✅ **پیشنهاد قرارداد تجاری با موفقیت به کشور {target_c['name']} ارسال شد.**\n\n💡 *توجه:* دارایی‌های شما تا زمان امضای طرف مقابل در حساب شما باقی می‌ماند و هر زمان می‌توانید از بخش «📋 قراردادهای من» پیشنهاد را لغو فرمایید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
             parse_mode="Markdown"
         )

@@ -1876,6 +1876,59 @@ def update_contract_status(contract_id: int, status: str):
     conn.close()
 
 
+def get_country_pending_sent_contracts(country_id: int) -> list:
+    """دریافت لیست قراردادهای معلق ارسالی که هنوز پاسخ داده نشده‌اند."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT t.*, c.name as target_name, c.flag as target_flag, c.country_key as target_key
+        FROM trade_contracts t
+        JOIN countries c ON t.recipient_id = c.id
+        WHERE t.proposer_id = ? AND t.status = 'pending'
+        ORDER BY t.id DESC
+    """, (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_country_pending_received_contracts(country_id: int) -> list:
+    """دریافت لیست قراردادهای معلق دریافتی که منتظر تصمیم این کشور هستند."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT t.*, c.name as sender_name, c.flag as sender_flag, c.country_key as sender_key
+        FROM trade_contracts t
+        JOIN countries c ON t.proposer_id = c.id
+        WHERE t.recipient_id = ? AND t.status = 'pending'
+        ORDER BY t.id DESC
+    """, (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def cancel_pending_contract_by_proposer(proposer_id: int, contract_id: int) -> tuple[bool, str]:
+    """لغو قرارداد معلق توسط پیشنهاددهنده و آزادسازی آن."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM trade_contracts WHERE id = ? AND proposer_id = ?", (contract_id, proposer_id))
+            row = cur.fetchone()
+            if not row:
+                return False, "قرارداد مورد نظر یافت نشد یا متعلق به شما نیست."
+
+            c = dict(row)
+            if c["status"] != "pending":
+                return False, f"این قرارداد قبلاً تعیین تکلیف شده است (وضعیت: {c['status']})."
+
+            cur.execute("UPDATE trade_contracts SET status = 'canceled' WHERE id = ?", (contract_id,))
+        return True, "پیشنهاد قرارداد تجاری با موفقیت لغو و ابطال گردید."
+    except Exception as e:
+        return False, f"خطا در لغو قرارداد: {e}"
+
+
 def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
     conn = get_connection()
     try:
