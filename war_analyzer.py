@@ -969,41 +969,163 @@ def build_detailed_loss_receipt(country_key: str, item_losses: list, military_lo
     return "\n".join(lines)
 
 
-def _war_prep_cost_from_items(items) -> dict:
-    """محاسبه هزینه آماده‌سازی عملیات تهاجمی بر اساس تجهیزات استفاده‌شده در رول.
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """فاصله دایره بزرگ بین دو نقطه (کیلومتر) — هورسین."""
+    from math import radians, sin, cos, sqrt, atan2
+    r = 6371.0
+    la1, lo1, la2, lo2 = map(radians, [lat1, lon1, lat2, lon2])
+    dla, dlo = la2 - la1, lo2 - lo1
+    a = sin(dla / 2) ** 2 + cos(la1) * cos(la2) * sin(dlo / 2) ** 2
+    return 2 * r * atan2(sqrt(a), sqrt(1 - a))
 
-    خروجی: {"money": int, "oil": int, "details": [str, ...]}"""
-    per_unit = getattr(config, "WAR_PREP_PER_UNIT", {}) or {}
+
+def _war_distance_km(attacker_key: str, defender_key: str) -> float:
+    """فاصله عملیاتی بین دو کشور بر اساس پایتخت‌ها."""
+    coords = getattr(config, "COUNTRY_COORDS", {}) or {}
+    a = coords.get(attacker_key)
+    d = coords.get(defender_key)
+    if a and d:
+        return _haversine_km(a[0], a[1], d[0], d[1])
+    return 1200.0
+
+
+def _plain_key(name: str) -> str:
+    """حذف فاصله/نماد از نام مدل برای تطبیق نرخ‌ها."""
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def _air_rates(name: str):
+    """نرخ (دلار/ساعت، بشکه/ساعت، سرعت km/h) برای یک هواگرد بر اساس مدل واقعی."""
+    plain = _plain_key(name)
+    table = getattr(config, "WAR_AIR_OPS", {}) or {}
+    best = None
+    for key, rate in table.items():
+        if key in plain and (best is None or len(key) > len(best[0])):
+            best = (key, rate)
+    return best[1] if best else (15_000, 40, 800)
+
+
+def _naval_rates(name: str):
+    """نرخ (دلار/روز، بشکه/روز) برای شناور بر اساس رده واقعی."""
+    n = (name or "").lower()
+    if any(k in n for k in ["carrier", "هواپیمابر", "بالگردبر", "lhd", "lha", "lph", "lpd", "تهاجمی"]):
+        return (1_000_000, 3000)
+    if any(k in n for k in ["destroyer", "ناوشکن", "cruiser", "رزم‌ناو", "aegis", "ایجیس", "055", "052", "kidd"]):
+        return (400_000, 1500)
+    if any(k in n for k in ["frigate", "ناوچه", "fremm", "برگامینی", "گوییند", "gowind", "میکو", "mecko", "perry"]):
+        return (150_000, 500)
+    if any(k in n for k in ["corvette", "کوروت"]):
+        return (80_000, 200)
+    if any(k in n for k in ["sub", "زیردریایی", "kilo", "کیلو", "scorpene", "اسکورپن", "dolphin", "دلفین"]):
+        return (120_000, 100)
+    if any(k in n for k in ["patrol", "گشتی", "شناور", "قایق", "تندرو", "boat", "craft", "موشک‌انداز", "موشک انداز"]):
+        return (30_000, 50)
+    return (60_000, 300)
+
+
+def _armor_rates(name: str):
+    """نرخ (دلار/روز، بشکه/روز) برای واحد زمینی بر اساس نوع واقعی."""
+    n = (name or "").lower()
+    if any(k in n for k in ["tank", "تانک", "abrams", "leopard", "merkava", "challenger", "armata", "type 99", "type 90", "type 10", "t-90", "t-80", "t-72", "t-64", "t-62", "t-55", "t-54", "pt-76", "pt76", "amx-30", "amx30", "leclerc", "لکلرک", "آرجون", "arjun", "altay", "karrar", "کرار", "zulfiqar", "ذوالفقار"]):
+        return (12_000, 6)
+    if any(k in n for k in ["ifv", "bmp", "bradley", "برادلی", "warrior", "marder", "مردر", "puma", "pizarro", "cv90", "cv9040", "k21", "borsuk", "stryker", "استرایکر"]):
+        return (6_000, 3)
+    return (2_000, 1)
+
+
+def _war_prep_cost_from_items(attacker_key: str, defender_key: str, items) -> dict:
+    """هزینه واقع‌گرایانه آماده‌سازی عملیات تهاجمی.
+
+    بر اساس فاصله عملیاتی دو کشور + نرخ واقعی مصرف سوخت/هزینه سورتی هر وسیله:
+    - هواگرد: ساعت پرواز = رفت‌وبرگشت ÷ سرعت کروز + گشت؛ هزینه = ساعت × نرخ واقعی مدل
+    - شناور: روز دریانوردی بر اساس فاصله؛ هزینه = روز × نرخ رده
+    - زرهی: هزینه و سوخت روزانه × ضریب فاصله
+    - موشک/پهپاد: هزینه لجستیک پرتاب (خود سلاح جداگانه از انبار کسر می‌شود)
+    - توپخانه: هزینه مهمات یک ماموریت آتش
+    """
+    dist = _war_distance_km(attacker_key, defender_key)
+    ops = getattr(config, "WAR_OPS", {}) or {}
+    loiter = float(ops.get("loiter_hours", 1.5))
     floor = getattr(config, "WAR_PREP_MIN", {}) or {}
-    money = 0
-    oil = 0
-    details = []
+
     cls_fa = {
         "ballistic": "موشک بالستیک", "cruise": "موشک کروز", "rocket": "راکت/مهمات",
         "drone": "پهپاد", "aircraft": "سورتی هوایی", "armor": "زرهی/تانک",
         "artillery": "توپخانه", "naval": "شناور", "sam": "پدافند", "other": "سایر",
     }
-    agg = {}
+    money = 0.0
+    oil = 0.0
+    agg = {}          # کلاس -> [تعداد، پول، نفت]
+    extra = {}        # کلاس -> توضیح (ساعت پرواز/روز)
     for it in items:
         qty = int(it.get("amount", 0) or 0)
         if qty <= 0:
             continue
         wclass = ws.weapon_class(it)
-        rate = per_unit.get(wclass, per_unit.get("other", {"money": 0, "oil": 0}))
-        m = qty * int(rate.get("money", 0) or 0)
-        o = qty * int(rate.get("oil", 0) or 0)
+        name = it.get("equipment_name") or it.get("name") or it.get("equipment_key") or ""
+        m = o = 0.0
+        if wclass == "aircraft":
+            mh, oh, spd = _air_rates(name)
+            hours = max(2.0, (2.0 * dist / max(1, spd)) + loiter)
+            m = qty * hours * mh
+            o = qty * hours * oh
+            extra["aircraft"] = extra.get("aircraft", 0.0) + hours * qty
+        elif wclass == "drone":
+            m = qty * int(ops.get("drone_launch_fee", 3_000))
+            o = qty * int(ops.get("drone_launch_oil", 1))
+        elif wclass in ("ballistic", "cruise"):
+            m = qty * int(ops.get("missile_launch_fee", 8_000))
+            o = qty * int(ops.get("missile_launch_oil", 2))
+        elif wclass == "rocket":
+            m = qty * int(ops.get("rocket_launch_fee", 1_500))
+            o = qty * int(ops.get("rocket_launch_oil", 1))
+        elif wclass == "artillery":
+            m = qty * int(ops.get("artillery_salvo", 22_000))
+            o = qty * int(ops.get("artillery_oil", 3))
+        elif wclass == "armor":
+            mc, oc = _armor_rates(name)
+            factor = max(1.0, min(3.0, 1.0 + dist / 400.0))
+            m = qty * mc * factor
+            o = qty * oc * factor
+        elif wclass == "naval":
+            mc, oc = _naval_rates(name)
+            days = max(1.0, min(30.0, 1.0 + dist / float(ops.get("naval_transit_km_day", 600))))
+            m = qty * mc * days
+            o = qty * oc * days
+            extra["naval"] = extra.get("naval", 0.0) + days * qty
+        elif wclass == "sam":
+            m = qty * int(ops.get("sam_fee", 5_000))
+            o = qty * int(ops.get("sam_oil", 2))
+        else:
+            m = qty * int(ops.get("other_fee", 5_000))
+            o = qty * int(ops.get("other_oil", 2))
         money += m
         oil += o
-        key = cls_fa.get(wclass, wclass)
-        a = agg.setdefault(key, [0, 0, 0])
+        a = agg.setdefault(wclass, [0, 0.0, 0.0])
         a[0] += qty
         a[1] += m
         a[2] += o
+
+    details = [f"📏 فاصله عملیاتی: {int(dist):,} کیلومتر"]
     for cls, (q, m, o) in agg.items():
-        details.append(f"{cls} ×{q:,} → {m:,} دلار + {o:,} بشکه")
+        line = f"{cls_fa.get(cls, cls)} ×{q:,} → {int(m):,} دلار + {int(o):,} بشکه"
+        if cls == "aircraft" and extra.get("aircraft"):
+            line += f" ({extra['aircraft']:.1f} ساعت پرواز)"
+        if cls == "naval" and extra.get("naval"):
+            line += f" ({extra['naval']:.0f} روز دریانوردی)"
+        details.append(line)
+
+    raw_money, raw_oil = money, oil
     money = max(money, int(floor.get("money", 0) or 0))
     oil = max(oil, int(floor.get("oil", 0) or 0))
-    return {"money": money, "oil": oil, "details": details}
+    if money != raw_money or oil != raw_oil:
+        parts = []
+        if money != raw_money:
+            parts.append(f"{money:,} دلار")
+        if oil != raw_oil:
+            parts.append(f"{oil:,} بشکه")
+        details.append("➕ کف حداقل هزینه عملیاتی اعمال شد (" + " + ".join(parts) + ").")
+    return {"money": int(money), "oil": int(oil), "details": details, "distance_km": int(dist)}
 
 
 def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, targets_text: str = ""):
@@ -1026,9 +1148,9 @@ def apply_war_losses_to_db(attacker_key: str, defender_key: str, losses: dict, t
             if att_country:
                 att_cid = att_country["id"]
 
-                # هزینه آماده‌سازی عملیات تهاجمی — بر اساس تجهیزات استفاده‌شده در رول
+                # هزینه آماده‌سازی عملیات تهاجمی — واقع‌گرایانه بر اساس فاصله و تجهیزات درگیر
                 prep_items = losses.get("att_fired") or losses.get("att_losses") or []
-                prep = _war_prep_cost_from_items(prep_items)
+                prep = _war_prep_cost_from_items(attacker_key, defender_key, prep_items)
                 prep_money = int(prep.get("money", 0) or 0)
                 prep_oil = int(prep.get("oil", 0) or 0)
                 if prep_money > 0:
