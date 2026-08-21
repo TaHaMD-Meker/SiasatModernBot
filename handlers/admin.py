@@ -45,6 +45,8 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
+        [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
+        [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
         [InlineKeyboardButton("📢 ارسال پیام همگانی (Broadcast)", callback_data="admin:broadcast_prompt")],
         [InlineKeyboardButton("❌ بستن پنل", callback_data="admin:close")],
@@ -1205,6 +1207,125 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:sync_catalog":
         db.sync_all_country_assets_to_catalog()
         text = "⚡ *همگام‌سازی کامل انجام شد!*\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:market_reset_prompt":
+        orders = db.get_market_orders()
+        count = len(orders)
+        text = (
+            "📦 *ریست کامل بازار بورس بین‌المللی کالاها*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• *تعداد سفارشات فعال در بورس:* `{count} سفارش`\n\n"
+            "⚠️ **هشدار عملیاتی:** با تأیید این عملیات:\n"
+            "۱. تمام سفارش‌های فعال فروش در بورس کالا لغو می‌شوند.\n"
+            "۲. **تمام نفت، طلا و غلات عرضه‌شده ۱۰۰٪ به موجودی انبار کشورهای فروشنده عودت داده می‌شود.**\n"
+            "۳. بازار بورس کاملاً پاکسازی و ریست می‌شود.\n\n"
+            "آیا از ریست کامل بورس و عودت کالاها مطمئن هستید؟"
+        )
+        keyboard = [
+            [InlineKeyboardButton("🔥 بله، ریست کن و کالاها را بازگردان", callback_data="admin:market_reset_confirm")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:market_reset_confirm":
+        ok, total_canceled, summary = db.reset_all_market_orders()
+        if not ok:
+            await query.edit_message_text(
+                f"❌ **خطا در ریست بازار بورس:**\n\n{summary.get('error', 'خطای ناشناخته')}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        text = (
+            "✅ *بازار بورس کالا با موفقیت کامل ریست شد!*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📋 **گزارش عودت کالاها به انبار کشورها:**\n"
+            f"• 📦 *تعداد کل سفارشات لغو‌شده:* `{total_canceled} سفارش`\n"
+            f"• 🌐 *کشورهای دریافت‌کننده کالا:* `{summary.get('countries_affected', 0)} کشور`\n\n"
+            f"📊 **حجم اقلام عودت‌داده‌شده به حساب کشورها:**\n"
+            f"• 🛢️ *نفت بازگردانده‌شده:* {format_oil(summary.get('oil', 0))}\n"
+            f"• 🌾 *غلات بازگردانده‌شده:* {format_number(summary.get('grain', 0))} تن\n"
+            f"• 🪙 *طلا بازگردانده‌شده:* {summary.get('gold', 0)} شمش طلا\n\n"
+            "📢 تمام کالاهای عرضه‌شده به موجودی خزانه و انبار بازیکنان برگشت."
+        )
+
+        # ارسال پیام اطلاع‌رسانی به بازیکنان متأثر
+        for p_id in summary.get("player_ids", []):
+            try:
+                await context.bot.send_message(
+                    chat_id=p_id,
+                    text=(
+                        "📦 **اطلاعیه مدیریت بازی — ریست بازار بورس کالا:**\n\n"
+                        "با تصمیم ستاد مدیریت، سفارشات فعال شما در بورس کالا لغو گردید و "
+                        "**تمام نفت، طلا و غلات عرضه‌شده شما به موجودی انبار کشورتان بازگردانده شد.**"
+                    ),
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:energy_aid_prompt":
+        countries = db.get_all_countries()
+        importers = []
+        for c in countries:
+            reqs = approval_system.calculate_country_requirements(c)
+            if (c.get('oil_production', 0) or 0) < reqs['oil_need_daily']:
+                importers.append(c)
+
+        text = (
+            "💰 *واریز بسته حمایتی ویژه انرژی به کشورهای واردکننده*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• *تعداد کشورهای مشمول بسته حمایتی:* `{len(importers)} کشور`\n"
+            "• *مبلغ واریزی:* **۱۵ تا ۲۵ میلیون دلار** کمک مالی بلاعوض به خزانه واردکنندگان نفت\n\n"
+            "با تأیید این دستور، مبلغ مستقیماً به خزانه کشورها واریز شده و پیام رسمی واریز برای بازیکنان فرستاده می‌شود.\n\n"
+            "آیا مایل به واریز فوری بسته حمایتی هستید؟"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ بله، واریز بسته حمایتی به واردکنندگان", callback_data="admin:energy_aid_confirm")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:energy_aid_confirm":
+        countries = db.get_all_countries()
+        count = 0
+        total_aid = 0
+
+        for c in countries:
+            reqs = approval_system.calculate_country_requirements(c)
+            net_oil = (c.get('oil_production', 0) or 0) - reqs['oil_need_daily']
+            if net_oil < 0:
+                deficit = abs(net_oil)
+                grant = 25_000_000 if deficit >= 200_000 else 15_000_000
+                
+                db.adjust_treasury(c["id"], grant)
+                db.add_transaction(c["id"], "aid", "بسته حمایتی ویژه صندوق بین‌المللی انرژی جهت خرید سوخت", grant)
+                count += 1
+                total_aid += grant
+
+                p_id = c.get("player_id")
+                if p_id:
+                    try:
+                        aid_msg = (
+                            f"🏦 **اطلاعیه صندوق بین‌المللی انرژی و توسعه — {c.get('flag','')} {c.get('name','')}**\n\n"
+                            f"جهت پایداری زنجیره انرژی و واردات سوخت، مبلغ **{format_money(grant)}** کمک مالی بلاعوض به خزانه کشور شما واریز گردید.\n\n"
+                            "💡 لطفاً جهت جلوگیری از بحران سوخت در روزهای آینده، از بخش **بورس کالا (/market)** نفت خریداری فرمایید یا اقدام به **احداث پالایشگاه در فروشگاه (/shop)** نمایید."
+                        )
+                        await context.bot.send_message(chat_id=p_id, text=aid_msg, parse_mode="Markdown")
+                    except Exception:
+                        pass
+
+        text = (
+            f"✅ *بسته حمایتی انرژی با موفقیت برای {count} کشور واردکننده واریز شد!*\n\n"
+            f"• 💰 *مجموع کمک مالی توزیع‌شده:* {format_money(total_aid)}\n"
+            "• 📩 پیام اطلاع‌رسانی رسمی برای تمام رهبران این کشورها ارسال گردید."
+        )
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 

@@ -2678,6 +2678,54 @@ def cancel_market_order(seller_id: int, order_id: int) -> tuple[bool, str]:
         return False, f"خطا در لغو سفارش: {e}"
 
 
+def reset_all_market_orders() -> tuple[bool, int, dict]:
+    """ریست کامل بازار بورس توسط مدیریت و بازگردانی ۱۰۰٪ تمام کالاهای عرضه‌شده به انبار کشورهای فروشنده."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT m.*, c.name as seller_name, c.flag as seller_flag, c.player_id
+                FROM market_orders m
+                JOIN countries c ON m.seller_id = c.id
+            """)
+            orders = cur.fetchall()
+
+            if not orders:
+                return True, 0, {"oil": 0, "gold": 0, "grain": 0, "countries_affected": 0, "player_ids": []}
+
+            refunded = {"oil": 0, "gold": 0, "grain": 0, "affected_countries": set(), "player_ids": set()}
+            resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain"}
+
+            for ord_row in orders:
+                o = dict(ord_row)
+                seller_id = o["seller_id"]
+                res_type = o["resource_type"]
+                amount = o["amount"]
+
+                col = resource_cols.get(res_type)
+                if col and amount > 0:
+                    cur.execute(f"UPDATE countries SET {col} = {col} + ? WHERE id = ?", (amount, seller_id))
+                    refunded[res_type] = refunded.get(res_type, 0) + amount
+                    refunded["affected_countries"].add(seller_id)
+                    if o.get("player_id"):
+                        refunded["player_ids"].add(o["player_id"])
+
+            cur.execute("DELETE FROM market_orders")
+
+        summary = {
+            "oil": refunded["oil"],
+            "gold": refunded["gold"],
+            "grain": refunded["grain"],
+            "countries_affected": len(refunded["affected_countries"]),
+            "player_ids": list(refunded["player_ids"]),
+            "total_orders": len(orders)
+        }
+        return True, len(orders), summary
+    except Exception as e:
+        return False, 0, {"error": str(e)}
+
+
 def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int, transport_mode: str = "sea") -> tuple[bool, str, dict]:
     """خرید فوری و مستقیم کالا از بورس جهانی توسط کشور خریدار."""
     conn = get_connection()
