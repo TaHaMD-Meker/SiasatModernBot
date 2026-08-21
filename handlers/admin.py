@@ -644,9 +644,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             "لطفاً حوزه مورد نظر را جهت مشاهده جدول رده‌بندی انتخاب فرمایید:"
         )
         keyboard = [
-            [InlineKeyboardButton("🛢️ رتبه‌بندی قدرت نفتی و انرژی", callback_data="admin:rank:oil")],
-            [InlineKeyboardButton("🌾 رتبه‌بندی غلات و امنیت غذایی", callback_data="admin:rank:grain")],
-            [InlineKeyboardButton("🏦 رتبه‌بندی اقتصاد، خزانه و ثروت ملی", callback_data="admin:rank:economy")],
+            [InlineKeyboardButton("🛢️ رتبه‌بندی قدرت نفتی و انرژی", callback_data="admin:rank:oil:0")],
+            [InlineKeyboardButton("🌾 رتبه‌بندی غلات و امنیت غذایی", callback_data="admin:rank:grain:0")],
+            [InlineKeyboardButton("🏦 رتبه‌بندی اقتصاد، خزانه و ثروت ملی", callback_data="admin:rank:economy:0")],
             [InlineKeyboardButton("🪖 رتبه‌بندی ارتش و توان نظامی (شاخه به شاخه)", callback_data="admin:rank:mil_menu")],
             [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
         ]
@@ -659,91 +659,157 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             "لطفاً شاخه یا رده نظامی مورد نظر را انتخاب فرمایید:"
         )
         keyboard = [
-            [InlineKeyboardButton("🎖️ ارتش کلی و کل قوا", callback_data="admin:rank:mil_total")],
+            [InlineKeyboardButton("🎖️ ارتش کلی و کل قوا", callback_data="admin:rank:mil_total:0")],
             [
-                InlineKeyboardButton("🛡️ نیروی زمینی", callback_data="admin:rank:mil_ground"),
-                InlineKeyboardButton("✈️ نیروی هوایی و پهپادی", callback_data="admin:rank:mil_air"),
+                InlineKeyboardButton("🛡️ نیروی زمینی", callback_data="admin:rank:mil_ground:0"),
+                InlineKeyboardButton("✈️ نیروی هوایی و پهپادی", callback_data="admin:rank:mil_air:0"),
             ],
             [
-                InlineKeyboardButton("⚓ نیروی دریایی و ناوگان", callback_data="admin:rank:mil_navy"),
-                InlineKeyboardButton("🚀 موشکی و پدافند هوایی", callback_data="admin:rank:mil_missile"),
+                InlineKeyboardButton("⚓ نیروی دریایی و ناوگان", callback_data="admin:rank:mil_navy:0"),
+                InlineKeyboardButton("🚀 موشکی و پدافند هوایی", callback_data="admin:rank:mil_missile:0"),
             ],
             [InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    elif data == "admin:rank:oil":
+    elif data.startswith("admin:rank:oil"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["🛢️ *رتبه‌بندی قدرت نفتی و انرژی جهان*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             sorted_c = sorted(countries, key=lambda c: -( (c.get('oil_reserves', 0) or 0) + ((c.get('oil_production', 0) or 0) * 30) ))
-            for idx, c in enumerate(sorted_c, 1):
+            total_pages = max(1, math.ceil(len(sorted_c) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_c = sorted_c[start_idx:start_idx + per_page]
+
+            lines = [f"🛢️ *رتبه‌بندی قدرت نفتی و انرژی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, c in enumerate(slice_c, start_idx + 1):
                 reqs = approval_system.calculate_country_requirements(c)
                 net_oil = (c.get('oil_production', 0) or 0) - reqs['oil_need_daily']
                 net_str = f"+{format_oil(net_oil)}" if net_oil >= 0 else f"-{format_oil(abs(net_oil))}"
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
-                    f"   • 🛢️ ذخیره نفت: `{format_oil(c.get('oil_reserves', 0))}`\n"
-                    f"   • ⚡ تولید روزانه: `+{format_oil(c.get('oil_production', 0))}/روز`\n"
-                    f"   • ⚖️ تراز خالص روزانه: `{net_str}/روز`\n"
+                    f"   • 🛢️ ذخیره: `{format_oil(c.get('oil_reserves', 0))}` | ⚡ تولید: `+{format_oil(c.get('oil_production', 0))}/روز`\n"
+                    f"   • ⚖️ تراز خالص: `{net_str}/روز`\n"
                 )
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:oil:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:oil:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:grain":
+    elif data.startswith("admin:rank:grain"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["🌾 *رتبه‌بندی غلات و امنیت غذایی*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             sorted_c = sorted(countries, key=lambda c: -( (c.get('grain', 0) or 0) + ((c.get('grain_daily', 0) or 0) * 20) ))
-            for idx, c in enumerate(sorted_c, 1):
+            total_pages = max(1, math.ceil(len(sorted_c) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_c = sorted_c[start_idx:start_idx + per_page]
+
+            lines = [f"🌾 *رتبه‌بندی غلات و امنیت غذایی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, c in enumerate(slice_c, start_idx + 1):
                 reqs = approval_system.calculate_country_requirements(c)
                 net_g = (c.get('grain_daily', 0) or 0) - reqs['grain_need_daily']
                 net_g_str = f"+{format_number(net_g)}" if net_g >= 0 else f"-{format_number(abs(net_g))}"
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
-                    f"   • 🌾 ذخیره استراتژیک: `{format_number(c.get('grain', 0))} تن`\n"
-                    f"   • 🚜 تولید روزانه: `+{format_number(c.get('grain_daily', 0))} تن/روز`\n"
-                    f"   • 👥 مصرف روزانه: `-{format_number(reqs['grain_need_daily'])} تن/روز`\n"
-                    f"   • ⚖️ تراز خالص: `{net_g_str} تن/روز`\n"
+                    f"   • 🌾 ذخیره: `{format_number(c.get('grain', 0))} تن` | 🚜 تولید: `+{format_number(c.get('grain_daily', 0))} تن/روز`\n"
+                    f"   • 👥 مصرف: `-{format_number(reqs['grain_need_daily'])} تن/روز` | ⚖️ تراز: `{net_g_str} تن/روز`\n"
                 )
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:grain:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:grain:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:economy":
+    elif data.startswith("admin:rank:economy"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["🏦 *رتبه‌بندی اقتصاد، خزانه و ثروت ملی*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             sorted_c = sorted(countries, key=lambda c: -( (c.get('treasury', 0) or 0) + ((c.get('gold', 0) or 0) * 250_000) + ((c.get('daily_income', 0) or 0) * 20) + ((c.get('tax_income', 0) or 0) * 15) ))
-            for idx, c in enumerate(sorted_c, 1):
+            total_pages = max(1, math.ceil(len(sorted_c) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_c = sorted_c[start_idx:start_idx + per_page]
+
+            lines = [f"🏦 *رتبه‌بندی اقتصاد، خزانه و ثروت ملی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, c in enumerate(slice_c, start_idx + 1):
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
-                    f"   • 🏦 خزانه ملی: `{format_money(c.get('treasury', 0))}`\n"
-                    f"   • 📈 درآمد ناخالص: `+{format_money(c.get('daily_income', 0))}/روز`\n"
+                    f"   • 🏦 خزانه: `{format_money(c.get('treasury', 0))}` | 📈 درآمد: `+{format_money(c.get('daily_income', 0))}/روز`\n"
                     f"   • 🪙 طلا: `{format_number(c.get('gold', 0))} شمش` | 💰 مالیات: `+{format_money(c.get('tax_income', 0))}/روز`\n"
                 )
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:economy:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:economy:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:mil_total":
+    elif data.startswith("admin:rank:mil_total"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["🎖️ *رتبه‌بندی ارتش کلی و کل قوا*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             mil_data = []
             for c in countries:
@@ -755,26 +821,47 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 power_index = tot_val + (personnel * 500) + (readiness * 10_000_000)
                 mil_data.append((c, tot_val, tot_units, personnel, readiness, power_index))
             mil_data.sort(key=lambda x: -x[5])
-            for idx, (c, tot_val, tot_units, personnel, readiness, p_idx) in enumerate(mil_data, 1):
+            
+            total_pages = max(1, math.ceil(len(mil_data) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_mil = mil_data[start_idx:start_idx + per_page]
+
+            lines = [f"🎖️ *رتبه‌بندی ارتش کلی و کل قوا (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, (c, tot_val, tot_units, personnel, readiness, p_idx) in enumerate(slice_mil, start_idx + 1):
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
                     f"   • 🪖 پرسنل فعال: `{format_number(personnel)} نفر` (آمادگی: `{readiness}٪`)\n"
                     f"   • 📦 کل تسلیحات: `{format_number(tot_units)} واحد` | 💰 ارزش نظامی: `{format_money(tot_val)}`\n"
                 )
-        keyboard = [
-            [InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")],
-        ]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:mil_total:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:mil_total:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:mil_ground":
+    elif data.startswith("admin:rank:mil_ground"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["🛡️ *رتبه‌بندی نیروی زمینی و زرهی*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             branch_data = []
             for c in countries:
@@ -786,27 +873,48 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 score = val + (units * 50_000) + (personnel * 500)
                 branch_data.append((c, val, units, personnel, score))
             branch_data.sort(key=lambda x: -x[4])
-            for idx, (c, val, units, personnel, score) in enumerate(branch_data, 1):
+            
+            total_pages = max(1, math.ceil(len(branch_data) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_br = branch_data[start_idx:start_idx + per_page]
+
+            lines = [f"🛡️ *رتبه‌بندی نیروی زمینی و زرهی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, (c, val, units, personnel, score) in enumerate(slice_br, start_idx + 1):
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
                     f"   • 🛡️ تجهیزات زرهی و توپخانه: `{format_number(units)} واحد`\n"
                     f"   • 👤 نیروی زمینی فعال: `{format_number(personnel)} نفر`\n"
                     f"   • 💰 ارزش یگان‌های زمینی: `{format_money(val)}`\n"
                 )
-        keyboard = [
-            [InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")],
-        ]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:mil_ground:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:mil_ground:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:mil_air":
+    elif data.startswith("admin:rank:mil_air"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["✈️ *رتبه‌بندی نیروی هوایی و پهپادی*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             branch_data = []
             for c in countries:
@@ -819,27 +927,48 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 score = val + (air_count * 2_000_000) + (uav_count * 100_000)
                 branch_data.append((c, air_count, uav_count, val, score))
             branch_data.sort(key=lambda x: -x[4])
-            for idx, (c, air_count, uav_count, val, score) in enumerate(branch_data, 1):
+            
+            total_pages = max(1, math.ceil(len(branch_data) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_br = branch_data[start_idx:start_idx + per_page]
+
+            lines = [f"✈️ *رتبه‌بندی نیروی هوایی و پهپادی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, (c, air_count, uav_count, val, score) in enumerate(slice_br, start_idx + 1):
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
                     f"   • ✈️ هواپیما و بالگرد: `{format_number(air_count)} فروند`\n"
                     f"   • 🛩️ پهپادها: `{format_number(uav_count)} فروند`\n"
                     f"   • 💰 ارزش ناوگان هوایی: `{format_money(val)}`\n"
                 )
-        keyboard = [
-            [InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")],
-        ]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:mil_air:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:mil_air:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:mil_navy":
+    elif data.startswith("admin:rank:mil_navy"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["⚓ *رتبه‌بندی نیروی دریایی و ناوگان*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             branch_data = []
             for c in countries:
@@ -850,26 +979,47 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 score = val + (units * 1_000_000)
                 branch_data.append((c, units, val, score))
             branch_data.sort(key=lambda x: -x[3])
-            for idx, (c, units, val, score) in enumerate(branch_data, 1):
+            
+            total_pages = max(1, math.ceil(len(branch_data) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_br = branch_data[start_idx:start_idx + per_page]
+
+            lines = [f"⚓ *رتبه‌بندی نیروی دریایی و ناوگان (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, (c, units, val, score) in enumerate(slice_br, start_idx + 1):
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
                     f"   • 🚢 مجموع ناوگان و شناورها: `{format_number(units)} فروند`\n"
                     f"   • 💰 ارزش ناوگان دریایی: `{format_money(val)}`\n"
                 )
-        keyboard = [
-            [InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")],
-        ]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:mil_navy:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:mil_navy:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin:rank:mil_missile":
+    elif data.startswith("admin:rank:mil_missile"):
+        parts = data.split(":")
+        page = int(parts[3]) if len(parts) > 3 else 0
+        per_page = 10
         countries = db.get_all_countries()
-        lines = ["🚀 *رتبه‌بندی موشکی و پدافند هوایی*\n━━━━━━━━━━━━━━━━━━\n"]
+        
         if not countries:
-            lines.append("هیچ کشوری ساخته نشده است.")
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")]]
+            await query.edit_message_text("❌ هیچ کشوری ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
             branch_data = []
             for c in countries:
@@ -882,21 +1032,38 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 score = val + (missile_count * 200_000) + (ad_count * 500_000)
                 branch_data.append((c, missile_count, ad_count, val, score))
             branch_data.sort(key=lambda x: -x[4])
-            for idx, (c, missile_count, ad_count, val, score) in enumerate(branch_data, 1):
+            
+            total_pages = max(1, math.ceil(len(branch_data) / per_page))
+            page = max(0, min(page, total_pages - 1))
+            start_idx = page * per_page
+            slice_br = branch_data[start_idx:start_idx + per_page]
+
+            lines = [f"🚀 *رتبه‌بندی موشکی و پدافند هوایی (صفحه {page + 1} از {total_pages})*\n━━━━━━━━━━━━━━━━━━\n"]
+            for idx, (c, missile_count, ad_count, val, score) in enumerate(slice_br, start_idx + 1):
                 lines.append(
                     f"{idx}. {c.get('flag','')} *{c.get('name','')}*\n"
                     f"   • 🚀 زرادخانه موشکی: `{format_number(missile_count)} فروند`\n"
                     f"   • 🛡️ سامانه‌های پدافند هوایی: `{format_number(ad_count)} واحد`\n"
                     f"   • 💰 ارزش زرادخانه استراتژیک: `{format_money(val)}`\n"
                 )
-        keyboard = [
-            [InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")],
-        ]
-        try:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            nav_row = []
+            if page > 0:
+                nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:rank:mil_missile:{page - 1}"))
+            if total_pages > 1:
+                nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+            if page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:rank:mil_missile:{page + 1}"))
+            
+            keyboard = []
+            if nav_row:
+                keyboard.append(nav_row)
+            keyboard.append([InlineKeyboardButton("🪖 بازگشت به دسته‌های ارتش", callback_data="admin:rank:mil_menu")])
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی رتبه‌بندی", callback_data="admin:rankings")])
+            
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "admin:pending_countries":
         pending_reqs = db.get_all_pending_country_requests()
