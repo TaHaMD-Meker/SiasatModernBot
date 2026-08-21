@@ -1402,7 +1402,7 @@ def rebalance_existing_countries_income():
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, country_key FROM countries")
+            cur.execute("SELECT id, country_key, oil_reserves, grain FROM countries")
             countries = cur.fetchall()
 
             for c in countries:
@@ -1416,6 +1416,8 @@ def rebalance_existing_countries_income():
                 base_elec = overrides.get("electricity", config.STARTING_VALUES["electricity"])
                 base_gold_daily = overrides.get("gold_daily", config.STARTING_VALUES["gold_daily"])
                 base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 1_000_000))
+                base_oil_res = overrides.get("oil_reserves", config.STARTING_VALUES.get("oil_reserves", 50_000_000))
+                base_grain = overrides.get("grain", config.STARTING_VALUES.get("grain", 35_000))
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
@@ -1447,6 +1449,11 @@ def rebalance_existing_countries_income():
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
 
+                curr_oil_res = c["oil_reserves"] or 0
+                curr_grain = c["grain"] or 0
+                new_oil_res = max(curr_oil_res, base_oil_res)
+                new_grain = max(curr_grain, base_grain)
+
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
@@ -1454,9 +1461,11 @@ def rebalance_existing_countries_income():
                     grain_daily = ?,
                     electricity = ?,
                     gold_daily = ?,
-                    oil_production = ?
+                    oil_production = ?,
+                    oil_reserves = ?,
+                    grain = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, c_id))
+                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
