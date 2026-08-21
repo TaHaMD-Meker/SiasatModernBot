@@ -53,7 +53,7 @@ def calculate_country_requirements(c: dict):
     total_oil_need_daily = pop_oil_need + ind_oil_need
 
     # 3. مصرف روزانه غلات و مواد غذایی (سطح منطقی و مدیریت‌پذیر)
-    grain_need_daily = max(400, int(500 + (pop_millions ** 0.68) * 60))
+    grain_need_daily = max(600, int(900 + (pop_millions ** 0.79) * 115))
 
     return {
         "pop": pop,

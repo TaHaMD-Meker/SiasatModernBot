@@ -1412,12 +1412,10 @@ def rebalance_existing_countries_income():
                 overrides = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
                 base_daily = overrides.get("daily_income", config.STARTING_VALUES["daily_income"])
                 base_tax = overrides.get("tax_income", config.STARTING_VALUES["tax_income"])
-                base_grain_daily = overrides.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 1500))
+                base_grain_daily = overrides.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500))
                 base_elec = overrides.get("electricity", config.STARTING_VALUES["electricity"])
                 base_gold_daily = overrides.get("gold_daily", config.STARTING_VALUES["gold_daily"])
-                base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 500_000))
-                base_oil_res = overrides.get("oil_reserves", config.STARTING_VALUES.get("oil_reserves", 5_000_000))
-                base_grain = overrides.get("grain", config.STARTING_VALUES.get("grain", 25_000))
+                base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 1_000_000))
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
@@ -1449,14 +1447,6 @@ def rebalance_existing_countries_income():
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
 
-                cur.execute("SELECT oil_reserves, grain FROM countries WHERE id = ?", (c_id,))
-                curr_row = cur.fetchone()
-                curr_oil_res = (curr_row["oil_reserves"] or 0) if curr_row else 0
-                curr_grain = (curr_row["grain"] or 0) if curr_row else 0
-
-                new_oil_res = min(curr_oil_res, int(base_oil_res * 1.5)) if curr_oil_res > base_oil_res * 2 else curr_oil_res
-                new_grain = min(curr_grain, int(base_grain * 1.5)) if curr_grain > base_grain * 2 else curr_grain
-
                 cur.execute("""
                     UPDATE countries SET
                     tax_income = ?,
@@ -1464,11 +1454,9 @@ def rebalance_existing_countries_income():
                     grain_daily = ?,
                     electricity = ?,
                     gold_daily = ?,
-                    oil_production = ?,
-                    oil_reserves = ?,
-                    grain = ?
+                    oil_production = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, c_id))
+                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
