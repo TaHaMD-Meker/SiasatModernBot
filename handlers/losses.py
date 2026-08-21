@@ -69,7 +69,7 @@ def to_english_digits(text: str) -> str:
 
 # ---------- پارسر متن گزارش استاندارد (ثبت سریع) ----------
 def _norm_name(t):
-    t = str(t).lower().replace("\u200c", " ").replace("_", " ").replace("*", "").strip()
+    t = to_english_digits(str(t)).lower().replace("\u200c", " ").replace("_", " ").replace("*", "").strip()
     return re.sub(r"\s+", " ", t)
 
 

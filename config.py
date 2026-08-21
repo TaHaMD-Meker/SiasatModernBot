@@ -1890,6 +1890,7 @@ COUNTRY_EQUIPMENT_CATALOG = {
         {'key': 'fateh110_missile_hz', 'name': 'موشک بالستیک تاکتیکی نقطه\u200cزن فاتح-۱۱۰', 'category': 'Missiles', 'price': 2000000, 'maint': 5000, 'initial': 120, 'producible': False},
         {'key': 'qader_antiship_hz', 'name': 'موشک کروز ضدکشتی قدیر', 'category': 'Missiles', 'price': 1800000, 'maint': 4500, 'initial': 40, 'producible': False},
         {'key': 'yakhont_supersonic_hz', 'name': 'موشک کروز هایپرسونیک/مافوق\u200cصوت یاخونت', 'category': 'Missiles', 'price': 4000000, 'maint': 9000, 'initial': 20, 'producible': False},
+        {'key': 'soumar_cruise_hz', 'name': 'موشک کروز سومار (تأمین ایرانی)', 'category': 'Missiles', 'price': 1500000, 'maint': 2500, 'initial': 25, 'producible': False},
         {'key': 'almas_kornet_atgm_hz', 'name': 'موشک ضدزره هوشمند تاپ\u200cاتک بومی الماس / کورنت', 'category': 'Missiles', 'price': 100000, 'maint': 300, 'initial': 1500, 'producible': True},
         {'key': 'toofan2_atgm_hz', 'name': 'موشک ضدزره طوفان-۲', 'category': 'Missiles', 'price': 60000, 'maint': 200, 'initial': 2000, 'producible': False},
         {'key': 'tharallah_dual_atgm_hz', 'name': 'سامانه موشکی دوگانه بومی ثارالله', 'category': 'Missiles', 'price': 150000, 'maint': 400, 'initial': 300, 'producible': True},
