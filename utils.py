@@ -14,6 +14,13 @@ def format_money(amount: int) -> str:
     1_500_000_000   -> "1.5 میلیارد دلار"
     500              -> "500 دلار"
     """
+    if amount is None:
+        return "0 دلار"
+    try:
+        amount = int(amount)
+    except (ValueError, TypeError):
+        return "0 دلار"
+
     sign = "-" if amount < 0 else ""
     amount = abs(amount)
 
@@ -27,7 +34,7 @@ def format_money(amount: int) -> str:
         value = amount / 1_000
         unit = "هزار"
     else:
-        return f"{sign}{amount} دلار"
+        return f"{sign}{amount:,}".replace(",", "٬") + " دلار"
 
     if value == int(value):
         value_str = str(int(value))
@@ -39,10 +46,22 @@ def format_money(amount: int) -> str:
 
 def format_number(amount: int) -> str:
     """برای اعدادی که پول نیستن (مثل جمعیت یا نفر) با جداکننده هزارتایی."""
+    if amount is None:
+        return "0"
+    try:
+        amount = int(amount)
+    except (ValueError, TypeError):
+        return "0"
     return f"{amount:,}".replace(",", "٬")
 
 
 def format_oil(barrels: int) -> str:
+    if barrels is None:
+        return "0 بشکه"
+    try:
+        barrels = int(barrels)
+    except (ValueError, TypeError):
+        return "0 بشکه"
     if barrels >= 1_000_000:
         value = barrels / 1_000_000
         value_str = str(int(value)) if value == int(value) else f"{value:.1f}"

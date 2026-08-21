@@ -12,6 +12,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 import database as db
 import config
 import asyncio
+from utils import format_money, format_number, format_oil, get_main_keyboard
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
@@ -85,11 +86,17 @@ async def show_countries_list(query, context, page: int = 0):
     countries = db.get_all_countries()
     if not countries:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
-        await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        try:
+            await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception:
+            try:
+                await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard))
+            except Exception:
+                pass
         return
 
     per_page = 5
-    total_pages = math.ceil(len(countries) / per_page)
+    total_pages = max(1, math.ceil(len(countries) / per_page))
     page = max(0, min(page, total_pages - 1))
 
     start_idx = page * per_page
@@ -97,17 +104,23 @@ async def show_countries_list(query, context, page: int = 0):
 
     keyboard = []
     for c in page_countries:
-        btn_text = f"{c['flag']} {c['name']} | 🏦 {format_money(c['treasury'])} (ID: {c['player_id']})"
+        flag = c.get("flag") or "🏳️"
+        name = c.get("name") or "بی‌نام"
+        tr = format_money(c.get("treasury") or 0)
+        pid = c.get("player_id") or "—"
+        btn_text = f"{flag} {name} | 🏦 {tr} (ID: {pid})"
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"admin:c:{c['id']}")])
 
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:list:{page - 1}"))
-    nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
+    if total_pages > 1:
+        nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
     if page < total_pages - 1:
         nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:list:{page + 1}"))
 
-    keyboard.append(nav_row)
+    if nav_row:
+        keyboard.append(nav_row)
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin:menu")])
 
     text = f"📋 *لیست کشورهای فعال (تعداد کل: {len(countries)})*\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
