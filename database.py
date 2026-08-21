@@ -1397,12 +1397,13 @@ def sync_all_country_assets_to_catalog():
 
 
 def rebalance_existing_countries_income():
-    """به‌روزرسانی و بالانس درآمد روزانه، غلات، برق، نفت و معادن تمام کشورها بر اساس آخرین مقادیر بالانس‌شده در config."""
+    import approval_system
+    """به‌روزرسانی و بالانس درآمد روزانه، غلات، برق، نفت و معادن تمام کشورها بر اساس مقادیر config."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, country_key, oil_reserves, grain FROM countries")
+            cur.execute("SELECT id, country_key, oil_reserves, grain, population FROM countries")
             countries = cur.fetchall()
 
             for c in countries:
@@ -1449,9 +1450,17 @@ def rebalance_existing_countries_income():
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
 
+                # اگر کشور واردکننده نفت است یا ذخیره بیش از سقف کانفیگ است، با مقدار ۵ روزه هماهنگ شود
                 curr_oil_res = c["oil_reserves"] or 0
                 curr_grain = c["grain"] or 0
-                new_oil_res = max(curr_oil_res, base_oil_res)
+                
+                # برای واردکنندگان، ذخیره ۵ روزه بحران ست می‌شود
+                reqs = approval_system.calculate_country_requirements({'population': c['population'], 'id': c_id})
+                if new_oil_prod < reqs['oil_need_daily']:
+                    new_oil_res = base_oil_res
+                else:
+                    new_oil_res = max(curr_oil_res, base_oil_res)
+
                 new_grain = max(curr_grain, base_grain)
 
                 cur.execute("""
