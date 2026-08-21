@@ -1965,6 +1965,12 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
 
             t_mode = c.get("transport_mode", "sea") or "sea"
             if t_mode == "sea":
+                p_c_key = p_c.get("country_key")
+                r_c_key = r_c.get("country_key")
+                if not has_open_sea_access(p_c_key) or not has_open_sea_access(r_c_key):
+                    no_sea_c = p_c if not has_open_sea_access(p_c_key) else r_c
+                    return False, f"⚓ **امکان ترابری دریایی وجود ندارد:** کشور {no_sea_c['flag']} **{no_sea_c['name']}** محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد. لطفاً این معاهده با ترابری هوایی یا زمینی صادر شود."
+
                 if is_country_blockaded(p_id) or is_country_blockaded(r_id):
                     return False, "⚓ **امکان اجرای معاهده از طریق ترابری دریایی وجود ندارد:** خطوط مواصلاتی دریایی یکی از دو کشور تحت محاصره کامل دریایی است. لطفا برای این معاهده از ترابری هوایی یا زمینی استفاده بفرمایید."
 

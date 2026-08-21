@@ -927,6 +927,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         payer = data.split(":")[2]
         draft = context.user_data.get("mil_draft", {})
         draft["transport_payer"] = payer
+        target_c = db.get_country_by_id(draft.get("target_id", 0))
+
+        my_key = country.get("country_key")
+        t_key = target_c.get("country_key") if target_c else ""
+        has_sea = db.has_open_sea_access(my_key) and db.has_open_sea_access(t_key)
+
+        sea_reason = ""
+        if not has_sea:
+            if not db.has_open_sea_access(my_key):
+                sea_reason = f"کشور شما ({country['flag']} {country['name']}) محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد."
+            else:
+                t_name = target_c['name'] if target_c else 'مقصد'
+                t_flag = target_c.get('flag', '') if target_c else ''
+                sea_reason = f"کشور مقصد ({t_flag} {t_name}) محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد."
 
         text = (
             "🌐 **انتخاب روش ترابری و ترانزیت محموله نظامی**\n"
@@ -934,14 +948,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             "لطفاً روش ارسال تجهیزات را انتخاب بفرمایید:\n\n"
             "• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سریع‌ترین / فعال در زمان محاصره)\n"
             "• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (ترانزیت زمینی / فعال)\n"
-            "• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)"
+            + ("• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)" if has_sea else f"• 🚫 **ترابری دریایی:** غیرفعال ({sea_reason})")
         )
         keyboard = [
             [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
             [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
-            [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:sea:{payer}")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
         ]
+        if has_sea:
+            keyboard.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:sea:{payer}")])
+        keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("dip:mil_finish:"):
@@ -956,6 +971,24 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 parse_mode="Markdown"
             )
             return
+
+        if mode == "sea":
+            p_key = country.get("country_key")
+            t_key = target_c.get("country_key")
+            if not db.has_open_sea_access(p_key) or not db.has_open_sea_access(t_key):
+                no_sea_c = country if not db.has_open_sea_access(p_key) else target_c
+                await query.edit_message_text(
+                    f"⚓ **ترابری دریایی غیرمجاز است!**\n\n"
+                    f"کشور {no_sea_c['flag']} **{no_sea_c['name']}** محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد.\n\n"
+                    "لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
 
         if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
             await query.edit_message_text(
@@ -1076,6 +1109,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         payer = data.split(":")[2] # 'seller' or 'buyer'
         draft = context.user_data.get("trade_draft", {})
         draft["transport_payer"] = payer
+        target_c = db.get_country_by_id(draft.get("target_id", 0))
+
+        my_key = country.get("country_key")
+        t_key = target_c.get("country_key") if target_c else ""
+        has_sea = db.has_open_sea_access(my_key) and db.has_open_sea_access(t_key)
+
+        sea_reason = ""
+        if not has_sea:
+            if not db.has_open_sea_access(my_key):
+                sea_reason = f"کشور شما ({country['flag']} {country['name']}) محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد."
+            else:
+                t_name = target_c['name'] if target_c else 'مقصد'
+                t_flag = target_c.get('flag', '') if target_c else ''
+                sea_reason = f"کشور مقصد ({t_flag} {t_name}) محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد."
 
         text = (
             "🌐 **انتخاب روش ترابری و ترانزیت محموله تجاری**\n"
@@ -1083,14 +1130,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             "لطفاً روش ارسال کالاهای تجاری را انتخاب بفرمایید:\n\n"
             "• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سریع‌ترین / فعال در زمان محاصره)\n"
             "• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (ترانزیت زمینی / فعال)\n"
-            "• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)"
+            + ("• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)" if has_sea else f"• 🚫 **ترابری دریایی:** غیرفعال ({sea_reason})")
         )
         keyboard = [
             [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
             [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
-            [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:sea:{payer}")],
-            [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
         ]
+        if has_sea:
+            keyboard.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:sea:{payer}")])
+        keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("dip:trade_finish:"):
@@ -1105,6 +1153,24 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 parse_mode="Markdown"
             )
             return
+
+        if mode == "sea":
+            p_key = country.get("country_key")
+            t_key = target_c.get("country_key")
+            if not db.has_open_sea_access(p_key) or not db.has_open_sea_access(t_key):
+                no_sea_c = country if not db.has_open_sea_access(p_key) else target_c
+                await query.edit_message_text(
+                    f"⚓ **ترابری دریایی غیرمجاز است!**\n\n"
+                    f"کشور {no_sea_c['flag']} **{no_sea_c['name']}** محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد.\n\n"
+                    "لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
 
         if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
             await query.edit_message_text(
