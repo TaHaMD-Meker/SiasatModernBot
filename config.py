@@ -86,9 +86,11 @@ COUNTRIES = {
 # این کشورها از سیستم محاصره دریایی بین‌المللی خارج هستند:
 # نه می‌توانند کشور دیگری را محاصره کنند و نه تحت محاصره دریایی قرار می‌گیرند.
 # سوئیس: کاملاً محصور در خشکی | آذربایجان: دریای خزر (دریای بسته بدون اتصال اقیانوسی)
+# ارمنستان: کاملاً محصور در خشکی
 NO_SEA_ACCESS_COUNTRIES = [
     "switzerland",
     "azerbaijan",
+    "armenia",
 ]
 
 COUNTRY_STARTING_OVERRIDES = {
@@ -2230,5 +2232,106 @@ COUNTRY_EQUIPMENT_CATALOG.update({
         {'category': 'Missiles', 'initial': 20, 'key': 'tochka_az', 'maint': 4000, 'name': 'موشک تاکتیکی Tochka-U', 'price': 1500000, 'producible': False},
         {'category': 'Air Defense', 'initial': 4, 'key': 'barak8_az', 'maint': 35000, 'name': 'پدافند Barak-8 ER', 'price': 25000000, 'producible': False},
         {'category': 'Air Defense', 'initial': 8, 'key': 's125_az', 'maint': 20000, 'name': 'پدافند S-125 Pechora-2M', 'price': 12000000, 'producible': False},
+    ],
+})
+
+# ===== کشورهای جدید: ارمنستان و گرجستان =====
+COUNTRIES.update({
+    "armenia": {'name': 'ارمنستان', 'flag': '🇦🇲'},
+    "georgia": {'name': 'گرجستان', 'flag': '🇬🇪'},
+})
+
+COUNTRY_STARTING_OVERRIDES.update({
+    "armenia": {'population': 2800000, 'treasury': 12000000, 'tax_income': 300000, 'daily_income': 1200000, 'gold': 80, 'gold_daily': 10, 'oil_reserves': 1000000, 'oil_production': 0, 'grain': 3000, 'electricity': 90, 'active_personnel': 45000, 'reserve_personnel': 200000, 'approval_rating': 70},
+    "georgia": {'population': 3700000, 'treasury': 18000000, 'tax_income': 500000, 'daily_income': 1700000, 'gold': 120, 'gold_daily': 15, 'oil_reserves': 2000000, 'oil_production': 2000, 'grain': 5000, 'electricity': 100, 'active_personnel': 37000, 'reserve_personnel': 150000, 'approval_rating': 74},
+})
+
+COUNTRY_EQUIPMENT_CATALOG.update({
+    "armenia": [
+        {'category': 'Aircraft', 'initial': 4, 'key': 'su30sm_am', 'maint': 25000, 'name': 'جنگنده Su-30SM', 'price': 30000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 15, 'key': 'su25_am', 'maint': 10000, 'name': 'پشتیبانی نزدیک Su-25', 'price': 9000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 8, 'key': 'mi24_am', 'maint': 9000, 'name': 'بالگرد تهاجمی Mi-24/35', 'price': 10000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 10, 'key': 'mi8_am', 'maint': 6000, 'name': 'بالگرد ترابری Mi-8/17', 'price': 6000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 6, 'key': 'l39_am', 'maint': 2000, 'name': 'آموزشی-رزمی L-39 Albatros', 'price': 4000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 4, 'key': 'yak52_am', 'maint': 500, 'name': 'آموزشی Yak-52', 'price': 500000, 'producible': False},
+        {'category': 'UAV', 'initial': 40, 'key': 'krunk_am', 'maint': 800, 'name': 'پهپاد شناسایی بومی Krunk-25', 'price': 400000, 'producible': True},
+        {'category': 'UAV', 'initial': 20, 'key': 'baze_am', 'maint': 1000, 'name': 'پهپاد رزمی بومی Baze', 'price': 800000, 'producible': True},
+        {'category': 'UAV', 'initial': 100, 'key': 'ares_am', 'maint': 200, 'name': 'پهپاد انتحاری بومی ARES', 'price': 50000, 'producible': True},
+        {'category': 'UAV', 'initial': 15, 'key': 'orlan10_am', 'maint': 500, 'name': 'پهپاد شناسایی Orlan-10', 'price': 150000, 'producible': False},
+        {'category': 'UAV', 'initial': 10, 'key': 'x55_am', 'maint': 800, 'name': 'پهپاد شناسایی X-55', 'price': 400000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 110, 'key': 't72b_am', 'maint': 3000, 'name': 'تانک T-72B', 'price': 1500000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 120, 'key': 'bmp1_am', 'maint': 1000, 'name': 'خودرو رزمی BMP-1', 'price': 400000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 60, 'key': 'bmp2_am', 'maint': 1200, 'name': 'خودرو رزمی BMP-2', 'price': 800000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 100, 'key': 'btr80_am', 'maint': 800, 'name': 'نفربر چرخ‌دار BTR-80', 'price': 500000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 60, 'key': 'brdm2_am', 'maint': 500, 'name': 'خودرو شناسایی BRDM-2', 'price': 200000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 150, 'key': 'mtlb_am', 'maint': 400, 'name': 'نفربر سبک MT-LB', 'price': 200000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 50, 'key': 'tigr_am', 'maint': 500, 'name': 'خودرو زرهی Tigr-M', 'price': 200000, 'producible': False},
+        {'category': 'Artillery', 'initial': 150, 'key': 'd30_am', 'maint': 300, 'name': 'توپ ۱۲۲ م‌م D-30', 'price': 150000, 'producible': False},
+        {'category': 'Artillery', 'initial': 80, 'key': 'bm21_am', 'maint': 500, 'name': 'راکت‌انداز BM-21 Grad', 'price': 300000, 'producible': False},
+        {'category': 'Artillery', 'initial': 60, 'key': '2s1_am', 'maint': 700, 'name': 'توپ خودکششی 2S1 Gvozdika', 'price': 400000, 'producible': False},
+        {'category': 'Artillery', 'initial': 30, 'key': '2s3_am', 'maint': 1000, 'name': 'توپ خودکششی 2S3 Akatsiya', 'price': 600000, 'producible': False},
+        {'category': 'Artillery', 'initial': 100, 'key': 'm46_am', 'maint': 500, 'name': 'توپ ۱۳۰ م‌م M-46', 'price': 300000, 'producible': False},
+        {'category': 'Artillery', 'initial': 24, 'key': 'wm80_am', 'maint': 4000, 'name': 'راکت‌انداز سنگین WM-80', 'price': 3000000, 'producible': False},
+        {'category': 'Artillery', 'initial': 80, 'key': 'd20_am', 'maint': 400, 'name': 'توپ ۱۵۲ م‌م D-20', 'price': 250000, 'producible': False},
+        {'category': 'Artillery', 'initial': 30, 'key': 'giatsint_am', 'maint': 1000, 'name': 'توپ ۱۵۲ م‌م 2A36 Giatsint-B', 'price': 600000, 'producible': False},
+        {'category': 'Missiles', 'initial': 8, 'key': 'iskander_am', 'maint': 20000, 'name': 'موشک بالستیک Iskander-E', 'price': 8000000, 'producible': False},
+        {'category': 'Missiles', 'initial': 20, 'key': 'scud_am', 'maint': 5000, 'name': 'موشک بالستیک Scud-B/C', 'price': 1000000, 'producible': False},
+        {'category': 'Missiles', 'initial': 30, 'key': 'tochka_am', 'maint': 4000, 'name': 'موشک تاکتیکی Tochka-U', 'price': 1500000, 'producible': False},
+        {'category': 'Missiles', 'initial': 200, 'key': 'konkurs_am', 'maint': 300, 'name': 'موشک ضدزره Konkurs', 'price': 80000, 'producible': False},
+        {'category': 'Missiles', 'initial': 100, 'key': 'kornet_am', 'maint': 400, 'name': 'موشک ضدزره Kornet', 'price': 100000, 'producible': False},
+        {'category': 'Missiles', 'initial': 300, 'key': 'fagot_am', 'maint': 200, 'name': 'موشک ضدزره Fagot', 'price': 50000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 6, 'key': 's300ps_am', 'maint': 35000, 'name': 'پدافند دوربرد S-300PS', 'price': 12000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 4, 'key': 'buk_am', 'maint': 15000, 'name': 'پدافند میان‌برد Buk-M2', 'price': 8000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 6, 'key': 'tor_am', 'maint': 8000, 'name': 'پدافند متحرک Tor-M2KM', 'price': 5000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 20, 'key': 'osa_am', 'maint': 5000, 'name': 'پدافند متحرک Osa-AK', 'price': 4000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 30, 'key': 'strela10_am', 'maint': 1200, 'name': 'پدافند کوتاه‌برد Strela-10', 'price': 800000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 15, 'key': 's125_am', 'maint': 10000, 'name': 'پدافند S-125 Pechora', 'price': 6000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 300, 'key': 'igla_am', 'maint': 300, 'name': 'دوش‌پرتاب Igla-S', 'price': 100000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 40, 'key': 'shilka_am', 'maint': 1500, 'name': 'پدافند خودکششی ZSU-23-4 Shilka', 'price': 1500000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 100, 'key': 'zu23_am', 'maint': 100, 'name': 'توپ ۲۳ م‌م ZU-23-2', 'price': 30000, 'producible': False},
+    ],
+    "georgia": [
+        {'category': 'Aircraft', 'initial': 12, 'key': 'su25_ge', 'maint': 10000, 'name': 'پشتیبانی نزدیک Su-25KM', 'price': 9000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 8, 'key': 'l39_ge', 'maint': 2000, 'name': 'آموزشی-رزمی L-39 Albatros', 'price': 4000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 6, 'key': 'mi24_ge', 'maint': 9000, 'name': 'بالگرد تهاجمی Mi-24V', 'price': 10000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 8, 'key': 'uh1_ge', 'maint': 4000, 'name': 'بالگرد UH-1H Huey', 'price': 3000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 12, 'key': 'mi8_ge', 'maint': 6000, 'name': 'بالگرد ترابری Mi-8/17', 'price': 6000000, 'producible': False},
+        {'category': 'Aircraft', 'initial': 4, 'key': 'an28_ge', 'maint': 3000, 'name': 'ترابری سبک An-28', 'price': 3000000, 'producible': False},
+        {'category': 'UAV', 'initial': 8, 'key': 'hermes450_ge', 'maint': 4000, 'name': 'پهپاد شناسایی Hermes 450', 'price': 2000000, 'producible': False},
+        {'category': 'UAV', 'initial': 20, 'key': 'skylark_ge', 'maint': 500, 'name': 'پهپاد تاکتیکی Skylark', 'price': 200000, 'producible': False},
+        {'category': 'UAV', 'initial': 6, 'key': 'tb2_ge', 'maint': 3000, 'name': 'پهپاد رزمی Bayraktar TB2', 'price': 5000000, 'producible': False},
+        {'category': 'UAV', 'initial': 30, 'key': 'delta_uav_ge', 'maint': 600, 'name': 'پهپاد شناسایی بومی Delta', 'price': 300000, 'producible': True},
+        {'category': 'Ground Forces', 'initial': 90, 'key': 't72sim1_ge', 'maint': 3000, 'name': 'تانک T-72SIM1', 'price': 1800000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 60, 'key': 'bmp1_ge', 'maint': 1000, 'name': 'خودرو رزمی BMP-1', 'price': 400000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 40, 'key': 'bmp2_ge', 'maint': 1200, 'name': 'خودرو رزمی BMP-2', 'price': 800000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 60, 'key': 'btr80_ge', 'maint': 800, 'name': 'نفربر چرخ‌دار BTR-80', 'price': 500000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 50, 'key': 'cobra_ge', 'maint': 600, 'name': 'خودرو زرهی Otokar Cobra', 'price': 400000, 'producible': False},
+        {'category': 'Ground Forces', 'initial': 80, 'key': 'didgori1_ge', 'maint': 700, 'name': 'خودرو زرهی بومی Didgori-1', 'price': 400000, 'producible': True},
+        {'category': 'Ground Forces', 'initial': 60, 'key': 'didgori2_ge', 'maint': 800, 'name': 'خودرو زرهی بومی Didgori-2', 'price': 500000, 'producible': True},
+        {'category': 'Ground Forces', 'initial': 30, 'key': 'didgori3_ge', 'maint': 1000, 'name': 'خودرو زرهی بومی Didgori-3', 'price': 600000, 'producible': True},
+        {'category': 'Ground Forces', 'initial': 40, 'key': 'humvee_ge', 'maint': 300, 'name': 'خودرو تاکتیکی Humvee', 'price': 150000, 'producible': False},
+        {'category': 'Artillery', 'initial': 100, 'key': 'd30_ge', 'maint': 300, 'name': 'توپ ۱۲۲ م‌م D-30', 'price': 150000, 'producible': False},
+        {'category': 'Artillery', 'initial': 60, 'key': '2s1_ge', 'maint': 700, 'name': 'توپ خودکششی 2S1 Gvozdika', 'price': 400000, 'producible': False},
+        {'category': 'Artillery', 'initial': 30, 'key': '2s3_ge', 'maint': 1000, 'name': 'توپ خودکششی 2S3 Akatsiya', 'price': 600000, 'producible': False},
+        {'category': 'Artillery', 'initial': 80, 'key': 'bm21_ge', 'maint': 500, 'name': 'راکت‌انداز BM-21 Grad', 'price': 300000, 'producible': False},
+        {'category': 'Artillery', 'initial': 20, 'key': 'msta_ge', 'maint': 1500, 'name': 'توپ ۱۵۲ م‌م Msta-B', 'price': 800000, 'producible': False},
+        {'category': 'Artillery', 'initial': 18, 'key': 'rm70_ge', 'maint': 1500, 'name': 'راکت‌انداز RM-70', 'price': 800000, 'producible': False},
+        {'category': 'Artillery', 'initial': 50, 'key': 'm46_ge', 'maint': 500, 'name': 'توپ ۱۳۰ م‌م M-46', 'price': 300000, 'producible': False},
+        {'category': 'Navy', 'initial': 4, 'key': 'island_ge', 'maint': 3000, 'name': 'شناور گشتی Island-class', 'price': 5000000, 'producible': False},
+        {'category': 'Navy', 'initial': 6, 'key': 'kaan_ge', 'maint': 2000, 'name': 'شناور گشتی Kaan-class', 'price': 3000000, 'producible': False},
+        {'category': 'Navy', 'initial': 10, 'key': 'patrol_ge', 'maint': 500, 'name': 'قایق گشتی ساحلی', 'price': 500000, 'producible': True},
+        {'category': 'Missiles', 'initial': 200, 'key': 'javelin_ge', 'maint': 800, 'name': 'موشک ضدزره Javelin', 'price': 200000, 'producible': False},
+        {'category': 'Missiles', 'initial': 300, 'key': 'stinger_ge', 'maint': 300, 'name': 'دوش‌پرتاب Stinger', 'price': 200000, 'producible': False},
+        {'category': 'Missiles', 'initial': 20, 'key': 'shturm_ge', 'maint': 1000, 'name': 'سامانه ضدزره Shturm-S', 'price': 500000, 'producible': False},
+        {'category': 'Missiles', 'initial': 150, 'key': 'konkurs_ge', 'maint': 300, 'name': 'موشک ضدزره Konkurs', 'price': 80000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 3, 'key': 'buk_ge', 'maint': 15000, 'name': 'پدافند میان‌برد Buk-M1', 'price': 8000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 15, 'key': 'osa_ge', 'maint': 5000, 'name': 'پدافند متحرک Osa-AK', 'price': 4000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 20, 'key': 'strela10_ge', 'maint': 1200, 'name': 'پدافند کوتاه‌برد Strela-10', 'price': 800000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 10, 'key': 's125_ge', 'maint': 10000, 'name': 'پدافند S-125 Pechora', 'price': 6000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 4, 'key': 'spyder_ge', 'maint': 15000, 'name': 'پدافند کوتاه‌برد Spyder SR', 'price': 8000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 3, 'key': 'nasams_ge', 'maint': 20000, 'name': 'پدافند NASAMS', 'price': 10000000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 200, 'key': 'igla_ge', 'maint': 300, 'name': 'دوش‌پرتاب Igla', 'price': 100000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 30, 'key': 'shilka_ge', 'maint': 1500, 'name': 'پدافند خودکششی ZSU-23-4 Shilka', 'price': 1500000, 'producible': False},
+        {'category': 'Air Defense', 'initial': 80, 'key': 'zu23_ge', 'maint': 100, 'name': 'توپ ۲۳ م‌م ZU-23-2', 'price': 30000, 'producible': False},
     ],
 })
