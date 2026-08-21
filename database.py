@@ -2309,35 +2309,6 @@ def calculate_military_fuel_consumption(country_id: int) -> int:
     return total
 
 
-def sell_oil_to_global_market(country_id: int, amount: int) -> tuple[bool, str]:
-    """فروش مستقیم نفت خام به بازار جهانی با قیمت کف (OIL_GLOBAL_PRICE)."""
-    if amount <= 0:
-        return False, "مقدار نفت باید بزرگ‌تر از صفر باشد."
-    conn = get_connection()
-    try:
-        with conn:
-            cur = conn.cursor()
-            cur.execute("SELECT oil_reserves, treasury FROM countries WHERE id = ?", (country_id,))
-            row = cur.fetchone()
-            if not row:
-                return False, "کشور یافت نشد."
-            if (row["oil_reserves"] or 0) < amount:
-                return False, f"ذخیره نفت کافی نیست! (موجودی فعلی: {(row['oil_reserves'] or 0):,} بشکه)"
-            revenue = amount * config.OIL_GLOBAL_PRICE
-            cur.execute(
-                "UPDATE countries SET oil_reserves = oil_reserves - ?, treasury = treasury + ? WHERE id = ?",
-                (amount, revenue, country_id),
-            )
-            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            cur.execute(
-                "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?,?,?,?,?)",
-                (country_id, "oil_export", f"صادرات نفت به بازار جهانی ({amount:,} بشکه × {config.OIL_GLOBAL_PRICE:,} $)", revenue, now_str),
-            )
-        return True, f"{revenue}"
-    except Exception as e:
-        return False, f"خطا در فروش به بازار جهانی: {e}"
-
-
 def has_active_oil_import_contract(country_id: int) -> bool:
     """بررسی وجود قرارداد فعال واردات نفت خام برای کشورهای صنعتی فاقد نفت."""
     conn = get_connection()
@@ -2540,13 +2511,13 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
     if amount <= 0 or unit_price <= 0:
         return False, "تعداد و قیمت واحد باید بزرگتر از صفر باشند."
 
-    # قیمت کف بازار جهانی: نفت را نمی‌توان زیر قیمت پایه عرضه کرد
+    # قیمت کف: نفت را نمی‌توان زیر قیمت پایه در بورس عرضه کرد
     if resource_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
         return False, (
-            f"⛔ **قیمت هر بشکه نفت نمی‌تواند کمتر از قیمت کف بازار جهانی باشد.**\n\n"
-            f"• قیمت کف بازار جهانی نفت: **{config.OIL_GLOBAL_PRICE:,} $/بشکه**\n"
+            f"⛔ **قیمت هر بشکه نفت نمی‌تواند کمتر از قیمت کف بازار باشد.**\n\n"
+            f"• قیمت کف نفت در بورس: **{config.OIL_GLOBAL_PRICE:,} $/بشکه**\n"
             f"• قیمت پیشنهادی شما: {unit_price:,} $/بشکه\n\n"
-            f"💡 می‌توانید نفت خود را مستقیم با قیمت پایه از گزینه «فروش به بازار جهانی» بفروشید."
+            f"💡 لطفاً نفت خود را در بورس با قیمتی برابر یا بالاتر از کف عرضه کنید."
         )
 
     resource_cols = {

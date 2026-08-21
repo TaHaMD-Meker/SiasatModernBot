@@ -329,7 +329,7 @@ def main():
             await admin_input_text_handler(update, context)
         elif context.user_data.get("diplomacy_input"):
             await diplomacy_text_input_handler(update, context)
-        elif context.user_data.get("market_sell_draft") or context.user_data.get("market_global_sell"):
+        elif context.user_data.get("market_sell_draft"):
             await market_text_input_handler(update, context)
         elif context.user_data.get("un_draft"):
             await un_text_input_handler(update, context)

@@ -32,8 +32,6 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not c:
         return
 
-    context.user_data.pop("market_global_sell", None)
-
     stats = db.get_market_stats()
     oil_low = f"{stats['oil'].get('lowest_active'):,} $" if stats['oil'].get('lowest_active') else f"{config.OIL_GLOBAL_PRICE:,} $ (قیمت پایه جهانی)"
     gold_low = f"{stats['gold'].get('lowest_active'):,} $" if stats['gold'].get('lowest_active') else "بدون عرضه"
@@ -63,9 +61,6 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("📦 عرضه‌ها و سفارش‌های من", callback_data="market:my_orders"),
         ],
         [
-            InlineKeyboardButton(f"🌍 فروش نفت به بازار جهانی (هر بشکه {config.OIL_GLOBAL_PRICE:,} $)", callback_data="market:global_sell"),
-        ],
-        [
             InlineKeyboardButton("📊 شاخص‌ها و آمار جهانی", callback_data="market:stats"),
         ],
     ]
@@ -92,19 +87,6 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     if data == "market:menu":
         await market_main_menu(update, context)
-
-    elif data == "market:global_sell":
-        c2 = db.get_country_by_id(country["id"]) or country
-        context.user_data["market_global_sell"] = True
-        await query.edit_message_text(
-            f"🌍 **فروش مستقیم نفت خام به بازار جهانی**\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"• **قیمت پایه بازار جهانی:** {config.OIL_GLOBAL_PRICE:,} $ به ازای هر بشکه\n"
-            f"• **موجودی نفت شما:** {format_oil(c2['oil_reserves'])}\n\n"
-            "مقدار نفت (بشکه) را به عدد انگلیسی ارسال کنید تا بلافاصله به همین قیمت فروخته شود:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="market:menu")]]),
-            parse_mode="Markdown"
-        )
 
     elif data.startswith("market:cat:"):
         res_type = data.split(":")[2]
@@ -352,7 +334,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
         floor_hint = ""
         if res_type == "oil":
-            floor_hint = f"\n💡 **قیمت کف بازار جهانی نفت:** {config.OIL_GLOBAL_PRICE:,} $/بشکه (عرضه زیر این قیمت مجاز نیست)\n"
+            floor_hint = f"\n💡 **قیمت کف نفت در بورس:** {config.OIL_GLOBAL_PRICE:,} $/بشکه (عرضه زیر این قیمت مجاز نیست)\n"
 
         text = (
             f"➕ **عرضه و فروش {res_names.get(res_type, res_type)}**\n"
@@ -442,33 +424,6 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
     if not country:
         return
 
-    # فروش مستقیم نفت به بازار جهانی با قیمت کف
-    if context.user_data.get("market_global_sell"):
-        del context.user_data["market_global_sell"]
-        raw = update.message.text.strip().replace(",", "").replace("٬", "")
-        if not raw.isdigit() or int(raw) <= 0:
-            await update.message.reply_text("⛔ لطفاً یک عدد صحیح انگلیسی بزرگ‌تر از صفر ارسال فرمایید.", parse_mode="Markdown")
-            return
-        amt = int(raw)
-        ok, res = db.sell_oil_to_global_market(country["id"], amt)
-        if not ok:
-            await update.message.reply_text(f"❌ **فروش به بازار جهانی ناموفق بود:**\n\n{res}", parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
-            return
-        revenue = int(res)
-        c2 = db.get_country_by_id(country["id"])
-        await update.message.reply_text(
-            f"🌍 **صادرات نفت به بازار جهانی با موفقیت انجام شد!**\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"• نفت فروخته‌شده: **{amt:,} بشکه**\n"
-            f"• قیمت هر بشکه: **{config.OIL_GLOBAL_PRICE:,} $**\n"
-            f"• درآمد صادراتی: **{format_money(revenue)}**\n"
-            f"• خزانه جدید: **{format_money(c2['treasury'])}**\n"
-            f"• ذخیره نفت باقی‌مانده: **{format_oil(c2['oil_reserves'])}**",
-            reply_markup=get_main_keyboard(user_id),
-            parse_mode="Markdown"
-        )
-        return
-
     draft = context.user_data.get("market_sell_draft")
     if not draft:
         return
@@ -515,10 +470,10 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
         # یادآوری قیمت کف نفت پیش از ثبت عرضه
         if res_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
             await update.message.reply_text(
-                f"⛔ **قیمت زیر کف بازار جهانی مجاز نیست!**\n\n"
-                f"قیمت کف نفت: **{config.OIL_GLOBAL_PRICE:,} $/بشکه**\n"
+                f"⛔ **قیمت زیر کف بازار مجاز نیست!**\n\n"
+                f"قیمت کف نفت در بورس: **{config.OIL_GLOBAL_PRICE:,} $/بشکه**\n"
                 f"قیمت پیشنهادی شما: {unit_price:,} $/بشکه\n\n"
-                f"لطفاً قیمتی برابر یا بالاتر از کف وارد کنید (یا از «فروش به بازار جهانی» استفاده کنید):",
+                f"لطفاً قیمتی برابر یا بالاتر از کف وارد کنید:",
                 parse_mode="Markdown"
             )
             return
