@@ -532,14 +532,28 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 )
 
             elif res_code == "blocked_unattributed":
-                # دفع ناشناس
+                # دفع ناشناس و انتشار خبر خنثی‌سازی در کانال برای حوادث فیزیکی/ترور
+                try:
+                    if op_type in ("sabotage_pipeline", "assassination_commander", "assassination_scientist"):
+                        await news_engine.trigger_foiled_sabotage_news(context.bot, target_c, op_type)
+                except Exception:
+                    pass
+
+                # ارسال هشدار امنیتی به بازیکن مدافع
                 if target_c.get("player_id"):
                     try:
-                        await context.bot.send_message(
-                            chat_id=target_c["player_id"],
-                            text=f"🛡️ <b>هشدار پدافند سایبری</b>\n\nیک تلاش برای نفوذ سایبری ناشناس به زیرساخت‌های کشور شما توسط فایروال ملی با موفقیت خنثی گردید. هویت نفوذگر غیرقابل ردگیری است.",
-                            parse_mode="HTML"
-                        )
+                        if op_type in ("sabotage_pipeline", "assassination_commander", "assassination_scientist"):
+                            await context.bot.send_message(
+                                chat_id=target_c["player_id"],
+                                text=f"🛡️ <b>گزارش امنیتی و ضدجاسوسی</b>\n\nیک اقدام خرابکارانه / ترور ناشناس علیه اهداف کشور شما با هوشیاری نیروهای امنیتی پیش از اجرا خنثی گردید.",
+                                parse_mode="HTML"
+                            )
+                        else:
+                            await context.bot.send_message(
+                                chat_id=target_c["player_id"],
+                                text=f"🛡️ <b>هشدار پدافند سایبری</b>\n\nیک تلاش برای نفوذ سایبری ناشناس به زیرساخت‌های کشور شما توسط فایروال ملی با موفقیت خنثی گردید. هویت نفوذگر غیرقابل ردگیری است.",
+                                parse_mode="HTML"
+                            )
                     except Exception:
                         pass
 

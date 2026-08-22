@@ -180,3 +180,32 @@ async def trigger_protest_news(bot, country: dict, reason: str):
         f"به دلیل {reason} و شرایط دشوار معیشتی، تجمعات اعتراضی در خیابان‌های اصلی کشور {country['flag']} **{country['name']}** شکل گرفته است."
     )
     await post_breaking_news(bot, headline, body)
+
+
+
+async def trigger_foiled_sabotage_news(bot, target_c: dict, op_type: str):
+    """انتشار خبر فوری دفع و خنثی‌سازی عملیات خرابکاری یا ترور در کانال رسمی."""
+    if op_type == "sabotage_pipeline":
+        headline = f"کشف و خنثی‌سازی عملیات خرابکاری در تأسیسات نفتی {target_c['name']}"
+        body = (
+            f"دستگاه‌های امنیتی و پدافند غیرعامل کشور {target_c['flag']} **{target_c['name']}** از کشف و خنثی‌سازی یک اقدام خرابکارانه در تأسیسات و خطوط انتقال نفت پیش از هرگونه وقوع حادثه خبر دادند.\n"
+            f"تأسیسات نفتی در امنیت کامل به فعالیت خود ادامه می‌دهند و تحقیقات برای شناسایی عاملان آغاز شده است."
+        )
+    elif op_type == "assassination_commander":
+        headline = f"خنثی‌سازی سوءقصد مسلحانه علیه مقامات نظامی در {target_c['name']}"
+        body = (
+            f"منابع امنیتی در کشور {target_c['flag']} **{target_c['name']}** اعلام کردند یک اقدام تروریستی با هوشیاری تیم‌های حفاظت با شکست مواجه و خنثی گردید.\n"
+            f"تمامی مقامات ارشد نظامی در سلامت کامل به سر می‌برند."
+        )
+    elif op_type == "assassination_scientist":
+        headline = f"ناکام ماندن سوءقصد به چهره‌های علمی در {target_c['name']}"
+        body = (
+            f"دستگاه‌های امنیتی کشور {target_c['flag']} **{target_c['name']}** از شناسایی و خنثی‌سازی یک طرح سوءقصد به پژوهشگران و دستگیری عوامل مشکوک در صحنه خبر دادند."
+        )
+    else:
+        headline = f"خنثی‌سازی اقدام خرابکارانه امنیتی در {target_c['name']}"
+        body = (
+            f"دستگاه‌های امنیتی کشور {target_c['flag']} **{target_c['name']}** از کشف و دفع یک اقدام خرابکارانه مشکوک در زیرساخت‌ها خبر دادند."
+        )
+
+    await post_breaking_news(bot, headline, body)
