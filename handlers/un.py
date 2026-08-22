@@ -60,6 +60,7 @@ async def un_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📋 قطعنامه‌ها و رای‌گیری‌های فعال", callback_data="un:res_list")],
         [InlineKeyboardButton("🕊️ اعزام نیروهای صلح‌بان کلاه‌آبی", callback_data="un:peacekeeper_start")],
         [InlineKeyboardButton("📦 ارسال کمک‌های بشردوستانه سازمان ملل", callback_data="un:relief_start")],
+        [InlineKeyboardButton("☢️ آژانس بین‌المللی انرژی اتمی (IAEA)", callback_data="un:iaea:menu")],
         [InlineKeyboardButton("📢 بیانیه رسمی دبیرکل سازمان ملل", callback_data="un:statement_start")],
         [InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin:menu")],
     ]
@@ -78,6 +79,11 @@ async def un_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = query.from_user.id
 
     await query.answer()
+
+    # ☢️ مسیر اختصاصی آژانس انرژی اتمی
+    if data.startswith("un:iaea:"):
+        await iaea_callback_handler(update, context)
+        return
 
     if data == "un:menu":
         await un_main_menu(update, context)
@@ -358,6 +364,368 @@ async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
             pass
 
         await update.message.reply_text("✅ بیانیه رسمی دبیرکل با موفقیت برای تمامی بازیکنان و کانال اصلی برودکست شد.", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+
+
+# ==================== ☢️ آژانس بین‌المللی انرژی اتمی (IAEA) ====================
+
+IAEA_P5 = ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+
+
+def _iaea_nuclear_countries():
+    """فهرست کشورهای دارای فعالیت هسته‌ای (مرتب: کلاهک، سپس سوخت)."""
+    result = []
+    for c in db.get_all_countries():
+        if c.get("country_key") == "un":
+            continue
+        wh = c.get("warheads") or 0
+        fuel = c.get("nuclear_fuel") or 0
+        u_ore = c.get("uranium_ore") or 0
+        f_daily = c.get("nuclear_fuel_daily") or 0
+        u_daily = c.get("uranium_ore_daily") or 0
+        if wh == 0 and fuel == 0 and u_ore == 0 and f_daily == 0 and u_daily == 0:
+            continue
+        result.append(c)
+    result.sort(key=lambda c: ((c.get("warheads") or 0), (c.get("nuclear_fuel") or 0)), reverse=True)
+    return result
+
+
+def _iaea_facilities(country_id):
+    """تعداد معدن اورانیوم و مجتمع غنی‌سازیِ مالکیت کشور."""
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    mines = sum((r["quantity"] or 0) for r in rows if r["item_key"] == "uranium_mine")
+    enr = sum((r["quantity"] or 0) for r in rows if r["item_key"] == "enrichment_facility")
+    return mines, enr
+
+
+def _iaea_cap_of(c: dict):
+    """سقف مجاز کلاهک کشور (P5: نامحدود)."""
+    if c.get("country_key") in IAEA_P5:
+        return None
+    return int(getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5))
+
+
+def _iaea_monitor_text():
+    """🛰️ متن گزارش نظارت جهانی."""
+    rows = _iaea_nuclear_countries()
+    cap_non_p5 = int(getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5))
+    lines = [
+        "🛰️ **گزارش نظارت جهانی هسته‌ای — IAEA**",
+        "━━━━━━━━━━━━━━━━━━", ""
+    ]
+    if not rows:
+        lines.append("در حال حاضر هیچ کشوری دارای برنامه هسته‌ای فعال نیست. ✅")
+    violators = []
+    suspended_list = []
+    for i, c in enumerate(rows[:25], start=1):
+        wh = c.get("warheads") or 0
+        p5 = " 🔷P5" if c.get("country_key") in IAEA_P5 else ""
+        susp = ""
+        if (c.get("enrichment_suspended") or 0):
+            susp = " ⛔تعلیق‌شده"
+            suspended_list.append(f"{c['flag']} {c['name']}")
+        lines.append(
+            f"{i}. {c['flag']} *{c['name']}*{p5}{susp}\n"
+            f"   ☢️ کلاهک: *{format_number(wh)}* | 🧪 سوخت: {format_number(c.get('nuclear_fuel') or 0)} ک‌گ | "
+            f"⛏️ اورانیوم: {format_number(c.get('uranium_ore') or 0)} تن"
+        )
+        cap = _iaea_cap_of(c)
+        if cap is not None and wh > cap:
+            violators.append(f"{c['flag']} {c['name']} ({format_number(wh)} کلاهک؛ سقف: {cap})")
+    if len(rows) > 25:
+        lines.append(f"\n… و {len(rows) - 25} کشور دیگر.")
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    if violators:
+        lines.append("⚠️ *متخلفان از سقف عدم اشاعه:*")
+        for v in violators:
+            lines.append(f"   • {v}")
+    if suspended_list:
+        lines.append("⛔ *برنامه‌های غنی‌سازی تعلیق‌شده:*")
+        for s in suspended_list:
+            lines.append(f"   • {s}")
+    if not violators and not suspended_list:
+        lines.append("✅ هیچ تخلفی از پیمان عدم اشاعه (NPT) ثبت نشده است.")
+    lines.append("\n_ابزار نظارتی آژانس بین‌المللی انرژی اتمی — وین_")
+    return "\n".join(lines)
+
+
+def _iaea_dossier_text(c: dict):
+    """🔍 متن پرونده بازرسی فنی یک کشور."""
+    mines, enr = _iaea_facilities(c["id"])
+    wh = c.get("warheads") or 0
+    cap = _iaea_cap_of(c)
+    suspended = bool(c.get("enrichment_suspended") or 0)
+
+    if cap is None:
+        cap_line = "نامحدود (قدرت هسته‌ای P5) 🔷"
+        status = "✅ منطبق"
+    else:
+        cap_line = format_number(cap)
+        status = ("✅ منطبق" if wh <= cap else f"⚠️ متخلف ({format_number(wh - cap)} کلاهک مازاد بر سقف)")
+
+    fac_parts = []
+    if mines:
+        fac_parts.append(f"⛏️ معدن اورانیوم ×{format_number(mines)}")
+    if enr:
+        fac_parts.append(f"🔬 مجتمع غنی‌سازی ×{format_number(enr)}")
+    facilities = " | ".join(fac_parts) if fac_parts else "ندارد"
+
+    text = (
+        f"🔍 **پرونده بازرسی هسته‌ای آژانس — {c['flag']} {c['name']}**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"☢️ *کلاهک‌های استراتژیک:* {format_number(wh)}\n"
+        f"📋 *سقف مجاز:* {cap_line} → *وضعیت:* {status}\n\n"
+        f"🧪 *سوخت غنی‌شده:* {format_number(c.get('nuclear_fuel') or 0)} ک‌گ (+{format_number(c.get('nuclear_fuel_daily') or 0)}/روز)\n"
+        f"⛏️ *کیک زرد اورانیوم:* {format_number(c.get('uranium_ore') or 0)} تن (+{format_number(c.get('uranium_ore_daily') or 0)}/روز)\n\n"
+        f"🏭 *تأسیسات چرخه سوخت:* {facilities}\n"
+        f"🔬 *سطح فناوری:* {format_number(c.get('tech_level') or 1)}\n"
+        f"⚖️ *وضعیت غنی‌سازی:* {'⛔ تعلیق‌شده به دستور آژانس' if suspended else '✅ فعال'}\n\n"
+        "_بازرسی فنی — بازرسان رسمی آژانس، وین_"
+    )
+    return text
+
+
+def _iaea_report_body():
+    """متن گزارش عمومی آژانس برای برودکست."""
+    rows = _iaea_nuclear_countries()
+    total_wh = sum((c.get("warheads") or 0) for c in rows)
+    violators = []
+    suspended = []
+    for c in rows:
+        cap = _iaea_cap_of(c)
+        if cap is not None and (c.get("warheads") or 0) > cap:
+            violators.append(f"{c['flag']} {c['name']}")
+        if c.get("enrichment_suspended") or 0:
+            suspended.append(f"{c['flag']} {c['name']}")
+    top = rows[:3]
+    top_str = " | ".join(f"{c['flag']} {c['name']} ({format_number(c.get('warheads') or 0)})" for c in top) if top else "—"
+
+    body = (
+        f"• کشورهای دارای برنامه هسته‌ای فعال: {format_number(len(rows))}\n"
+        f"• مجموع کلاهک‌های استراتژیک جهان: {format_number(total_wh)}\n"
+        f"• بزرگ‌ترین زرادخانه‌ها: {top_str}\n"
+        f"• متخلفان از سقف عدم اشاعه: {'، '.join(violators) if violators else 'موردی ثبت نشد ✅'}\n"
+        f"• برنامه‌های غنی‌سازی تعلیق‌شده: {'، '.join(suspended) if suspended else 'موردی نیست ✅'}"
+    )
+    return body
+
+
+async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    parts = data.split(":")  # un:iaea:action[:arg]
+
+    user_id, c = await require_un_or_admin(update)
+    if not c:
+        return
+
+    action = parts[2] if len(parts) > 2 else "menu"
+
+    # ---------- منوی اصلی آژانس ----------
+    if action == "menu":
+        text = (
+            "☢️ **آژانس بین‌المللی انرژی اتمی (IAEA)**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "آژانس، نهاد نظارتی سازمان ملل در حوزه چرخه سوخت هسته‌ای، غنی‌سازی اورانیوم و پیمان عدم اشاعه (NPT) است.\n\n"
+            "**اختیارات در دسترس دبیرکل:**\n"
+            "• 🛰️ رصد و نظارت جهانی برنامه‌های هسته‌ای\n"
+            "• 🔍 بازرسی فنی و تشکیل پرونده کشورها\n"
+            "• ⛔ تعلیق برنامه غنی‌سازی کشور متخلف\n"
+            "• 🧹 خلع سلاح هسته‌ای اجباری\n"
+            "• 📢 انتشار گزارش عمومی آژانس\n\n"
+            "_مقر رسمی آژانس — وین، اتریش_"
+        )
+        keyboard = [
+            [InlineKeyboardButton("🛰️ رصد و نظارت جهانی", callback_data="un:iaea:monitor")],
+            [InlineKeyboardButton("🔍 بازرسی فنی کشور", callback_data="un:iaea:inspect")],
+            [InlineKeyboardButton("📢 انتشار گزارش عمومی آژانس", callback_data="un:iaea:report")],
+            [InlineKeyboardButton("🔙 بازگشت به ستاد سازمان ملل", callback_data="un:menu")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 🛰️ رصد جهانی ----------
+    elif action == "monitor":
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data="un:iaea:monitor")],
+            [InlineKeyboardButton("🔙 بازگشت به آژانس", callback_data="un:iaea:menu")],
+        ]
+        await query.edit_message_text(_iaea_monitor_text(), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 🔍 انتخاب کشور برای بازرسی ----------
+    elif action == "inspect":
+        all_c = [x for x in db.get_all_countries() if x.get("country_key") != "un"]
+        if not all_c:
+            await query.edit_message_text("هیچ کشوری برای بازرسی وجود ندارد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="un:iaea:menu")]]))
+            return
+        keyboard = []
+        row = []
+        for x in all_c:
+            mark = "☢️" if ((x.get("warheads") or 0) > 0 or (x.get("nuclear_fuel") or 0) > 0) else "🕊️"
+            row.append(InlineKeyboardButton(f"{mark} {x['name']}", callback_data=f"un:iaea:dossier:{x['id']}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به آژانس", callback_data="un:iaea:menu")])
+        await query.edit_message_text(
+            "🔍 **بازرسی فنی آژانس — انتخاب کشور**\n\nکشور موردنظر را برای تشکیل پرونده هسته‌ای انتخاب فرمایید:\n_(☢️ دارای فعالیت هسته‌ای | 🕊️ فاقد برنامه)_",
+            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
+        )
+
+    # ---------- 🔍 پرونده کشور ----------
+    elif action == "dossier":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        keyboard = []
+        if (target.get("enrichment_suspended") or 0):
+            keyboard.append([InlineKeyboardButton("✅ رفع تعلیق غنی‌سازی", callback_data=f"un:iaea:unsuspend:{t_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton("⛔ تعلیق برنامه غنی‌سازی", callback_data=f"un:iaea:suspend:{t_id}")])
+        if (target.get("warheads") or 0) > 0:
+            keyboard.append([InlineKeyboardButton("🧹 خلع سلاح هسته‌ای اجباری", callback_data=f"un:iaea:disarm:{t_id}")])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")])
+        await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- ⛔ تعلیق غنی‌سازی ----------
+    elif action == "suspend":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        db.set_enrichment_suspended(t_id, True)
+        db.add_transaction(t_id, "iaea_suspend", "⛔ تعلیق برنامه غنی‌سازی به دستور آژانس بین‌المللی انرژی اتمی — تولید سوخت غنی‌شده روزانه متوقف شد.", 0)
+        try:
+            if target.get("player_id"):
+                await context.bot.send_message(
+                    target["player_id"],
+                    f"⛔ **اخطاریه آژانس بین‌المللی انرژی اتمی**\n\n برنامه غنی‌سازی کشور {target['flag']} *{target['name']}* به دستور آژانس تعلیق گردید. تولید سوخت غنی‌شدهٔ روزانه شما تا اطلاع بعدی متوقف است.\n\n_IAEA — وین_",
+                    parse_mode="Markdown"
+                )
+        except Exception:
+            pass
+        await query.answer("⛔ برنامه غنی‌سازی تعلیق شد", show_alert=True)
+        target = db.get_country_by_id(t_id)
+        keyboard = [
+            [InlineKeyboardButton("✅ رفع تعلیق غنی‌سازی", callback_data=f"un:iaea:unsuspend:{t_id}")],
+            [InlineKeyboardButton("🔙 بازگشت به پرونده", callback_data=f"un:iaea:dossier:{t_id}")],
+        ]
+        await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- ✅ رفع تعلیق ----------
+    elif action == "unsuspend":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        db.set_enrichment_suspended(t_id, False)
+        db.add_transaction(t_id, "iaea_unsuspend", "✅ رفع تعلیق برنامه غنی‌سازی به دستور آژانس بین‌المللی انرژی اتمی — تولید سوخت از سر گرفته شد.", 0)
+        try:
+            if target.get("player_id"):
+                await context.bot.send_message(
+                    target["player_id"],
+                    f"✅ **ابلاغیه آژانس بین‌المللی انرژی اتمی**\n\n تعلیق برنامه غنی‌سازی کشور {target['flag']} *{target['name']}* لغو گردید و تولید سوخت غنی‌شده از سر گرفته شد.\n\n_IAEA — وین_",
+                    parse_mode="Markdown"
+                )
+        except Exception:
+            pass
+        await query.answer("✅ تعلیق برداشته شد", show_alert=True)
+        target = db.get_country_by_id(t_id)
+        keyboard = [
+            [InlineKeyboardButton("⛔ تعلیق برنامه غنی‌سازی", callback_data=f"un:iaea:suspend:{t_id}")],
+            [InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")],
+        ]
+        await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 🧹 خلع سلاح (تأیید دو مرحله‌ای) ----------
+    elif action == "disarm":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target or (target.get("warheads") or 0) <= 0:
+            await query.answer("این کشور کلاهکی ندارد!", show_alert=True)
+            return
+        text = (
+            f"🧹 **خلع سلاح هسته‌ای اجباری — تأیید نهایی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"کشور: {target['flag']} *{target['name']}*\n"
+            f"کلاهک‌های ضبط‌شدنی: *{format_number(target.get('warheads') or 0)}*\n\n"
+            "⚠️ تمام کلاهک‌های استراتژیک این کشور توسط بازرسان آژانس ضبط و از بین خواهد رفت. این اقدام با رسید رسمی به کشور ابلاغ می‌شود.\n\nآیا مطمئن هستید؟"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ تأیید خلع سلاح", callback_data=f"un:iaea:disarmok:{t_id}")],
+            [InlineKeyboardButton("❌ انصراف", callback_data=f"un:iaea:dossier:{t_id}")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif action == "disarmok":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        count = db.confiscate_warheads(t_id, f"خلع سلاح اجباری آژانس — {format_number(0 if not target else target.get('warheads') or 0)} کلاهک ضبط شد.")
+        if count <= 0:
+            await query.answer("کلاهکی برای ضبط وجود نداشت!", show_alert=True)
+            return
+        try:
+            if target.get("player_id"):
+                await context.bot.send_message(
+                    target["player_id"],
+                    f"🧹 **ابلاغیه خلع سلاح — آژانس بین‌المللی انرژی اتمی**\n\n به استحضار می‌رساند {format_number(count)} فقره کلاهک استراتژیک کشور {target['flag']} *{target['name']}* توسط بازرسان آژانس ضبط و нейترالیزه گردید.\n\n_IAEA — وین_",
+                    parse_mode="Markdown"
+                )
+        except Exception:
+            pass
+        await query.answer(f"🧹 {count} کلاهک ضبط شد", show_alert=True)
+        target = db.get_country_by_id(t_id)
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")]]
+        await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 📢 گزارش عمومی ----------
+    elif action == "report":
+        body = _iaea_report_body()
+        msg = (
+            "☢️ **گزارش عمومی آژانس بین‌المللی انرژی اتمی (IAEA)**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"{body}\n\n"
+            "_مصوب شورای حکام آژانس — وین، اتریش_"
+        )
+        sent = 0
+        for c_item in db.get_all_countries():
+            p_id = c_item.get("player_id")
+            if p_id:
+                try:
+                    await context.bot.send_message(p_id, msg, parse_mode="Markdown")
+                    sent += 1
+                except Exception:
+                    pass
+        try:
+            await news_engine.post_breaking_news(
+                context.bot,
+                news_title="گزارش رسمی آژانس بین‌المللی انرژی اتمی",
+                news_body=body,
+                event_category="آژانس انرژی اتمی"
+            )
+        except Exception:
+            pass
+        await query.answer(f"📢 گزارش برای {sent} بازیکن ارسال شد", show_alert=True)
+        keyboard = [
+            [InlineKeyboardButton("📢 ارسال مجدد", callback_data="un:iaea:report")],
+            [InlineKeyboardButton("🔙 بازگشت به آژانس", callback_data="un:iaea:menu")],
+        ]
+        await query.edit_message_text(
+            f"☢️ **گزارش عمومی آژانس**\n\n✅ برای *{format_number(sent)}* بازیکن ارسال شد و خبر فوری آن منتشر گردید.",
+            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
+        )
 
 
 def get_un_handlers():

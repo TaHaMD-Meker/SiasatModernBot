@@ -135,6 +135,11 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN enrichment_suspended INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -1508,6 +1513,44 @@ def adjust_warheads(country_id: int, delta: int):
     conn.close()
 
 
+def set_enrichment_suspended(country_id: int, suspended: bool):
+    """تعلیق/رفع تعلیق برنامه غنی‌سازی (اختیار آژانس انرژی اتمی).
+
+    هنگام تعلیق: تولید سوخت غنی‌شدهٔ روزانه صفر می‌شود.
+    هنگام رفع تعلیق: تولید روزانه از روی مجتمع‌های غنی‌سازی مالکیت کشور بازمحاسبه می‌شود.
+    (پایدار است — rebalance نیز این ستون را رعایت می‌کند.)
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    if suspended:
+        cur.execute("UPDATE countries SET enrichment_suspended = 1, nuclear_fuel_daily = 0 WHERE id = ?", (country_id,))
+    else:
+        cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = 'enrichment_facility'", (country_id,))
+        row = cur.fetchone()
+        qty = (row["quantity"] or 0) if row else 0
+        item = config.ALL_SHOP_ITEMS.get("enrichment_facility", {})
+        daily = qty * item.get("nuclear_fuel_daily_add", 20)
+        cur.execute("UPDATE countries SET enrichment_suspended = 0, nuclear_fuel_daily = ? WHERE id = ?", (daily, country_id))
+    conn.commit()
+    conn.close()
+
+
+def confiscate_warheads(country_id: int, reason: str) -> int:
+    """خلع سلاح هسته‌ای توسط آژانس — تمام کلاهک‌ها ضبط و رسید ثبت می‌شود. خروجی: تعداد ضبط‌شده."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT warheads FROM countries WHERE id = ?", (country_id,))
+    row = cur.fetchone()
+    count = (row["warheads"] or 0) if row else 0
+    if count > 0:
+        cur.execute("UPDATE countries SET warheads = 0 WHERE id = ?", (country_id,))
+        conn.commit()
+    conn.close()
+    if count > 0:
+        add_transaction(country_id, "iaea_disarm", f"☢️ {reason}", -count)
+    return count
+
+
 def adjust_grain(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
@@ -1562,7 +1605,7 @@ def rebalance_existing_countries_income():
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips, uranium_ore, nuclear_fuel, warheads FROM countries")
+            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips, uranium_ore, nuclear_fuel, warheads, enrichment_suspended FROM countries")
             countries = cur.fetchall()
 
             for c in countries:
@@ -1656,8 +1699,10 @@ def rebalance_existing_countries_income():
                 new_uranium_ore = curr_uranium_ore
                 new_nuclear_fuel = curr_nuclear_fuel
                 new_warheads = curr_warheads
+                # ⛔ تعلیق آژانسی غنی‌سازی (IAEA): تولید سوخت روزانه صفر می‌ماند
+                suspended = (c["enrichment_suspended"] or 0) if "enrichment_suspended" in c.keys() else 0
                 new_uranium_ore_daily = civ_uranium_ore_daily
-                new_nuclear_fuel_daily = civ_nuclear_fuel_daily
+                new_nuclear_fuel_daily = 0 if suspended else civ_nuclear_fuel_daily
 
                 cur.execute("""
                     UPDATE countries SET
@@ -1699,7 +1744,7 @@ def fix_nuclear_free_grant_v1():
         return
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, treasury FROM countries")
+    cur.execute("SELECT id, treasury, enrichment_suspended FROM countries")
     rows = cur.fetchall()
     fixed_stock = 0
     fixed_debt = 0
@@ -1710,7 +1755,8 @@ def fix_nuclear_free_grant_v1():
         had_debt = (r["treasury"] or 0) < 0
         debt_relief = abs(r["treasury"]) if had_debt else 0
 
-        # تولید روزانه فقط از تأسیسات خریداری‌شده
+        # تولید روزانه فقط از تأسیسات خریداری‌شده (تعلیق آژانسی غنی‌سازی رعایت می‌شود)
+        is_suspended = (r["enrichment_suspended"] or 0) if "enrichment_suspended" in r.keys() else 0
         cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
         u_daily = 0
         f_daily = 0
@@ -1720,6 +1766,8 @@ def fix_nuclear_free_grant_v1():
                 u_daily += item.get("uranium_ore_daily_add", 50) * eq["quantity"]
             elif eq["item_key"] == "enrichment_facility":
                 f_daily += item.get("nuclear_fuel_daily_add", 20) * eq["quantity"]
+        if is_suspended:
+            f_daily = 0
 
         cur.execute("SELECT uranium_ore, nuclear_fuel, warheads FROM countries WHERE id = ?", (c_id,))
         pre = cur.fetchone()
