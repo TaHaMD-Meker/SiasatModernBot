@@ -197,9 +197,6 @@ async def dip_blockade_start(query, context, country):
         )
         return
 
-    assets = db.get_country_assets(country["id"], category="Navy")
-    naval_count = sum(a["amount"] for a in assets)
-
     active_blks = db.get_active_blockades_for_country(country["id"])
     im_blockaded = db.is_country_blockaded(country["id"])
 
@@ -214,9 +211,14 @@ async def dip_blockade_start(query, context, country):
         if t_c:
             keyboard.append([InlineKeyboardButton(f"🔓 لغو محاصره دریایی کشور {t_c['name']}", callback_data=f"dip:lift_blk:{t_c['id']}")])
 
-    if naval_count < 1 and not im_blockaded and not my_blockades:
+    qualified, units, val = db.check_strait_navy_qualification(country["id"])
+    if not qualified and not im_blockaded and not my_blockades:
         await query.edit_message_text(
-            "⚓ **عدم توانایی عملیاتی:** کشور شما در حال حاضر فاقد یگان‌های ناوشکن، ناوچه یا ناوهای رزمی در دیتابیس برای اجرای محاصره دریایی است.",
+            "⚓ **عدم توانایی عملیاتی ناوگان:**\n━━━━━━━━━━━━━━━━━━\n\n"
+            "برای اعزام ناودسته‌ها و اجرای محاصره دریایی، کشور شما باید حداقل دارای "
+            "**۵ شناور رزمی فعال** با ارزش مجموع حداقل **۱۰,۰۰۰,۰۰۰ دلار** در نیروی دریایی باشد.\n\n"
+            f"📊 **ناوگان فعلی شما:** {units} فروند شناور (ارزش کل: {format_money(val)})\n\n"
+            "💡 جهت ارتقا و تجهیز ناوگان، از بخش **فروشگاه → نیروی دریایی** اقدام به ساخت شناورهای رزمی فرمایید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
             parse_mode="Markdown"
         )
@@ -708,6 +710,18 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         # دریافت تازه از دیتابیس برای جلوگیری از استفاده از داده‌های کهنه (خزانه/نفت)
         country = db.get_country_by_id(country["id"]) or country
 
+        qualified, units, val = db.check_strait_navy_qualification(country["id"])
+        if not qualified:
+            await query.edit_message_text(
+                "⚓ **ناوگان شما شرایط عملیاتی لازم جهت محاصره را ندارد.**\n━━━━━━━━━━━━━━━━━━\n\n"
+                "حداقل نیاز: **۵ شناور فعال** و **۱۰ میلیون دلار** ارزش کل ناوگان.\n"
+                f"📊 **ناوگان فعلی شما:** {units} فروند (ارزش: {format_money(val)})\n\n"
+                "💡 از بخش **فروشگاه → نیروی دریایی** اقدام به ساخت شناورهای رزمی فرمایید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
         # بررسی وجود محاصره قبلی توسط همین کشور
         active_blks = db.get_active_blockades_for_country(country["id"])
         already_blockading = any(b["blockader_id"] == country["id"] and b["target_id"] == target_id for b in active_blks)
@@ -816,6 +830,15 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             return
 
         country = db.get_country_by_id(country["id"]) or country
+
+        qualified, units, val = db.check_strait_navy_qualification(country["id"])
+        if not qualified:
+            await query.edit_message_text(
+                "❌ **ناوگان شما شرایط عملیاتی لازم جهت محاصره را ندارد.**\n\nحداقل نیاز: ۵ شناور فعال و ۱۰ میلیون دلار ارزش کل ناوگان.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
 
         today_str = datetime.date.today().isoformat()
         if country.get("last_blockade_date") == today_str:

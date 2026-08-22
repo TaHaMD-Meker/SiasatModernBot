@@ -3644,7 +3644,7 @@ def check_strait_navy_qualification(country_id: int) -> tuple[bool, int, int]:
 
 
 def auto_check_and_reopen_straits_if_navy_destroyed() -> list:
-    """بررسی وضعیت تمام تنگه‌ها و بازگشایی خودکار در صورت نابودی یا تضعیف ناوگان دریایی کشور کنترل‌کننده."""
+    """بررسی وضعیت تمام تنگه‌ها و محاصره‌های دریایی و بازگشایی خودکار در صورت نابودی یا تضعیف ناوگان دریایی کشور کنترل‌کننده."""
     reopened = []
     for owner_key, strait_info in STRAITS_MAPPING.items():
         s_key = strait_info["strait_key"]
@@ -3665,6 +3665,23 @@ def auto_check_and_reopen_straits_if_navy_destroyed() -> list:
                     "units": units,
                     "val": val
                 })
+
+    # بررسی و لغو خودکار محاصره‌های دریایی در صورت نابودی ناوگان محاصره‌کننده
+    try:
+        active_blks = get_all_active_blockades()
+        for blk in active_blks:
+            b_id = blk["blockader_id"]
+            t_id = blk["target_id"]
+            qualified, units, val = check_strait_navy_qualification(b_id)
+            if not qualified:
+                lift_naval_blockade(b_id, t_id)
+                t_c = get_country_by_id(t_id)
+                if t_c and not is_country_blockaded(t_id):
+                    new_app = min(100, (t_c.get("approval_rating") or 80) + 15)
+                    update_country_field(t_id, "approval_rating", new_app)
+    except Exception:
+        pass
+
     return reopened
 
 
