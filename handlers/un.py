@@ -338,6 +338,53 @@ async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
         await update.message.reply_text("✅ کمک‌های بشردوستانه صادر و ابلاغ گردید.", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
+    elif step == "iaea_cap":
+        t_id = draft.get("target_id")
+        try:
+            val = int(text)
+        except ValueError:
+            await update.message.reply_text("⛔ لطفاً فقط یک عدد صحیح ارسال کنید (مثلاً `10` یا `-1`).", parse_mode="Markdown")
+            return
+        if val < -1 or val > 10000:
+            await update.message.reply_text("⛔ بازه مجاز: `-1` تا `10000`.", parse_mode="Markdown")
+            return
+        target = db.get_country_by_id(t_id)
+        if not target:
+            del context.user_data["un_draft"]
+            await update.message.reply_text("⛔ کشور یافت نشد.")
+            return
+        del context.user_data["un_draft"]
+        db.set_warhead_cap_override(t_id, val)
+        if val >= 0:
+            db.add_transaction(t_id, "iaea_cap", f"⚖️ آژانس سقف اختصاصی نگهداری کلاهک کشور شما را به {val} عدد تعیین کرد.", 0)
+            try:
+                if target.get("player_id"):
+                    await context.bot.send_message(
+                        target["player_id"],
+                        f"⚖️ **ابلاغیه آژانس بین‌المللی انرژی اتمی**\n\n سقف مجاز نگهداری کلاهک هسته‌ای برای کشور {target['flag']} *{target['name']}* به تعداد *{val}* تعیین گردید.\n\n_IAEA — وین_",
+                        parse_mode="Markdown"
+                    )
+            except Exception:
+                pass
+            confirm = (
+                f"✅ سقف اختصاصی {target['flag']} *{target['name']}* روی **{val} کلاهک** تنظیم شد "
+                "و به کشور ابلاغ گردید."
+            )
+        else:
+            db.add_transaction(t_id, "iaea_cap", "⚖️ سقف اختصاصی کلاهک کشور شما لغو و به قانون پیش‌فرض بازگشت.", 0)
+            confirm = (
+                f"✅ سقف اختصاصی {target['flag']} *{target['name']}* حذف شد — قانون پیش‌فرض اعمال می‌شود "
+                "(P5/خارج از NPT: نامحدود، بقیه: ۵ کلاهک)."
+            )
+        await update.message.reply_text(
+            confirm,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 مشاهده پرونده به‌روزشده", callback_data=f"un:iaea:dossier:{t_id}")]
+            ]),
+            parse_mode="Markdown"
+        )
+        return
+
     elif step == "statement":
         del context.user_data["un_draft"]
         msg = (
@@ -402,10 +449,8 @@ def _iaea_facilities(country_id):
 
 
 def _iaea_cap_of(c: dict):
-    """سقف مجاز کلاهک کشور (P5: نامحدود)."""
-    if c.get("country_key") in IAEA_P5:
-        return None
-    return int(getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5))
+    """سقف مؤثر کلاهک کشور (اختصاصی مصوب آژانس > P5 نامحدود > خارج از NPT نامحدود > قانون عام)."""
+    return db.get_effective_warhead_cap(c)
 
 
 def _iaea_monitor_text():
@@ -471,8 +516,13 @@ def _iaea_dossier_text(c: dict):
 
     npt_out = bool(c.get("npt_withdrawn") or 0)
     sanc = bool(c.get("un_sanctioned") or 0)
+    override = c.get("warhead_cap_override")
+    has_override = override is not None and override >= 0
 
-    if cap is None:
+    if has_override:
+        cap_line = f"{format_number(override)} (مصوب ویژه آژانس ⚖️)"
+        status = ("✅ منطبق" if wh <= (cap or 0) else f"⚠️ متخلف ({format_number(wh - (cap or 0))} کلاهک مازاد بر سقف)")
+    elif cap is None:
         cap_line = "نامحدود (قدرت هسته‌ای P5) 🔷"
         status = "✅ منطبق"
     elif npt_out:
@@ -623,6 +673,7 @@ async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             keyboard.append([InlineKeyboardButton("🚫 تحریم جامع سازمان ملل", callback_data=f"un:iaea:sanction:{t_id}")])
         if (target.get("warheads") or 0) > 0:
             keyboard.append([InlineKeyboardButton("🧹 خلع سلاح هسته‌ای اجباری", callback_data=f"un:iaea:disarm:{t_id}")])
+        keyboard.append([InlineKeyboardButton("⚖️ تنظیم سقف اختصاصی کلاهک", callback_data=f"un:iaea:setcap:{t_id}")])
         keyboard.append([InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")])
         await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -724,6 +775,32 @@ async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         target = db.get_country_by_id(t_id)
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")]]
         await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- ⚖️ تنظیم سقف اختصاصی کلاهک ----------
+    elif action == "setcap":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        eff = db.get_effective_warhead_cap(target)
+        override = target.get("warhead_cap_override")
+        cur_line = (
+            f"اختصاصی مصوب: {format_number(override)} ⚖️" if (override is not None and override >= 0)
+            else ("قانون پیش‌فرض: نامحدود" if eff is None else f"قانون پیش‌فرض: {format_number(eff)}")
+        )
+        context.user_data["un_draft"] = {"step": "iaea_cap", "target_id": t_id}
+        text = (
+            f"⚖️ **تنظیم سقف اختصاصی کلاهک — {target['flag']} {target['name']}**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• کلاهک فعلی: {format_number(target.get('warheads') or 0)}\n"
+            f"• سقف فعلی: {cur_line}\n\n"
+            "لطفاً **سقف جدید** را به‌صورت عدد ارسال فرمایید:\n"
+            "• عدد `0` تا هر مقدار → سقف اختصاصی (بر همه قوانین مقدم است)\n"
+            "• `-1` → حذف سقف اختصاصی و بازگشت به قانون پیش‌فرض (P5/خارج از NPT: نامحدود، بقیه: ۵)"
+        )
+        keyboard = [[InlineKeyboardButton("❌ انصراف", callback_data=f"un:iaea:dossier:{t_id}")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     # ---------- 🚫 منوی تحریم‌های جامع سازمان ملل ----------
     elif action == "sanctions":

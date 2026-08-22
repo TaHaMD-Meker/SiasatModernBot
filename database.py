@@ -150,6 +150,11 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN warhead_cap_override INTEGER DEFAULT -1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -1571,13 +1576,12 @@ def set_npt_withdrawn(country_id: int, withdrawn: bool) -> tuple:
     """
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT country_key, warheads FROM countries WHERE id = ?", (country_id,))
+    cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
     row = cur.fetchone()
     if not row:
         conn.close()
         return False, "کشور یافت نشد."
-    is_p5 = row["country_key"] in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
-    cap = getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5)
+    c = dict(row)
 
     if withdrawn:
         cur.execute("""
@@ -1590,10 +1594,11 @@ def set_npt_withdrawn(country_id: int, withdrawn: bool) -> tuple:
         add_transaction(country_id, "npt_withdraw", "🚪 خروج رسمی از پیمان عدم اشاعه (NPT) — سقف کلاهک برداشته و اختیارات آژانس لغو گردید.", 0)
         return True, "خروج از NPT ثبت شد."
 
-    # بازگشت به پیمان
-    if not is_p5 and (row["warheads"] or 0) > cap:
+    # بازگشت به پیمان — تنها با رعایت سقف مؤثر (اختصاصی یا پیش‌فرض)
+    eff_cap = get_effective_warhead_cap(c)
+    if eff_cap is not None and (c["warheads"] or 0) > eff_cap:
         conn.close()
-        return False, f"برای بازگشت به NPT باید ابتدا زرادخانه خود را به سقف مجاز ({cap} کلاهک) کاهش دهید. کلاهک فعلی: {row['warheads'] or 0}"
+        return False, f"برای بازگشت به NPT باید ابتدا زرادخانه خود را به سقف مجاز ({eff_cap} کلاهک) کاهش دهید. کلاهک فعلی: {c['warheads'] or 0}"
 
     cur.execute("UPDATE countries SET npt_withdrawn = 0 WHERE id = ?", (country_id,))
     conn.commit()
@@ -1614,6 +1619,41 @@ def set_un_sanctioned(country_id: int, sanctioned: bool, reason: str = ""):
         add_transaction(country_id, "un_sanction", f"🚫 تحریم جامع سازمان ملل: {reason}", 0)
     else:
         add_transaction(country_id, "un_unsanction", "✅ لغو تحریم جامع سازمان ملل.", 0)
+
+
+# قدرت‌های هسته‌ای رسمی (P5+) — سقف کلاهک پیش‌فرض: نامحدود
+WARHEAD_P5 = ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+
+
+def get_effective_warhead_cap(c: dict):
+    """سقف مؤثر نگهداری کلاهک کشور (خروجی None = نامحدود).
+
+    اولویت:
+      ۱) سقف اختصاصی مصوب آژانس/شورای امنیت (warhead_cap_override ≥ 0) — بر همه قوانین مقدم است
+      ۲) قدرت هسته‌ای P5 → نامحدود
+      ۳) خارج از پیمان عدم اشاعه → نامحدود
+      ۴) بقیه کشورها → WARHEAD_MAX_NON_SUPERPOWER
+    """
+    if not c:
+        return getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5)
+    override = c["warhead_cap_override"] if "warhead_cap_override" in c.keys() else None
+    if override is not None and override >= 0:
+        return int(override)
+    key = c["country_key"] if "country_key" in c.keys() else None
+    if key in WARHEAD_P5:
+        return None
+    if (c["npt_withdrawn"] or 0) if "npt_withdrawn" in c.keys() else 0:
+        return None
+    return int(getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5))
+
+
+def set_warhead_cap_override(country_id: int, value: int):
+    """تنظیم سقف اختصاصی کلاهک توسط آژانس/شورای امنیت (مقدار -1 = بازگشت به قانون پیش‌فرض)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET warhead_cap_override = ? WHERE id = ?", (int(value), country_id))
+    conn.commit()
+    conn.close()
 
 
 def adjust_grain(country_id: int, delta: int):
@@ -2340,9 +2380,9 @@ def assemble_nuclear_warhead_transaction(country_id: int) -> tuple[bool, str]:
                 return False, "🔬 **عدم وجود مجتمع غنی‌سازی:** شما باید ابتدا حداقل ۱ واحد «مجتمع غنی‌سازی و سانتریفیوژ» احداث فرمایید."
 
             curr_warheads = c["warheads"] or 0
-            npt_out = (c["npt_withdrawn"] or 0) if "npt_withdrawn" in c.keys() else 0
-            if not is_p5 and not npt_out and curr_warheads >= getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5):
-                return False, f"⛔ **سقف مجاز بازدارندگی هسته‌ای:** طبق پیمان‌های بین‌المللی و توان ژئوپلیتیک، سقف نگهداری کلاهک فعال برای کشور شما حداکثر {getattr(config, 'WARHEAD_MAX_NON_SUPERPOWER', 5)} عدد می‌باشد."
+            eff_cap = get_effective_warhead_cap(c)
+            if eff_cap is not None and curr_warheads >= eff_cap:
+                return False, f"⛔ **سقف مجاز بازدارندگی هسته‌ای:** طبق پیمان‌های بین‌المللی و مصوبات آژانس/شورای امنیت، سقف نگهداری کلاهک فعال برای کشور شما حداکثر {eff_cap} عدد می‌باشد."
 
             cost_money = getattr(config, "WARHEAD_PROD_COST_MONEY", 150_000_000)
             cost_gold = getattr(config, "WARHEAD_PROD_COST_GOLD", 100)

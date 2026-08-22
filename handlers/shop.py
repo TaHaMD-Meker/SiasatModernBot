@@ -535,19 +535,23 @@ async def show_warheads_menu(query, country):
         "⚠️ **قوانین بازدارندگی و ایمنی بین‌المللی:**\n"
         "۱. هرگونه مونتاژ کلاهک هسته‌ای با هشدار اطلاعاتی بین‌المللی همراه خواهد بود.\n"
         "۲. نگهداری کلاهک روزانه ۵ میلیون دلار و ۲ تراشه هزینه مستقیم دارد.\n"
-        "۳. سقف نگهداری برای کشورهای غیرابرقدرت حداکثر ۵ کلاهک بازدارنده است."
+        f"۳. سقف نگهداری کلاهک کشور شما: **{cap_display}**{override_note}"
     )
 
     npt_out = bool(country.get("npt_withdrawn") or 0)
+    eff_cap = db.get_effective_warhead_cap(country)
+    cap_display = "نامحدود" if eff_cap is None else format_number(eff_cap)
+    override = country.get("warhead_cap_override")
+    override_note = " (⚖️ مصوب ویژه آژانس)" if (override is not None and override >= 0) else ""
     if not is_p5:
         if npt_out:
             text += (
-                "\n\n🚫 **وضعیت پیمان عدم اشاعه (NPT):** خارج از پیمان\n"
-                "• سقف کلاهک: **نامحدود** (محدودیت NPT اعمال نمی‌شود)\n"
+                f"\n\n🚫 **وضعیت پیمان عدم اشاعه (NPT):** خارج از پیمان\n"
+                f"• سقف کلاهک: **{cap_display}**{override_note}\n"
                 "• ⚠️ ریسک: در معرض **تحریم جامع سازمان ملل** قرار دارید (درآمد نصف + بستن بازار جهانی)"
             )
         else:
-            text += "\n\n📜 **وضعیت پیمان عدم اشاعه (NPT):** عضو کامل — سقف کلاهک: ۵ عدد"
+            text += f"\n\n📜 **وضعیت پیمان عدم اشاعه (NPT):** عضو کامل — سقف کلاهک شما: {cap_display}{override_note}"
 
     buttons = [
         [InlineKeyboardButton("☢️ مونتاژ و مسلح‌سازی ۱ کلاهک راهبردی", callback_data="shop:do_assemble_warhead")],
