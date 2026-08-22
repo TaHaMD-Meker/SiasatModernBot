@@ -229,6 +229,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN is_vip INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     # جدول سران و کادر فرماندهی نظامی کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS country_commanders (
@@ -3622,6 +3627,64 @@ def get_pending_roleplays() -> list:
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_roleplays_by_filter(status: str = None, is_vip_only: bool = False, limit: int = 10, offset: int = 0) -> tuple[list, int]:
+    """دریافت رول‌ها بر اساس وضعیت و فیلتر VIP با صفحه‌بندی و شمارش کل."""
+    conn = get_connection()
+    cur = conn.cursor()
+    base_where = "WHERE 1=1"
+    params = []
+    if status:
+        base_where += " AND r.status = ?"
+        params.append(status)
+    if is_vip_only:
+        base_where += " AND COALESCE(c.is_vip, 0) = 1 AND r.status IN ('pending', 'approved')"
+
+    # شمارش کل
+    count_sql = f"SELECT COUNT(*) as total FROM pending_roleplays r LEFT JOIN countries c ON r.country_id = c.id {base_where}"
+    cur.execute(count_sql, params)
+    crow = cur.fetchone()
+    total = (crow["total"] or 0) if crow else 0
+
+    # دریافت ردیف‌ها
+    data_sql = f"""
+        SELECT r.*, c.name as country_name, c.flag as country_flag, COALESCE(c.is_vip, 0) as is_vip
+        FROM pending_roleplays r
+        LEFT JOIN countries c ON r.country_id = c.id
+        {base_where}
+        ORDER BY r.id DESC LIMIT ? OFFSET ?
+    """
+    params.extend([limit, offset])
+    cur.execute(data_sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows], total
+
+
+def get_roleplay_counts() -> dict:
+    """دریافت آمار زنده دسته‌بندی‌های مختلف رول‌ها جهت نمایش در منو."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT status, COUNT(*) as cnt FROM pending_roleplays GROUP BY status")
+    rows = cur.fetchall()
+    counts = {r["status"]: r["cnt"] for r in rows}
+
+    cur.execute("""
+        SELECT COUNT(*) as cnt FROM pending_roleplays r
+        JOIN countries c ON r.country_id = c.id
+        WHERE COALESCE(c.is_vip, 0) = 1 AND r.status IN ('pending', 'approved')
+    """)
+    vip_row = cur.fetchone()
+    vip_cnt = (vip_row["cnt"] or 0) if vip_row else 0
+    conn.close()
+    return {
+        "pending": counts.get("pending", 0),
+        "approved": counts.get("approved", 0),
+        "rejected": counts.get("rejected", 0),
+        "archived": counts.get("archived", 0),
+        "vip": vip_cnt
+    }
 
 
 def get_roleplay_by_id(role_id: int):
