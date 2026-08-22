@@ -32,7 +32,7 @@ from handlers.shop import (
     shop, show_category, show_military_asset_category, back_to_shop,
     confirm_asset_purchase, execute_asset_purchase,
     confirm_civilian_purchase, execute_civilian_purchase,
-    execute_warhead_assembly
+    execute_warhead_assembly, npt_actions_handler
 )
 from handlers.admin import (
     admin_panel, admin_callback_handler, admin_input_text_handler,
@@ -102,7 +102,14 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
         maint_info = db.calculate_country_maintenance_cost(c["id"])
         tax_income = c.get("tax_income", 0) or 0
-        net_full = c["daily_income"] + tax_income - maint_info["total_maint"]
+        gross_income = c["daily_income"] + tax_income
+        sanction_note = ""
+        # 🚫 تحریم جامع سازمان ملل: درآمد روزانه کشور تحریمی کاهش می‌یابد
+        if c.get("un_sanctioned") or 0:
+            factor = getattr(config, "UN_SANCTION_INCOME_FACTOR", 0.5)
+            gross_income = int(gross_income * factor)
+            sanction_note = f" — 🚫 درآمد تحت تحریم جامع سازمان ملل ({int(factor * 100)}٪)"
+        net_full = gross_income - maint_info["total_maint"]
         net_payment = net_full if force else int(net_full / INCOME_PARTS)
         gold_daily = c.get("gold_daily", 0) or 0
         gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
@@ -154,7 +161,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         if force:
             db.add_transaction(c["id"], "daily_income", "توزیع فوری درآمد روزانه (ادمین)", net_full)
         else:
-            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد (هر {INCOME_INTERVAL_HOURS} ساعت)", net_payment)
+            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد (هر {INCOME_INTERVAL_HOURS} ساعت){sanction_note}", net_payment)
 
         p_id = c.get("player_id")
         if p_id:
@@ -293,6 +300,7 @@ def main():
     app.add_handler(CallbackQueryHandler(confirm_civilian_purchase, pattern=r"^buyciv:"))
     app.add_handler(CallbackQueryHandler(execute_civilian_purchase, pattern=r"^docivbuy:"))
     app.add_handler(CallbackQueryHandler(execute_warhead_assembly, pattern=r"^shop:do_assemble_warhead$"))
+    app.add_handler(CallbackQueryHandler(npt_actions_handler, pattern=r"^shop:npt_"))
 
     # سیستم ابلاغ عملیات و رول‌های نظامی
     app.add_handler(CommandHandler("role", operations_menu))

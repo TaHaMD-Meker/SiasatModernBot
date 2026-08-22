@@ -5110,3 +5110,7 @@ WARHEAD_MAX_NON_SUPERPOWER = 5
 #   → کشورهای اقتصادی قوی به سقف می‌رسند (مثل آمریکا) و بقیه متناسب با اقتصادشان کمتر می‌گیرند.
 NUCLEAR_COMPENSATION_CAP = 30_000_000
 NUCLEAR_COMPENSATION_ECONOMY_MULT = 3
+
+# ===== 📜 پیمان عدم اشاعه (NPT) و تحریم جامع سازمان ملل =====
+NPT_WITHDRAWAL_APPROVAL_HIT = 10   # افت رضایت عمومی هنگام خروج از NPT (واکنش داخلی و بین‌المللی)
+UN_SANCTION_INCOME_FACTOR = 0.5    # ضریب درآمد روزانهٔ کشورِ تحت تحریم جامع (۰.۵ = نصف)

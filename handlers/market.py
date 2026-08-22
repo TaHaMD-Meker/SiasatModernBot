@@ -32,6 +32,21 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not c:
         return
 
+    # 🚫 تحریم جامع سازمان ملل: بورس جهانی برای کشور تحریمی بسته است
+    if c.get("un_sanctioned") or 0:
+        blocked_text = (
+            "🚫 **تحریم جامع سازمان ملل متحد**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "بورس جهانی کالاها برای کشور شما به موجب مصوبه شورای امنیت **مسدود** است.\n"
+            "📉 درآمد روزانه شما نیز تحت تأثیر تحریم کاهش یافته است.\n\n"
+            "_برای رفع تحریم با سازمان ملل و آژانس انرژی اتمی تماس بگیرید._"
+        )
+        if update.message:
+            await update.message.reply_text(blocked_text, parse_mode="Markdown")
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(blocked_text, parse_mode="Markdown")
+        return
+
     stats = db.get_market_stats()
     oil_low = f"{stats['oil'].get('lowest_active'):,} $" if stats.get('oil',{}).get('lowest_active') else f"{config.OIL_GLOBAL_PRICE:,} $ (قیمت پایه جهانی)"
     gold_low = f"{stats['gold'].get('lowest_active'):,} $" if stats.get('gold',{}).get('lowest_active') else "بدون عرضه"

@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 import database as db
 import config
+import news_engine
 from utils import format_money, format_number, format_oil
 
 CIVILIAN_CATEGORIES = {
@@ -537,12 +538,106 @@ async def show_warheads_menu(query, country):
         "۳. سقف نگهداری برای کشورهای غیرابرقدرت حداکثر ۵ کلاهک بازدارنده است."
     )
 
+    npt_out = bool(country.get("npt_withdrawn") or 0)
+    if not is_p5:
+        if npt_out:
+            text += (
+                "\n\n🚫 **وضعیت پیمان عدم اشاعه (NPT):** خارج از پیمان\n"
+                "• سقف کلاهک: **نامحدود** (محدودیت NPT اعمال نمی‌شود)\n"
+                "• ⚠️ ریسک: در معرض **تحریم جامع سازمان ملل** قرار دارید (درآمد نصف + بستن بازار جهانی)"
+            )
+        else:
+            text += "\n\n📜 **وضعیت پیمان عدم اشاعه (NPT):** عضو کامل — سقف کلاهک: ۵ عدد"
+
     buttons = [
         [InlineKeyboardButton("☢️ مونتاژ و مسلح‌سازی ۱ کلاهک راهبردی", callback_data="shop:do_assemble_warhead")],
-        [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")],
     ]
+    if not is_p5:
+        if npt_out:
+            buttons.append([InlineKeyboardButton("🕊️ بازگشت به پیمان عدم اشاعه (NPT)", callback_data="shop:npt_rejoin")])
+        else:
+            buttons.append([InlineKeyboardButton("🚪 خروج از پیمان عدم اشاعه (NPT)", callback_data="shop:npt_leave")])
+    buttons.append([InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="shopback")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+
+async def npt_actions_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """اقدامات پیمان عدم اشاعه: خروج (دو مرحله‌ای) و بازگشت."""
+    query = update.callback_query
+    data = query.data
+    user_id = query.from_user.id
+
+    c = db.get_country_by_player(user_id)
+    if not c:
+        await query.answer("شما هنوز کشوری ندارید!", show_alert=True)
+        return
+    await query.answer()
+
+    if data == "shop:npt_leave":
+        text = (
+            "🚪 **خروج از پیمان عدم اشاعه (NPT) — تأیید نهایی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ **عواقب بین‌المللی خروج:**\n"
+            "• ✅ سقف ۵ کلاهکی برداشته می‌شود (زرادخانه نامحدود)\n"
+            "• ✅ هر تعلیق آژانس انرژی اتمی بر غنی‌سازی شما لغو و بی‌اثر می‌گردد\n"
+            "• ❌ افت شدید رضایت عمومی (−۱۰)\n"
+            "• ❌ در معرض **تحریم جامع سازمان ملل** قرار می‌گیرید:\n"
+            "     نصف شدن درآمد روزانه + بسته شدن بورس جهانی برای شما\n"
+            "• 🌐 انعکاس جهانی و اطلاع آژانس و دبیرکل سازمان ملل\n\n"
+            "آیا مطمئن هستید؟ این تصمیم سیاست خارجی کشور شما را دگرگون می‌کند."
+        )
+        keyboard = [
+            [InlineKeyboardButton("🚪 تأیید خروج از NPT", callback_data="shop:npt_leave_ok")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="shopcat:warheads")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "shop:npt_leave_ok":
+        ok, msg = db.set_npt_withdrawn(c["id"], True)
+        if not ok:
+            await query.edit_message_text(f"❌ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="shopcat:warheads")]]), parse_mode="Markdown")
+            return
+        # واکنش داخلی: افت رضایت عمومی
+        new_appr = max(0, (c.get("approval_rating") or 80) - int(getattr(config, "NPT_WITHDRAWAL_APPROVAL_HIT", 10)))
+        db.update_country_field(c["id"], "approval_rating", new_appr)
+        try:
+            await news_engine.post_breaking_news(
+                context.bot,
+                news_title="خروج یک کشور از پیمان عدم اشاعه هسته‌ای",
+                news_body=f"کشور {c['flag']} {c['name']} رسماً از پیمان عدم اشاعه (NPT) خارج شد. جامعه بین‌المللی در شوک کامل است؛ آژانس انرژی اتمی اختیارات نظارتی خود را بر برنامه هسته‌ای این کشور از دست داد و شورای امنیت سازمان ملل درباره اعمال تحریم‌های جامع تبادل نظر می‌کند.",
+                event_category="بحران بین‌المللی"
+            )
+        except Exception:
+            pass
+        text = (
+            f"🚪 **خروج از پیمان عدم اشاعه ثبت شد — {c['flag']} {c['name']}**\n\n"
+            "✅ سقف کلاهک برداشته شد (زرادخانه نامحدود)\n"
+            "✅ اختیارات آژانس بر غنی‌سازی شما لغو شد\n"
+            f"❌ رضایت عمومی: {new_appr} (−{getattr(config, 'NPT_WITHDRAWAL_APPROVAL_HIT', 10)})\n"
+            "⚠️ منتظر واکنش شورای امنیت سازمان ملل باشید..."
+        )
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به مرکز راهبردی", callback_data="shopcat:warheads")]]), parse_mode="Markdown")
+
+    elif data == "shop:npt_rejoin":
+        ok, msg = db.set_npt_withdrawn(c["id"], False)
+        if not ok:
+            await query.answer(msg, show_alert=True)
+            return
+        try:
+            await news_engine.post_breaking_news(
+                context.bot,
+                news_title="بازگشت یک کشور به پیمان عدم اشاعه",
+                news_body=f"کشور {c['flag']} {c['name']} رسماً به پیمان عدم اشاعه (NPT) بازگشت. نظارت آژانس بین‌المللی انرژی اتمی بر تأسیسات این کشور از سر گرفته شد.",
+                event_category="دیپلماسی"
+            )
+        except Exception:
+            pass
+        await query.edit_message_text(
+            "🕊️ **بازگشت به پیمان عدم اشاعه ثبت شد.**\n\n✅ سقف ۵ کلاهکی و نظارت آژانس مجدداً برقرار شد.\nامیدواریم تحریم‌های سازمان ملل نیز به‌زودی برداشته شود.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به مرکز راهبردی", callback_data="shopcat:warheads")]]),
+            parse_mode="Markdown"
+        )
 
 
 async def execute_warhead_assembly(update: Update, context: ContextTypes.DEFAULT_TYPE):

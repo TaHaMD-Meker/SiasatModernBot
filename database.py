@@ -140,6 +140,16 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN npt_withdrawn INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN un_sanctioned INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -1551,6 +1561,61 @@ def confiscate_warheads(country_id: int, reason: str) -> int:
     return count
 
 
+def set_npt_withdrawn(country_id: int, withdrawn: bool) -> tuple:
+    """خروج/بازگشت به پیمان عدم اشاعه (NPT).
+
+    خروج: سقف کلاهکِ غیر P5 برداشته می‌شود و هر تعلیق آژانسی غنی‌سازی بی‌اثر و لغو می‌گردد
+          (آژانس بر کشور غیرعضو اختیاری ندارد).
+    بازگشت: تنها در صورتی مجاز است تعداد کلاهک‌ها حداکثر برابر سقف مجاز باشد.
+    خروجی: (موفق؟, پیام)
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT country_key, warheads FROM countries WHERE id = ?", (country_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, "کشور یافت نشد."
+    is_p5 = row["country_key"] in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+    cap = getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5)
+
+    if withdrawn:
+        cur.execute("""
+            UPDATE countries SET npt_withdrawn = 1, enrichment_suspended = 0
+            WHERE id = ?
+        """, (country_id,))
+        conn.commit()
+        # بازمحاسبه تولید سوخت از مجتمع‌های غنی‌سازی (تعلیق لغو شده است)
+        set_enrichment_suspended(country_id, False)
+        add_transaction(country_id, "npt_withdraw", "🚪 خروج رسمی از پیمان عدم اشاعه (NPT) — سقف کلاهک برداشته و اختیارات آژانس لغو گردید.", 0)
+        return True, "خروج از NPT ثبت شد."
+
+    # بازگشت به پیمان
+    if not is_p5 and (row["warheads"] or 0) > cap:
+        conn.close()
+        return False, f"برای بازگشت به NPT باید ابتدا زرادخانه خود را به سقف مجاز ({cap} کلاهک) کاهش دهید. کلاهک فعلی: {row['warheads'] or 0}"
+
+    cur.execute("UPDATE countries SET npt_withdrawn = 0 WHERE id = ?", (country_id,))
+    conn.commit()
+    conn.close()
+    add_transaction(country_id, "npt_rejoin", "🕊️ بازگشت رسمی به پیمان عدم اشاعه (NPT) — سقف کلاهک و نظارت آژانس مجدداً برقرار شد.", 0)
+    return True, "بازگشت به NPT ثبت شد."
+
+
+def set_un_sanctioned(country_id: int, sanctioned: bool, reason: str = ""):
+    """اعمال/لغو تحریم جامع سازمان ملل — درآمد روزانه نصف می‌شود و بازار جهانی بسته می‌گردد."""
+    conn = get_connection()
+    cur = conn.cursor()
+    val = 1 if sanctioned else 0
+    cur.execute("UPDATE countries SET un_sanctioned = ? WHERE id = ?", (val, country_id))
+    conn.commit()
+    conn.close()
+    if sanctioned:
+        add_transaction(country_id, "un_sanction", f"🚫 تحریم جامع سازمان ملل: {reason}", 0)
+    else:
+        add_transaction(country_id, "un_unsanction", "✅ لغو تحریم جامع سازمان ملل.", 0)
+
+
 def adjust_grain(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
@@ -2275,7 +2340,8 @@ def assemble_nuclear_warhead_transaction(country_id: int) -> tuple[bool, str]:
                 return False, "🔬 **عدم وجود مجتمع غنی‌سازی:** شما باید ابتدا حداقل ۱ واحد «مجتمع غنی‌سازی و سانتریفیوژ» احداث فرمایید."
 
             curr_warheads = c["warheads"] or 0
-            if not is_p5 and curr_warheads >= getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5):
+            npt_out = (c["npt_withdrawn"] or 0) if "npt_withdrawn" in c.keys() else 0
+            if not is_p5 and not npt_out and curr_warheads >= getattr(config, "WARHEAD_MAX_NON_SUPERPOWER", 5):
                 return False, f"⛔ **سقف مجاز بازدارندگی هسته‌ای:** طبق پیمان‌های بین‌المللی و توان ژئوپلیتیک، سقف نگهداری کلاهک فعال برای کشور شما حداکثر {getattr(config, 'WARHEAD_MAX_NON_SUPERPOWER', 5)} عدد می‌باشد."
 
             cost_money = getattr(config, "WARHEAD_PROD_COST_MONEY", 150_000_000)
@@ -3310,6 +3376,15 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
     if amount <= 0 or unit_price <= 0:
         return False, "تعداد و قیمت واحد باید بزرگتر از صفر باشند."
 
+    # 🚫 تحریم جامع سازمان ملل: بازار جهانی برای کشور تحریمی بسته است
+    conn0 = get_connection()
+    cur0 = conn0.cursor()
+    cur0.execute("SELECT un_sanctioned FROM countries WHERE id = ?", (seller_id,))
+    s_row = cur0.fetchone()
+    conn0.close()
+    if s_row and (s_row["un_sanctioned"] or 0):
+        return False, "🚫 **تحریم جامع سازمان ملل:** امکان عرضه کالا در بورس جهانی برای کشور شما مسدود است."
+
     # قیمت کف: نفت را نمی‌توان زیر قیمت پایه در بورس عرضه کرد
     if resource_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
         return False, (
@@ -3511,6 +3586,12 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
             seller = cur.fetchone()
             cur.execute("SELECT * FROM countries WHERE id = ?", (buyer_id,))
             buyer = cur.fetchone()
+
+            # 🚫 تحریم جامع سازمان ملل: بازار برای کشورهای تحریمی (خریدار یا فروشنده) بسته است
+            if seller and (seller["un_sanctioned"] or 0):
+                return False, "🚫 **تحریم جامع سازمان ملل:** امکان خرید از این عرضه وجود ندارد — کشور فروشنده تحت تحریم جامع است.", {}
+            if buyer and (buyer["un_sanctioned"] or 0):
+                return False, "🚫 **تحریم جامع سازمان ملل:** بورس جهانی برای کشور شما مسدود است و امکان خرید وجود ندارد.", {}
 
             if not seller or not buyer:
                 return False, "کشور خریدار یا فروشنده یافت نشد.", {}

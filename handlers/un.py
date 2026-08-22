@@ -420,6 +420,7 @@ def _iaea_monitor_text():
         lines.append("در حال حاضر هیچ کشوری دارای برنامه هسته‌ای فعال نیست. ✅")
     violators = []
     suspended_list = []
+    npt_out_list = []
     for i, c in enumerate(rows[:25], start=1):
         wh = c.get("warheads") or 0
         p5 = " 🔷P5" if c.get("country_key") in IAEA_P5 else ""
@@ -427,13 +428,16 @@ def _iaea_monitor_text():
         if (c.get("enrichment_suspended") or 0):
             susp = " ⛔تعلیق‌شده"
             suspended_list.append(f"{c['flag']} {c['name']}")
+        npt_out = " 🚫خارج از NPT" if (c.get("npt_withdrawn") or 0) else ""
+        if npt_out:
+            npt_out_list.append(f"{c['flag']} {c['name']}")
         lines.append(
-            f"{i}. {c['flag']} *{c['name']}*{p5}{susp}\n"
+            f"{i}. {c['flag']} *{c['name']}*{p5}{susp}{npt_out}\n"
             f"   ☢️ کلاهک: *{format_number(wh)}* | 🧪 سوخت: {format_number(c.get('nuclear_fuel') or 0)} ک‌گ | "
             f"⛏️ اورانیوم: {format_number(c.get('uranium_ore') or 0)} تن"
         )
         cap = _iaea_cap_of(c)
-        if cap is not None and wh > cap:
+        if cap is not None and wh > cap and not (c.get("npt_withdrawn") or 0):
             violators.append(f"{c['flag']} {c['name']} ({format_number(wh)} کلاهک؛ سقف: {cap})")
     if len(rows) > 25:
         lines.append(f"\n… و {len(rows) - 25} کشور دیگر.")
@@ -447,7 +451,12 @@ def _iaea_monitor_text():
         lines.append("⛔ *برنامه‌های غنی‌سازی تعلیق‌شده:*")
         for s in suspended_list:
             lines.append(f"   • {s}")
-    if not violators and not suspended_list:
+    if npt_out_list:
+        lines.append("🚫 *کشورهای خارج از پیمان عدم اشاعه (NPT):*")
+        for n in npt_out_list:
+            sanc_mark = ""
+            lines.append(f"   • {n}")
+    if not violators and not suspended_list and not npt_out_list:
         lines.append("✅ هیچ تخلفی از پیمان عدم اشاعه (NPT) ثبت نشده است.")
     lines.append("\n_ابزار نظارتی آژانس بین‌المللی انرژی اتمی — وین_")
     return "\n".join(lines)
@@ -460,9 +469,15 @@ def _iaea_dossier_text(c: dict):
     cap = _iaea_cap_of(c)
     suspended = bool(c.get("enrichment_suspended") or 0)
 
+    npt_out = bool(c.get("npt_withdrawn") or 0)
+    sanc = bool(c.get("un_sanctioned") or 0)
+
     if cap is None:
         cap_line = "نامحدود (قدرت هسته‌ای P5) 🔷"
         status = "✅ منطبق"
+    elif npt_out:
+        cap_line = "نامحدود (خارج از NPT 🚫)"
+        status = "🚫 خارج از پیمان — خارج از صلاحدید آژانس"
     else:
         cap_line = format_number(cap)
         status = ("✅ منطبق" if wh <= cap else f"⚠️ متخلف ({format_number(wh - cap)} کلاهک مازاد بر سقف)")
@@ -483,7 +498,9 @@ def _iaea_dossier_text(c: dict):
         f"⛏️ *کیک زرد اورانیوم:* {format_number(c.get('uranium_ore') or 0)} تن (+{format_number(c.get('uranium_ore_daily') or 0)}/روز)\n\n"
         f"🏭 *تأسیسات چرخه سوخت:* {facilities}\n"
         f"🔬 *سطح فناوری:* {format_number(c.get('tech_level') or 1)}\n"
-        f"⚖️ *وضعیت غنی‌سازی:* {'⛔ تعلیق‌شده به دستور آژانس' if suspended else '✅ فعال'}\n\n"
+        f"⚖️ *وضعیت غنی‌سازی:* {'⛔ تعلیق‌شده به دستور آژانس' if suspended else '✅ فعال'}\n"
+        f"📜 *پیمان عدم اشاعه:* {'🚫 خارج از پیمان' if npt_out else '✅ عضو کامل'}\n"
+        f"🌐 *تحریم جامع سازمان ملل:* {'🚫 تحت تحریم (درآمد نصف + بازار بسته)' if sanc else 'ندارد'}\n\n"
         "_بازرسی فنی — بازرسان رسمی آژانس، وین_"
     )
     return text
@@ -495,12 +512,18 @@ def _iaea_report_body():
     total_wh = sum((c.get("warheads") or 0) for c in rows)
     violators = []
     suspended = []
+    npt_outside = []
+    sanctioned = []
     for c in rows:
         cap = _iaea_cap_of(c)
-        if cap is not None and (c.get("warheads") or 0) > cap:
+        if cap is not None and (c.get("warheads") or 0) > cap and not (c.get("npt_withdrawn") or 0):
             violators.append(f"{c['flag']} {c['name']}")
         if c.get("enrichment_suspended") or 0:
             suspended.append(f"{c['flag']} {c['name']}")
+        if c.get("npt_withdrawn") or 0:
+            npt_outside.append(f"{c['flag']} {c['name']}")
+        if c.get("un_sanctioned") or 0:
+            sanctioned.append(f"{c['flag']} {c['name']}")
     top = rows[:3]
     top_str = " | ".join(f"{c['flag']} {c['name']} ({format_number(c.get('warheads') or 0)})" for c in top) if top else "—"
 
@@ -509,7 +532,9 @@ def _iaea_report_body():
         f"• مجموع کلاهک‌های استراتژیک جهان: {format_number(total_wh)}\n"
         f"• بزرگ‌ترین زرادخانه‌ها: {top_str}\n"
         f"• متخلفان از سقف عدم اشاعه: {'، '.join(violators) if violators else 'موردی ثبت نشد ✅'}\n"
-        f"• برنامه‌های غنی‌سازی تعلیق‌شده: {'، '.join(suspended) if suspended else 'موردی نیست ✅'}"
+        f"• برنامه‌های غنی‌سازی تعلیق‌شده: {'، '.join(suspended) if suspended else 'موردی نیست ✅'}\n"
+        f"• کشورهای خارج از NPT: {'، '.join(npt_outside) if npt_outside else 'موردی نیست ✅'}\n"
+        f"• تحت تحریم جامع سازمان ملل: {'، '.join(sanctioned) if sanctioned else 'موردی نیست ✅'}"
     )
     return body
 
@@ -542,6 +567,7 @@ async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = [
             [InlineKeyboardButton("🛰️ رصد و نظارت جهانی", callback_data="un:iaea:monitor")],
             [InlineKeyboardButton("🔍 بازرسی فنی کشور", callback_data="un:iaea:inspect")],
+            [InlineKeyboardButton("🚫 تحریم‌های جامع سازمان ملل", callback_data="un:iaea:sanctions")],
             [InlineKeyboardButton("📢 انتشار گزارش عمومی آژانس", callback_data="un:iaea:report")],
             [InlineKeyboardButton("🔙 بازگشت به ستاد سازمان ملل", callback_data="un:menu")],
         ]
@@ -585,10 +611,16 @@ async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.answer("کشور یافت نشد!", show_alert=True)
             return
         keyboard = []
-        if (target.get("enrichment_suspended") or 0):
-            keyboard.append([InlineKeyboardButton("✅ رفع تعلیق غنی‌سازی", callback_data=f"un:iaea:unsuspend:{t_id}")])
+        if not (target.get("npt_withdrawn") or 0):
+            # آژانس فقط بر اعضای NPT اختیار تعلیق دارد
+            if (target.get("enrichment_suspended") or 0):
+                keyboard.append([InlineKeyboardButton("✅ رفع تعلیق غنی‌سازی", callback_data=f"un:iaea:unsuspend:{t_id}")])
+            else:
+                keyboard.append([InlineKeyboardButton("⛔ تعلیق برنامه غنی‌سازی", callback_data=f"un:iaea:suspend:{t_id}")])
+        if (target.get("un_sanctioned") or 0):
+            keyboard.append([InlineKeyboardButton("🔓 لغو تحریم جامع سازمان ملل", callback_data=f"un:iaea:unsanction:{t_id}")])
         else:
-            keyboard.append([InlineKeyboardButton("⛔ تعلیق برنامه غنی‌سازی", callback_data=f"un:iaea:suspend:{t_id}")])
+            keyboard.append([InlineKeyboardButton("🚫 تحریم جامع سازمان ملل", callback_data=f"un:iaea:sanction:{t_id}")])
         if (target.get("warheads") or 0) > 0:
             keyboard.append([InlineKeyboardButton("🧹 خلع سلاح هسته‌ای اجباری", callback_data=f"un:iaea:disarm:{t_id}")])
         keyboard.append([InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")])
@@ -600,6 +632,9 @@ async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         target = db.get_country_by_id(t_id)
         if not target:
             await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        if target.get("npt_withdrawn") or 0:
+            await query.answer("⛔ این کشور خارج از پیمان عدم اشاعه است — آژانس اختیاری ندارد!", show_alert=True)
             return
         db.set_enrichment_suspended(t_id, True)
         db.add_transaction(t_id, "iaea_suspend", "⛔ تعلیق برنامه غنی‌سازی به دستور آژانس بین‌المللی انرژی اتمی — تولید سوخت غنی‌شده روزانه متوقف شد.", 0)
@@ -688,6 +723,145 @@ async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer(f"🧹 {count} کلاهک ضبط شد", show_alert=True)
         target = db.get_country_by_id(t_id)
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به فهرست بازرسی", callback_data="un:iaea:inspect")]]
+        await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 🚫 منوی تحریم‌های جامع سازمان ملل ----------
+    elif action == "sanctions":
+        all_c = [x for x in db.get_all_countries() if x.get("country_key") != "un"]
+        sanctioned = [x for x in all_c if x.get("un_sanctioned") or 0]
+        outside = [x for x in all_c if (x.get("npt_withdrawn") or 0) and not (x.get("un_sanctioned") or 0)]
+
+        lines = [
+            "🚫 **تحریم‌های جامع سازمان ملل (Comprehensive Sanctions)**",
+            "━━━━━━━━━━━━━━━━━━", ""
+        ]
+        if sanctioned:
+            lines.append("⛔ *کشورهای تحت تحریم:*")
+            for x in sanctioned:
+                lines.append(f"   • {x['flag']} {x['name']}")
+        else:
+            lines.append("✅ در حال حاضر کشوری تحت تحریم جامع نیست.")
+        lines.append("")
+        if outside:
+            lines.append("⚠️ *کشورهای خارج از NPT که هنوز تحریم نشده‌اند:*")
+            for x in outside:
+                lines.append(f"   • {x['flag']} {x['name']}")
+        elif sanctioned:
+            lines.append("ℹ️ همه کشورهای خارج از NPT تحت تحریم‌اند.")
+        else:
+            lines.append("ℹ️ هیچ کشوری از پیمان عدم اشاعه خارج نشده است.")
+        lines.append("")
+        lines.append(
+            "*آثار تحریم جامع:*\n"
+            "• 📉 نصف شدن درآمد روزانه کشور\n"
+            "• 🏪 بسته شدن بورس جهانی (خرید و فروش)\n"
+            "• 🌐 انزوای بین‌المللی و انعکاس خبری"
+        )
+
+        keyboard = []
+        for x in sanctioned:
+            keyboard.append([InlineKeyboardButton(f"🔓 لغو تحریم {x['flag']} {x['name']}", callback_data=f"un:iaea:unsanction:{x['id']}")])
+        for x in outside:
+            keyboard.append([InlineKeyboardButton(f"🚫 تحریم {x['flag']} {x['name']}", callback_data=f"un:iaea:sanction:{x['id']}")])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به آژانس", callback_data="un:iaea:menu")])
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 🚫 تأیید تحریم جامع ----------
+    elif action == "sanction":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        if target.get("un_sanctioned") or 0:
+            await query.answer("این کشور از قبل تحت تحریم است!", show_alert=True)
+            return
+        npt_mark = "خارج از پیمان عدم اشاعه 🚫" if (target.get("npt_withdrawn") or 0) else "عضو NPT"
+        text = (
+            f"🚫 **اعمال تحریم جامع سازمان ملل — تأیید نهایی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"کشور: {target['flag']} *{target['name']}* ({npt_mark})\n\n"
+            "**آثار تحریم:**\n"
+            "• 📉 درآمد روزانه کشور نصف می‌شود\n"
+            "• 🏪 بورس جهانی برای آن بسته می‌شود\n"
+            "• 🌐 ابلاغ رسمی به کشور و انعکاس خبری جهانی\n\n"
+            "آیا مطمئن هستید؟"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ تأیید تحریم جامع", callback_data=f"un:iaea:sanction_ok:{t_id}")],
+            [InlineKeyboardButton("❌ انصراف", callback_data=f"un:iaea:dossier:{t_id}")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif action == "sanction_ok":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        reason = "نقض پیمان عدم اشاعه و تهدید صلح جهانی" if (target.get("npt_withdrawn") or 0) else "مصوبه شورای امنیت سازمان ملل"
+        db.set_un_sanctioned(t_id, True, reason)
+        try:
+            if target.get("player_id"):
+                await context.bot.send_message(
+                    target["player_id"],
+                    f"🚫 **ابلاغیه رسمی سازمان ملل متحد**\n\n کشور شما {target['flag']} *{target['name']}* به دلیل *{reason}* مشمول تحریم جامع گردید:\n\n📉 درآمد روزانه کشور نصف شد\n🏪 دسترسی به بورس جهانی قطع شد\n\n_شورای امنیت سازمان ملل متحد — نیویورک_",
+                    parse_mode="Markdown"
+                )
+        except Exception:
+            pass
+        try:
+            await news_engine.post_breaking_news(
+                context.bot,
+                news_title="تحریم جامع سازمان ملل علیه یک کشور",
+                news_body=f"شورای امنیت سازمان ملل متحد تحریم‌های جامع را علیه کشور {target['flag']} {target['name']} به دلیل {reason} تصویب کرد. درآمد روزانه این کشور نصف و دسترسی آن به بازارهای جهانی قطع شد.",
+                event_category="تحریم بین‌المللی"
+            )
+        except Exception:
+            pass
+        await query.answer("🚫 تحریم جامع اعمال شد", show_alert=True)
+        target = db.get_country_by_id(t_id)
+        keyboard = [
+            [InlineKeyboardButton("🔓 لغو تحریم", callback_data=f"un:iaea:unsanction:{t_id}")],
+            [InlineKeyboardButton("🔙 بازگشت به پرونده", callback_data=f"un:iaea:dossier:{t_id}")],
+        ]
+        await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # ---------- 🔓 لغو تحریم ----------
+    elif action == "unsanction":
+        t_id = int(parts[3])
+        target = db.get_country_by_id(t_id)
+        if not target:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        if not (target.get("un_sanctioned") or 0):
+            await query.answer("این کشور تحت تحریم نیست!", show_alert=True)
+            return
+        db.set_un_sanctioned(t_id, False)
+        try:
+            if target.get("player_id"):
+                await context.bot.send_message(
+                    target["player_id"],
+                    f"✅ **ابلاغیه رسمی سازمان ملل متحد**\n\n تحریم‌های جامع علیه کشور {target['flag']} *{target['name']}* لغو گردید. درآمد روزانه و دسترسی به بورس جهانی به حالت عادی بازگشت.\n\n_شورای امنیت سازمان ملل متحد — نیویورک_",
+                    parse_mode="Markdown"
+                )
+        except Exception:
+            pass
+        try:
+            await news_engine.post_breaking_news(
+                context.bot,
+                news_title="لغو تحریم جامع",
+                news_body=f"سازمان ملل متحد تحریم‌های جامع علیه کشور {target['flag']} {target['name']} را لغو کرد. روابط اقتصادی این کشور با جهان از سر گرفته شد.",
+                event_category="دیپلماسی"
+            )
+        except Exception:
+            pass
+        await query.answer("✅ تحریم لغو شد", show_alert=True)
+        target = db.get_country_by_id(t_id)
+        keyboard = [
+            [InlineKeyboardButton("🚫 تحریم جامع سازمان ملل", callback_data=f"un:iaea:sanction:{t_id}")],
+            [InlineKeyboardButton("🔙 بازگشت به پرونده", callback_data=f"un:iaea:dossier:{t_id}")],
+        ]
         await query.edit_message_text(_iaea_dossier_text(target), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     # ---------- 📢 گزارش عمومی ----------
