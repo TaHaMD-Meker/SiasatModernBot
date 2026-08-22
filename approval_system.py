@@ -48,7 +48,7 @@ def calculate_country_requirements(c: dict):
     elec_need = 100 + ind_elec_need
 
     # 2. مصرف سوخت و نفت روزانه (بالانس دقیق و رقابتی)
-    pop_oil_need = int(20_000 + (pop_millions ** 0.68) * 10_000)
+    pop_oil_need = max(1_000, int((pop_millions ** 0.65) * 5_000))
     ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
     total_oil_need_daily = pop_oil_need + ind_oil_need
 

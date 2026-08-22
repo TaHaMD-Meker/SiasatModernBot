@@ -2047,17 +2047,10 @@ def rebalance_existing_countries_income():
                 curr_warheads = (c["warheads"] or 0) if "warheads" in c.keys() else 0
                 
                 reqs = approval_system.calculate_country_requirements({'population': c['population'], 'id': c_id})
-                if new_oil_prod < reqs['oil_need_daily']:
-                    new_oil_res = base_oil_res
-                else:
-                    new_oil_res = max(curr_oil_res, base_oil_res)
-
-                if new_grain_daily < reqs['grain_need_daily']:
-                    new_grain = base_grain
-                else:
-                    new_grain = max(curr_grain, base_grain)
-
-                new_chips = max(curr_chips, base_chips)
+                # ذخایر و انبارها دارایی واقعی بازیکن هستند و در ری‌بالانس هرگز نباید ریست یا اوررایت شوند
+                new_oil_res = curr_oil_res
+                new_grain = curr_grain
+                new_chips = curr_chips
                 # 🧪 چرخه هسته‌ای: ذخایر هرگز از کانفیگ اهداء نمی‌شوند (فقط مقدار فعلی حفظ می‌شود)
                 # و تولید روزانه فقط از تأسیسات خریداری‌شده (معدن اورانیوم / سایت غنی‌سازی) محاسبه می‌شود.
                 # باگ قدیمی: max(curr, base) با هر ری‌استارت به‌صورت مجانی کلاهک/سوخت واقع‌گرایانه
@@ -3443,13 +3436,16 @@ def has_active_oil_import_contract(country_id: int) -> bool:
 
 
 def get_industrial_oil_consumption(country_id: int) -> int:
-    """محاسبه مصرف روزانه سوخت صنعتی نیروگاه‌ها و کارخانجات کشور."""
+    """محاسبه متوازن و واقعی مصرف روزانه سوخت صنعتی نیروگاه‌ها و کارخانجات کشور."""
     equipment = get_equipment(country_id)
     fossil_count = equipment.get("fossil_plant", 0)
-    factories_count = equipment.get("small_factory", 0) + equipment.get("medium_factory", 0) + equipment.get("large_factory", 0) + equipment.get("industrial_complex", 0)
-    refinery_count = equipment.get("oil_refinery", 0)
+    small_f = equipment.get("small_factory", 0)
+    med_f = equipment.get("medium_factory", 0)
+    large_f = equipment.get("large_factory", 0)
+    ind_comp = equipment.get("industrial_complex", 0)
 
-    ind_oil_need = (fossil_count * 200_000) + (factories_count * 50_000) + (refinery_count * 300_000)
+    # مصرف سوخت صنعتی نیروگاه فسیلی (۱۰k بشکه)، کارخانجات (۵۰۰ تا ۶k بشکه)
+    ind_oil_need = (fossil_count * 10_000) + (small_f * 500) + (med_f * 1_500) + (large_f * 3_000) + (ind_comp * 6_000)
     return ind_oil_need
 
 
