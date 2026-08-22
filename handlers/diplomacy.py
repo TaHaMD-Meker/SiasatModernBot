@@ -663,6 +663,17 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         # دریافت تازه از دیتابیس برای جلوگیری از استفاده از داده‌های کهنه (خزانه/نفت)
         country = db.get_country_by_id(country["id"]) or country
 
+        # بررسی وجود محاصره قبلی توسط همین کشور
+        active_blks = db.get_active_blockades_for_country(country["id"])
+        already_blockading = any(b["blockader_id"] == country["id"] and b["target_id"] == target_id for b in active_blks)
+        if already_blockading:
+            await query.edit_message_text(
+                f"⚓ **کشور شما در حال حاضر {target_c['flag']} {target_c['name']} را تحت محاصره دریایی دارد.**",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
         today_str = datetime.date.today().isoformat()
         if country.get("last_blockade_date") == today_str:
             await query.edit_message_text(
@@ -705,11 +716,105 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         if blockader_power < required_power:
             await query.edit_message_text(
+                f"⚓ **عدم برتری دریایی لازم جهت محاصره!**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **قدرت رزمی ناوگان شما ({country['name']}):** {blockader_power:,} امتیاز\n"
+                f"• **قدرت رزمی ناوگان هدف ({target_c['name']}):** {target_power:,} امتیاز\n"
+                f"• **حداقل قدرت لازم جهت محاصره (۱۲۰٪):** {required_power:,} امتیاز\n\n"
+                f"⚠️ ناوگان دریایی کشور شما قدرت کافی برای مسدودسازی بنادر {target_c['name']} را ندارد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        # نمایش پیام تأییدیه دو مرحله‌ای قبل از اجرای عملیات
+        confirm_text = (
+            f"⚓ **تأیید نهایی عملیات محاصره دریایی بین‌المللی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"آیا از اعزام ناودسته‌ها و استقرار محاصره کامل دریایی علیه {target_c['flag']} **{target_c['name']}** اطمینان دارید؟\n\n"
+            f"📊 **برآورد هزینه و تراز عملیات:**\n"
+            f"• 💵 **هزینه اولیه اعزام:** {format_money(BLOCKADE_MONEY_COST)}\n"
+            f"• 🛢️ **سوخت اولیه ناوگان:** {format_oil(BLOCKADE_OIL_COST)}\n"
+            f"• ⚓ **قدرت ناوگان شما ({country['name']}):** {blockader_power:,} امتیاز\n"
+            f"• 🛡️ **قدرت ناوگان هدف ({target_c['name']}):** {target_power:,} امتیاز (حداقل لازم: {required_power:,})\n\n"
+            f"⚠️ **پیامدهای ژئوپلیتیک عملیات:**\n"
+            f"• تمامی بنادر تجاری و مسیرهای ترانزیت دریایی {target_c['name']} مسدود خواهند شد.\n"
+            f"• ۱۵٪ از رضایت عمومی کشور هدف بلافاصله کسر می‌گردد.\n"
+            f"• خبر فوری محاصره در کانال رسمی اخبار منتشر خواهد شد.\n"
+            f"• سقف روزانه شما مصرف شده و تا ۲۴ ساعت آینده امکان محاصره جدید نخواهید داشت.\n"
+        )
+
+        confirm_keyboard = [
+            [InlineKeyboardButton(f"⚓ تأیید و آغاز محاصره دریایی {target_c['name']}", callback_data=f"dip:blk_confirm:{target_id}")],
+            [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="dip:blockade_start")]
+        ]
+
+        await query.edit_message_text(confirm_text, reply_markup=InlineKeyboardMarkup(confirm_keyboard), parse_mode="Markdown")
+
+    elif data.startswith("dip:blk_confirm:"):
+        target_id = int(data.split(":")[2])
+
+        if target_id == country["id"]:
+            await query.edit_message_text("❌ امکان محاصره دریایی کشور خودتان وجود ندارد.", parse_mode="Markdown")
+            return
+
+        target_c = db.get_country_by_id(target_id)
+        if not target_c:
+            await query.edit_message_text("❌ کشور هدف پیدا نشد.", parse_mode="Markdown")
+            return
+
+        if not db.has_open_sea_access(target_c.get("country_key")):
+            await query.edit_message_text(
+                "❌ **امکان محاصره دریایی این کشور وجود ندارد.**\n\nاین کشور به آب‌های آزاد و اقیانوس دسترسی ندارد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        country = db.get_country_by_id(country["id"]) or country
+
+        today_str = datetime.date.today().isoformat()
+        if country.get("last_blockade_date") == today_str:
+            await query.edit_message_text(
+                "⏳ **سقف مجاز روزانه عملیات دریایی:**\n━━━━━━━━━━━━━━━━━━\n\n"
+                "کشور شما امروز یک بار اقدام به اجرای محاصره دریایی نموده است.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        BLOCKADE_MONEY_COST = 10_000_000
+        BLOCKADE_OIL_COST = 500_000
+
+        if country.get("treasury", 0) < BLOCKADE_MONEY_COST:
+            await query.edit_message_text(
+                f"💰 **عدم تکافوی تمکن مالی:**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **هزینه اولیه اعزام ناوگان محاصره:** {format_money(BLOCKADE_MONEY_COST)}\n"
+                f"• **موجودی خزانه شما:** {format_money(country.get('treasury', 0))}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        if country.get("oil_reserves", 0) < BLOCKADE_OIL_COST:
+            await query.edit_message_text(
+                f"🛢️ **عدم تکافوی ذخایر سوخت و نفت:**\n━━━━━━━━━━━━━━━━━━\n\n"
+                f"• **سوخت اولیه مورد نیاز ناوگان:** {format_oil(BLOCKADE_OIL_COST)}\n"
+                f"• **ذخایر نفت فعلی شما:** {format_oil(country.get('oil_reserves', 0))}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        blockader_power = db.calculate_naval_power(country["id"])
+        target_power = db.calculate_naval_power(target_id)
+        required_power = max(int(target_power * 1.2), 1)
+
+        if blockader_power < required_power:
+            await query.edit_message_text(
                 f"⚓ **عملیات محاصره دریایی ناموفق بود!**\n━━━━━━━━━━━━━━━━━━\n\n"
                 f"• **قدرت رزمی ناوگان شما ({country['name']}):** {blockader_power:,} امتیاز\n"
                 f"• **قدرت رزمی ناوگان هدف ({target_c['name']}):** {target_power:,} امتیاز\n"
-                f"• **حداقل قدرت لازم جهت محاصره:** {required_power:,} امتیاز\n\n"
-                f"⚠️ **توضیحات:** ناوگان دریایی برتر کشور {target_c['name']} اجازه مسدودسازی بنادر خود را نداد!",
+                f"• **حداقل قدرت لازم جهت محاصره:** {required_power:,} امتیاز",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
                 parse_mode="Markdown"
             )
