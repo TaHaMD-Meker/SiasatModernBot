@@ -1453,7 +1453,10 @@ def update_country_field(country_id: int, field: str, value):
         "active_personnel", "reserve_personnel", "last_income_date", "name", "flag",
         "approval_rating", "grain_daily", "microchips", "microchips_daily", "tech_level",
         "combat_readiness", "last_drill_date", "daily_drill_count", "username", "country_key", "player_id",
-        "last_blockade_date"
+        "last_blockade_date",
+        # فیلدهای چرخه هسته‌ای (ویرایش از پنل ادمین)
+        "uranium_ore", "uranium_ore_daily", "nuclear_fuel", "nuclear_fuel_daily", "warheads",
+        "warhead_cap_override",
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")

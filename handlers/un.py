@@ -340,11 +340,19 @@ async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif step == "iaea_cap":
         t_id = draft.get("target_id")
-        try:
-            val = int(text)
-        except ValueError:
-            await update.message.reply_text("⛔ لطفاً فقط یک عدد صحیح ارسال کنید (مثلاً `10` یا `-1`).", parse_mode="Markdown")
+        import re as _re
+        clean_val = (
+            str(text)
+            .translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+            .replace("٬", "").replace(",", "").replace("_", "").strip()
+        )
+        if not _re.fullmatch(r"-?\d+", clean_val):
+            await update.message.reply_text(
+                "⛔ لطفاً فقط یک عدد صحیح ارسال کنید (مثلاً `10` یا `۱۰` یا `-1`).",
+                parse_mode="Markdown"
+            )
             return
+        val = int(clean_val)
         if val < -1 or val > 10000:
             await update.message.reply_text("⛔ بازه مجاز: `-1` تا `10000`.", parse_mode="Markdown")
             return

@@ -1758,7 +1758,11 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             await update.message.reply_text("❌ لطفاً فقط یک عدد صحیح بفرست.", parse_mode="Markdown")
             return
         cid_ = input_state["country_id"]; field_ = input_state["field"]
-        new_val, err = apply_cstat_value(cid_, field_, int(raw))
+        try:
+            new_val, err = apply_cstat_value(cid_, field_, int(raw))
+        except Exception as exc:
+            err = f"خطای داخلی در ذخیره فیلد `{field_}`: {exc}"
+            new_val = None
         c = db.get_country_by_id(cid_)
         info = COUNTRY_STAT_FIELDS.get(field_)
         context.user_data["admin_awaiting_input"] = None
