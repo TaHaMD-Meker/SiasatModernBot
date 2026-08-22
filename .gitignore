@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 *.db
 .env
+
+# pytest / caches
+.pytest_cache/
+__pycache__/
+*.pyc

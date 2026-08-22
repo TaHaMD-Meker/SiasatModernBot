@@ -8,6 +8,7 @@
 «خسارت زیرساخت/اقتصادی/مصرف مهمات» با همین الگو توسعه‌پذیر است.
 """
 
+import math
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
@@ -123,14 +124,46 @@ def match_country_by_name(name_part: str):
     return best
 
 
+# واژه‌های عمومی که به‌تنهایی هیچ تجهیزی را مشخص نمی‌کنند.
+# اگر تنها اشتراک دو نام یکی از این‌ها باشد، تطبیق نباید انجام شود
+# (وگرنه «جنگنده رافال» به «جنگنده F-16» تطبیق می‌خورد و از انبار اشتباه کسر می‌شود).
+_GENERIC_TOKENS = frozenset({
+    'های', 'ها', 'ای', 'در', 'به', 'با', 'و', 'از',
+    'جنگنده', 'هواپیما', 'هواپیمای', 'بمب', 'افکن', 'بمب‌افکن', 'بالگرد', 'پهپاد',
+    'موشک', 'موشکی', 'سامانه', 'پدافند', 'پدافندی', 'تانک', 'خودرو', 'خودروی',
+    'زرهی', 'نفربر', 'توپ', 'توپخانه', 'راکت', 'انداز', 'ناو', 'ناوشکن', 'ناوچه',
+    'زیردریایی', 'شناور', 'کروز', 'بالستیک', 'ضدکشتی', 'رزمی', 'تهاجمی', 'ترابری',
+    'شناسایی', 'استراتژیک', 'سنگین', 'سبک', 'اصلی', 'میدان', 'نبرد', 'نسل',
+    'chip', 'fighter', 'jet', 'tank', 'missile', 'radar', 'drone',
+})
+
+
+def _significant_tokens(text: str):
+    """توکن‌های معنادار یک نام: عمومی‌ها حذف، بقیه نگه داشته می‌شوند."""
+    return {w for w in text.split() if len(w) >= 2 and w not in _GENERIC_TOKENS}
+
+
+def _has_distinctive_overlap(q_tokens, c_tokens) -> bool:
+    """آیا دو نام حداقل یک نشانگر اختصاصی مشترک دارند؟
+
+    نشانگر اختصاصی = توکنی که در فهرست واژه‌های عمومی نیست
+    (مثل «رافال»، «f-16»، «تامکت»، «373»).
+    """
+    return bool(q_tokens & c_tokens)
+
+
 def match_asset_by_name(name: str, assets: list):
-    """تطبیق هوشمند و چندلایه‌ای نام تجهیز با موجودی انبار."""
+    """تطبیق هوشمند و چندلایه‌ای نام تجهیز با موجودی انبار.
+
+    قانون طلایی: هیچ تطبیقی صرفاً بر پایه‌ی واژه‌های عمومی («جنگنده»، «موشک»، …)
+    انجام نمی‌شود؛ باید دست‌کم یک نشانگر اختصاصی مشترک وجود داشته باشد.
+    """
     q_raw = _clean_str(name)
     if len(q_raw) < 2:
         return None
     q_stripped = _strip_prefix(q_raw)
     q_tokens = set(q_raw.split()) | set(q_stripped.split())
-    q_sig_tokens = {w for w in q_tokens if len(w) >= 2 and w not in ('های', 'ها', 'ای', 'در', 'به', 'با')}
+    q_sig_tokens = _significant_tokens(q_raw) | _significant_tokens(q_stripped)
 
     best = None
     best_score = 0
@@ -145,18 +178,17 @@ def match_asset_by_name(name: str, assets: list):
         for c in candidates:
             if not c:
                 continue
-            # 1. تطبیق دقیق
+            c_sig_tokens = _significant_tokens(c)
+            # 1. تطبیق دقیق کل نام
             if q_raw == c or q_stripped == c:
                 score = 1000 + len(c)
-            # 2. دربرگیری مستقیم زیررشته
-            elif q_stripped in c or c in q_stripped:
+            # 2. دربرگیری زیررشته — فقط اگر نشانگر اختصاصی مشترک هم داشته باشند
+            elif (q_stripped in c or c in q_stripped) and _has_distinctive_overlap(q_sig_tokens, c_sig_tokens):
                 score = 500 + len(min(q_stripped, c, key=len))
-            elif q_raw in c or c in q_raw:
+            elif (q_raw in c or c in q_raw) and _has_distinctive_overlap(q_sig_tokens, c_sig_tokens):
                 score = 400 + len(min(q_raw, c, key=len))
             else:
-                # 3. تطبیق واژگانی و شناسه‌های حروفی-عددی (مثل F-14, 373, 136)
-                c_tokens = set(c.split())
-                c_sig_tokens = {w for w in c_tokens if len(w) >= 2 and w not in ('های', 'ها', 'ای', 'در', 'به', 'با')}
+                # 3. تطبیق واژگانی روی نشانگرهای اختصاصی (مثل F-14, 373, 136)
                 inter = q_sig_tokens & c_sig_tokens
                 if inter:
                     distinctive = sum(20 for t in inter if any(ch.isalnum() for ch in t))
@@ -268,13 +300,14 @@ def parse_loss_report_text(text: str):
             break
 
     # اقلام تجهیزاتی: «تلفات: [حدود] N واحد» + نزدیک‌ترین خط قبلی معتبر = نام تجهیز
-    qty_pat = re.compile(r"^[*•]?\s*تلفات\s*:?\s*(?:حدود|تقریبا[ً]?|نزدیک|~|≈)?\s*([\d,٬]+)\s*(.*)$")
+    qty_pat = re.compile(r"^[*•]?\s*تلفات\s*:?\s*(?:حدود|تقریبا[ً]?|نزدیک|~|≈)?\s*([\d,٬]+(?:\.\d+)?)\s*(.*)$")
     skip_markers = ("جمع تلفات", "وضعیت", "📄", "📌", "━━", "👥")
     for i, ln in enumerate(lines[:human_start]):
         m = qty_pat.match(ln)
         if not m:
             continue
-        qty = int(m.group(1).replace(",", "").replace("٬", ""))
+        # عدد اعشاری به بالا گرد می‌شود (نصف یک پالایشگاه یعنی یک واحد آسیب‌دیده)
+        qty = int(math.ceil(float(m.group(1).replace(",", "").replace("٬", ""))))
         name = None
         for j in range(i - 1, -1, -1):
             prev = lines[j]
@@ -294,38 +327,73 @@ def parse_loss_report_text(text: str):
 
     # بخش تلفات انسانی
     if human_start < len(lines):
-        htxt = " ".join(lines[human_start:])
+        # خط‌به‌خط پردازش می‌شود تا هر عدد فقط به دسته‌ی خودش نسبت داده شود
+        # و ترتیب «۳۲۰ نفر کشته» هم مثل «کشته: ۳۲۰ نفر» درست خوانده شود.
+        def _first_number(s):
+            mm = re.search(r"([\d,٬]+(?:\.\d+)?)", s)
+            if not mm:
+                return None
+            return int(math.ceil(float(mm.group(1).replace(",", "").replace("٬", ""))))
 
-        def _num_after(pat):
-            mm = re.search(pat, htxt)
-            if mm:
-                return int(mm.group(1).replace(",", "").replace("٬", ""))
-            return 0
+        for ln in lines[human_start:]:
+            if not ln.strip():
+                continue
+            num = _first_number(ln)
+            if num is None:
+                continue
+            is_civ = re.search(r"غیر\s?نظامی|غیرنظامی|شهروند|مردم", ln)
+            is_wounded = re.search(r"مجروح|زخمی", ln)
+            is_mil = re.search(r"نظامی|سرباز|پرسنل|نیرو", ln)
+            if is_civ:
+                result["human"]["civilians"] = result["human"]["civilians"] or num
+            elif is_wounded:
+                result["human"]["wounded"] = result["human"]["wounded"] or num
+            elif is_mil or re.search(r"کشته|شهید|تلفات جانی", ln):
+                result["human"]["mil"] = result["human"]["mil"] or num
 
-        result["human"]["wounded"] = _num_after(r"مجروح[^0-9]{0,50}(?:حدود|تقریبا[ً]?|نزدیک)?\s*([\d,٬]+)")
-        result["human"]["civilians"] = _num_after(r"(?:غیر\s?نظامی|شهروند)[^0-9]{0,50}(?:حدود|تقریبا[ً]?)?\s*([\d,٬]+)")
-        result["human"]["mil"] = _num_after(r"(?<!غیر)(?<!غیر )(?:نظامی|سرباز|کشته)[^0-9]{0,50}(?:حدود|تقریبا[ً]?)?\s*([\d,٬]+)")
-        if result["human"]["civilians"] and result["human"]["mil"] == result["human"]["civilians"]:
-            result["human"]["mil"] = 0
+    # هزینه آماده‌سازی: فقط از بخش «هزینه آماده‌سازی عملیات» خوانده می‌شود.
+    # (قبلاً کل متن جارو می‌شد و هر عدد دلاری — مثلاً «خسارت ۸۰۰ میلیون دلاری به بازار»
+    #  در توضیحات — به‌اشتباه از خزانه‌ی کشور کسر می‌شد.)
+    cost_start = None
+    for idx, ln in enumerate(lines):
+        if re.search(r"هزینه\s*(?:آماده[\s‌]*سازی|عملیات)", ln):
+            cost_start = idx
+            break
 
-    # هزینه آماده‌سازی: مبالغ دلار و بشکه در کل متن (با پشتیبانی میلیون/میلیارد)
-    def _amounts_with_unit(unit_word):
+    def _amounts_with_unit(scope_text, unit_word):
         total = 0
-        for mm in re.finditer(r"([\d,٬]+(?:\.\d+)?)\s*(میلیارد|میلیون)?\s*" + unit_word, t):
+        for mm in re.finditer(r"([\d,٬]+(?:\.\d+)?)\s*(میلیارد|میلیون|هزار)?\s*" + unit_word, scope_text):
             val = float(mm.group(1).replace(",", "").replace("٬", ""))
-            mult = {"میلیارد": 1_000_000_000, "میلیون": 1_000_000}.get(mm.group(2), 1)
+            mult = {"میلیارد": 1_000_000_000, "میلیون": 1_000_000, "هزار": 1_000}.get(mm.group(2), 1)
             total += int(val * mult)
         return total
 
-    result["costs"] = {"money": _amounts_with_unit("دلار"), "oil": _amounts_with_unit("بشکه")}
+    if cost_start is None:
+        result["costs"] = {"money": 0, "oil": 0}
+    else:
+        cost_text = "\n".join(lines[cost_start:])
+        result["costs"] = {
+            "money": _amounts_with_unit(cost_text, "دلار"),
+            "oil": _amounts_with_unit(cost_text, "بشکه"),
+        }
     return result
 
 
 # ---------- ساخت گزارش استاندارد ----------
+# دسته‌بندی اقلام ویژه برای بخش‌بندی صحیح گزارش رسمی
+STRATEGIC_SPECIALS = ("warheads", "uranium_ore", "nuclear_fuel", "microchips", "gold")
+HUMAN_SPECIALS = ("mil_kia", "wounded", "civ_kia")
+COST_SPECIALS = ("money", "oil")
+
+
 def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 وضعیت: تلفات ثبت شد.", note=None):
     from collections import OrderedDict
-    human_items = [it for it in items if it.get("special")]
+    special_items = [it for it in items if it.get("special")]
     items = [it for it in items if not it.get("special")]
+    strategic_items = [it for it in special_items if it.get("special") in STRATEGIC_SPECIALS]
+    building_items = [it for it in special_items if it.get("special") == "building"]
+    human_items = [it for it in special_items if it.get("special") in HUMAN_SPECIALS]
+    cost_items = [it for it in special_items if it.get("special") in COST_SPECIALS]
     groups = OrderedDict()
     for it in items:
         groups.setdefault((it.get("subcat", "تجهیزات"), it.get("emoji", "📦")), []).append(it)
@@ -341,34 +409,39 @@ def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 و�
             lines.append(f"تلفات: {format_number(int(it.get('qty', 0) or 0))} {it.get('unit', '')}")
         lines.append("---")
 
-    lines.append("\n📌 جمع تلفات ثبت‌شده:\n")
-    totals = OrderedDict()
-    units = {}
-    for (sub, emo), its in groups.items():
-        t = sum(int(x.get("qty", 0) or 0) for x in its)
-        totals[(sub, emo)] = t
-        units[sub] = its[0].get("unit", "")
-    for (sub, emo), t in totals.items():
-        lines.append(f"{emo} {sub}: {format_number(t)} {units[sub]}")
+    if groups:
+        lines.append("\n📌 جمع تلفات ثبت‌شده:\n")
+        totals = OrderedDict()
+        units = {}
+        for (sub, emo), its in groups.items():
+            t = sum(int(x.get("qty", 0) or 0) for x in its)
+            totals[(sub, emo)] = t
+            units[sub] = its[0].get("unit", "")
+        for (sub, emo), t in totals.items():
+            lines.append(f"{emo} {sub}: {format_number(t)} {units[sub]}")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━")
-    if any(it.get("special") == "building" for it in human_items):
+    if strategic_items:
+        lines.append("\n☢️ ذخایر و منابع راهبردی\n")
+        for it in strategic_items:
+            lines.append(
+                f"{it.get('emoji', '📦')} {it.get('name')}: "
+                f"{format_number(int(it.get('qty', 0) or 0))} {it.get('unit', '')}".rstrip()
+            )
+    if building_items:
         lines.append("\n🏗️ خسارت ساخت‌سازی\n")
-        for it in human_items:
-            if it.get("special") == "building":
-                lines.append(f"{it.get('name', it.get('key'))}: {format_number(int(it.get('qty', 0) or 0))} واحد")
-    if any(it.get("special") in ("mil_kia", "wounded", "civ_kia") for it in human_items):
+        for it in building_items:
+            lines.append(f"{it.get('emoji', '🏗️')} {it.get('name', it.get('key'))}: {format_number(int(it.get('qty', 0) or 0))} واحد")
+    if human_items:
         lines.append("\n👥 تلفات انسانی\n")
         for it in human_items:
-            if it.get("special") in ("money", "oil"):
-                continue
             lines.append(f"{it.get('emoji', '👤')} {it.get('name')}: {format_number(int(it.get('qty', 0) or 0))} {it.get('unit', 'نفر')}")
-    if any(it.get("special") in ("money", "oil") for it in human_items):
+    if cost_items:
         lines.append("\n💸 هزینه آماده‌سازی عملیات\n")
-        for it in human_items:
+        for it in cost_items:
             if it.get("special") == "money":
                 lines.append(f"💵 هزینه مالی: {format_number(int(it.get('qty', 0) or 0))} دلار")
-            elif it.get("special") == "oil":
+            else:
                 lines.append(f"🛢️ سوخت مصرفی: {format_number(int(it.get('qty', 0) or 0))} بشکه")
     if note:
         lines.append(f"\n📝 {note}")
@@ -416,11 +489,19 @@ def _cat_picker(cid):
 
 
 # ---------- منوی اصلی ----------
+def is_admin(user_id: int) -> bool:
+    """فقط ادمین‌های تعریف‌شده در config حق ثبت/بازگردانی تلفات دارند."""
+    return user_id in config.ADMIN_IDS
+
+
 async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        await query.answer("⛔ این بخش فقط برای مدیریت بازی است.", show_alert=True)
+        return
     await query.answer()
     data = query.data
-    user_id = query.from_user.id
 
     if data == "ls:menu":
         text = (
@@ -749,7 +830,8 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         c = db.get_country_by_id(cid)
         s = db.get_loss_stats(cid)
         lines = [f"📊 *آمار تلفات {c['flag']} {c['name']}*", "━━━━━━━━━━━━━━━━━━"]
-        lines.append(f"• گزارش‌های ثبت‌شده: {s['reports']} (بازگردانی‌شده: {s['reverted']})")
+        lines.append(f"• گزارش‌های فعال (اعمال‌شده): {s['reports']}")
+        lines.append(f"• بازگردانی‌شده: {s['reverted']}  |  مجموع ثبت‌ها: {s.get('total', s['reports'] + s['reverted'])}")
         if s["by_subcat"]:
             lines.append("\n📌 مجموع به تفکیک دسته:")
             for sub, total in s["by_subcat"].most_common():
@@ -800,6 +882,8 @@ def _preview_text(draft):
 
 # ---------- ورودی‌های متنی (تعداد، نام عملیات، توضیح، جستجو) ----------
 async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, input_state: dict):
+    if not is_admin(user_id):
+        return
     text = (update.message.text or "").strip()
     t = input_state.get("type")
 

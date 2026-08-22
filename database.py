@@ -713,6 +713,87 @@ def fix_bab_el_mandeb_status():
 # معماری ماژولار: بات فقط ثبت/اعمال/بازگردانی می‌کند؛ تعیین تلفات با مدیریت بازی است.
 # برای افزودن «خسارت زیرساخت/اقتصادی/مصرف مهمات» در آینده، همین الگو با ستون type قابل توسعه است.
 
+# نگاشت واحدِ «قلم ویژه» → ستون کشور. مرجع مشترک اعمال/بازگردانی تا هیچ‌وقت
+# مسیر revert از مسیر apply عقب نیفتد (باگ قدیمی: منابع راهبردی برنمی‌گشتند).
+LOSS_SPECIAL_COLUMNS = {
+    "money": "treasury",
+    "oil": "oil_reserves",
+    "mil_kia": "active_personnel",
+    "uranium_ore": "uranium_ore",
+    "nuclear_fuel": "nuclear_fuel",
+    "warheads": "warheads",
+    "microchips": "microchips",
+    "gold": "gold",
+}
+
+# اقلامی که فقط ثبت گزارشی می‌شوند و روی هیچ موجودی اثر ندارند
+LOSS_RECORD_ONLY_SPECIALS = ("wounded", "civ_kia")
+
+_LOSS_SPECIAL_LABELS = {
+    "money": "هزینه مالی",
+    "oil": "سوخت مصرفی",
+    "mil_kia": "تلفات نظامی",
+    "uranium_ore": "تلفات اورانیوم",
+    "nuclear_fuel": "تلفات سوخت هسته‌ای",
+    "warheads": "تلفات کلاهک هسته‌ای",
+    "microchips": "تلفات میکروچیپ",
+    "gold": "تلفات طلا",
+}
+
+_BUILDING_EFFECT_COLUMNS = {
+    "elec": "electricity",
+    "gold_daily": "gold_daily",
+    "oil_prod": "oil_production",
+    "grain_daily": "grain_daily",
+    "uranium_ore_daily": "uranium_ore_daily",
+    "nuclear_fuel_daily": "nuclear_fuel_daily",
+    "microchips_daily": "microchips_daily",
+}
+
+
+def _apply_building_effects(cur, country_id: int, effects: dict, sign: int):
+    """اعمال (sign=-1) یا بازگردانی (sign=+1) اثرات تولیدی یک ساختمان."""
+    if not effects:
+        return
+    for eff_key, column in _BUILDING_EFFECT_COLUMNS.items():
+        delta = int(effects.get(eff_key, 0) or 0)
+        if delta:
+            cur.execute(
+                f"UPDATE countries SET {column} = MAX(0, COALESCE({column}, 0) + ?) WHERE id = ?",
+                (sign * delta, country_id),
+            )
+
+
+def _restore_loss_items(cur, country_id: int, items: list):
+    """بازگردانی کاملِ اقلام یک گزارش به موجودی کشور (مشترک بین revert و delete)."""
+    for it in items:
+        qty = int(it.get("qty", 0) or 0)
+        if qty <= 0:
+            continue
+        special = it.get("special")
+        if special in LOSS_RECORD_ONLY_SPECIALS:
+            continue
+        if special == "building":
+            cur.execute(
+                "INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
+                " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + excluded.quantity",
+                (country_id, it["key"], qty),
+            )
+            _apply_building_effects(cur, country_id, it.get("effects", {}), sign=+1)
+            continue
+        column = LOSS_SPECIAL_COLUMNS.get(special)
+        if column:
+            cur.execute(
+                f"UPDATE countries SET {column} = COALESCE({column}, 0) + ? WHERE id = ?",
+                (qty, country_id),
+            )
+            continue
+        cur.execute(
+            "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
+            (qty, country_id, it["key"]),
+        )
+
+
 def create_loss_report(country_id: int, items: list, operation_name: str = "", note: str = "", admin_id=None):
     """ثبت و اعمال تراکنشیِ گزارش تلفات — همه یا هیچ.
 
@@ -726,17 +807,28 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
         with conn:
             cur = conn.cursor()
             # اقلام ویژه: mil_kia از نیروی فعال؛ money از خزانه؛ oil از ذخایر نفت؛ wounded/civ فقط ثبت
-            valid_items = [it for it in items if int(it.get("qty", 0) or 0) > 0 and it.get("special") != "wounded" and it.get("special") != "civ_kia"]
+            valid_items = [
+                it for it in items
+                if int(it.get("qty", 0) or 0) > 0
+                and it.get("special") not in LOSS_RECORD_ONLY_SPECIALS
+            ]
             for it in valid_items:
                 if it.get("special") == "building":
                     cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = ?", (country_id, it["key"]))
                     erow = cur.fetchone()
                     owned = (erow["quantity"] or 0) if erow else 0
                     if owned <= 0:
-                        continue  # مالکیت ندارد → نادیده گرفته می‌شود
+                        it["qty"] = 0  # مالکیت ندارد → نادیده گرفته می‌شود (بدون منفی‌شدن موجودی)
+                        continue
                     it["qty"] = min(int(it["qty"]), owned)
                     cfg_it = config.ALL_SHOP_ITEMS.get(it["key"], {})
                     q = int(it["qty"])
+                    chips_daily = 0
+                    if it["key"] == "chip_fab":
+                        cur.execute("SELECT country_key FROM countries WHERE id = ?", (country_id,))
+                        ckrow = cur.fetchone()
+                        ckey = (ckrow["country_key"] if ckrow else "") or ""
+                        chips_daily = config.get_chip_fab_effect(ckey).get("chips_daily", 25)
                     it["effects"] = {
                         "elec": int(cfg_it.get("elec_add", 0) or 0) * q,
                         "gold_daily": int(cfg_it.get("gold_daily_add", 0) or 0) * q,
@@ -744,64 +836,20 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                         "grain_daily": int(cfg_it.get("grain_daily_add", 0) or 0) * q,
                         "uranium_ore_daily": int(cfg_it.get("uranium_ore_daily_add", 0) or 0) * q,
                         "nuclear_fuel_daily": int(cfg_it.get("nuclear_fuel_daily_add", 0) or 0) * q,
-                        "microchips_daily": (config.get_chip_fab_effect(db.get_country_by_id(country_id).get('country_key','')).get('chips_daily', 25) if it["key"] == "chip_fab" else 0) * q,
+                        "microchips_daily": int(chips_daily) * q,
                     }
                     continue
-                if it.get("special") == "money":
-                    cur.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,))
-                    trow = cur.fetchone()
-                    tr = (trow["treasury"] or 0) if trow else 0
-                    if int(it["qty"]) > tr:
-                        raise ValueError(f"هزینه مالی ({int(it['qty']):,}) بیشتر از خزانه کشور ({tr:,}) است.")
-                    continue
-                if it.get("special") == "oil":
-                    cur.execute("SELECT oil_reserves FROM countries WHERE id = ?", (country_id,))
-                    orow = cur.fetchone()
-                    ores = (orow["oil_reserves"] or 0) if orow else 0
-                    if int(it["qty"]) > ores:
-                        raise ValueError(f"سوخت مصرفی ({int(it['qty']):,}) بیشتر از ذخایر نفت کشور ({ores:,}) است.")
-                    continue
-                if it.get("special") == "mil_kia":
-                    cur.execute("SELECT active_personnel FROM countries WHERE id = ?", (country_id,))
-                    prow = cur.fetchone()
-                    ap = (prow["active_personnel"] or 0) if prow else 0
-                    if int(it["qty"]) > ap:
-                        raise ValueError(f"تلفات نظامی ({int(it['qty']):,}) بیشتر از نیروی فعال کشور ({ap:,}) است.")
-                    continue
-                if it.get("special") == "uranium_ore":
-                    cur.execute("SELECT uranium_ore FROM countries WHERE id = ?", (country_id,))
-                    urow = cur.fetchone()
-                    ures = (urow["uranium_ore"] or 0) if urow else 0
-                    if int(it["qty"]) > ures:
-                        raise ValueError(f"تلفات اورانیوم ({int(it['qty']):,}) بیشتر از ذخایر کشور ({ures:,}) است.")
-                    continue
-                if it.get("special") == "nuclear_fuel":
-                    cur.execute("SELECT nuclear_fuel FROM countries WHERE id = ?", (country_id,))
-                    nfrow = cur.fetchone()
-                    nfres = (nfrow["nuclear_fuel"] or 0) if nfrow else 0
-                    if int(it["qty"]) > nfres:
-                        raise ValueError(f"تلفات سوخت هسته‌ای ({int(it['qty']):,}) بیشتر از ذخایر کشور ({nfres:,}) است.")
-                    continue
-                if it.get("special") == "warheads":
-                    cur.execute("SELECT warheads FROM countries WHERE id = ?", (country_id,))
-                    whrow = cur.fetchone()
-                    whres = (whrow["warheads"] or 0) if whrow else 0
-                    if int(it["qty"]) > whres:
-                        raise ValueError(f"تلفات کلاهک هسته‌ای ({int(it['qty']):,}) بیشتر از موجودی کشور ({whres:,}) است.")
-                    continue
-                if it.get("special") == "microchips":
-                    cur.execute("SELECT microchips FROM countries WHERE id = ?", (country_id,))
-                    mcrow = cur.fetchone()
-                    mcres = (mcrow["microchips"] or 0) if mcrow else 0
-                    if int(it["qty"]) > mcres:
-                        raise ValueError(f"تلفات میکروچیپ ({int(it['qty']):,}) بیشتر از موجودی کشور ({mcres:,}) است.")
-                    continue
-                if it.get("special") == "gold":
-                    cur.execute("SELECT gold FROM countries WHERE id = ?", (country_id,))
-                    grow = cur.fetchone()
-                    gres = (grow["gold"] or 0) if grow else 0
-                    if int(it["qty"]) > gres:
-                        raise ValueError(f"تلفات طلا ({int(it['qty']):,}) بیشتر از موجودی کشور ({gres:,}) است.")
+                special = it.get("special")
+                if special in LOSS_SPECIAL_COLUMNS:
+                    column = LOSS_SPECIAL_COLUMNS[special]
+                    cur.execute(f"SELECT {column} FROM countries WHERE id = ?", (country_id,))
+                    crow = cur.fetchone()
+                    have = (crow[column] or 0) if crow else 0
+                    need = int(it["qty"])
+                    if need > have:
+                        raise ValueError(
+                            f"{_LOSS_SPECIAL_LABELS.get(special, 'مقدار')} ({need:,}) بیشتر از موجودی کشور ({have:,}) است."
+                        )
                     continue
                 cur.execute(
                     "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
@@ -815,38 +863,20 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                         f"تلفات «{it.get('name', it['key'])}» ({it['qty']:,}) بیشتر از موجودی ({(row['amount'] or 0):,}) است."
                     )
             for it in valid_items:
+                if int(it.get("qty", 0) or 0) <= 0:
+                    continue
                 if it.get("special") == "building":
-                    cur.execute("UPDATE equipment SET quantity = quantity - ? WHERE country_id = ? AND item_key = ?",
+                    cur.execute("UPDATE equipment SET quantity = MAX(0, quantity - ?) WHERE country_id = ? AND item_key = ?",
                                 (int(it["qty"]), country_id, it["key"]))
-                    eff = it.get("effects", {})
+                    _apply_building_effects(cur, country_id, it.get("effects", {}), sign=-1)
+                    continue
+                special = it.get("special")
+                if special in LOSS_SPECIAL_COLUMNS:
+                    column = LOSS_SPECIAL_COLUMNS[special]
                     cur.execute(
-                        "UPDATE countries SET electricity = MAX(0, electricity - ?), gold_daily = MAX(0, gold_daily - ?),"
-                        " oil_production = MAX(0, oil_production - ?), grain_daily = MAX(0, grain_daily - ?) WHERE id = ?",
-                        (eff.get("elec", 0), eff.get("gold_daily", 0), eff.get("oil_prod", 0), eff.get("grain_daily", 0), country_id))
-                    continue
-                if it.get("special") == "money":
-                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "oil":
-                    cur.execute("UPDATE countries SET oil_reserves = oil_reserves - ? WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "mil_kia":
-                    cur.execute("UPDATE countries SET active_personnel = active_personnel - ? WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "uranium_ore":
-                    cur.execute("UPDATE countries SET uranium_ore = MAX(0, uranium_ore - ?) WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "nuclear_fuel":
-                    cur.execute("UPDATE countries SET nuclear_fuel = MAX(0, nuclear_fuel - ?) WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "warheads":
-                    cur.execute("UPDATE countries SET warheads = MAX(0, warheads - ?) WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "microchips":
-                    cur.execute("UPDATE countries SET microchips = MAX(0, microchips - ?) WHERE id = ?", (int(it["qty"]), country_id))
-                    continue
-                if it.get("special") == "gold":
-                    cur.execute("UPDATE countries SET gold = MAX(0, gold - ?) WHERE id = ?", (int(it["qty"]), country_id))
+                        f"UPDATE countries SET {column} = MAX(0, COALESCE({column}, 0) - ?) WHERE id = ?",
+                        (int(it["qty"]), country_id),
+                    )
                     continue
                 cur.execute(
                     "UPDATE country_assets SET amount = amount - ? WHERE country_id = ? AND equipment_key = ?",
@@ -914,31 +944,7 @@ def revert_loss_report(report_id: int):
             if row["status"] != "applied":
                 raise ValueError("این گزارش قبلاً بازگردانی شده است.")
             items = json.loads(row["items_json"])
-            for it in items:
-                if int(it.get("qty", 0) or 0) > 0:
-                    if it.get("special") == "building":
-                        cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
-                                    " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + excluded.quantity",
-                                    (row["country_id"], it["key"], int(it["qty"])))
-                        eff = it.get("effects", {})
-                        cur.execute(
-                            "UPDATE countries SET electricity = electricity + ?, gold_daily = gold_daily + ?,"
-                            " oil_production = oil_production + ?, grain_daily = grain_daily + ? WHERE id = ?",
-                            (eff.get("elec", 0), eff.get("gold_daily", 0), eff.get("oil_prod", 0), eff.get("grain_daily", 0), row["country_id"]))
-                        continue
-                    if it.get("special") == "money":
-                        cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
-                        continue
-                    if it.get("special") == "oil":
-                        cur.execute("UPDATE countries SET oil_reserves = oil_reserves + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
-                        continue
-                    if it.get("special") == "mil_kia":
-                        cur.execute("UPDATE countries SET active_personnel = active_personnel + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
-                        continue
-                    cur.execute(
-                        "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
-                        (int(it["qty"]), row["country_id"], it["key"]),
-                    )
+            _restore_loss_items(cur, row["country_id"], items)
             cur.execute("UPDATE loss_reports SET status = 'reverted' WHERE id = ?", (report_id,))
         if any(it.get("special") == "building" for it in items):
             try:
@@ -960,33 +966,10 @@ def delete_loss_report(report_id: int):
             row = cur.fetchone()
             if not row:
                 raise ValueError("گزارش یافت نشد.")
+            items = []
             if row["status"] == "applied":
                 items = json.loads(row["items_json"])
-                for it in items:
-                    if int(it.get("qty", 0) or 0) > 0:
-                        if it.get("special") == "building":
-                            cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
-                                        " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + excluded.quantity",
-                                        (row["country_id"], it["key"], int(it["qty"])))
-                            eff = it.get("effects", {})
-                            cur.execute(
-                                "UPDATE countries SET electricity = electricity + ?, gold_daily = gold_daily + ?,"
-                                " oil_production = oil_production + ?, grain_daily = grain_daily + ? WHERE id = ?",
-                                (eff.get("elec", 0), eff.get("gold_daily", 0), eff.get("oil_prod", 0), eff.get("grain_daily", 0), row["country_id"]))
-                            continue
-                        if it.get("special") == "money":
-                            cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
-                            continue
-                        if it.get("special") == "oil":
-                            cur.execute("UPDATE countries SET oil_reserves = oil_reserves + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
-                            continue
-                        if it.get("special") == "mil_kia":
-                            cur.execute("UPDATE countries SET active_personnel = active_personnel + ? WHERE id = ?", (int(it["qty"]), row["country_id"]))
-                            continue
-                        cur.execute(
-                            "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
-                            (int(it["qty"]), row["country_id"], it["key"]),
-                        )
+                _restore_loss_items(cur, row["country_id"], items)
             cur.execute("UPDATE loss_reports SET status = 'deleted' WHERE id = ?", (report_id,))
         if row["status"] == "applied" and any(it.get("special") == "building" for it in items):
             try:
@@ -1008,20 +991,27 @@ def get_loss_stats(country_id: int):
     from collections import Counter
     by_equip = Counter()
     by_subcat = Counter()
-    reports = 0
+    active = 0
     reverted = 0
     for r in rows:
         if r["status"] == "deleted":
             continue
-        reports += 1
         if r["status"] == "reverted":
             reverted += 1
             continue
+        active += 1
         for it in json.loads(r["items_json"]):
             if int(it.get("qty", 0) or 0) > 0:
                 by_equip[it.get("name", it.get("key", "?"))] += int(it["qty"])
                 by_subcat[it.get("subcat", it.get("category", "?"))] += int(it["qty"])
-    return {"reports": reports, "reverted": reverted, "by_equip": by_equip, "by_subcat": by_subcat}
+    # reports = گزارش‌های فعال (اعمال‌شده)؛ total = فعال + بازگردانی‌شده
+    return {
+        "reports": active,
+        "reverted": reverted,
+        "total": active + reverted,
+        "by_equip": by_equip,
+        "by_subcat": by_subcat,
+    }
 
 
 
