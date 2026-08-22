@@ -126,7 +126,7 @@ async def nuclear_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             buttons.append([InlineKeyboardButton("🚪 خروج از معاهده NPT", callback_data="nuc:npt_toggle")])
 
-    buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="op:movements")])
+    buttons.append([InlineKeyboardButton("🔙 بازگشت به تحرکات نظامی", callback_data="mv:menu")])
 
     if update.message:
         await update.message.reply_text(text, reply_markup=_kb(buttons), parse_mode="Markdown")
@@ -150,8 +150,12 @@ async def nuclear_callback_handler(update: Update, context: ContextTypes.DEFAULT
     c = db.get_country_by_id(country["id"]) or country
     cid = c["id"]
 
-    if data == "nuc:menu":
+    if data in ("nuc:menu", "nuc:back"):
         await nuclear_main_menu(update, context)
+
+    elif data in ("op:movements", "nuc:close", "mv:menu"):
+        from handlers.bases import military_movements_menu
+        await military_movements_menu(update, context)
 
     # ---------------- 1. احداث مجتمع غنی‌سازی ----------------
     elif data == "nuc:build_prompt":
