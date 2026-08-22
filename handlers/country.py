@@ -46,29 +46,28 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     missions_str = ("\n\n🎯 **مأموریت‌های روزانه:**\n" + "\n".join(ms_parts)) if ms_parts else ""
 
     text = (
-        f"{c['flag']} *وضعیت کشور {c['name']}*\n\n"
-        f"📊 رضایت عمومی: {app_icon} {app_val}٪ (/approval)\n"
-        f"🪖 آمادگی رزمی نیروها: ⚔️ {readiness_val}٪\n"
-        f"👥 جمعیت: {format_number(c['population'])}\n"
-        f"💰 درآمد مالیاتی: {format_money(c['tax_income'])}\n"
-        f"🏦 خزانه: {format_money(c['treasury'])}\n"
-        f"🪙 طلا: {format_number(c['gold'])}\n"
-        f"📈 درآمد روزانه: {format_money(c['daily_income'])}\n\n"
-        f"🛢️ ذخیره نفت: {format_oil(c['oil_reserves'])}\n"
-        f"🛢️ تولید نفت: {format_oil(c['oil_production'])} در روز\n\n"
-        f"🌾 ذخیره غلات: {format_number(c['grain'])} تن\n"
-        f"🌾 تولید روزانه غلات: +{format_number(c.get('grain_daily') or 0)} تن/روز\n\n"
-        f"💻 ذخیره میکروچیپ: {format_number(c.get('microchips') or 0)} عدد\n"
-        f"💻 تولید روزانه چیپ: +{format_number(c.get('microchips_daily') or 0)} عدد/روز\n\n"
-        f"☢️ ذخیره کیک زرد: {format_number(c.get('uranium_ore') or 0)} تن (+{format_number(c.get('uranium_ore_daily') or 0)} تن/روز)\n"
-        f"🟢 سوخت راکتور (۳.۵٪): {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم (+{format_number(c.get('nuclear_fuel_daily') or 0)} ک‌گ/روز)\n"
-        + (f"🟡 ایزوتوپ پزشکی (۲۰٪): {format_number(c.get('medical_isotopes') or 0)} کیلوگرم\n" if (c.get('medical_isotopes') or 0) > 0 else "")
-        + (f"🟠 اورانیوم ۶۰٪: {format_number(c.get('enriched_60') or 0)} کیلوگرم\n" if (c.get('enriched_60') or 0) > 0 else "")
-        + (f"🔴 اورانیوم تسلیحاتی ۹۰٪: {format_number(c.get('weapons_grade_90') or 0)} کیلوگرم\n" if (c.get('weapons_grade_90') or 0) > 0 else "")
-        + (f"🚀 کلاهک‌های بازدارنده: ☢️ {format_number(c.get('warheads') or 0)} عدد\n" if (c.get('warheads') or 0) > 0 else "") +
-        f"⚡ برق: {c['electricity']}٪\n\n"
-        f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
-        f"👤 نیروی ذخیره: {format_number(c['reserve_personnel'])}{badges_str}"
+        f"**شناسنامه و وضعیت جامع کشور**\n"
+        f"> **کشور:** {c['flag']} {c['name']}\n"
+        f"> **رضایت عمومی:** {app_icon} {app_val}٪ (/approval)\n"
+        f"> **آمادگی رزمی نیروها:** ⚔️ {readiness_val}٪\n\n"
+        f"**اقتصاد و خزانه ملی**\n"
+        f"• **خزانه کشور:** {format_money(c['treasury'])}\n"
+        f"• **درآمد روزانه کل:** {format_money(c['daily_income'])}\n"
+        f"• **درآمد مالیاتی:** {format_money(c['tax_income'])}\n"
+        f"• **پشتوانه طلا:** {format_number(c['gold'])} شمش\n\n"
+        f"**انرژی، غلات و صنایع استراتژیک**\n"
+        f"• **ذخایر نفت:** {format_oil(c['oil_reserves'])} (تولید: {format_oil(c['oil_production'])}/روز)\n"
+        f"• **ذخایر غلات:** {format_number(c['grain'])} تن (تولید: +{format_number(c.get('grain_daily') or 0)} تن/روز)\n"
+        f"• **میکروچیپ و نیمه‌هادی:** {format_number(c.get('microchips') or 0)} عدد (+{format_number(c.get('microchips_daily') or 0)}/روز)\n"
+        f"• **کیک زرد اورانیوم:** {format_number(c.get('uranium_ore') or 0)} تن\n"
+        f"• **سوخت هسته‌ای (۳.۵٪):** {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم\n"
+        + (f"• **ایزوتوپ پزشکی (۲۰٪):** {format_number(c.get('medical_isotopes') or 0)} کیلوگرم\n" if (c.get('medical_isotopes') or 0) > 0 else "")
+        + (f"• **کلاهک‌های بازدارنده:** {format_number(c.get('warheads') or 0)} عدد\n" if (c.get('warheads') or 0) > 0 else "") +
+        f"• **پوشش شبکه برق:** {c['electricity']}٪\n\n"
+        f"**نیروی انسانی و توان نظامی**\n"
+        f"• **جمعیت کل:** {format_number(c['population'])} نفر\n"
+        f"• **پرسنل فعال ارتش:** {format_number(c['active_personnel'])} نفر\n"
+        f"• **نیروهای ذخیره:** {format_number(c['reserve_personnel'])} نفر{badges_str}"
     )
 
     text += missions_str
