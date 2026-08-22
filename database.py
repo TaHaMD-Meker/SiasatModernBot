@@ -3338,6 +3338,12 @@ STRAITS_MAPPING = {
         "name": "تنگه تایوان (ضلع شرقی)",
         "desc": "خط ترانزیت و پدافند دریایی تایوان",
         "affected_keys": ["china"]
+    },
+    "india": {
+        "strait_key": "andaman_malacca",
+        "name": "آبراه استراتژیک آندامان و ورودی مالاکا (Andaman & Nicobar Command)",
+        "desc": "شاهراه ترانزیت انرژی خلیج فارس به شرق آسیا و دهانه ورودی غربی تنگه مالاکا",
+        "affected_keys": ["china", "japan", "south_korea", "taiwan", "singapore", "malaysia"]
     }
 }
 
