@@ -238,10 +238,25 @@ def match_strategic_resource(name: str):
         return {"key": "__uranium_ore__", "name": "ذخایر اورانیوم (کیک زرد)", "special": "uranium_ore",
                 "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "☢️", "unit": "تن"}
 
-    # سوخت هسته‌ای / غنی‌شده
-    if any(w in q for w in ("سوخت هسته", "میله سوخت", "اورانیوم غنی", "سوخت غنی")):
-        return {"key": "__nuclear_fuel__", "name": "سوخت هسته‌ای غنی‌شده", "special": "nuclear_fuel",
-                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🧪", "unit": "کیلوگرم"}
+    # سوخت هسته‌ای / غنی‌شده ۳.۵٪
+    if any(w in q for w in ("سوخت هسته", "میله سوخت", "سوخت ۳", "اورانیوم ۳", "سوخت نیروگاه")):
+        return {"key": "__nuclear_fuel__", "name": "سوخت هسته‌ای غنی‌شده (۳.۵٪)", "special": "nuclear_fuel",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🟢", "unit": "کیلوگرم"}
+
+    # ایزوتوپ‌های پزشکی و سوخت ۲۰٪
+    if any(w in q for w in ("ایزوتوپ", "رادیودارو", "سوخت ۲۰", "اورانیوم ۲۰")):
+        return {"key": "__medical_isotopes__", "name": "ایزوتوپ پزشکی و سوخت ۲۰٪", "special": "medical_isotopes",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🟡", "unit": "کیلوگرم"}
+
+    # اورانیوم ۶۰٪
+    if any(w in q for w in ("اورانیوم ۶۰", "سوخت ۶۰", "غنای ۶۰")):
+        return {"key": "__enriched_60__", "name": "اورانیوم غنی‌شده ۶۰٪", "special": "enriched_60",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🟠", "unit": "کیلوگرم"}
+
+    # اورانیوم تسلیحاتی ۹۰٪
+    if any(w in q for w in ("اورانیوم ۹۰", "سوخت ۹۰", "اورانیوم تسلیحاتی", "غنای ۹۰")):
+        return {"key": "__weapons_grade_90__", "name": "اورانیوم تسلیحاتی ۹۰٪", "special": "weapons_grade_90",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🔴", "unit": "کیلوگرم"}
 
     # میکروچیپ / تراشه
     if any(w in q for w in ("میکروچیپ", "تراشه", "نیمه هادی", "چیپست", "چیپ")):

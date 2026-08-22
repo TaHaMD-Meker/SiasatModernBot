@@ -19,6 +19,7 @@ import database as db
 import approval_system
 import news_engine
 from utils import format_money, format_number, format_oil
+from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
@@ -119,6 +120,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         u_payment = u_daily if force else int(u_daily / INCOME_PARTS)
         fuel_daily = c.get("nuclear_fuel_daily", 0) or 0
         fuel_payment = fuel_daily if force else int(fuel_daily / INCOME_PARTS)
+        med_daily = c.get("medical_isotopes_daily", 0) or 0
+        med_payment = med_daily if force else int(med_daily / INCOME_PARTS)
 
         # 🛡 محافظ خزانه: هزینه نگهداری هرگز خزانه را منفی نمی‌کند.
         # (باقی‌مانده هزینه وقتی خزانه پر شود کسر نمی‌شود — ساده و غیرقابل سوءاستفاده)
@@ -134,6 +137,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             db.adjust_uranium_ore(c["id"], u_payment)
         if fuel_payment > 0:
             db.adjust_nuclear_fuel(c["id"], fuel_payment)
+        if med_payment > 0:
+            db.adjust_medical_isotopes(c["id"], med_payment)
 
         app_res = None
         if first_of_day:
@@ -320,6 +325,10 @@ def main():
     app.add_handler(CommandHandler("research", research_menu))
     app.add_handler(CommandHandler("tech", research_menu))
     app.add_handler(CallbackQueryHandler(research_callback_handler, pattern=r"^research:"))
+
+    # برنامه راهبردی هسته‌ای (/nuclear)
+    app.add_handler(CommandHandler(["nuclear", "nuke"], nuclear_main_menu))
+    app.add_handler(CallbackQueryHandler(nuclear_callback_handler, pattern=r"^nuc:"))
 
     # سیستم دیپلماسی و معاهدات بین‌المللی
     app.add_handler(CommandHandler("diplomacy", diplomacy_menu))

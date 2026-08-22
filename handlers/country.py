@@ -61,7 +61,10 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💻 ذخیره میکروچیپ: {format_number(c.get('microchips') or 0)} عدد\n"
         f"💻 تولید روزانه چیپ: +{format_number(c.get('microchips_daily') or 0)} عدد/روز\n\n"
         f"☢️ ذخیره کیک زرد: {format_number(c.get('uranium_ore') or 0)} تن (+{format_number(c.get('uranium_ore_daily') or 0)} تن/روز)\n"
-        f"🧪 سوخت هسته‌ای: {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم (+{format_number(c.get('nuclear_fuel_daily') or 0)} ک‌گ/روز)\n"
+        f"🟢 سوخت راکتور (۳.۵٪): {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم (+{format_number(c.get('nuclear_fuel_daily') or 0)} ک‌گ/روز)\n"
+        + (f"🟡 ایزوتوپ پزشکی (۲۰٪): {format_number(c.get('medical_isotopes') or 0)} کیلوگرم\n" if (c.get('medical_isotopes') or 0) > 0 else "")
+        + (f"🟠 اورانیوم ۶۰٪: {format_number(c.get('enriched_60') or 0)} کیلوگرم\n" if (c.get('enriched_60') or 0) > 0 else "")
+        + (f"🔴 اورانیوم تسلیحاتی ۹۰٪: {format_number(c.get('weapons_grade_90') or 0)} کیلوگرم\n" if (c.get('weapons_grade_90') or 0) > 0 else "")
         + (f"🚀 کلاهک‌های بازدارنده: ☢️ {format_number(c.get('warheads') or 0)} عدد\n" if (c.get('warheads') or 0) > 0 else "") +
         f"⚡ برق: {c['electricity']}٪\n\n"
         f"👤 نیروی فعال: {format_number(c['active_personnel'])}\n"
@@ -72,7 +75,10 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     inline_keyboard = [
         [InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")],
-        [InlineKeyboardButton("🔬 مرکز تحقیق و توسعه فناوری (R&D)", callback_data="research:menu")],
+        [
+            InlineKeyboardButton("🔬 مرکز تحقیق و توسعه (R&D)", callback_data="research:menu"),
+            InlineKeyboardButton("☢️ برنامه هسته‌ای", callback_data="nuc:menu"),
+        ],
         [
             InlineKeyboardButton("🏪 بورس کالا", callback_data="market:menu"),
             InlineKeyboardButton("🎖️ دارایی‌ها", callback_data="assets_back"),

@@ -53,6 +53,7 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
             "🎖️ *تحرکات نظامی*\n━━━━━━━━━━━━━━━━━━\n\nیک گزینه را انتخاب کنید:",
             reply_markup=_kb([
                 [InlineKeyboardButton("🪖 برگزاری مانور نظامی", callback_data="op:military_drill")],
+                [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
                 [InlineKeyboardButton("🏗️ ساخت پایگاه پیشروی", callback_data="mv:newbase")],
                 [InlineKeyboardButton("📍 پایگاه‌های من", callback_data="mv:mybases")],
                 [InlineKeyboardButton("🗺️ پایگاه‌های روی خاک من", callback_data="mv:hostbases")],
@@ -65,6 +66,7 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
         "🎖️ *تحرکات نظامی*\n━━━━━━━━━━━━━━━━━━\n\nیک گزینه را انتخاب کنید:",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🪖 برگزاری مانور نظامی", callback_data="op:military_drill")],
+            [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
             [InlineKeyboardButton("🏗️ ساخت پایگاه پیشروی", callback_data="mv:newbase")],
             [InlineKeyboardButton("📍 پایگاه‌های من", callback_data="mv:mybases")],
             [InlineKeyboardButton("🗺️ پایگاه‌های روی خاک من", callback_data="mv:hostbases")],

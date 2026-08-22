@@ -5114,3 +5114,78 @@ NUCLEAR_COMPENSATION_ECONOMY_MULT = 3
 # ===== 📜 پیمان عدم اشاعه (NPT) و تحریم جامع سازمان ملل =====
 NPT_WITHDRAWAL_APPROVAL_HIT = 10   # افت رضایت عمومی هنگام خروج از NPT (واکنش داخلی و بین‌المللی)
 UN_SANCTION_INCOME_FACTOR = 0.5    # ضریب درآمد روزانهٔ کشورِ تحت تحریم جامع (۰.۵ = نصف)
+
+# ===== 🔬 سطوح و دکترین‌های برنامه غنی‌سازی و چرخه سوخت =====
+ENRICHMENT_FACILITY_PRICE = 60_000_000
+ENRICHMENT_FACILITY_GOLD = 150
+ENRICHMENT_FACILITY_CHIPS = 250
+ENRICHMENT_FACILITY_TECH_REQ = 3
+
+ENRICHMENT_TIERS = {
+    1: {
+        "tier": 1,
+        "name": "🟢 سوخت صلح‌آمیز نیروگاهی (۳.۵٪ تا ۵٪)",
+        "short_name": "سوخت ۳.۵٪ نیروگاهی",
+        "ore_consume": 40,
+        "chips_consume": 0,
+        "fuel_prod": 25,
+        "medical_prod": 0,
+        "60_prod": 0,
+        "90_prod": 0,
+        "tech_req": 3,
+        "iaea_threat": "صلح‌آمیز 🟢",
+        "desc": "تولید سوخت پاک راکتورهای اتمی. با تامین سوخت، مصرف نفت شبکه برق کشور صفر شده و نفت برای صادرات آزاد می‌شود."
+    },
+    2: {
+        "tier": 2,
+        "name": "🟡 ایزوتوپ‌های پزشکی و پیشران (۲۰٪)",
+        "short_name": "ایزوتوپ پزشکی ۲۰٪",
+        "ore_consume": 60,
+        "chips_consume": 2,
+        "fuel_prod": 0,
+        "medical_prod": 10,
+        "60_prod": 0,
+        "90_prod": 0,
+        "tech_req": 3,
+        "iaea_threat": "پزشکی/تحقیقاتی 🟡",
+        "desc": "تولید رادیوداروهای درمان سرطان و پیشران اتمی. اعطای +۵٪ بونوس رضایت عمومی و سلامت ملی و ۳۰٪ کاهش سوخت ناوگان."
+    },
+    3: {
+        "tier": 3,
+        "name": "🟠 آستانه گریز هسته‌ای (۶۰٪)",
+        "short_name": "اورانیوم ۶۰٪ (آستانه گریز)",
+        "ore_consume": 80,
+        "chips_consume": 4,
+        "fuel_prod": 0,
+        "medical_prod": 0,
+        "60_prod": 5,
+        "90_prod": 0,
+        "tech_req": 4,
+        "iaea_threat": "آستانه گریز 🟠 (هشدار آژانس)",
+        "desc": "تولید اورانیوم با غنای ۶۰٪. ایجاد اهرم چانه‌زنی سنگین در دیپلماسی بین‌المللی و نزدیک شدن به زمان گریز هسته‌ای."
+    },
+    4: {
+        "tier": 4,
+        "name": "🔴 غنی‌سازی تسلیحاتی (۹۰٪)",
+        "short_name": "اورانیوم تسلیحاتی ۹۰٪",
+        "ore_consume": 120,
+        "chips_consume": 6,
+        "fuel_prod": 0,
+        "medical_prod": 0,
+        "60_prod": 0,
+        "90_prod": 2.5,
+        "tech_req": 4,
+        "iaea_threat": "تهدید تسلیحاتی 🔴 (آلارم قرمز)",
+        "desc": "تولید اورانیوم تسلیحاتی درجه سلاح جهت آزمایش زیرزمینی انفجار اتمی و ساخت کلاهک راهبردی."
+    }
+}
+
+NUCLEAR_TEST_COST_MONEY = 50_000_000
+NUCLEAR_TEST_COST_GOLD = 50
+NUCLEAR_TEST_COST_CHIPS = 200
+NUCLEAR_TEST_WEAPONS_GRADE = 50
+
+NUCLEAR_WARHEAD_COST_MONEY = 100_000_000
+NUCLEAR_WARHEAD_COST_GOLD = 100
+NUCLEAR_WARHEAD_COST_CHIPS = 500
+NUCLEAR_WARHEAD_WEAPONS_GRADE = 100

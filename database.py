@@ -155,6 +155,36 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN medical_isotopes INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN medical_isotopes_daily INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN enriched_60 INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN weapons_grade_90 INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN enrichment_tier INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN nuclear_tested INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -721,6 +751,9 @@ LOSS_SPECIAL_COLUMNS = {
     "mil_kia": "active_personnel",
     "uranium_ore": "uranium_ore",
     "nuclear_fuel": "nuclear_fuel",
+    "medical_isotopes": "medical_isotopes",
+    "enriched_60": "enriched_60",
+    "weapons_grade_90": "weapons_grade_90",
     "warheads": "warheads",
     "microchips": "microchips",
     "gold": "gold",
@@ -747,6 +780,7 @@ _BUILDING_EFFECT_COLUMNS = {
     "grain_daily": "grain_daily",
     "uranium_ore_daily": "uranium_ore_daily",
     "nuclear_fuel_daily": "nuclear_fuel_daily",
+    "medical_isotopes_daily": "medical_isotopes_daily",
     "microchips_daily": "microchips_daily",
 }
 
@@ -1504,6 +1538,240 @@ def adjust_uranium_ore(country_id: int, delta: int):
     conn.commit()
     conn.close()
 
+
+
+def adjust_medical_isotopes(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET medical_isotopes = MAX(0, medical_isotopes + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def adjust_enriched_60(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET enriched_60 = MAX(0, enriched_60 + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def adjust_weapons_grade_90(country_id: int, delta: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE countries SET weapons_grade_90 = MAX(0, weapons_grade_90 + ?) WHERE id = ?", (delta, country_id))
+    conn.commit()
+    conn.close()
+
+
+def set_country_enrichment_tier(country_id: int, tier: int) -> tuple[bool, str]:
+    """تنظیم دکترین و پله غنی‌سازی سانتریفیوژها (۱=۳.۵٪، ۲=۲۰٪، ۳=۶۰٪، ۴=۹۰٪)."""
+    tier = max(1, min(4, tier))
+    tier_info = config.ENRICHMENT_TIERS.get(tier, {})
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT tech_level, country_key, enrichment_suspended FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور یافت نشد."
+
+            tech_lvl = c["tech_level"] or 1
+            if tech_lvl < tier_info.get("tech_req", 3):
+                return False, f"🔬 برای این پله غنی‌سازی نیاز به سطح فناوری {tier_info.get('tech_req', 3)} دارید."
+
+            cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = 'enrichment_facility'", (country_id,))
+            eq = cur.fetchone()
+            fac_count = (eq["quantity"] or 0) if eq else 0
+            is_p5 = c["country_key"] in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+
+            if fac_count < 1 and not is_p5:
+                return False, "❌ کشور شما فاقد مجتمع غنی‌سازی و سانتریفیوژ فعال است."
+
+            fuel_d = (tier_info.get("fuel_prod", 0) * max(1, fac_count)) if not c["enrichment_suspended"] else 0
+            med_d = (tier_info.get("medical_prod", 0) * max(1, fac_count)) if not c["enrichment_suspended"] else 0
+
+            cur.execute("""
+                UPDATE countries SET
+                enrichment_tier = ?,
+                nuclear_fuel_daily = ?,
+                medical_isotopes_daily = ?
+                WHERE id = ?
+            """, (tier, fuel_d, med_d, country_id))
+
+        return True, f"✅ دکترین غنی‌سازی سانتریفیوژها بر روی «{tier_info.get('name')}» تنظیم گردید."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
+
+def build_enrichment_facility_transaction(country_id: int) -> tuple[bool, str]:
+    """احداث مجتمع غنی‌سازی و آبشار سانتریفیوژهای زیرزمینی."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور یافت نشد."
+
+            tech_lvl = c["tech_level"] or 1
+            if tech_lvl < getattr(config, "ENRICHMENT_FACILITY_TECH_REQ", 3):
+                return False, f"🔬 **پیش‌نیاز فناوری نامعتبر:** برای احداث مجتمع غنی‌سازی زیرزمینی نیاز به سطح فناوری ۳ به بالا دارید."
+
+            cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = 'enrichment_facility'", (country_id,))
+            eq = cur.fetchone()
+            curr_qty = (eq["quantity"] or 0) if eq else 0
+            if curr_qty >= 2:
+                return False, "🔒 سقف مجاز احداث مجتمع غنی‌سازی (حداکثر ۲ واحد) تکمیل است."
+
+            price = getattr(config, "ENRICHMENT_FACILITY_PRICE", 60_000_000)
+            gold_req = getattr(config, "ENRICHMENT_FACILITY_GOLD", 150)
+            chips_req = getattr(config, "ENRICHMENT_FACILITY_CHIPS", 250)
+
+            if (c["treasury"] or 0) < price:
+                return False, f"💵 موجودی خزانه کافی نیست! نیاز: {format_money(price)}"
+            if (c["gold"] or 0) < gold_req:
+                return False, f"🪙 شمش طلا کافی نیست! نیاز: {gold_req} شمش"
+            if (c["microchips"] or 0) < chips_req:
+                return False, f"💻 میکروچیپ کافی نیست! نیاز: {chips_req:,} عدد"
+
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                gold = gold - ?,
+                microchips = microchips - ?,
+                nuclear_fuel_daily = nuclear_fuel_daily + 25
+                WHERE id = ?
+            """, (price, gold_req, chips_req, country_id))
+
+            if eq:
+                cur.execute("UPDATE equipment SET quantity = quantity + 1 WHERE country_id = ? AND item_key = 'enrichment_facility'", (country_id,))
+            else:
+                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'enrichment_facility', 1)", (country_id,))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'enrichment_build', 'احداث مجتمع غنی‌سازی و سانتریفیوژ زیرزمینی', ?, ?)
+            """, (country_id, -price, now_str))
+
+        return True, "🔬 **مجتمع غنی‌سازی و سانتریفیوژ زیرزمینی با موفقیت احداث و راه‌اندازی شد!**"
+    except Exception as e:
+        return False, f"خطای دیتابیس: {e}"
+
+
+def conduct_nuclear_test_transaction(country_id: int) -> tuple[bool, str]:
+    """انجام موفقیت‌آمیز آزمایش انفجار هسته‌ای زیرزمینی."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور یافت نشد."
+
+            if c.get("nuclear_tested"):
+                return False, "🌟 کشور شما قبلاً آزمایش انفجار هسته‌ای را با موفقیت انجام داده است."
+
+            tech_lvl = c["tech_level"] or 1
+            if tech_lvl < 4:
+                return False, "🔬 برای انجام آزمایش هسته‌ای نیاز به سطح فناوری ۴ به بالا دارید."
+
+            w90_req = getattr(config, "NUCLEAR_TEST_WEAPONS_GRADE", 50)
+            cost_money = getattr(config, "NUCLEAR_TEST_COST_MONEY", 50_000_000)
+            cost_gold = getattr(config, "NUCLEAR_TEST_COST_GOLD", 50)
+            cost_chips = getattr(config, "NUCLEAR_TEST_COST_CHIPS", 200)
+
+            if (c["weapons_grade_90"] or 0) < w90_req:
+                return False, f"🔴 اورانیوم تسلیحاتی ۹۰٪ کافی نیست! نیاز: {w90_req} کیلوگرم (موجودی: {c['weapons_grade_90'] or 0} ک‌گ)"
+            if (c["treasury"] or 0) < cost_money:
+                return False, f"💵 موجودی خزانه کافی نیست! نیاز: {format_money(cost_money)}"
+            if (c["gold"] or 0) < cost_gold:
+                return False, f"🪙 طلا کافی نیست! نیاز: {cost_gold} شمش"
+            if (c["microchips"] or 0) < cost_chips:
+                return False, f"💻 میکروچیپ کافی نیست! نیاز: {cost_chips:,} عدد"
+
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                gold = gold - ?,
+                microchips = microchips - ?,
+                weapons_grade_90 = weapons_grade_90 - ?,
+                nuclear_tested = 1
+                WHERE id = ?
+            """, (cost_money, cost_gold, cost_chips, w90_req, country_id))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'nuclear_test', 'انجام نخستین آزمایش انفجار هسته‌ای زیرزمینی', ?, ?)
+            """, (country_id, -cost_money, now_str))
+
+        return True, "💥 **نخستین آزمایش انفجار هسته‌ای زیرزمینی کشور با موفقیت کامل انجام شد!**"
+    except Exception as e:
+        return False, f"خطای دیتابیس: {e}"
+
+
+def assemble_strategic_warhead_transaction(country_id: int) -> tuple[bool, str]:
+    """کوچک‌سازی و مونتاژ کلاهک راهبردی بازدارنده هسته‌ای."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور یافت نشد."
+
+            tech_lvl = c["tech_level"] or 1
+            if tech_lvl < 5:
+                return False, "🔬 برای کوچک‌سازی و مونتاژ کلاهک موشکی نیاز به بالاترین سطح فناوری (سطح ۵) دارید."
+
+            is_p5 = c["country_key"] in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+            if not c.get("nuclear_tested") and not is_p5:
+                return False, "💥 ابتدا باید آزمایش انفجار هسته‌ای زیرزمینی (فاز ۴) را با موفقیت پشت سر بگذارید."
+
+            eff_cap = get_effective_warhead_cap(c)
+            curr_wh = c["warheads"] or 0
+            if eff_cap is not None and curr_wh >= eff_cap:
+                return False, f"⛔ **سقف مجاز نگهداری کلاهک تکمیل است:** سقف شما حداکثر {eff_cap} عدد می‌باشد."
+
+            w90_req = getattr(config, "NUCLEAR_WARHEAD_WEAPONS_GRADE", 100)
+            cost_money = getattr(config, "NUCLEAR_WARHEAD_COST_MONEY", 100_000_000)
+            cost_gold = getattr(config, "NUCLEAR_WARHEAD_COST_GOLD", 100)
+            cost_chips = getattr(config, "NUCLEAR_WARHEAD_COST_CHIPS", 500)
+
+            if (c["weapons_grade_90"] or 0) < w90_req:
+                return False, f"🔴 اورانیوم تسلیحاتی ۹۰٪ کافی نیست! نیاز: {w90_req} کیلوگرم (موجودی: {c['weapons_grade_90'] or 0} ک‌گ)"
+            if (c["treasury"] or 0) < cost_money:
+                return False, f"💵 موجودی خزانه کافی نیست! نیاز: {format_money(cost_money)}"
+            if (c["gold"] or 0) < cost_gold:
+                return False, f"🪙 طلا کافی نیست! نیاز: {cost_gold} شمش"
+            if (c["microchips"] or 0) < cost_chips:
+                return False, f"💻 میکروچیپ کافی نیست! نیاز: {cost_chips:,} عدد"
+
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                gold = gold - ?,
+                microchips = microchips - ?,
+                weapons_grade_90 = weapons_grade_90 - ?,
+                warheads = warheads + 1
+                WHERE id = ?
+            """, (cost_money, cost_gold, cost_chips, w90_req, country_id))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'warhead_assembly', 'مونتاژ و مسلح‌سازی ۱ کلاهک راهبردی هسته‌ای', ?, ?)
+            """, (country_id, -cost_money, now_str))
+
+        return True, f"🚀 **کلاهک راهبردی هسته‌ای با موفقیت مونتاژ و در زرادخانه مستقر شد!**\nتعداد کلاهک‌های فعال: **{curr_wh + 1} عدد**"
+    except Exception as e:
+        return False, f"خطای دیتابیس: {e}"
 
 def adjust_nuclear_fuel(country_id: int, delta: int):
     conn = get_connection()

@@ -136,13 +136,17 @@ def process_daily_approval_and_emigration(c: dict):
     else:
         debt_penalty = 0
 
-    # 5. Recovery
+    # 5. Recovery & Medical Isotopes Health Bonus
     if elec_ok and oil_ok and grain_ok and treasury >= 0:
         recovery = 2
     else:
         recovery = 0
 
-    net_change = elec_penalty + oil_penalty + grain_penalty + debt_penalty + recovery
+    med_res = c.get("medical_isotopes", 0) or 0
+    med_daily = c.get("medical_isotopes_daily", 0) or 0
+    med_bonus = 5 if (med_res > 0 or med_daily > 0) else 0
+
+    net_change = elec_penalty + oil_penalty + grain_penalty + debt_penalty + recovery + med_bonus
     new_approval = max(0, min(100, current_approval + net_change))
     db.update_country_field(cid, "approval_rating", new_approval)
 
@@ -332,7 +336,12 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
 
     fuel_prod = c.get("nuclear_fuel_daily", 0) or 0
     if fuel_prod > 0:
-        lines.append(f"• *تولید روزانه سوخت هسته‌ای:* +{format_number(fuel_prod)} کیلوگرم/روز\n")
+        lines.append(f"• *تولید روزانه سوخت هسته‌ای (۳.۵٪):* +{format_number(fuel_prod)} کیلوگرم/روز\n")
+
+    med_prod = c.get("medical_isotopes_daily", 0) or 0
+    med_res = c.get("medical_isotopes", 0) or 0
+    if med_prod > 0 or med_res > 0:
+        lines.append(f"• 🏥 *پزشکی هسته‌ای و سلامت ملی:* تامین رادیوداروهای درمانی (+۵٪ رضایت ملی)\n")
 
     warheads_count = c.get("warheads", 0) or 0
     if warheads_count > 0:

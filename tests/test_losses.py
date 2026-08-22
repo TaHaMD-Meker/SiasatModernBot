@@ -71,6 +71,9 @@ def _snapshot(db, cid):
         "gold": c["gold"],
         "uranium_ore": c["uranium_ore"],
         "nuclear_fuel": c["nuclear_fuel"],
+        "medical_isotopes": c.get("medical_isotopes", 0) or 0,
+        "enriched_60": c.get("enriched_60", 0) or 0,
+        "weapons_grade_90": c.get("weapons_grade_90", 0) or 0,
         "treasury": c["treasury"],
         "oil_reserves": c["oil_reserves"],
         "active_personnel": c["active_personnel"],
@@ -84,7 +87,10 @@ FULL_ITEMS = [
     {"key": "__microchips__", "name": "تراشه", "special": "microchips", "subcat": "فناوری", "emoji": "💻", "unit": "عدد", "qty": 100},
     {"key": "__gold__", "name": "طلا", "special": "gold", "subcat": "مالی", "emoji": "🪙", "unit": "شمش", "qty": 20},
     {"key": "__uranium_ore__", "name": "اورانیوم", "special": "uranium_ore", "subcat": "منابع", "emoji": "☢️", "unit": "تن", "qty": 10},
-    {"key": "__nuclear_fuel__", "name": "سوخت هسته‌ای", "special": "nuclear_fuel", "subcat": "منابع", "emoji": "🧪", "unit": "کیلوگرم", "qty": 15},
+    {"key": "__nuclear_fuel__", "name": "سوخت هسته‌ای", "special": "nuclear_fuel", "subcat": "منابع", "emoji": "🟢", "unit": "کیلوگرم", "qty": 15},
+    {"key": "__medical_isotopes__", "name": "ایزوتوپ پزشکی", "special": "medical_isotopes", "subcat": "منابع", "emoji": "🟡", "unit": "کیلوگرم", "qty": 5},
+    {"key": "__enriched_60__", "name": "اورانیوم ۶۰٪", "special": "enriched_60", "subcat": "منابع", "emoji": "🟠", "unit": "کیلوگرم", "qty": 2},
+    {"key": "__weapons_grade_90__", "name": "اورانیوم تسلیحاتی", "special": "weapons_grade_90", "subcat": "منابع", "emoji": "🔴", "unit": "کیلوگرم", "qty": 4},
     {"key": "__cost_money__", "name": "هزینه", "special": "money", "subcat": "هزینه", "emoji": "💵", "unit": "دلار", "qty": 5_000_000},
     {"key": "__cost_oil__", "name": "سوخت", "special": "oil", "subcat": "هزینه", "emoji": "🛢️", "unit": "بشکه", "qty": 100_000},
     {"key": "__personnel_mil__", "name": "کشته", "special": "mil_kia", "subcat": "انسانی", "emoji": "🪖", "unit": "نفر", "qty": 500},
@@ -98,7 +104,7 @@ FULL_ITEMS = [
 class TestApplyAndRevert:
     def test_apply_deducts_every_resource(self, db, country):
         cid = country["id"]
-        _seed(db, cid, warheads=10, microchips=500, gold=100, uranium_ore=50, nuclear_fuel=80)
+        _seed(db, cid, warheads=10, microchips=500, gold=100, uranium_ore=50, nuclear_fuel=80, medical_isotopes=30, enriched_60=20, weapons_grade_90=25)
         before = _snapshot(db, cid)
 
         ok, rid, err = db.create_loss_report(cid, [dict(i) for i in FULL_ITEMS], "عملیات", "", 1)
@@ -118,7 +124,7 @@ class TestApplyAndRevert:
     def test_revert_restores_everything(self, db, country):
         """رگرسیون: بازگردانی باید منابع راهبردی را هم برگرداند."""
         cid = country["id"]
-        _seed(db, cid, warheads=10, microchips=500, gold=100, uranium_ore=50, nuclear_fuel=80)
+        _seed(db, cid, warheads=10, microchips=500, gold=100, uranium_ore=50, nuclear_fuel=80, medical_isotopes=30, enriched_60=20, weapons_grade_90=25)
         before = _snapshot(db, cid)
 
         ok, rid, _ = db.create_loss_report(cid, [dict(i) for i in FULL_ITEMS], "عملیات", "", 1)
@@ -131,7 +137,7 @@ class TestApplyAndRevert:
 
     def test_delete_restores_everything(self, db, country):
         cid = country["id"]
-        _seed(db, cid, warheads=10, microchips=500, gold=100, uranium_ore=50, nuclear_fuel=80)
+        _seed(db, cid, warheads=10, microchips=500, gold=100, uranium_ore=50, nuclear_fuel=80, medical_isotopes=30, enriched_60=20, weapons_grade_90=25)
         before = _snapshot(db, cid)
 
         ok, rid, _ = db.create_loss_report(cid, [dict(i) for i in FULL_ITEMS], "عملیات", "", 1)

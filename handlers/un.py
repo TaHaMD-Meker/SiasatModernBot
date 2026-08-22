@@ -427,20 +427,24 @@ IAEA_P5 = ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israe
 
 
 def _iaea_nuclear_countries():
-    """فهرست کشورهای دارای فعالیت هسته‌ای (مرتب: کلاهک، سپس سوخت)."""
+    """فهرست کشورهای دارای فعالیت هسته‌ای (مرتب: کلاهک، سپس اورانیوم تسلیحاتی و سوخت)."""
     result = []
     for c in db.get_all_countries():
         if c.get("country_key") == "un":
             continue
         wh = c.get("warheads") or 0
+        w90 = c.get("weapons_grade_90") or 0
+        e60 = c.get("enriched_60") or 0
         fuel = c.get("nuclear_fuel") or 0
+        med = c.get("medical_isotopes") or 0
         u_ore = c.get("uranium_ore") or 0
         f_daily = c.get("nuclear_fuel_daily") or 0
         u_daily = c.get("uranium_ore_daily") or 0
-        if wh == 0 and fuel == 0 and u_ore == 0 and f_daily == 0 and u_daily == 0:
+        tested = c.get("nuclear_tested") or 0
+        if wh == 0 and w90 == 0 and e60 == 0 and fuel == 0 and med == 0 and u_ore == 0 and f_daily == 0 and u_daily == 0 and tested == 0:
             continue
         result.append(c)
-    result.sort(key=lambda c: ((c.get("warheads") or 0), (c.get("nuclear_fuel") or 0)), reverse=True)
+    result.sort(key=lambda c: ((c.get("warheads") or 0) * 1000 + (c.get("weapons_grade_90") or 0) * 10 + (c.get("enriched_60") or 0) * 5 + (c.get("nuclear_fuel") or 0)), reverse=True)
     return result
 
 
@@ -484,8 +488,17 @@ def _iaea_monitor_text():
         npt_out = " 🚫خارج از NPT" if (c.get("npt_withdrawn") or 0) else ""
         if npt_out:
             npt_out_list.append(f"{c['flag']} {c['name']}")
+        threat_tags = []
+        if (c.get("weapons_grade_90") or 0) > 0:
+            threat_tags.append("🔴 تسلیحاتی ۹۰٪")
+        elif (c.get("enriched_60") or 0) > 0:
+            threat_tags.append("🟠 آستانه گریز ۶۰٪")
+        elif (c.get("medical_isotopes") or 0) > 0:
+            threat_tags.append("🟡 پزشکی ۲۰٪")
+        threat_str = f" [{' | '.join(threat_tags)}]" if threat_tags else ""
+
         lines.append(
-            f"{i}. {c['flag']} *{c['name']}*{p5}{susp}{npt_out}\n"
+            f"{i}. {c['flag']} *{c['name']}*{p5}{susp}{npt_out}{threat_str}\n"
             f"   ☢️ کلاهک: *{format_number(wh)}* | 🧪 سوخت: {format_number(c.get('nuclear_fuel') or 0)} ک‌گ | "
             f"⛏️ اورانیوم: {format_number(c.get('uranium_ore') or 0)} تن"
         )
@@ -547,19 +560,28 @@ def _iaea_dossier_text(c: dict):
         fac_parts.append(f"🔬 مجتمع غنی‌سازی ×{format_number(enr)}")
     facilities = " | ".join(fac_parts) if fac_parts else "ندارد"
 
+    tier = c.get("enrichment_tier", 1) or 1
+    tier_name = config.ENRICHMENT_TIERS.get(tier, {}).get("name", "پله ۱")
+    tested = bool(c.get("nuclear_tested", 0))
+
     text = (
-        f"🔍 **پرونده بازرسی هسته‌ای آژانس — {c['flag']} {c['name']}**\n"
+        f"🔍 **پرونده بازرسی فنی هسته‌ای آژانس (IAEA) — {c['flag']} {c['name']}**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"☢️ *کلاهک‌های استراتژیک:* {format_number(wh)}\n"
-        f"📋 *سقف مجاز:* {cap_line} → *وضعیت:* {status}\n\n"
-        f"🧪 *سوخت غنی‌شده:* {format_number(c.get('nuclear_fuel') or 0)} ک‌گ (+{format_number(c.get('nuclear_fuel_daily') or 0)}/روز)\n"
-        f"⛏️ *کیک زرد اورانیوم:* {format_number(c.get('uranium_ore') or 0)} تن (+{format_number(c.get('uranium_ore_daily') or 0)}/روز)\n\n"
+        f"☢️ *کلاهک‌های استراتژیک مستقر:* {format_number(wh)}\n"
+        f"📋 *سقف مجاز نگهداری:* {cap_line} → *وضعیت:* {status}\n"
+        f"💥 *آزمایش انفجار هسته‌ای (فاز ۴):* {'✅ انجام شده' if tested else '❌ انجام نشده'}\n"
+        f"⚙️ *دکترین فعال سانتریفیوژها:* {tier_name}\n\n"
+        f"🔴 *اورانیوم تسلیحاتی (۹۰٪):* {format_number(c.get('weapons_grade_90') or 0)} کیلوگرم\n"
+        f"🟠 *اورانیوم آستانه گریز (۶۰٪):* {format_number(c.get('enriched_60') or 0)} کیلوگرم\n"
+        f"🟡 *ایزوتوپ پزشکی و پیشران (۲۰٪):* {format_number(c.get('medical_isotopes') or 0)} کیلوگرم (+{format_number(c.get('medical_isotopes_daily') or 0)}/روز)\n"
+        f"🟢 *سوخت راکتور نیروگاهی (۳.۵٪):* {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم (+{format_number(c.get('nuclear_fuel_daily') or 0)}/روز)\n"
+        f"⛏️ *کیک زرد اورانیوم خام:* {format_number(c.get('uranium_ore') or 0)} تن (+{format_number(c.get('uranium_ore_daily') or 0)}/روز)\n\n"
         f"🏭 *تأسیسات چرخه سوخت:* {facilities}\n"
-        f"🔬 *سطح فناوری:* {format_number(c.get('tech_level') or 1)}\n"
+        f"🔬 *سطح فناوری:* سطح {format_number(c.get('tech_level') or 1)}\n"
         f"⚖️ *وضعیت غنی‌سازی:* {'⛔ تعلیق‌شده به دستور آژانس' if suspended else '✅ فعال'}\n"
-        f"📜 *پیمان عدم اشاعه:* {'🚫 خارج از پیمان' if npt_out else '✅ عضو کامل'}\n"
-        f"🌐 *تحریم جامع سازمان ملل:* {'🚫 تحت تحریم (درآمد نصف + بازار بسته)' if sanc else 'ندارد'}\n\n"
-        "_بازرسی فنی — بازرسان رسمی آژانس، وین_"
+        f"📜 *پیمان عدم اشاعه:* {'🚫 خارج از پیمان NPT' if npt_out else '✅ عضو متعهد NPT'}\n"
+        f"🌐 *تحریم جامع سازمان ملل:* {'🚫 تحت تحریم جامع' if sanc else 'ندارد'}\n\n"
+        "_بازرسی فنی و ارزیابی ریسک — بازرسان رسمی آژانس، وین_"
     )
     return text
 

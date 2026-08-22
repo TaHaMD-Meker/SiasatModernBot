@@ -41,7 +41,6 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏠 ساختمان‌ها", callback_data="shopcat:buildings"), InlineKeyboardButton("🏭 صنعت و کارخانجات", callback_data="shopcat:factories")],
         [InlineKeyboardButton("⚡ نیروگاه‌های انرژی", callback_data="shopcat:power"), InlineKeyboardButton("🚢 حمل‌ونقل و ترابری", callback_data="shopcat:transport")],
         [InlineKeyboardButton("⛏️ منابع و معادن", callback_data="shopcat:mines"), InlineKeyboardButton("🌾 کشاورزی و غلات", callback_data="shopcat:agriculture")],
-        [InlineKeyboardButton("🚀 مرکز تسلیحات راهبردی و کلاهک بازدارنده", callback_data="shopcat:warheads")],
         [InlineKeyboardButton("🔬 مرکز تحقیق و توسعه فناوری (R&D)", callback_data="research:menu")],
     ]
 
@@ -154,7 +153,8 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if cat_key == "warheads":
-        await show_warheads_menu(query, country)
+        from handlers.nuclear import nuclear_main_menu
+        await nuclear_main_menu(update, context)
         return
 
     if cat_key == "military_assets":
