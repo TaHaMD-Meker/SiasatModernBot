@@ -20,6 +20,7 @@ import approval_system
 import news_engine
 from utils import format_money, format_number, format_oil
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
+from handlers.intel import intel_main_menu, intel_callback_handler
 from handlers.bases import military_movements_menu
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
@@ -332,6 +333,10 @@ def main():
     # برنامه راهبردی هسته‌ای (/nuclear)
     app.add_handler(CommandHandler(["nuclear", "nuke"], nuclear_main_menu))
     app.add_handler(CallbackQueryHandler(nuclear_callback_handler, pattern=r"^nuc:"))
+
+    # سازمان اطلاعات و جنگ سایبری (/intel)
+    app.add_handler(CommandHandler(["intel", "mossad", "cia", "vaja", "commanders", "cyber"], intel_main_menu))
+    app.add_handler(CallbackQueryHandler(intel_callback_handler, pattern=r"^intel:"))
 
     # سیستم دیپلماسی و معاهدات بین‌المللی
     app.add_handler(CommandHandler("diplomacy", diplomacy_menu))

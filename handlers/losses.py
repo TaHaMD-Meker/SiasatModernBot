@@ -1018,6 +1018,30 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 matched.append(res_match)
                 continue
 
+            # تطبیق با سران و فرماندهان نظامی کشور
+            cmd_list = db.get_country_commanders(country["id"])
+            clean_n = _clean_str(name)
+            cmd_match = None
+            for cm in cmd_list:
+                c_t = _clean_str(cm["title"])
+                if clean_n in c_t or c_t in clean_n or (len(clean_n) >= 4 and any(w in clean_n and w in c_t for w in ("هوافضا", "موساد", "ستاد", "اطلاعات", "هوایی", "فرمانده"))):
+                    if cm["status"] == "active":
+                        cmd_match = cm
+                        break
+            if cmd_match:
+                matched.append({
+                    "key": f"__cmd_{cmd_match['key']}__",
+                    "name": f"{cmd_match['title']} (ترور / شهید)",
+                    "special": "commander",
+                    "cmd_key": cmd_match["key"],
+                    "category": "Command",
+                    "subcat": "سران نظامی",
+                    "emoji": "🎖️",
+                    "unit": "نفر",
+                    "qty": qty
+                })
+                continue
+
             # تطبیق با ساختمان‌ها و صنایع
             b = match_building(name, country["id"])
             if b:

@@ -185,6 +185,75 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN firewall_level INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN air_defense_disrupted_until TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN blackout_until TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN r_and_d_frozen_until TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN command_disrupted_until TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN last_intel_op_time TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN intel_ops_today INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN intel_ops_date TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # جدول سران و کادر فرماندهی نظامی کشورها
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS country_commanders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT DEFAULT 'active',
+        killed_at TEXT,
+        UNIQUE(country_id, key),
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    # جدول لاگ و تاریخچه عملیات‌های اطلاعاتی و سایبری
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS intel_operations_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        attacker_id INTEGER NOT NULL,
+        target_id INTEGER NOT NULL,
+        op_type TEXT NOT NULL,
+        result TEXT NOT NULL,
+        details TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(attacker_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(target_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_countries_country_key ON countries(country_key)")
     except sqlite3.OperationalError:
         pass
@@ -815,6 +884,10 @@ def _restore_loss_items(cur, country_id: int, items: list):
             )
             _apply_building_effects(cur, country_id, it.get("effects", {}), sign=+1)
             continue
+        if special == "commander":
+            cmd_k = it.get("cmd_key", it["key"].replace("__cmd_", "").replace("__", ""))
+            revive_commander(country_id, cmd_k)
+            continue
         column = LOSS_SPECIAL_COLUMNS.get(special)
         if column:
             cur.execute(
@@ -874,6 +947,8 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     }
                     continue
                 special = it.get("special")
+                if special == "commander":
+                    continue
                 if special in LOSS_SPECIAL_COLUMNS:
                     column = LOSS_SPECIAL_COLUMNS[special]
                     cur.execute(f"SELECT {column} FROM countries WHERE id = ?", (country_id,))
@@ -903,6 +978,10 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     cur.execute("UPDATE equipment SET quantity = MAX(0, quantity - ?) WHERE country_id = ? AND item_key = ?",
                                 (int(it["qty"]), country_id, it["key"]))
                     _apply_building_effects(cur, country_id, it.get("effects", {}), sign=-1)
+                    continue
+                if it.get("special") == "commander":
+                    cmd_k = it.get("cmd_key", it["key"].replace("__cmd_", "").replace("__", ""))
+                    kill_commander(country_id, cmd_k, f"اصابت در عملیات {operation_name}")
                     continue
                 special = it.get("special")
                 if special in LOSS_SPECIAL_COLUMNS:
@@ -4197,3 +4276,289 @@ def get_war_result_by_id(war_id: int) -> dict:
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
+
+# ---------- 🕵️‍♂️ سیستم اطلاعات، امنیت ملی و کادر فرماندهی ----------
+
+def get_intel_agency_info(country_key: str) -> dict:
+    """دریافت مشخصات رسمی و رتبه اطلاعاتی سازمان امنیت کشور."""
+    if not country_key:
+        return config.DEFAULT_INTELLIGENCE_AGENCY
+    return config.INTELLIGENCE_AGENCIES.get(country_key, config.DEFAULT_INTELLIGENCE_AGENCY)
+
+
+def seed_country_commanders(country_id: int, country_key: str):
+    """ثبت و همگام‌سازی کادر فرماندهی اختصاصی هر کشور."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            presets = config.COUNTRY_COMMANDERS_PRESETS.get(country_key, config.DEFAULT_COMMANDERS)
+            for cmd in presets:
+                cur.execute("""
+                    INSERT INTO country_commanders (country_id, key, title, status)
+                    VALUES (?, ?, ?, 'active')
+                    ON CONFLICT(country_id, key) DO UPDATE SET title = excluded.title
+                """, (country_id, cmd["key"], cmd["title"]))
+    except Exception as e:
+        print(f"Error seeding commanders: {e}")
+
+
+def get_country_commanders(country_id: int) -> list:
+    """دریافت فهرست کادر فرماندهی و وضعیت حیات آنان."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM country_commanders WHERE country_id = ? ORDER BY id ASC", (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    if not rows:
+        c = get_country_by_id(country_id)
+        if c and c.get("country_key"):
+            seed_country_commanders(country_id, c["country_key"])
+            return get_country_commanders(country_id)
+    return [dict(r) for r in rows]
+
+
+def kill_commander(country_id: int, commander_key: str, reason: str = "ترور اطلاعاتی") -> tuple[bool, str]:
+    """شهادت یا ترور یکی از سران نظامی و فعال شدن شوک خلاء فرماندهی."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            now_str = now_dt.isoformat()
+            until_dt = now_dt + datetime.timedelta(hours=24)
+            until_str = until_dt.isoformat()
+
+            cur.execute("""
+                UPDATE country_commanders SET status = 'assassinated', killed_at = ?
+                WHERE country_id = ? AND (key = ? OR title LIKE ?) AND status = 'active'
+            """, (now_str, country_id, commander_key, f"%{commander_key}%"))
+
+            affected = cur.rowcount
+            if affected > 0:
+                cur.execute("""
+                    UPDATE countries SET
+                    combat_readiness = MAX(0, combat_readiness - 15),
+                    command_disrupted_until = ?
+                    WHERE id = ?
+                """, (until_str, country_id))
+                add_transaction(country_id, "commander_killed", f"🎖️ شهادت / ترور {commander_key} ({reason})", 0)
+                return True, f"فرمانده {commander_key} مورد اصابت قرار گرفت و وضعیت وی به ترور/شهید تغییر یافت."
+            return False, "فرمانده یافت نشد یا قبلاً ترور شده است."
+    except Exception as e:
+        return False, str(e)
+
+
+def revive_commander(country_id: int, commander_key: str) -> bool:
+    """انتصاب فرمانده جدید پس از پایان دوره سوگواری و بازسازی فرماندهی."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE country_commanders SET status = 'active', killed_at = NULL
+                WHERE country_id = ? AND (key = ? OR title LIKE ?)
+            """, (country_id, commander_key, f"%{commander_key}%"))
+        return True
+    except Exception:
+        return False
+
+
+def get_country_intel_attack_defense(country_id: int) -> tuple[int, int]:
+    """محاسبه نمرات قدرت سایبری تهاجمی و پدافند ضدجاسوسی با فایروال و فناوری."""
+    c = get_country_by_id(country_id)
+    if not c:
+        return 50, 50
+    agency = get_intel_agency_info(c.get("country_key"))
+    tech_lvl = c.get("tech_level", 1) or 1
+    fw_lvl = c.get("firewall_level", 1) or 1
+    fw_bonus = config.FIREWALL_UPGRADES.get(fw_lvl, {}).get("defense_bonus", 0)
+
+    offense = agency["base_offense"] + (tech_lvl * 5)
+    defense = agency["base_defense"] + (tech_lvl * 5) + fw_bonus
+    return offense, defense
+
+
+def upgrade_firewall_transaction(country_id: int) -> tuple[bool, str]:
+    """ارتقای سطح فایروال و پدافند سایبری ملی با مصرف میکروچیپ و بودجه."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور یافت نشد."
+
+            curr_lvl = c.get("firewall_level", 1) or 1
+            if curr_lvl >= 5:
+                return False, "🛡️ پدافند سایبری کشور شما در بالاترین سطح (سطح ۵ - قلعه نفوذناپذیر) قرار دارد."
+
+            next_lvl = curr_lvl + 1
+            up_info = config.FIREWALL_UPGRADES[next_lvl]
+            cost_money = up_info["cost_money"]
+            cost_chips = up_info["cost_chips"]
+
+            if (c["treasury"] or 0) < cost_money:
+                return False, f"💵 موجودی خزانه کافی نیست! نیاز: {format_money(cost_money)}"
+            if (c["microchips"] or 0) < cost_chips:
+                return False, f"💻 میکروچیپ کافی نیست! نیاز: {cost_chips} عدد"
+
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                microchips = microchips - ?,
+                firewall_level = ?
+                WHERE id = ?
+            """, (cost_money, cost_chips, next_lvl, country_id))
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'firewall_upgrade', ?, ?, ?)
+            """, (country_id, f"ارتقای فایروال ملی به {up_info['label']}", -cost_money, now_str))
+
+        return True, f"🛡️ **سپر سایبری با موفقیت ارتقا یافت!**\nسطح جدید: **{up_info['label']}** (+{up_info['defense_bonus']}٪ مقاومت)"
+    except Exception as e:
+        return False, str(e)
+
+
+def execute_intel_operation(attacker_id: int, target_id: int, op_type: str, chips_boost: int = 0) -> tuple[bool, str, dict]:
+    """اجرای عملیات اطلاعاتی/سایبری با محاسبه شانس، پیامدها، گمنامی و رسوایی بین‌المللی."""
+    import random
+    op_cfg = config.INTEL_OPERATIONS_CONFIG.get(op_type)
+    if not op_cfg:
+        return False, "نوع عملیات نامعتبر است.", {}
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (attacker_id,))
+            att = cur.fetchone()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (target_id,))
+            tgt = cur.fetchone()
+
+            if not att or not tgt:
+                return False, "کشور مهاجم یا هدف یافت نشد.", {}
+
+            att_c = dict(att)
+            tgt_c = dict(tgt)
+
+            today_str = datetime.date.today().isoformat()
+            last_date = att_c.get("intel_ops_date")
+            ops_today = att_c.get("intel_ops_today", 0) if last_date == today_str else 0
+
+            if ops_today >= config.INTEL_DAILY_OPERATION_LIMIT:
+                return False, f"⏳ **سقف مجاز روزانه:** هر سازمان اطلاعاتی حداکثر مجاز به اجرای {config.INTEL_DAILY_OPERATION_LIMIT} عملیات در هر ۲۴ ساعت می‌باشد.", {}
+
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            last_time_raw = att_c.get("last_intel_op_time")
+            if last_time_raw:
+                try:
+                    last_time = datetime.datetime.fromisoformat(last_time_raw)
+                    diff_h = (now_dt - last_time).total_seconds() / 3600.0
+                    if diff_h < config.INTEL_OPERATION_COOLDOWN_HOURS:
+                        rem_h = config.INTEL_OPERATION_COOLDOWN_HOURS - diff_h
+                        return False, f"⏳ **زمان بازسازی شبکه نفوذ (Cooldown):** تیم‌های اطلاعاتی در حال ریکاوری هستند. زمان باقی‌مانده: {rem_h:.1f} ساعت.", {}
+                except Exception:
+                    pass
+
+            cost_money = op_cfg["cost_money"]
+            cost_chips = op_cfg["cost_chips"] + chips_boost
+
+            if (att_c["treasury"] or 0) < cost_money:
+                return False, f"💵 بودجه سیاه کافی نیست! نیاز: {format_money(cost_money)}", {}
+            if (att_c["microchips"] or 0) < cost_chips:
+                return False, f"💻 میکروچیپ کافی نیست! نیاز: {cost_chips} عدد", {}
+
+            # کسر منابع عملیات
+            cur.execute("""
+                UPDATE countries SET
+                treasury = treasury - ?,
+                microchips = microchips - ?,
+                last_intel_op_time = ?,
+                intel_ops_today = ?,
+                intel_ops_date = ?
+                WHERE id = ?
+            """, (cost_money, cost_chips, now_dt.isoformat(), ops_today + 1, today_str, attacker_id))
+
+            # محاسبه شانس موفقیت و خروجی عملیات
+            att_off, _ = get_country_intel_attack_defense(attacker_id)
+            _, tgt_def = get_country_intel_attack_defense(target_id)
+            att_off += chips_boost * 2
+
+            score_diff = att_off - tgt_def
+            success_prob = max(15, min(85, 50 + int(score_diff * 0.8)))
+            roll = random.randint(1, 100)
+
+            att_agency = get_intel_agency_info(att_c.get("country_key"))
+
+            meta = {
+                "attacker": att_c,
+                "target": tgt_c,
+                "op_cfg": op_cfg,
+                "op_type": op_type,
+                "success_prob": success_prob,
+                "roll": roll,
+                "agency": att_agency,
+            }
+
+            now_str = now_dt.isoformat()
+
+            if roll <= success_prob:
+                # موفقیت کامل (Clean Strike)
+                result_code = "clean_success"
+                dur = op_cfg.get("duration_hours", 24)
+                until_str = (now_dt + datetime.timedelta(hours=dur)).isoformat()
+
+                if op_type == "cyber_air_defense":
+                    cur.execute("UPDATE countries SET air_defense_disrupted_until = ? WHERE id = ?", (until_str, target_id))
+                elif op_type == "cyber_blackout":
+                    cur.execute("UPDATE countries SET blackout_until = ?, approval_rating = MAX(0, approval_rating - 5) WHERE id = ?", (until_str, target_id))
+                elif op_type == "cyber_centrifuge":
+                    cur.execute("UPDATE countries SET nuclear_fuel = MAX(0, nuclear_fuel - 50), enrichment_suspended = 1 WHERE id = ?", (target_id,))
+                elif op_type == "sabotage_pipeline":
+                    cur.execute("UPDATE countries SET oil_reserves = MAX(0, oil_reserves - 150000) WHERE id = ?", (target_id,))
+                elif op_type == "assassination_scientist":
+                    cur.execute("UPDATE countries SET r_and_d_frozen_until = ? WHERE id = ?", ((now_dt + datetime.timedelta(hours=48)).isoformat(), target_id))
+                elif op_type == "assassination_commander":
+                    cmds = get_country_commanders(target_id)
+                    alive = [cm for cm in cmds if cm["status"] == "active"]
+                    if alive:
+                        chosen_cmd = random.choice(alive)
+                        kill_commander(target_id, chosen_cmd["key"], "عملیات ترور هدفمند")
+                        meta["killed_commander"] = chosen_cmd
+
+                meta["result"] = result_code
+                cur.execute("""
+                    INSERT INTO intel_operations_history (attacker_id, target_id, op_type, result, details, created_at)
+                    VALUES (?, ?, ?, ?, 'موفقیت کامل و گمنام', ?)
+                """, (attacker_id, target_id, op_type, result_code, now_str))
+                return True, "عملیات اطلاعاتی با موفقیت کامل و بدون بر جای گذاشتن ردپا اجرا گردید.", meta
+
+            else:
+                # شکست: بررسی لو رفتن هویت یا دفع ناشناس
+                expose_roll = random.randint(1, 100)
+                if expose_roll <= 35:
+                    # رسوایی بین‌المللی (Busted & Exposed)
+                    result_code = "busted_exposed"
+                    cur.execute("UPDATE countries SET approval_rating = MAX(0, approval_rating - 5) WHERE id = ?", (attacker_id,))
+                    meta["result"] = result_code
+                    cur.execute("""
+                        INSERT INTO intel_operations_history (attacker_id, target_id, op_type, result, details, created_at)
+                        VALUES (?, ?, ?, ?, 'شکست و افشای هویت در کانال اخبار', ?)
+                    """, (attacker_id, target_id, op_type, result_code, now_str))
+                    return False, "عملیات شکست خورد و هویت سازمان اطلاعاتی شما افشا گردید!", meta
+                else:
+                    # دفع ناشناس (Blocked Unattributed)
+                    result_code = "blocked_unattributed"
+                    meta["result"] = result_code
+                    cur.execute("""
+                        INSERT INTO intel_operations_history (attacker_id, target_id, op_type, result, details, created_at)
+                        VALUES (?, ?, ?, ?, 'خنثی‌سازی بدون لو رفتن هویت', ?)
+                    """, (attacker_id, target_id, op_type, result_code, now_str))
+                    return False, "عملیات توسط فایروال و پدافند ضدجاسوسی حریف خنثی گردید، اما هویت شما ناشناس باقی ماند.", meta
+
+    except Exception as e:
+        return False, f"خطای دیتابیس: {e}", {}

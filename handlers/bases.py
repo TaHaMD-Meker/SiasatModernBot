@@ -53,6 +53,8 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
             "🎯 **ستاد توسعه و اقدامات راهبردی**\n━━━━━━━━━━━━━━━━━━\n\nیک بخش را جهت اقدام انتخاب کنید:",
             reply_markup=_kb([
                 [InlineKeyboardButton("🪖 برگزاری مانور نظامی", callback_data="op:military_drill")],
+                [InlineKeyboardButton("🕵️‍♂️ سازمان اطلاعات و عملیات سایبری", callback_data="intel:menu")],
+                [InlineKeyboardButton("🎖️ کادر فرماندهی و سران نظامی", callback_data="intel:commanders_menu")],
                 [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
                 [InlineKeyboardButton("🏗️ ساخت پایگاه پیشروی", callback_data="mv:newbase")],
                 [InlineKeyboardButton("📍 پایگاه‌های من", callback_data="mv:mybases")],
@@ -66,6 +68,8 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
         "🎯 **ستاد توسعه و اقدامات راهبردی**\n━━━━━━━━━━━━━━━━━━\n\nیک بخش را جهت اقدام انتخاب کنید:",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🪖 برگزاری مانور نظامی", callback_data="op:military_drill")],
+            [InlineKeyboardButton("🕵️‍♂️ سازمان اطلاعات و عملیات سایبری", callback_data="intel:menu")],
+            [InlineKeyboardButton("🎖️ کادر فرماندهی و سران نظامی", callback_data="intel:commanders_menu")],
             [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
             [InlineKeyboardButton("🏗️ ساخت پایگاه پیشروی", callback_data="mv:newbase")],
             [InlineKeyboardButton("📍 پایگاه‌های من", callback_data="mv:mybases")],

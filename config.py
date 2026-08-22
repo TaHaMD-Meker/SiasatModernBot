@@ -5189,3 +5189,402 @@ NUCLEAR_WARHEAD_COST_MONEY = 100_000_000
 NUCLEAR_WARHEAD_COST_GOLD = 100
 NUCLEAR_WARHEAD_COST_CHIPS = 500
 NUCLEAR_WARHEAD_WEAPONS_GRADE = 100
+
+# ===== 🕵️‍♂️ سازمان‌های اطلاعات و امنیت ملی ۵۷ کشور جهان =====
+INTELLIGENCE_AGENCIES = {
+    "israel": {
+        "agency_name": "موساد و آمان (Mossad & Aman)",
+        "cyber_unit": "یگان ۸۲۰۰ سایبری (Unit 8200)",
+        "tier": "S",
+        "base_offense": 90,
+        "base_defense": 88,
+        "desc": "متخصص در ترورهای نقطه‌زن، نفوذ به رادارها و تخریب سایبری زیرساخت‌ها"
+    },
+    "usa": {
+        "agency_name": "سازمان سیا و NSA (CIA & NSA)",
+        "cyber_unit": "فرماندهی سایبری ارتش (USCYBERCOM)",
+        "tier": "S",
+        "base_offense": 92,
+        "base_defense": 90,
+        "desc": "شنود ماهواره‌ای جهانی، رصد ارتباطات سراسر جهان و نفوذ سایبری زیرساختی"
+    },
+    "russia": {
+        "agency_name": "سرویس امنیت فدرال و GRU (FSB & GRU)",
+        "cyber_unit": "واحد عملیات ویژه سایبری GRU",
+        "tier": "S",
+        "base_offense": 88,
+        "base_defense": 86,
+        "desc": "ضدجاسوسی تهاجمی، عملیات پنهان نفوذ و جنگ هیبریدی الکترونیک"
+    },
+    "uk": {
+        "agency_name": "سازمان ام‌آی‌سیکس و GCHQ (MI6 & GCHQ)",
+        "cyber_unit": "نیروی ملی سایبری بریتانیا (NCF)",
+        "tier": "S",
+        "base_offense": 86,
+        "base_defense": 88,
+        "desc": "شنود راهبردی ارتباطات بین‌المللی و دیپلماسی پنهان ناتو"
+    },
+    "iran": {
+        "agency_name": "وزارت اطلاعات و اطلاعات سپاه (VAJA & SAS)",
+        "cyber_unit": "قرارگاه دفاع و تهاجم سایبری",
+        "tier": "A",
+        "base_offense": 82,
+        "base_defense": 80,
+        "desc": "شبکه‌های نفوذ منطقه‌ای، ضدجاسوسی داخلی، جنگ نامتقارن و پهپادهای نفوذگر"
+    },
+    "china": {
+        "agency_name": "وزارت امنیت دولتی (MSS)",
+        "cyber_unit": "واحد ۶۱۳۹۸ ارتش سایبری چین",
+        "tier": "A",
+        "base_offense": 84,
+        "base_defense": 84,
+        "desc": "جاسوسی صنعتی، سرقت اسناد راهبردی نظامی و رصد سایبری زنجیره تامین"
+    },
+    "turkey": {
+        "agency_name": "سازمان اطلاعات ملی (MİT)",
+        "cyber_unit": "مرکز دفاع سایبری ارتش ترکیه",
+        "tier": "A",
+        "base_offense": 78,
+        "base_defense": 76,
+        "desc": "رصد اطلاعاتی منطقه قفقاز و خاورمیانه و نفوذ پهپادی"
+    },
+    "pakistan": {
+        "agency_name": "سازمان اطلاعات مشترک (ISI)",
+        "cyber_unit": "شاخه امنیت سایبری و جنگ الکترونیک ارتش",
+        "tier": "A",
+        "base_offense": 78,
+        "base_defense": 74,
+        "desc": "شبکه نفوذ میدانی جنوب آسیا و عملیات چریکی نامتقارن"
+    },
+    "india": {
+        "agency_name": "شاخه تحقیقات و تحلیل (RAW)",
+        "cyber_unit": "سازمان تحقیقات فنی ملی (NTRO)",
+        "tier": "A",
+        "base_offense": 76,
+        "base_defense": 78,
+        "desc": "رصد استراتژیک اقیانوس هند، جنوب آسیا و شنود فنی"
+    },
+    "france": {
+        "agency_name": "اداره کل امنیت خارجی (DGSE)",
+        "cyber_unit": "فرماندهی سایبری ارتش فرانسه (COMCYBER)",
+        "tier": "A",
+        "base_offense": 80,
+        "base_defense": 82,
+        "desc": "شبکه اطلاعاتی در اروپا، آفریقا و حوزه مدیترانه"
+    },
+    "ukraine": {
+        "agency_name": "اداره اصلی اطلاعات نظامی (GUR)",
+        "cyber_unit": "ارتش IT اوکراین و سرویس SBU",
+        "tier": "A",
+        "base_offense": 82,
+        "base_defense": 75,
+        "desc": "ترورهای هدایت‌شده پهپادی، خرابکاری عمقی و نفوذ مستقیم جنگی"
+    },
+    "north_korea": {
+        "agency_name": "اداره کل شناسایی (RGB)",
+        "cyber_unit": "یگان هکری لازاروس (Lazarus Group)",
+        "tier": "B",
+        "base_offense": 80,
+        "base_defense": 65,
+        "desc": "حملات سایبری مالی، باج‌افزارهای زیرساختی و نفوذ به زنجیره دفاعی"
+    },
+    "germany": {
+        "agency_name": "سرویس اطلاعات فدرال (BND)",
+        "cyber_unit": "اداره فدرال امنیت اطلاعات (BSI)",
+        "tier": "B",
+        "base_offense": 70,
+        "base_defense": 82,
+        "desc": "پدافند سایبری فوق‌پیشرفته و شنود صنعتی در اروپا"
+    },
+    "uae": {
+        "agency_name": "اداره کل امنیت دولتی (SIA)",
+        "cyber_unit": "شورای امنیت سایبری امارات",
+        "tier": "B",
+        "base_offense": 74,
+        "base_defense": 76,
+        "desc": "ابزارهای جاسوسی پیشرفته ماهواره‌ای و سامانه‌های نظارت دیجیتال"
+    },
+    "saudi": {
+        "agency_name": "ریاست استخبارات عمومی (GIP)",
+        "cyber_unit": "مرکز ملی امنیت سایبری سعودی (NCA)",
+        "tier": "B",
+        "base_offense": 72,
+        "base_defense": 74,
+        "desc": "شبکه اطلاعاتی جهان عرب و رصد خلیج فارس"
+    },
+    "egypt": {
+        "agency_name": "سازمان مخابرات عامه (GIS)",
+        "cyber_unit": "اداره اطلاعات نظامی مصر",
+        "tier": "B",
+        "base_offense": 70,
+        "base_defense": 72,
+        "desc": "رصد امنیتی شمال آفریقا و کانال سوئز"
+    },
+    "south_korea": {
+        "agency_name": "سرویس اطلاعات ملی (NIS)",
+        "cyber_unit": "ستاد عملیات سایبری کره جنوبی",
+        "tier": "B",
+        "base_offense": 76,
+        "base_defense": 80,
+        "desc": "رصد راداری شبه‌جزیره کره و پدافند ضدجاسوسی"
+    },
+    "japan": {
+        "agency_name": "دفتر تحقیقات و اطلاعات کابینه (CIRO)",
+        "cyber_unit": "یگان دفاع سایبری نیروهای خودکفا",
+        "tier": "B",
+        "base_offense": 70,
+        "base_defense": 82,
+        "desc": "رصد ماهواره‌ای شرق آسیا و پدافند شبکه‌های بانکی و انرژی"
+    },
+    "hezbollah": {
+        "agency_name": "یگان امنیت و اطلاعات نظامی حزب‌الله",
+        "cyber_unit": "شاخه جنگ الکترونیک و شنود راداری",
+        "tier": "B",
+        "base_offense": 72,
+        "base_defense": 70,
+        "desc": "جمع‌آوری سیگنالی مرزی، شناسایی هوایی و نفوذ میدانی"
+    },
+    "yemen": {
+        "agency_name": "دستگاه امنیت و اطلاعات یمن",
+        "cyber_unit": "واحد رصد و جنگ الکترونیک دریای سرخ",
+        "tier": "B",
+        "base_offense": 68,
+        "base_defense": 65,
+        "desc": "رصد دریایی باب‌المندب و هدایت عملیات پهپادی و موشکی"
+    }
+}
+
+# پیش‌فرض برای سایر کشورها
+DEFAULT_INTELLIGENCE_AGENCY = {
+    "agency_name": "سازمان اطلاعات و امنیت ملی",
+    "cyber_unit": "مرکز ملی پدافند سایبری",
+    "tier": "C",
+    "base_offense": 50,
+    "base_defense": 55,
+    "desc": "سرویس امنیت ملی و دفاع سایبری کشور"
+}
+
+# ===== 🎖️ کادر فرماندهی و سران نظامی کشورها =====
+COUNTRY_COMMANDERS_PRESETS = {
+    "iran": [
+        {"key": "commander_aerospace", "title": "فرمانده نیروی هوافضای سپاه"},
+        {"key": "commander_irgc", "title": "فرمانده کل سپاه پاسداران"},
+        {"key": "chief_general_staff", "title": "رئیس ستاد کل نیروهای مسلح"},
+        {"key": "minister_intel", "title": "رئیس اطلاعات سپاه / وزیر اطلاعات"},
+        {"key": "head_aheo", "title": "رئیس سازمان انرژی اتمی"},
+    ],
+    "israel": [
+        {"key": "mossad_chief", "title": "رئیس موساد (Mossad)"},
+        {"key": "idf_chief", "title": "رئیس ستاد کل ارتش (IDF)"},
+        {"key": "iaf_commander", "title": "فرمانده نیروی هوایی (IAF)"},
+        {"key": "aman_chief", "title": "رئیس اطلاعات نظامی (Aman)"},
+        {"key": "air_defense_cdr", "title": "فرمانده پدافند هوایی و راداری"},
+    ],
+    "usa": [
+        {"key": "cjcs", "title": "رئیس ستاد مشترک ارتش (CJCS)"},
+        {"key": "centcom_cdr", "title": "فرمانده ستاد مرکزی (CENTCOM)"},
+        {"key": "cia_director", "title": "مدیر سازمان اطلاعات مرکزی (CIA)"},
+        {"key": "stratcom_cdr", "title": "فرمانده ستاد راهبردی هسته‌ای (STRATCOM)"},
+        {"key": "navy_5th_fleet", "title": "فرمانده ناوگان پنجم دریایی"},
+    ],
+    "russia": [
+        {"key": "general_staff_chief_ru", "title": "رئیس ستاد کل نیروهای مسلح روسیه"},
+        {"key": "fsb_director", "title": "مدیر سرویس امنیت فدرال (FSB)"},
+        {"key": "vks_commander", "title": "فرمانده نیروی هوافضا (VKS)"},
+        {"key": "gru_chief", "title": "رئیس اداره کل اطلاعات نظامی (GRU)"},
+        {"key": "black_sea_fleet_cdr", "title": "فرمانده ناوگان دریای سیاه"},
+    ],
+    "china": [
+        {"key": "cmc_vice_chairman", "title": "نایب‌رئیس کمیسیون نظامی مرکزی (CMC)"},
+        {"key": "mss_minister", "title": "وزیر امنیت دولتی چین (MSS)"},
+        {"key": "pla_rocket_force_cdr", "title": "فرمانده نیروی موشکی ارتش چین (PLARF)"},
+        {"key": "pla_airforce_cdr", "title": "فرمانده نیروی هوایی چین (PLAAF)"},
+        {"key": "southern_theater_cdr", "title": "فرمانده قرارگاه راهبردی دریای جنوبی"},
+    ],
+    "uk": [
+        {"key": "chief_defence_staff_uk", "title": "رئیس ستاد دفاع بریتانیا (CDS)"},
+        {"key": "mi6_chief", "title": "رئیس سرویس اطلاعات خارجی (MI6)"},
+        {"key": "raf_commander", "title": "فرمانده نیروی هوایی سلطنتی (RAF)"},
+        {"key": "gchq_director", "title": "مدیر ستاد ارتباطات و سایبری (GCHQ)"},
+        {"key": "royal_navy_lord", "title": "فرمانده کل نیروی دریایی سلطنتی"},
+    ],
+    "france": [
+        {"key": "cema_fr", "title": "رئیس ستاد کل نیروهای مسلح فرانسه (CEMA)"},
+        {"key": "dgse_director", "title": "مدیرکل امنیت خارجی (DGSE)"},
+        {"key": "air_space_cdr_fr", "title": "فرمانده نیروی هوافضای فرانسه"},
+        {"key": "strategic_air_forces_cdr", "title": "فرمانده نیروهای هوایی راهبردی هسته‌ای (FAS)"},
+        {"key": "mediterranean_fleet_cdr", "title": "فرمانده ناوگان دریای مدیترانه"},
+    ],
+    "germany": [
+        {"key": "generalinspekteur_de", "title": "بازرس کل نیروهای مسلح آلمان (Bundeswehr)"},
+        {"key": "bnd_president", "title": "رئیس سرویس اطلاعات فدرال (BND)"},
+        {"key": "luftwaffe_chief", "title": "فرمانده نیروی هوایی آلمان (Luftwaffe)"},
+        {"key": "cyber_command_chief_de", "title": "فرماندهی پدافند سایبری و اطلاعات (CIR)"},
+        {"key": "navy_inspector_de", "title": "فرمانده کل نیروی دریایی آلمان"},
+    ],
+    "turkey": [
+        {"key": "general_staff_chief_tr", "title": "رئیس ستاد کل نیروهای مسلح ترکیه"},
+        {"key": "mit_chief", "title": "رئیس سازمان اطلاعات ملی (MİT)"},
+        {"key": "air_force_cdr_tr", "title": "فرمانده نیروی هوایی ترکیه (THK)"},
+        {"key": "naval_forces_cdr_tr", "title": "فرمانده نیروی دریایی ترکیه"},
+        {"key": "defense_industries_pres", "title": "رئیس صنایع دفاعی ترکیه (SSB)"},
+    ],
+    "saudi": [
+        {"key": "chief_general_staff_sa", "title": "رئیس ستاد کل ارتش عربستان"},
+        {"key": "gip_president", "title": "رئیس استخبارات عمومی عربستان (GIP)"},
+        {"key": "air_force_cdr_sa", "title": "فرمانده نیروی هوایی سلطنتی سعودی (RSAF)"},
+        {"key": "air_defense_cdr_sa", "title": "فرمانده نیروهای پدافند هوایی سعودی"},
+        {"key": "joint_forces_cdr_sa", "title": "فرمانده نیروهای مشترک ائتلاف"},
+    ],
+    "pakistan": [
+        {"key": "coas_pk", "title": "فرمانده کل ارتش پاکستان (COAS)"},
+        {"key": "isi_dg", "title": "مدیرکل سازمان اطلاعات مشترک (ISI)"},
+        {"key": "paf_air_chief", "title": "فرمانده نیروی هوایی پاکستان (PAF)"},
+        {"key": "spd_director_general", "title": "مدیرکل برنامه‌ریزی راهبردی هسته‌ای (SPD)"},
+        {"key": "pak_navy_chief", "title": "فرمانده نیروی دریایی پاکستان"},
+    ],
+    "india": [
+        {"key": "cds_in", "title": "رئیس ستاد دفاع هند (CDS)"},
+        {"key": "raw_chief", "title": "رئیس شاخه تحقیقات و تحلیل (RAW)"},
+        {"key": "iaf_air_chief", "title": "فرمانده نیروی هوایی هند (IAF)"},
+        {"key": "sfc_commander_in", "title": "فرمانده ستاد نیروهای راهبردی هسته‌ای (SFC)"},
+        {"key": "anc_commander_in", "title": "فرمانده قرارگاه راهبردی آندامان و نیکوبار (ANC)"},
+    ],
+    "yemen": [
+        {"key": "defense_minister_ye", "title": "وزیر دفاع و فرماندهی عالی نظامی"},
+        {"key": "missile_force_cdr_ye", "title": "فرمانده یگان موشکی و پهپادی"},
+        {"key": "intel_chief_ye", "title": "رئیس دستگاه امنیت و اطلاعات یمن"},
+        {"key": "naval_forces_cdr_ye", "title": "فرمانده نیروی دریایی و دفاع ساحلی"},
+        {"key": "coastal_defense_gen_ye", "title": "فرمانده قرارگاه پدافند دریای سرخ"},
+    ],
+    "hezbollah": [
+        {"key": "military_council_chief_hz", "title": "رئیس شورای جهادی و نظامی حزب‌الله"},
+        {"key": "missile_unit_cdr_hz", "title": "فرمانده یگان موشکی و راکتی"},
+        {"key": "radwan_force_cdr_hz", "title": "فرمانده یگان ویژه رضوان"},
+        {"key": "security_unit_chief_hz", "title": "مسئول یگان امنیت و ضدجاسوسی"},
+        {"key": "air_unit_cdr_hz", "title": "فرمانده یگان پهپادی و پدافند"},
+    ],
+    "ukraine": [
+        {"key": "commander_in_chief_ua", "title": "فرمانده کل نیروهای مسلح اوکراین"},
+        {"key": "gur_chief_ua", "title": "رئیس اداره اصلی اطلاعات نظامی (GUR)"},
+        {"key": "air_force_cdr_ua", "title": "فرمانده نیروی هوایی اوکراین"},
+        {"key": "sbu_head_ua", "title": "رئیس سرویس امنیت دولتی اوکراین (SBU)"},
+        {"key": "unmanned_systems_cdr_ua", "title": "فرمانده نیروهای سامانه‌های بدون سرنشین"},
+    ],
+    "japan": [
+        {"key": "joint_staff_chief_jp", "title": "رئیس ستاد مشترک نیروهای خودکفا"},
+        {"key": "ciro_director_jp", "title": "مدیر دفتر تحقیقات و اطلاعات کابینه (CIRO)"},
+        {"key": "jasdf_chief_jp", "title": "فرمانده نیروی خودکفای هوایی"},
+        {"key": "jmsdf_chief_jp", "title": "فرمانده ناوگان دریایی خودکفا"},
+        {"key": "cyber_defense_cdr_jp", "title": "فرمانده قرارگاه یکپارچه دفاع سایبری"},
+    ],
+    "south_korea": [
+        {"key": "jcs_chairman_kr", "title": "رئیس ستاد مشترک ارتش کره جنوبی"},
+        {"key": "nis_director_kr", "title": "مدیر سرویس اطلاعات ملی (NIS)"},
+        {"key": "rokaf_chief_kr", "title": "فرمانده نیروی هوایی کره جنوبی"},
+        {"key": "strategic_command_cdr_kr", "title": "فرمانده ستاد راهبردی موشکی و پدافند"},
+        {"key": "cyber_ops_cdr_kr", "title": "فرمانده ستاد عملیات سایبری"},
+    ],
+    "north_korea": [
+        {"key": "general_staff_chief_kp", "title": "رئیس ستاد کل ارتش خلق کره"},
+        {"key": "rgb_director_kp", "title": "مدیر اداره کل شناسایی و عملیات ویژه (RGB)"},
+        {"key": "missile_general_bureau_chief_kp", "title": "رئیس اداره کل موشکی و هسته‌ای"},
+        {"key": "kpa_air_cdr_kp", "title": "فرمانده نیروی هوایی و پدافند"},
+        {"key": "cyber_warfare_chief_kp", "title": "فرمانده قرارگاه جنگ سایبری (واحد ۱۲۱)"},
+    ],
+    "uae": [
+        {"key": "chief_staff_uae", "title": "رئیس ستاد کل نیروهای مسلح امارات"},
+        {"key": "sia_chief_uae", "title": "رئیس اداره کل امنیت دولتی (SIA)"},
+        {"key": "air_force_cdr_uae", "title": "فرمانده نیروی هوایی و پدافند"},
+        {"key": "presidential_guard_cdr_uae", "title": "فرمانده گارد ریاست‌جمهوری"},
+        {"key": "cyber_security_council_head_uae", "title": "رئیس شورای امنیت سایبری"},
+    ],
+    "egypt": [
+        {"key": "chief_staff_eg", "title": "رئیس ستاد کل نیروهای مسلح مصر"},
+        {"key": "gis_director_eg", "title": "مدیر سازمان مخابرات عامه (GIS)"},
+        {"key": "air_defense_cdr_eg", "title": "فرمانده نیروهای پدافند هوایی"},
+        {"key": "air_force_cdr_eg", "title": "فرمانده نیروی هوایی مصر"},
+        {"key": "navy_cdr_eg", "title": "فرمانده نیروی دریایی مصر"},
+    ]
+}
+
+DEFAULT_COMMANDERS = [
+    {"key": "chief_of_defense", "title": "رئیس ستاد کل نیروهای مسلح"},
+    {"key": "director_national_intel", "title": "مدیر سازمان اطلاعات و امنیت ملی"},
+    {"key": "air_force_commander", "title": "فرمانده نیروی هوایی و پدافند"},
+    {"key": "land_forces_commander", "title": "فرمانده نیروی زمینی ارتش"},
+    {"key": "naval_fleet_commander", "title": "فرمانده ناوگان نیروی دریایی"},
+]
+
+# ===== 🔒 پارامترها و محدودیت‌های ضداسپم عملیات اطلاعاتی =====
+INTEL_DAILY_OPERATION_LIMIT = 2        # حداکثر ۲ عملیات اطلاعاتی در هر ۲۴ ساعت
+INTEL_OPERATION_COOLDOWN_HOURS = 8      # کول‌داون ۸ ساعت بین هر دو عملیات
+
+INTEL_OPERATIONS_CONFIG = {
+    "espionage_military": {
+        "name": "سرقت اسناد انبار تسلیحات",
+        "cost_money": 8_000_000,
+        "cost_chips": 5,
+        "tech_req": 2,
+        "desc": "نفوذ به سرورهای محرمانه و استخراج لیست دارایی‌ها و جنگ‌افزارهای ارتش مدافع"
+    },
+    "espionage_nuclear": {
+        "name": "پرونده‌خوانی برنامه هسته‌ای",
+        "cost_money": 12_000_000,
+        "cost_chips": 10,
+        "tech_req": 3,
+        "desc": "رصد محرمانه وضعیت سانتریفیوژها، سطح غنا و ذخایر اورانیوم حریف"
+    },
+    "cyber_air_defense": {
+        "name": "هک و کور کردن شبکه پدافند هوایی",
+        "cost_money": 15_000_000,
+        "cost_chips": 15,
+        "tech_req": 3,
+        "duration_hours": 24,
+        "desc": "ایجاد اختلال ۲۴ ساعته در رادارهای پدافند هوایی حریف و افزایش ۴۰٪ خسارت بمباران هوایی"
+    },
+    "cyber_blackout": {
+        "name": "خاموشی سایبری شبکه برق (Blackout)",
+        "cost_money": 20_000_000,
+        "cost_chips": 20,
+        "tech_req": 4,
+        "duration_hours": 24,
+        "desc": "قطع سراسری شبکه برق مدافع به مدت ۲۴ ساعت و کسر ۵٪ رضایت عمومی"
+    },
+    "cyber_centrifuge": {
+        "name": "تزریق بدافزار به سانتریفیوژها (استاکس‌نت)",
+        "cost_money": 25_000_000,
+        "cost_chips": 30,
+        "tech_req": 4,
+        "desc": "تخریب فیزیکی و سوزاندن ۵۰ کیلوگرم سوخت غنی‌شده و توقف ۲۴ ساعته غنی‌سازی"
+    },
+    "sabotage_pipeline": {
+        "name": "خرابکاری انفجاری در خطوط لوله نفت",
+        "cost_money": 18_000_000,
+        "cost_chips": 10,
+        "tech_req": 3,
+        "desc": "انفجار در خطوط لوله و سوزاندن ۱۵۰,۰۰۰ بشکه نفت از ذخایر مدافع"
+    },
+    "assassination_commander": {
+        "name": "ترور هدفمند فرمانده ارشد نظامی",
+        "cost_money": 30_000_000,
+        "cost_chips": 25,
+        "tech_req": 4,
+        "desc": "ترور یکی از سران نظامی، کسر ۱۵٪ آمادگی رزمی و ایجاد شوک خلاء فرماندهی در نبردها"
+    },
+    "assassination_scientist": {
+        "name": "ترور دانشمند ارشد هسته‌ای / فناوری",
+        "cost_money": 28_000_000,
+        "cost_chips": 25,
+        "tech_req": 4,
+        "desc": "ترور سرتیم علمی، قفل شدن ۴۸ ساعته R&D و افت ۵۰٪ تولید غنی‌سازی اورانیوم"
+    },
+}
+
+FIREWALL_UPGRADES = {
+    1: {"cost_money": 0, "cost_chips": 0, "defense_bonus": 0, "label": "سطح ۱ (فایروال پایه)"},
+    2: {"cost_money": 10_000_000, "cost_chips": 20, "defense_bonus": 15, "label": "سطح ۲ (پدافند پیشرفته)"},
+    3: {"cost_money": 25_000_000, "cost_chips": 50, "defense_bonus": 30, "label": "سطح ۳ (سپر سایبری یکپارچه)"},
+    4: {"cost_money": 50_000_000, "cost_chips": 100, "defense_bonus": 45, "label": "سطح ۴ (سیستم هوش مصنوعی امنیتی)"},
+    5: {"cost_money": 100_000_000, "cost_chips": 200, "defense_bonus": 60, "label": "سطح ۵ (قلعه سایبری غیرقابل نفوذ)"},
+}
