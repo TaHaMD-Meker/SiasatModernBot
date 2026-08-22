@@ -513,14 +513,29 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 parse_mode="Markdown"
             )
         elif act == "toll":
-            toll_val = 1_000_000
-            db.set_strait_status(s_key, "toll", toll_val)
-            await news_engine.trigger_strait_news(context.bot, country, s_name, "toll", format_money(toll_val))
-            await query.edit_message_text(
-                f"🟡 **عوارض ترانزیت ({format_money(toll_val)}) برای عبور از {s_name} برقرار گردید.**\n\n📢 خبر رسمی در کانال منتشر گردید.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
-                parse_mode="Markdown"
+            toll_text = (
+                f"🟡 **تعیین عوارض ترانزیت (حق عبور) — {s_name}**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "لطفاً مبلغ عوارض دریافتی از هر ترانزیت دریایی عبوری از این آبراه را تعیین فرمایید:\n\n"
+                f"📌 **حداکثر سقف مجاز:** {format_money(1_000_000)} (۱ میلیون دلار)\n"
+                f"📌 **حداقل کف مجاز:** {format_money(50_000)} (۵۰ هزار دلار)\n\n"
+                "می‌توانید یکی از مبالغ آماده زیر را انتخاب کرده یا مبلغ دلخواه خود را تایپ نمایید:"
             )
+            toll_kb = [
+                [
+                    InlineKeyboardButton("💰 ۲۵۰,۰۰۰ $", callback_data="dip:strait_toll_val:250000"),
+                    InlineKeyboardButton("💰 ۵۰۰,۰۰۰ $", callback_data="dip:strait_toll_val:500000"),
+                ],
+                [
+                    InlineKeyboardButton("💰 ۷۵۰,۰۰۰ $", callback_data="dip:strait_toll_val:750000"),
+                    InlineKeyboardButton("💰 ۱,۰۰۰,۰۰۰ $ (سقف)", callback_data="dip:strait_toll_val:1000000"),
+                ],
+                [
+                    InlineKeyboardButton("✍️ وارد کردن مبلغ دلخواه (تا ۱M $)", callback_data="dip:strait_toll_custom"),
+                ],
+                [InlineKeyboardButton("🔙 بازگشت به منوی تنگه", callback_data="dip:strait_menu")],
+            ]
+            await query.edit_message_text(toll_text, reply_markup=InlineKeyboardMarkup(toll_kb), parse_mode="Markdown")
         elif act == "open":
             db.set_strait_status(s_key, "open")
             await news_engine.trigger_strait_news(context.bot, country, s_name, "open")
@@ -529,6 +544,36 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
                 parse_mode="Markdown"
             )
+
+
+    elif data.startswith("dip:strait_toll_val:"):
+        toll_val = int(data.split(":")[2])
+        toll_val = max(10_000, min(1_000_000, toll_val))
+        c_key = country.get("country_key")
+        strait_info = db.get_strait_info_by_country_key(c_key)
+        if not strait_info:
+            await query.edit_message_text("❌ شما تسلطی بر تنگه‌های استراتژیک ندارید.", parse_mode="Markdown")
+            return
+        s_key = strait_info["strait_key"]
+        s_name = strait_info["name"]
+
+        db.set_strait_status(s_key, "toll", toll_val)
+        await news_engine.trigger_strait_news(context.bot, country, s_name, "toll", format_money(toll_val))
+        await query.edit_message_text(
+            f"🟡 **عوارض ترانزیت ({format_money(toll_val)}) برای عبور از {s_name} برقرار گردید.**\n\n📢 خبر رسمی در کانال منتشر گردید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
+
+    elif data == "dip:strait_toll_custom":
+        context.user_data["diplomacy_input"] = {"type": "strait_custom_toll"}
+        await query.edit_message_text(
+            "✍️ **لطفاً مبلغ عوارض ترانزیت مد نظر خود را به عدد انگلیسی ارسال فرمایید:**\n\n"
+            "📌 **سقف مجاز:** حداکثر ۱,۰۰۰,۰۰۰ دلار (۱ میلیون دلار)\n"
+            "📌 **کف مجاز:** حداقل ۱۰,۰۰۰ دلار",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:strait_menu")]]),
+            parse_mode="Markdown"
+        )
 
     elif data == "dip:break_blk":
         # گارد: فقط زمانی که واقعاً تحت محاصره باشی، امکان شکستن وجود دارد
@@ -1654,6 +1699,36 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         except ValueError:
             await update.message.reply_text("❌ عدد وارد شده نامعتبر بود.", parse_mode="Markdown")
+
+    elif input_type == "strait_custom_toll":
+        try:
+            toll_val = int(clean_num)
+            if toll_val < 10_000 or toll_val > 1_000_000:
+                await update.message.reply_text(
+                    "⛔ **مبلغ نامعتبر:** عوارض ترانزیت باید بین ۱۰,۰۰۰ دلار تا سقف ۱,۰۰۰,۰۰۰ دلار باشد.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                    parse_mode="Markdown"
+                )
+                return
+
+            c_key = country.get("country_key")
+            strait_info = db.get_strait_info_by_country_key(c_key)
+            if not strait_info:
+                await update.message.reply_text("❌ شما تسلطی بر تنگه‌های استراتژیک ندارید.", parse_mode="Markdown")
+                return
+
+            s_key = strait_info["strait_key"]
+            s_name = strait_info["name"]
+
+            db.set_strait_status(s_key, "toll", toll_val)
+            await news_engine.trigger_strait_news(context.bot, country, s_name, "toll", format_money(toll_val))
+            await update.message.reply_text(
+                f"🟡 **عوارض ترانزیت ({format_money(toll_val)}) برای عبور از {s_name} با موفقیت برقرار گردید.**\n\n📢 خبر رسمی در کانال منتشر شد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد.", parse_mode="Markdown")
 
     elif input_type == "aid_amount":
         try:
