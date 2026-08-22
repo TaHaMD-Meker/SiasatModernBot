@@ -1,36 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-ماژول سیستم اخبار زنده جهانی و موتور رویدادها (Live Breaking News & Events Engine)
-اتصال مستقیم اخبار کانال تلگرام به تمام تحرکات بازی (محاصره دریایی، معاهدات سنگین، نبردها و اعتراضات مردمی).
+ماژول سیستم اخبار زنده جهانی و موتور رویدادها (Live Breaking News & Events Engine).
+طراحی اخبار به سبک کانال‌های خبری فوری تلگرام: کوتاه، میدانی، ژورنالیستی، مبهم و هیجان‌انگیز بدون لو دادن دیتابیس یا اسامی.
 """
 
 import datetime
-import database as db
 import config
 
-async def post_breaking_news(bot, news_title: str, news_body: str, event_category: str = "خبر فوری"):
-    """ارسال کارت خبر فوری به کانال رسمی تلگرام بازی."""
-    
+
+async def post_breaking_news(bot, headline: str, body_text: str):
+    """ارسال خبر فوری به کانال رسمی تلگرام بازی به سبک کانال‌های خبری."""
     channel_id = config.get_channel_id()
     if not channel_id:
         return False
 
-    today_str = datetime.date.today().isoformat()
-
     card_text_md = (
-        f"🚨 **«{event_category} — {news_title}»**\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{news_body}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📌 **خبرگزاری رسمی ژئوپلیتیک «سیاست مدرن»** | {today_str}"
+        f"🚨 **فوری / {headline}**\n\n"
+        f"{body_text}\n\n"
+        f"🆔 @SiasatModern"
     )
 
     card_text_plain = (
-        f"🚨 «{event_category} — {news_title}»\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{news_body}\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📌 خبرگزاری رسمی ژئوپلیتیک «سیاست مدرن» | {today_str}"
+        f"🚨 فوری / {headline}\n\n"
+        f"{body_text}\n\n"
+        f"🆔 @SiasatModern"
     )
 
     try:
@@ -46,150 +39,144 @@ async def post_breaking_news(bot, news_title: str, news_body: str, event_categor
             return False
 
 
-async def trigger_blockade_news(bot, blockader_c: dict, target_c: dict):
-    """انتشار خبر فوری آغاز محاصره دریایی."""
-    title = f"محاصره دریایی بنادر {target_c['name']} توسط {blockader_c['name']}"
-    body = (
-        f"یگان‌های ناوگان دریایی کشور {blockader_c['flag']} {blockader_c['name']} تمام خطوط ترانزیت دریایی "
-        f"و بنادر تجاری کشور {target_c['flag']} {target_c['name']} را زیر محاصره کامل قرار دادند.\n"
-        f"این اقدام موجب توقف مبادلات دریایی و صفر شدن درآمدهای تجاری بنادر گردیده است. (مسیرهای ترابری هوایی و زمینی همچنان فعال می‌باشد)."
-    )
-    await post_breaking_news(bot, title, body, "محاصره دریایی بین‌المللی")
-
-
-async def trigger_unblockade_news(bot, blockader_c: dict, target_c: dict, is_broken: bool = False):
-    """انتشار خبر فوری پایان یا شکست محاصره دریایی."""
-    if is_broken:
-        title = f"شکسته شدن محاصره دریایی {target_c['name']}"
-        body = (
-            f"نیروهای مدافع و موشکی کشور {target_c['flag']} {target_c['name']} با شلیک موشک‌های ضدکشتی ساحلی و عملیات زیردریایی، "
-            f"محاصره دریایی تحمیل‌شده توسط {blockader_c['name']} را با موفقیت درهم شکستند."
-        )
-    else:
-        title = f"پایان و لغو محاصره دریایی {target_c['name']}"
-        body = (
-            f"دولت {blockader_c['flag']} {blockader_c['name']} رسماً لغو محاصره دریایی بنادر کشور {target_c['name']} "
-            "و بازگشایی مسیرهای ترانزیت دریایی را اعلام کرد."
-        )
-    await post_breaking_news(bot, title, body, "تحرکات ژئوپلیتیک")
-
-
-async def trigger_trade_news(bot, prop_c: dict, recip_c: dict, details_str: str = "", transport_mode: str = "sea"):
-    """انتشار خبر فوری محرمانه معاهده یا ترابری بین‌المللی (بدون افشای جزئیات عددی و نام تسلیحات)."""
-    if transport_mode == "air":
-        title = f"پروازهای ترابری سنگین هوایی بین {prop_c['name']} و {recip_c['name']}"
-        body = (
-            f"پرواز چند فروند هواپیمای ترابری سنگین هوایی بین کشور {prop_c['flag']} {prop_c['name']} و کشور {recip_c['flag']} {recip_c['name']} "
-            f"توسط رادارهای منطقه‌ای به ثبت رسید.\nطبق مفاد معاهده دوجانبه، جزئیات عددی و نوع محموله‌های ترابری‌شده محرمانه باقی مانده است."
-        )
-        category = "تحرکات ژئوپلیتیک"
-    elif transport_mode == "land":
-        title = f"ترانزیت و مبادلات زمینی بین {prop_c['name']} و {recip_c['name']}"
-        body = (
-            f"حرکت کاروان‌های ترانزیت زمینی تحت تدابیر امنیتی بین کشور {prop_c['flag']} {prop_c['name']} و کشور {recip_c['flag']} {recip_c['name']} "
-            f"مشاهده گردید.\nجزئیات و محتوای این معاهده تجاری محرمانه می‌باشد."
-        )
-        category = "معاهده بین‌المللی"
-    else:
-        title = f"امضای معاهده تجاری و ترانزیت دریایی بین {prop_c['name']} و {recip_c['name']}"
-        body = (
-            f"نمایندگان دیپلماتیک دو کشور {prop_c['flag']} {prop_c['name']} و {recip_c['flag']} {recip_c['name']} "
-            f"معاهده جدید تجاری از طریق خطوط مواصلاتی دریایی را امضا و اجرا نمودند.\nجزئیات دقیق محموله‌ها محرمانه حفظ شده است."
-        )
-        category = "معاهده بین‌المللی"
-
-    await post_breaking_news(bot, title, body, category)
-
-
-async def trigger_protest_news(bot, country: dict, reason: str):
-    """انتشار خبر فوری بروز اعتراضات مردمی و ناآرامی‌های معیشتی."""
-    title = f"موج اعتراضات مردمی و اعتصابات در {country['name']}"
-    body = (
-        f"به دلیل {reason} و افت رضایت عمومی به زام بحرانی، تظاهرات گسترده و صف‌های طولانی در شهرهای اصلی کشور {country['flag']} {country['name']} "
-        "شکل گرفته است. گزارش‌ها از خروج تدریجی نیروها و موج جدید مهاجرت خبر می‌دهند."
-    )
-    await post_breaking_news(bot, title, body, "بحران اجتماعی")
-
-
-async def trigger_strait_news(bot, country: dict, strait_name: str, action_type: str, toll_str: str = ""):
-    """انتشار خبر فوری وضعیت انسداد یا عوارض ترانزیت در تنگه‌های استراتژیک."""
-    if action_type == "block":
-        title = f"انسداد کامل {strait_name} توسط {country['name']}"
-        body = (
-            f"دولت {country['flag']} {country['name']} رسماً مسدودسازی کامل و انسداد ترانزیت در {strait_name} را اعلام نمود.\n"
-            "کلیه خطوط کشتیرانی و معاهدات دریایی در این آبراه استراتژیک متوقف گردید."
-        )
-        category = "بحران ژئوپلیتیک"
-    elif action_type == "toll":
-        title = f"وضع عوارض ترانزیت در {strait_name} توسط {country['name']}"
-        body = (
-            f"دولت {country['flag']} {country['name']} دریافت عوارض ترانزیت ({toll_str}) برای عبور تمام شناورهای تجاری از {strait_name} را آغاز کرد."
-        )
-        category = "معاهده بین‌المللی"
-    else:
-        title = f"بازگشایی و ترانزیت آزاد در {strait_name} توسط {country['name']}"
-        body = (
-            f"دولت {country['flag']} {country['name']} لغو انسداد و بازگشایی کامل ترانزیت آزاد دریایی در {strait_name} را رسماً اعلام نمود."
-        )
-        category = "تحرکات ژئوپلیتیک"
-
-    await post_breaking_news(bot, title, body, category)
-
+async def trigger_general_broadcast(bot, message_text: str):
+    """ارسال بیانیه یا پیام عمومی به کانال اخبار."""
+    channel_id = config.get_channel_id()
+    if not channel_id:
+        return False
+    try:
+        await bot.send_message(chat_id=channel_id, text=message_text, parse_mode="Markdown")
+        return True
+    except Exception as ex:
+        print(f"General broadcast error: {ex}")
+        return False
 
 
 async def trigger_pipeline_sabotage_news(bot, target_c: dict, attacker_c: dict = None):
-    """انتشار خبر فوری انفجار در خطوط لوله نفت در کانال رسمی اخبار."""
+    """انتشار خبر فوری انفجار در خطوط لوله و مخازن نفتی به سبک میدانی."""
     if attacker_c:
-        title = f"رسوایی خرابکاری نفتی: دستگیری عوامل نفوذی {attacker_c['name']} در {target_c['name']}"
+        headline = f"دستگیری تیم خرابکاری نفوذی در تأسیسات نفتی {target_c['name']}"
         body = (
-            f"نیروهای امنیتی و ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** یک هسته خرابکاری وابسته به {attacker_c['flag']} **{attacker_c['name']}** را در حین تلاش برای انفجار خطوط لوله نفت شناسایی و بازداشت کردند.\n"
-            f"شورای امنیت سازمان ملل این اقدام را محکوم کرد و ۵٪ از رضایت عمومی کشور مهاجم کسر گردید."
+            f"نیروهای امنیتی کشور {target_c['flag']} **{target_c['name']}** از خنثی‌سازی یک عملیات خرابکاری در خطوط لوله انتقال نفت و بازداشت چند مظنون نفوذی خبر دادند.\n"
+            f"تحقیقات اولیه از ارتباط بازداشت‌شدگان با سرویس اطلاعاتی کشور {attacker_c['flag']} **{attacker_c['name']}** حکایت دارد."
         )
-        category = "رسوایی اطلاعاتی"
     else:
-        title = f"انفجار مهیب در خطوط لوله و مخازن نفتی {target_c['name']}"
+        headline = f"انفجار شدید در تأسیسات نفتی {target_c['name']}؛ ستون‌های دود بر فراز منطقه رویت شد"
         body = (
-            f"منابع محلی از وقوع چند انفجار سنگین و آتش‌سوزی در تأسیسات و خطوط لوله انتقال نفت کشور {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
-            f"برآوردهای اولیه حاکی از نابودی حداقل ۱۵۰٬۰۰۰ بشکه نفت خام است. دستگاه‌های امنیتی این کشور تحقیقات گسترده‌ای را برای شناسایی منشأ این خرابکاری آغاز نموده‌اند."
+            f"منابع محلی از شنیده شدن صدای چند انفجار مهیب در نزدیکی خطوط لوله و مخازن نفتی کشور {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
+            f"بر اساس گزارش‌های اولیه، آتش‌سوزی گسترده‌ای در منطقه رخ داده و نیروهای امدادی و امنیتی در حال اعزام هستند.\n\n"
+            "هنوز هیچ گروه یا کشوری مسئولیت این حادثه را بر عهده نگرفته است."
         )
-        category = "حوادث و خرابکاری امنیتی"
 
-    await post_breaking_news(bot, title, body, category)
+    await post_breaking_news(bot, headline, body)
 
 
-async def trigger_commander_assassination_news(bot, target_c: dict, commander_title: str, attacker_c: dict = None):
-    """انتشار خبر فوری ترور یا شهادت فرمانده ارشد نظامی در کانال رسمی."""
+async def trigger_commander_assassination_news(bot, target_c: dict, commander_title: str = "", attacker_c: dict = None):
+    """انتشار خبر فوری حادثه امنیتی و ترور مقامات نظامی به سبک خبری بدون لو دادن جزئیات."""
     if attacker_c:
-        title = f"خنثی‌سازی ترور {commander_title} و رسوایی {attacker_c['name']}"
+        headline = f"خنثی‌سازی سوءقصد مسلحانه و دستگیری تیم ترور در {target_c['name']}"
         body = (
-            f"سرویس ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** از خنثی‌سازی نقشه ترور {commander_title} و دستگیری عوامل عملیاتی اعزامی از سوی {attacker_c['flag']} **{attacker_c['name']}** خبر داد."
+            f"سرویس‌های امنیتی کشور {target_c['flag']} **{target_c['name']}** اعلام کردند یک هسته ترور مسلحانه وابسته به {attacker_c['flag']} **{attacker_c['name']}** را پیش از اقدام شناسایی و متلاشی کرده‌اند."
         )
-        category = "رسوایی اطلاعاتی"
     else:
-        title = f"ترور هدفمند {commander_title} در {target_c['name']}"
+        headline = f"حادثه امنیتی و تیراندازی سنگین در {target_c['name']}؛ اخبار ضد و نقیض از ترور یک مقام ارشد"
         body = (
-            f"منابع نظامی رسماً اعلام کردند {commander_title} کشور {target_c['flag']} **{target_c['name']}** در یک عملیات غافلگیرانه به شهادت رسیده / ترور گردید.\n"
-            f"ستاد کل نیروهای مسلح این کشور حالت آماده‌باش نظامی اعلام کرد و تحقیقات امنیتی آغاز شده است."
+            f"منابع خبری از وقوع یک عملیات سوءقصد مسلحانه و ترور هدفمند در پایتخت کشور {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
+            f"تدابیر شدید امنیتی و پرواز بالگردها در منطقه برقرار شده و ستاد کل نیروهای مسلح این کشور حالت آماده‌باش اعلام کرده است.\n\n"
+            "اخبار تکمیلی متعاقباً اعلام خواهد شد..."
         )
-        category = "رویداد ویژه امنیتی"
 
-    await post_breaking_news(bot, title, body, category)
+    await post_breaking_news(bot, headline, body)
 
 
 async def trigger_scientist_assassination_news(bot, target_c: dict, attacker_c: dict = None):
-    """انتشار خبر فوری ترور دانشمند ارشد هسته‌ای در کانال رسمی."""
+    """انتشار خبر فوری ترور چهره‌های علمی و تحقیقاتی."""
     if attacker_c:
-        title = f"خنثی‌سازی ترور دانشمند هسته‌ای {target_c['name']}"
+        headline = f"خنثی‌سازی عملیات ترور چهره‌های علمی در {target_c['name']}"
         body = (
-            f"تلاش هسته عملیاتی {attacker_c['flag']} **{attacker_c['name']}** برای ترور دانشمند هسته‌ای {target_c['name']} با هوشیاری نیروهای امنیتی ناکام ماند و عوامل نفوذی بازداشت شدند."
+            f"دستگاه ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** از دستگیری عوامل وابسته به {attacker_c['flag']} **{attacker_c['name']}** پیش از اجرای عملیات ترور خبر داد."
         )
-        category = "رسوایی اطلاعاتی"
     else:
-        title = f"ترور دانشمند ارشد هسته‌ای در {target_c['name']}"
+        headline = f"ترور یکی از چهره‌های علمی و تحقیقاتی در {target_c['name']}"
         body = (
-            f"گزارش‌های فوری از ترور هدفمند یکی از چهره‌های کلیدی و دانشمندان ارشد تحقیقات هسته‌ای در کشور {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
-            f"برنامه توسعه و R&D این کشور موقتاً وارد شوک و وقفه تحقیقاتی گردیده است."
+            f"گزارش‌های میدانی از حمله مسلحانه به خودروی یکی از پژوهشگران و چهره‌های کلیدی توسعه فناوری در کشور {target_c['flag']} **{target_c['name']}** حکایت دارد.\n"
+            f"نیروهای امنیتی منطقه را مسدود کرده و تحقیقات درباره چگونگی این سوءقصد در جریان است."
         )
-        category = "حوادث امنیتی و ترور"
 
-    await post_breaking_news(bot, title, body, category)
+    await post_breaking_news(bot, headline, body)
+
+
+async def trigger_blockade_news(bot, blockader_c: dict, target_c: dict):
+    """انتشار خبر فوری آرایش جنگی و محاصره دریایی."""
+    headline = f"آرایش جنگی ناوگان {blockader_c['name']} و محاصره دریایی بنادر {target_c['name']}"
+    body = (
+        f"رادارهای دریایی از استقرار ناودسته‌های رزمی کشور {blockader_c['flag']} **{blockader_c['name']}** در مبادی ورودی بنادر و خطوط مواصلاتی {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
+        f"تردد کشتی‌های تجاری در این مسیرها متوقف گردیده است."
+    )
+    await post_breaking_news(bot, headline, body)
+
+
+async def trigger_unblockade_news(bot, blockader_c: dict, target_c: dict, is_broken: bool = False):
+    """انتشار خبر پایان محاصره دریایی."""
+    if is_broken:
+        headline = f"درگیری سنگین دریایی و شکسته شدن خطوط محاصره در بنادر {target_c['name']}"
+        body = (
+            f"نیروهای پدافند ساحلی و موشکی کشور {target_c['flag']} **{target_c['name']}** با آتش متراکم ضدکشتی، محاصره دریایی ناوگان {blockader_c['name']} را درهم شکستند."
+        )
+    else:
+        headline = f"لغو محاصره دریایی و بازگشایی بنادر {target_c['name']}"
+        body = (
+            f"دولت {blockader_c['flag']} **{blockader_c['name']}** پایان محاصره دریایی و از سرگیری تردد در بنادر {target_c['name']} را اعلام کرد."
+        )
+    await post_breaking_news(bot, headline, body)
+
+
+async def trigger_strait_news(bot, country: dict, strait_name: str, action_type: str, toll_str: str = ""):
+    """انتشار خبر وضعیت تنگه‌های استراتژیک."""
+    if action_type == "block":
+        headline = f"مسدودسازی کامل و توقف ترانزیت در {strait_name} توسط {country['name']}"
+        body = (
+            f"یگان‌های دریایی کشور {country['flag']} **{country['name']}** تردد کلیه شناورهای تجاری در {strait_name} را متوقف و این آبراه راهبردی را مسدود اعلام کردند."
+        )
+    elif action_type == "toll":
+        headline = f"وضع عوارض ترانزیت عبوری در {strait_name} توسط {country['name']}"
+        body = (
+            f"دولت {country['flag']} **{country['name']}** دریافت عوارض عبور ({toll_str}) برای شناورهای تجاری در {strait_name} را به اجرا گذاشت."
+        )
+    else:
+        headline = f"بازگشایی و از سرگیری تردد آزاد در {strait_name}"
+        body = (
+            f"دولت {country['flag']} **{country['name']}** لغو محدودیت‌ها و بازگشایی کامل کشتیرانی آزاد در {strait_name} را رسماً اعلام نمود."
+        )
+
+    await post_breaking_news(bot, headline, body)
+
+
+async def trigger_trade_news(bot, prop_c: dict, recip_c: dict, details_str: str = "", transport_mode: str = "sea"):
+    """انتشار خبر ترانزیت یا پروازهای ترابری بین‌المللی."""
+    if transport_mode == "air":
+        headline = f"پروازهای ترابری سنگین هوایی بین {prop_c['name']} و {recip_c['name']}"
+        body = (
+            f"رادارهای منطقه‌ای پرواز چند فروند هواپیمای ترابری سنگین هوایی بین کشور {prop_c['flag']} **{prop_c['name']}** و {recip_c['flag']} **{recip_c['name']}** را ثبت کردند."
+        )
+    elif transport_mode == "land":
+        headline = f"ترانزیت کاروان‌های زمینی تحت تدابیر امنیتی بین {prop_c['name']} و {recip_c['name']}"
+        body = (
+            f"حرکت کاروان‌های ترانزیت زمینی تحت مراقبت‌های ویژه بین مرزهای {prop_c['flag']} **{prop_c['name']}** و {recip_c['flag']} **{recip_c['name']}** مشاهده گردید."
+        )
+    else:
+        headline = f"ترانزیت کاروان‌های تجاری دریایی بین {prop_c['name']} و {recip_c['name']}"
+        body = (
+            f"تردد چند فروند کشتی ترابری و باری میان بنادر کشور {prop_c['flag']} **{prop_c['name']}** و {recip_c['flag']} **{recip_c['name']}** به ثبت رسید."
+        )
+
+    await post_breaking_news(bot, headline, body)
+
+
+async def trigger_protest_news(bot, country: dict, reason: str):
+    """انتشار خبر بروز ناآرامی و اعتصابات."""
+    headline = f"اعتصابات گسترده و تجمعات اعتراضی در پایتخت {country['name']}"
+    body = (
+        f"به دلیل {reason} و شرایط دشوار معیشتی، تجمعات اعتراضی در خیابان‌های اصلی کشور {country['flag']} **{country['name']}** شکل گرفته است."
+    )
+    await post_breaking_news(bot, headline, body)
