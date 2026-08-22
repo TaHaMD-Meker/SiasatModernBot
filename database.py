@@ -1691,9 +1691,10 @@ def build_enrichment_facility_transaction(country_id: int) -> tuple[bool, str]:
         with conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
-            c = cur.fetchone()
-            if not c:
+            row = cur.fetchone()
+            if not row:
                 return False, "کشور یافت نشد."
+            c = dict(row)
 
             tech_lvl = c["tech_level"] or 1
             if tech_lvl < getattr(config, "ENRICHMENT_FACILITY_TECH_REQ", 3):
@@ -1748,9 +1749,10 @@ def conduct_nuclear_test_transaction(country_id: int) -> tuple[bool, str]:
         with conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
-            c = cur.fetchone()
-            if not c:
+            row = cur.fetchone()
+            if not row:
                 return False, "کشور یافت نشد."
+            c = dict(row)
 
             if c.get("nuclear_tested"):
                 return False, "🌟 کشور شما قبلاً آزمایش انفجار هسته‌ای را با موفقیت انجام داده است."
@@ -1801,9 +1803,10 @@ def assemble_strategic_warhead_transaction(country_id: int) -> tuple[bool, str]:
         with conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
-            c = cur.fetchone()
-            if not c:
+            row = cur.fetchone()
+            if not row:
                 return False, "کشور یافت نشد."
+            c = dict(row)
 
             tech_lvl = c["tech_level"] or 1
             if tech_lvl < 5:
@@ -2696,9 +2699,10 @@ def assemble_nuclear_warhead_transaction(country_id: int) -> tuple[bool, str]:
         with conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
-            c = cur.fetchone()
-            if not c:
+            row = cur.fetchone()
+            if not row:
                 return False, "کشور یافت نشد."
+            c = dict(row)
 
             tech_lvl = c["tech_level"] or 1
             if tech_lvl < getattr(config, "WARHEAD_PROD_TECH_REQ", 5):
@@ -4386,9 +4390,10 @@ def upgrade_firewall_transaction(country_id: int) -> tuple[bool, str]:
         with conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
-            c = cur.fetchone()
-            if not c:
+            row = cur.fetchone()
+            if not row:
                 return False, "کشور یافت نشد."
+            c = dict(row)
 
             curr_lvl = c.get("firewall_level", 1) or 1
             if curr_lvl >= 5:
