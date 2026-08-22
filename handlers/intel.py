@@ -112,6 +112,7 @@ async def intel_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("🎖️ کادر فرماندهی و سران نظامی", callback_data="intel:commanders_menu"),
+            InlineKeyboardButton("📋 پرونده‌ها و سوابق عملیات", callback_data="intel:history"),
         ],
         [
             InlineKeyboardButton("🔙 بازگشت به ستاد راهبردی", callback_data="mv:menu"),
@@ -292,6 +293,9 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "intel:commanders_menu":
         await intel_commanders_menu(update, context)
 
+    elif data == "intel:history":
+        await intel_history_menu(update, context)
+
     # ---------------- دسته‌بندی‌های عملیات ----------------
     elif data == "intel:menu_espionage":
         text = (
@@ -437,28 +441,51 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             result_header = f"🎉 <b>موفقیت کامل عملیات اطلاعاتی (Clean Strike)</b>\n<blockquote>مأموریت با موفقیت کامل و بدون برجای گذاشتن ردپا اجرا گردید.</blockquote>\n\n"
             if op_type == "espionage_military":
                 dump_text = _generate_obfuscated_military_dump(target_c)
-                await query.edit_message_text(
-                    f"{result_header}<b>اسناد سرقت‌شده از انبار نظامی {target_c['flag']} {target_c['name']}:</b>\n\n{dump_text}",
-                    reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به سازمان اطلاعات", callback_data="intel:menu")]]),
-                    parse_mode="HTML"
-                )
+                full_result_text = f"{result_header}<b>اسناد سرقت‌شده از انبار نظامی {target_c['flag']} {target_c['name']}:</b>\n\n{dump_text}"
             elif op_type == "espionage_nuclear":
                 dump_text = _generate_obfuscated_nuclear_dump(target_c)
-                await query.edit_message_text(
-                    f"{result_header}<b>پرونده محرمانه هسته‌ای {target_c['flag']} {target_c['name']}:</b>\n\n{dump_text}",
-                    reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به سازمان اطلاعات", callback_data="intel:menu")]]),
-                    parse_mode="HTML"
-                )
+                full_result_text = f"{result_header}<b>پرونده محرمانه هسته‌ای {target_c['flag']} {target_c['name']}:</b>\n\n{dump_text}"
             else:
                 extra_note = ""
                 if op_type == "assassination_commander" and "killed_commander" in meta:
                     extra_note = f"\n• فرمانده هدف: <b>{meta['killed_commander']['title']}</b> (شهید / ترور شد)"
+                full_result_text = f"{result_header}• هدف مأموریت: <b>{meta['op_cfg']['name']}</b>\n• کشور هدف: {target_c['flag']} <b>{target_c['name']}</b>{extra_note}\n\n<i>اثرات عملیات فوراً در دیتابیس بازی اعمال گردید.</i>"
 
-                await query.edit_message_text(
-                    f"{result_header}• هدف مأموریت: <b>{meta['op_cfg']['name']}</b>\n• کشور هدف: {target_c['flag']} <b>{target_c['name']}</b>{extra_note}\n\n<i>اثرات عملیات فوراً در دیتابیس بازی اعمال گردید.</i>",
-                    reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به سازمان اطلاعات", callback_data="intel:menu")]]),
-                    parse_mode="HTML"
-                )
+            # ارسال نسخه دائمی به عنوان پیام مستقل در پیوی بازیکن تا با کلیک دکمه گم نشود
+            try:
+                await context.bot.send_message(chat_id=user_id, text=full_result_text, parse_mode="HTML")
+            except Exception:
+                pass
+
+            # ارسال هشدار خرابکاری برای کشور مدافع
+            if target_c.get("player_id"):
+                try:
+                    if op_type == "sabotage_pipeline":
+                        await context.bot.send_message(
+                            chat_id=target_c["player_id"],
+                            text=f"🛢️ <b>هشدار پدافند غیرعامل — انفجار در خطوط لوله نفت!</b>\n\nیک خرابکاری انفجاری ناشناس در خطوط لوله و مخازن نفتی کشور شما رخ داد و <b>۱۵۰,۰۰۰ بشکه نفت</b> از بین رفت.",
+                            parse_mode="HTML"
+                        )
+                    elif op_type == "cyber_blackout":
+                        await context.bot.send_message(
+                            chat_id=target_c["player_id"],
+                            text=f"⚡ <b>هشدار خاموشی سایبری (Blackout)!</b>\n\nحمله سایبری ناشناس به شبکه توزیع برق کشور موجب قطعی گسترده برق و افت ۵٪ رضایت عمومی گردید.",
+                            parse_mode="HTML"
+                        )
+                    elif op_type == "cyber_centrifuge":
+                        await context.bot.send_message(
+                            chat_id=target_c["player_id"],
+                            text=f"☢️ <b>هشدار امنیتی تاسیسات هسته‌ای!</b>\n\nنفوذ بدافزار به سانتریفیوژها موجب انهدام ۵۰ کیلوگرم سوخت غنی‌شده و توقف موقت غنی‌سازی گردید.",
+                            parse_mode="HTML"
+                        )
+                except Exception:
+                    pass
+
+            await query.edit_message_text(
+                full_result_text,
+                reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به سازمان اطلاعات", callback_data="intel:menu")]]),
+                parse_mode="HTML"
+            )
 
         else:
             # شکست
@@ -510,3 +537,49 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                     reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت", callback_data="intel:menu")]]),
                     parse_mode="HTML"
                 )
+
+
+async def intel_history_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    country = await require_country(update)
+    if not country:
+        return
+
+    c = db.get_country_by_id(country["id"]) or country
+    history = db.get_country_intel_history(c["id"], limit=10)
+
+    lines = [
+        f"📋 <b>پرونده‌ها و تاریخچه عملیات‌های اطلاعاتی — {c['flag']} {c['name']}</b>\n",
+        "<blockquote>سوابق رسمی مأموریت‌های سایبری، جاسوسی و عملیات سیاه اجراشده توسط کشور</blockquote>\n\n"
+    ]
+
+    if not history:
+        lines.append("<i>هنوز هیچ عملیات اطلاعاتی ثبت نگردیده است.</i>\n")
+    else:
+        result_labels = {
+            "clean_success": "🟢 موفقیت کامل (گمنام)",
+            "blocked_unattributed": "🟡 خنثی‌شده (بدون لو رفتن)",
+            "busted_exposed": "🔴 شکست و رسوایی افشاشده"
+        }
+        for h in history:
+            op_cfg = config.INTEL_OPERATIONS_CONFIG.get(h["op_type"], {})
+            op_name = op_cfg.get("name", h["op_type"])
+            t_flag = h.get("target_flag", "")
+            t_name = h.get("target_name", "هدف")
+            res_str = result_labels.get(h["result"], h["result"])
+            dt_str = (h["created_at"] or "")[:16].replace("T", " ")
+
+            lines.append(
+                f"• <b>مأموریت:</b> {op_name} ➔ {t_flag} <b>{t_name}</b>\n"
+                f"  <blockquote>نتیجه: {res_str} | زمان: <code>{dt_str}</code></blockquote>\n"
+            )
+
+    buttons = [
+        [InlineKeyboardButton("🔙 بازگشت به سازمان اطلاعات", callback_data="intel:menu")],
+    ]
+
+    text = "".join(lines)
+    query = update.callback_query
+    if query:
+        await query.edit_message_text(text, reply_markup=_kb(buttons), parse_mode="HTML")
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=_kb(buttons), parse_mode="HTML")

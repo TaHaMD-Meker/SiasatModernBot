@@ -4583,3 +4583,19 @@ def execute_intel_operation(attacker_id: int, target_id: int, op_type: str, chip
 
     except Exception as e:
         return False, f"خطای دیتابیس: {e}", {}
+
+
+def get_country_intel_history(country_id: int, limit: int = 10) -> list:
+    """دریافت سوابق و تاریخچه عملیات‌های اطلاعاتی کشور."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT h.*, c.name as target_name, c.flag as target_flag
+        FROM intel_operations_history h
+        JOIN countries c ON h.target_id = c.id
+        WHERE h.attacker_id = ?
+        ORDER BY h.id DESC LIMIT ?
+    """, (country_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
