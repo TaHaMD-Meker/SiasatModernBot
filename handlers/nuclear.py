@@ -126,7 +126,7 @@ async def nuclear_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             buttons.append([InlineKeyboardButton("🚪 خروج از معاهده NPT", callback_data="nuc:npt_toggle")])
 
-    buttons.append([InlineKeyboardButton("🔙 بازگشت به تحرکات نظامی", callback_data="mv:menu")])
+    buttons.append([InlineKeyboardButton("🔙 بازگشت به ستاد راهبردی", callback_data="mv:menu")])
 
     if update.message:
         await update.message.reply_text(text, reply_markup=_kb(buttons), parse_mode="Markdown")

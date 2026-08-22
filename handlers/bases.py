@@ -50,7 +50,7 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
     if query:
         await query.answer()
         await query.edit_message_text(
-            "🎖️ *تحرکات نظامی*\n━━━━━━━━━━━━━━━━━━\n\nیک گزینه را انتخاب کنید:",
+            "🎯 **ستاد توسعه و اقدامات راهبردی**\n━━━━━━━━━━━━━━━━━━\n\nیک بخش را جهت اقدام انتخاب کنید:",
             reply_markup=_kb([
                 [InlineKeyboardButton("🪖 برگزاری مانور نظامی", callback_data="op:military_drill")],
                 [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
@@ -63,7 +63,7 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
         )
         return
     await update.message.reply_text(
-        "🎖️ *تحرکات نظامی*\n━━━━━━━━━━━━━━━━━━\n\nیک گزینه را انتخاب کنید:",
+        "🎯 **ستاد توسعه و اقدامات راهبردی**\n━━━━━━━━━━━━━━━━━━\n\nیک بخش را جهت اقدام انتخاب کنید:",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🪖 برگزاری مانور نظامی", callback_data="op:military_drill")],
             [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
@@ -528,5 +528,5 @@ async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
 def get_bases_handlers():
     return [
         CallbackQueryHandler(mv_callback_handler, pattern=r"^mv:"),
-        MessageHandler(filters.Regex("^🎖️ تحرکات نظامی$"), military_movements_menu),
+        MessageHandler(filters.Regex(r"^(?:🎯 ستاد توسعه و اقدامات راهبردی|🎖️ تحرکات نظامی)$"), military_movements_menu),
     ]
