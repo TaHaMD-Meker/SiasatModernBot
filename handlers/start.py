@@ -149,20 +149,24 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.add_log(actor=str(player_id), action="request_country", details=key)
 
     # Send approval request to Admin
+    u_name_display = f"@{user.username}" if user.username else "ندارد"
+    user_url = f"https://t.me/{user.username}" if user.username else f"tg://user?id={player_id}"
     admin_msg = (
         "📥 *درخواست جدید انتخاب کشور*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"• *کشور درخواستی:* {info['flag']} {info['name']} (`{key}`)\n"
         f"• *نام کاربر:* {user.first_name or ''} {user.last_name or ''}\n"
-        f"• *یوزرنیم تلگرام:* @{user.username}\n"
-        f"• *شناسه عددی (ID):* `{player_id}`\n"
-        f"• *لینک پیوی کاربر:* [پیوی کاربر](tg://user?id={player_id})\n\n"
-        f"آیا با واگذاری کشور {info['flag']} {info['name']} به این کاربر موافقید؟"
+        f"• *یوزرنیم تلگرام:* {u_name_display}\n"
+        f"• *شناسه عددی (ID):* `{player_id}`\n\n"
+        f"🔍 برای بررسی هویت و پیام دادن به بازیکن، روی دکمه زیر کلیک کنید:"
     )
 
     admin_kb = [
-        [InlineKeyboardButton("✅ تایید و واگذاری کشور", callback_data=f"admin:approve_country:{req_id}")],
-        [InlineKeyboardButton("❌ رد درخواست", callback_data=f"admin:reject_country:{req_id}")],
+        [InlineKeyboardButton("👤 مشاهده پروفایل / چت با متقاضی در پیوی", url=user_url)],
+        [
+            InlineKeyboardButton("✅ تایید و واگذاری کشور", callback_data=f"admin:approve_country:{req_id}"),
+            InlineKeyboardButton("❌ رد درخواست", callback_data=f"admin:reject_country:{req_id}")
+        ],
     ]
 
     for admin_id in config.ADMIN_IDS:
