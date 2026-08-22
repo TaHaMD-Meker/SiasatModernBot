@@ -360,6 +360,40 @@ class TestReportRendering:
         assert out.index("شمش طلا") < human_at
         assert out.index("نظامیان") > human_at
 
+    def test_no_duplicated_emoji_in_labels(self):
+        """رگرسیون: نام ساختمان از config خودش ایموجی دارد؛
+        نباید «🏗️ 🛢️ پالایشگاه نفت» تولید شود."""
+        from handlers.losses import build_loss_report_text, _split_emoji
+
+        name, emoji = _split_emoji("🛢️ پالایشگاه نفت", "🏗️")
+        assert name == "پالایشگاه نفت"
+        assert emoji == "🛢️"
+
+        items = [{"key": "oil_refinery", "name": name, "special": "building",
+                  "subcat": "ساخت‌سازی", "emoji": emoji, "unit": "واحد", "qty": 1}]
+        out = build_loss_report_text("🇾🇪", "یمن", "تست", items)
+        assert "🏗️ 🛢️" not in out
+        assert "🛢️ پالایشگاه نفت: 1 واحد" in out
+
+    def test_fallback_category_label_has_single_emoji(self):
+        """رگرسیون: fallback دسته «📦 🚛 نیروی زمینی» تولید می‌کرد."""
+        from handlers.losses import classify_subcat
+        label, emoji = classify_subcat(
+            {"category": "Ground Forces", "equipment_name": "چیز ناشناخته", "equipment_key": "x"}
+        )
+        assert not label.startswith("🚛")
+        assert emoji != "📦"
+
+    def test_technical_vehicle_classified_as_armored(self):
+        """تویوتا تکنیکال باید در «خودروهای زرهی» بیفتد، نه fallback."""
+        from handlers.losses import classify_subcat
+        label, emoji = classify_subcat({
+            "category": "Ground Forces",
+            "equipment_name": "تویوتا تکنیکال مجهز به دوشکا و زو-۲۳",
+            "equipment_key": "toyota_technical_yemen",
+        })
+        assert label == "خودروهای زرهی"
+
     def test_no_empty_equipment_summary(self):
         """گزارشی که فقط قلم ویژه دارد نباید هدر «جمع تلفات» خالی بزند."""
         from handlers.losses import build_loss_report_text

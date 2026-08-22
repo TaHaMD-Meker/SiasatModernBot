@@ -28,7 +28,9 @@ _SUBCAT_RULES = [
     ("جنگنده‌ها", "✈️", [], "Aircraft"),
     ("پهپادها", "🛩️", [], "UAV"),
     ("تانک‌ها", "🛡️", ["تانک", "t-90", "t-80", "t-72", "t-14", "t-69", "t-62", "t-55", "merkava", "مرکاوا", "آبرامز", "ابرامز", "abrams", "لئوپارد", "لیوپارد", "leopard", "leclerc", "لکلرک", "challenger", "چلنجر", "ztz", "type 90", "k2", "altay", "ارماتا", "armata", "karrar", "کرار"], "Ground Forces"),
-    ("خودروهای زرهی", "🚙", ["نفربر", "bmp", "btr", "m113", "namer", "نمر", "eitan", "ایتان", "stryker", "برادلی", "bradley", "mrap", "typhoon", "tigr", "تیگر", "خودروی زرهی", "زرهی", "فنی", "هموند", "humvee", "کوگر", "aryeh", "پل‌گذار", "مهندسی"], "Ground Forces"),
+    ("خودروهای زرهی", "🚙", ["نفربر", "bmp", "btr", "m113", "namer", "نمر", "eitan", "ایتان", "stryker", "برادلی", "bradley", "mrap", "typhoon", "tigr", "تیگر", "خودروی زرهی", "زرهی", "فنی", "هموند", "humvee", "کوگر", "aryeh", "پل‌گذار", "مهندسی",
+     "تویوتا", "تکنیکال", "technical", "پیکاپ", "دوشکا", "لندکروزر", "land cruiser", "خودرو تاکتیکی", "تاکتیکی",
+     "sandcat", "tigris", "achzarit", "اچزاریت", "btr", "بی تی آر"], "Ground Forces"),
     ("توپخانه", "🎯", ["توپخانه", "توپ خودکششی", "خمپاره", "howitzer", "هویتزر", "m109", "m777", "2s1", "2s3", "2s19", "2s35", "msta", "paladin", "pzh", "k9", "firtina", "ceasar", "قیسر", "اتمز"], "Artillery"),
     ("راکت‌اندازها", "🚀", ["راکت", "himars", "هیمارس", "گراد", "grad", "smerch", "سمرچ", "tornado", "تورنادو", "uragan", "فجر", "رعد", "mlrs", "پیندا", "arityah", "امرسال", "lars", "astro", "لنچر"], "Artillery"),
     ("ناوهای هواپیمابر", "⚓", ["ناو هواپیمابر", "ناو بالگردبر", "carrier", "کوزنتسف", "ford", "nimitz", "cavour", "elizabeth", "ویکرانت", "آنادول", "dokdo", "wasl"], "Navy"),
@@ -50,6 +52,20 @@ _SUBCAT_RULES = [
 _UNIT_BY_CATEGORY = {k: v[1] for k, v in config.ASSET_CATEGORIES.items()}
 
 
+def _split_emoji(label: str, default_emoji: str = "📦"):
+    """جداکردن ایموجی ابتدای یک برچسب از متن آن.
+
+    نام‌های config معمولاً به شکل «🛢️ پالایشگاه نفت» هستند؛ اگر ایموجی
+    جداگانه‌ای هم کنارشان بگذاریم، خروجی «🏗️ 🛢️ پالایشگاه نفت» می‌شود.
+    خروجی: (متن بدون ایموجی، ایموجی)
+    """
+    label = (label or "").strip()
+    parts = label.split(" ", 1)
+    if len(parts) == 2 and parts[0] and not parts[0][0].isalnum():
+        return parts[1].strip(), parts[0]
+    return label, default_emoji
+
+
 def classify_subcat(asset: dict):
     """تشخیص زیردسته نمایشی + ایموجی برای یک دارایی."""
     cat = asset.get("category", "")
@@ -59,7 +75,10 @@ def classify_subcat(asset: dict):
             continue
         if not hints or any(h in text for h in hints):
             return label, emoji
-    return config.ASSET_CATEGORIES.get(cat, (cat, "تجهیز"))[0], "📦"
+    # هیچ زیردسته‌ای تطبیق نخورد → برچسب دسته‌ی اصلی.
+    # برچسب‌های config خودشان ایموجی دارند («🚛 نیروی زمینی»)، پس ایموجی را
+    # از خودشان بیرون می‌کشیم تا «📦 🚛 نیروی زمینی» تولید نشود.
+    return _split_emoji(config.ASSET_CATEGORIES.get(cat, (cat, "تجهیز"))[0])
 
 
 def to_english_digits(text: str) -> str:
@@ -987,8 +1006,9 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             # تطبیق با ساختمان‌ها و صنایع
             b = match_building(name, country["id"])
             if b:
-                matched.append({"key": b["key"], "name": b["name"], "special": "building",
-                                "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": "🏗️",
+                b_name, b_emoji = _split_emoji(b["name"], "🏗️")
+                matched.append({"key": b["key"], "name": b_name, "special": "building",
+                                "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": b_emoji,
                                 "unit": "واحد", "qty": qty})
                 continue
 
