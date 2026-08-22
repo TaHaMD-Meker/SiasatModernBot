@@ -203,6 +203,68 @@ def _generate_obfuscated_military_dump(target: dict) -> str:
     return text
 
 
+def _generate_obfuscated_diplomacy_dump(target: dict) -> str:
+    t_key = target.get("country_key", "UNKNOWN").upper()
+    t_id = target["id"]
+
+    sent_contracts = db.get_country_pending_sent_contracts(t_id) or []
+    recv_contracts = db.get_country_pending_received_contracts(t_id) or []
+    market_orders = db.get_country_market_orders(t_id) or []
+
+    contract_blocks = []
+    type_labels = {"treasury": "USD", "gold": "GOLD_BARS", "oil": "BBL_OIL", "grain": "TONS_GRAIN", "microchips": "CHIPS", "uranium_ore": "YELLOWCAKE", "nuclear_fuel": "REACTOR_FUEL"}
+
+    for c in sent_contracts[:2]:
+        dest_name = c.get("target_name", "UNKNOWN")
+        off_t = type_labels.get(c["offered_type"], c["offered_type"])
+        req_t = type_labels.get(c["requested_type"], c["requested_type"])
+        contract_blocks.append(
+            f'        0x{random.randint(0x10, 0xFF):02X}: [PENDING_OUTBOUND_DEAL #{c["id"]}]:\n'
+            f'             DESTINATION: [{dest_name}]\n'
+            f'             OFFERED: {fa_num(c["offered_amount"])} {off_t}\n'
+            f'             REQUESTED: {fa_num(c["requested_amount"])} {req_t}\n'
+            f'             TRANSPORT_MODE: [{c.get("transport_mode", "sea").upper()}]'
+        )
+
+    for c in recv_contracts[:2]:
+        sender_name = c.get("sender_name", "UNKNOWN")
+        off_t = type_labels.get(c["offered_type"], c["offered_type"])
+        req_t = type_labels.get(c["requested_type"], c["requested_type"])
+        contract_blocks.append(
+            f'        0x{random.randint(0x10, 0xFF):02X}: [INCOMING_PROPOSAL #{c["id"]}]:\n'
+            f'             ORIGIN: [{sender_name}]\n'
+            f'             INBOUND: {fa_num(c["offered_amount"])} {off_t}\n'
+            f'             OUTBOUND: {fa_num(c["requested_amount"])} {req_t}'
+        )
+
+    for m in market_orders[:2]:
+        res_t = type_labels.get(m["resource_type"], m["resource_type"])
+        contract_blocks.append(
+            f'        0x{random.randint(0x10, 0xFF):02X}: [COMMODITY_MARKET_LISTING #{m["id"]}]:\n'
+            f'             RESOURCE: {res_t} × {fa_num(m["amount"])}\n'
+            f'             UNIT_ASK_PRICE: ${fa_num(m["unit_price"])}'
+        )
+
+    if not contract_blocks:
+        contract_blocks.append('        0x1A: [SECURE_ENCRYPTED_WIRES]: NO_ACTIVE_UNRESOLVED_CONTRACTS_FOUND\n        0x2B: TREASURY_LIQUIDITY: EST ~$' + fa_num(int(target.get("treasury", 0) * 0.95)) + ' - $' + fa_num(int(target.get("treasury", 0) * 1.05)))
+
+    contracts_str = "\n".join(contract_blocks)
+
+    text = (
+        f"<code>[SYSTEM: CLASSIFIED_DIPLOMATIC_WIRETAP // SIGINT INTERCEPT]</code>\n"
+        f"<code>==================================================</code>\n"
+        f"<code>> TARGET_NODE: {t_key}_MINISTRY_FOREIGN_AFFAIRS</code>\n"
+        f"<code>> STATUS: COMMS_DECRYPTED (RSA-4096 CRACKED)</code>\n\n"
+        f"<code>[+] INTERCEPTED DEALS & COMMODITY WIRES:</code>\n"
+        f"<code>--------------------------------------------------</code>\n"
+        f"<code>{contracts_str}</code>\n"
+        f"<code>        0xFF: [CIPHER_KEY_ROTATED]: [REDACTED_CHANNEL_0x8C]</code>\n"
+        f"<code>--------------------------------------------------</code>\n"
+        f"<code>[!] TRACE_CLEARED: SECURE DIPLOMATIC COMMS COMPROMISED.</code>"
+    )
+    return text
+
+
 def _generate_obfuscated_nuclear_dump(target: dict) -> str:
     t_key = target.get("country_key", "UNKNOWN").upper()
     u_ore = target.get("uranium_ore", 0) or 0
@@ -305,6 +367,7 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         buttons = [
             [InlineKeyboardButton("📑 سرقت اسناد انبار تسلیحات", callback_data="intel:pick_target:espionage_military")],
+            [InlineKeyboardButton("📜 شنود دیپلماسی و قراردادهای محرمانه", callback_data="intel:pick_target:espionage_diplomacy")],
             [InlineKeyboardButton("☢️ پرونده‌خوانی برنامه هسته‌ای", callback_data="intel:pick_target:espionage_nuclear")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="intel:menu")],
         ]
@@ -445,6 +508,9 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             elif op_type == "espionage_nuclear":
                 dump_text = _generate_obfuscated_nuclear_dump(target_c)
                 full_result_text = f"{result_header}<b>پرونده محرمانه هسته‌ای {target_c['flag']} {target_c['name']}:</b>\n\n{dump_text}"
+            elif op_type == "espionage_diplomacy":
+                dump_text = _generate_obfuscated_diplomacy_dump(target_c)
+                full_result_text = f"{result_header}<b>شنود خطوط دیپلماسی و قراردادهای {target_c['flag']} {target_c['name']}:</b>\n\n{dump_text}"
             else:
                 extra_note = ""
                 if op_type == "assassination_commander" and "killed_commander" in meta:
