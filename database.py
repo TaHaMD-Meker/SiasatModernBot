@@ -15,9 +15,14 @@ def get_connection():
     db_dir = os.path.dirname(config.DB_PATH)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
+    except Exception:
+        pass
     return conn
 
 
@@ -1241,7 +1246,10 @@ def approve_base_create(req_id, auto=True):
             )
             base_id = cur.lastrowid
             cur.execute("UPDATE base_requests SET status = 'accepted' WHERE id = ?", (req_id,))
-            add_transaction(req["owner_id"], "base_build", f"ساخت پایگاه «{req['base_name']}»", -int(config.BASE_BUILD_COST.get("money", 0)))
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'base_build', ?, ?, ?)
+            """, (req["owner_id"], f"ساخت پایگاه «{req['base_name']}»", -int(config.BASE_BUILD_COST.get("money", 0)), now_str))
         return True, "ساخته شد", base_id
     except Exception as e:
         return False, str(e), None
@@ -1262,6 +1270,11 @@ def approve_base_upgrade(req_id):
             cur.execute("UPDATE foreign_bases SET capacity = capacity + ?, level = level + 1 WHERE id = ?",
                         (config.BASE_UPGRADE_STEP, req["base_id"]))
             cur.execute("UPDATE base_requests SET status = 'accepted' WHERE id = ?", (req_id,))
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                INSERT INTO transactions (country_id, type, description, amount, created_at)
+                VALUES (?, 'base_upgrade', 'ارتقای پایگاه پیشروی', ?, ?)
+            """, (req["owner_id"], -int(config.BASE_UPGRADE_COST.get("money", 0)), now_str))
         return True, "ارتقا یافت"
     except Exception as e:
         return False, str(e)
@@ -4346,7 +4359,10 @@ def kill_commander(country_id: int, commander_key: str, reason: str = "ترور 
                     command_disrupted_until = ?
                     WHERE id = ?
                 """, (until_str, country_id))
-                add_transaction(country_id, "commander_killed", f"🎖️ شهادت / ترور {commander_key} ({reason})", 0)
+                cur.execute("""
+                    INSERT INTO transactions (country_id, type, description, amount, created_at)
+                    VALUES (?, 'commander_killed', ?, 0, ?)
+                """, (country_id, f"🎖️ شهادت / ترور {commander_key} ({reason})", now_str))
                 return True, f"فرمانده {commander_key} مورد اصابت قرار گرفت و وضعیت وی به ترور/شهید تغییر یافت."
             return False, "فرمانده یافت نشد یا قبلاً ترور شده است."
     except Exception as e:
