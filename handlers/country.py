@@ -11,6 +11,7 @@ import database as db
 import config
 import approval_system
 from utils import format_money, format_number, format_oil, get_main_keyboard
+from premium_emojis import pe
 
 
 async def require_country(update: Update):
@@ -46,28 +47,30 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     missions_str = ("\n\n🎯 **مأموریت‌های روزانه:**\n" + "\n".join(ms_parts)) if ms_parts else ""
 
     text = (
-        f"**شناسنامه و وضعیت جامع کشور**\n"
-        f"> **کشور:** {c['flag']} {c['name']}\n"
-        f"> **رضایت عمومی:** {app_icon} {app_val}٪ (/approval)\n"
-        f"> **آمادگی رزمی نیروها:** ⚔️ {readiness_val}٪\n\n"
-        f"**اقتصاد و خزانه ملی**\n"
-        f"• **خزانه کشور:** {format_money(c['treasury'])}\n"
-        f"• **درآمد روزانه کل:** {format_money(c['daily_income'])}\n"
-        f"• **درآمد مالیاتی:** {format_money(c['tax_income'])}\n"
-        f"• **پشتوانه طلا:** {format_number(c['gold'])} شمش\n\n"
-        f"**انرژی، غلات و صنایع استراتژیک**\n"
-        f"• **ذخایر نفت:** {format_oil(c['oil_reserves'])} (تولید: {format_oil(c['oil_production'])}/روز)\n"
-        f"• **ذخایر غلات:** {format_number(c['grain'])} تن (تولید: +{format_number(c.get('grain_daily') or 0)} تن/روز)\n"
-        f"• **میکروچیپ و نیمه‌هادی:** {format_number(c.get('microchips') or 0)} عدد (+{format_number(c.get('microchips_daily') or 0)}/روز)\n"
-        f"• **کیک زرد اورانیوم:** {format_number(c.get('uranium_ore') or 0)} تن\n"
-        f"• **سوخت هسته‌ای (۳.۵٪):** {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم\n"
-        + (f"• **ایزوتوپ پزشکی (۲۰٪):** {format_number(c.get('medical_isotopes') or 0)} کیلوگرم\n" if (c.get('medical_isotopes') or 0) > 0 else "")
-        + (f"• **کلاهک‌های بازدارنده:** {format_number(c.get('warheads') or 0)} عدد\n" if (c.get('warheads') or 0) > 0 else "") +
-        f"• **پوشش شبکه برق:** {c['electricity']}٪\n\n"
-        f"**نیروی انسانی و توان نظامی**\n"
-        f"• **جمعیت کل:** {format_number(c['population'])} نفر\n"
-        f"• **پرسنل فعال ارتش:** {format_number(c['active_personnel'])} نفر\n"
-        f"• **نیروهای ذخیره:** {format_number(c['reserve_personnel'])} نفر{badges_str}"
+        f"{pe('globe', '🌐')} <b>شناسنامه و وضعیت جامع کشور</b>\n"
+        f"<blockquote>"
+        f"<b>کشور:</b> {c['flag']} {c['name']}\n"
+        f"<b>رضایت عمومی:</b> {app_icon} {app_val}٪ (/approval)\n"
+        f"<b>آمادگی رزمی نیروها:</b> {pe('shield', '⚔️')} {readiness_val}٪\n"
+        f"</blockquote>\n"
+        f"<b>اقتصاد و خزانه ملی</b>\n"
+        f"• {pe('bank', '🏦')} <b>خزانه کشور:</b> {format_money(c['treasury'])}\n"
+        f"• {pe('money', '📈')} <b>درآمد روزانه کل:</b> {format_money(c['daily_income'])}\n"
+        f"• {pe('gold', '🪙')} <b>پشتوانه طلا:</b> {format_number(c['gold'])} شمش\n"
+        f"• {pe('money', '💰')} <b>درآمد مالیاتی:</b> {format_money(c['tax_income'])}\n\n"
+        f"<b>انرژی، غلات و صنایع استراتژیک</b>\n"
+        f"• {pe('oil', '🛢️')} <b>ذخایر نفت:</b> {format_oil(c['oil_reserves'])} (تولید: {format_oil(c['oil_production'])}/روز)\n"
+        f"• {pe('grain', '🌾')} <b>ذخایر غلات:</b> {format_number(c['grain'])} تن (+{format_number(c.get('grain_daily') or 0)} تن/روز)\n"
+        f"• {pe('chip', '💻')} <b>میکروچیپ و نیمه‌هادی:</b> {format_number(c.get('microchips') or 0)} عدد (+{format_number(c.get('microchips_daily') or 0)}/روز)\n"
+        f"• {pe('nuclear', '☢️')} <b>کیک زرد اورانیوم:</b> {format_number(c.get('uranium_ore') or 0)} تن\n"
+        f"• {pe('atom', '🟢')} <b>سوخت هسته‌ای (۳.۵٪):</b> {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم\n"
+        + (f"• {pe('hospital', '🟡')} <b>ایزوتوپ پزشکی (۲۰٪):</b> {format_number(c.get('medical_isotopes') or 0)} کیلوگرم\n" if (c.get('medical_isotopes') or 0) > 0 else "")
+        + (f"• {pe('rocket', '🚀')} <b>کلاهک‌های بازدارنده:</b> {format_number(c.get('warheads') or 0)} عدد\n" if (c.get('warheads') or 0) > 0 else "") +
+        f"• {pe('lightning', '⚡')} <b>پوشش شبکه برق:</b> {c['electricity']}٪\n\n"
+        f"<b>نیروی انسانی و توان نظامی</b>\n"
+        f"• {pe('globe', '👥')} <b>جمعیت کل:</b> {format_number(c['population'])} نفر\n"
+        f"• {pe('medal', '🪖')} <b>پرسنل فعال ارتش:</b> {format_number(c['active_personnel'])} نفر\n"
+        f"• {pe('medal', '🎖️')} <b>نیروهای ذخیره:</b> {format_number(c['reserve_personnel'])} نفر{badges_str}"
     )
 
     text += missions_str
@@ -88,7 +91,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(
             text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=get_main_keyboard(update.effective_user.id)
         )
         await update.message.reply_text(
@@ -99,7 +102,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(inline_keyboard),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
 
