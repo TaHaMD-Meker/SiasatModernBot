@@ -457,6 +457,17 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             except Exception:
                 pass
 
+            # انتشار خبر فوری رویدادهای فیزیکی در کانال اخبار (خرابکاری نفتی، ترورها)
+            try:
+                if op_type == "sabotage_pipeline":
+                    await news_engine.trigger_pipeline_sabotage_news(context.bot, target_c)
+                elif op_type == "assassination_commander" and "killed_commander" in meta:
+                    await news_engine.trigger_commander_assassination_news(context.bot, target_c, meta['killed_commander']['title'])
+                elif op_type == "assassination_scientist":
+                    await news_engine.trigger_scientist_assassination_news(context.bot, target_c)
+            except Exception:
+                pass
+
             # ارسال هشدار خرابکاری برای کشور مدافع
             if target_c.get("player_id"):
                 try:
@@ -490,16 +501,23 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             # شکست
             if res_code == "busted_exposed":
-                # رسوایی جهانی
+                # رسوایی جهانی و انتشار در کانال اخبار
                 att_agency = meta.get("agency", {})
                 agency_name = att_agency.get("agency_name", "سرویس اطلاعاتی")
                 try:
-                    await news_engine.trigger_general_broadcast(
-                        context.bot,
-                        f"🚨 **رسوایی اطلاعاتی و خنثی‌سازی عملیات سیاه!**\n\n"
-                        f"پدافند ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** یک هسته خرابکاری متعلق به **{agency_name} ({c['flag']} {c['name']})** را در حین نفوذ شناسایی و دستگیر کرد.\n\n"
-                        f"شورای امنیت سازمان ملل این اقدام تجاوزکارانه را محکوم کرد و ۵٪ از رضایت عمومی کشور مهاجم کسر گردید."
-                    )
+                    if op_type == "sabotage_pipeline":
+                        await news_engine.trigger_pipeline_sabotage_news(context.bot, target_c, attacker_c=c)
+                    elif op_type == "assassination_commander":
+                        await news_engine.trigger_commander_assassination_news(context.bot, target_c, "یکی از فرماندهان ارشد", attacker_c=c)
+                    elif op_type == "assassination_scientist":
+                        await news_engine.trigger_scientist_assassination_news(context.bot, target_c, attacker_c=c)
+                    else:
+                        await news_engine.post_breaking_news(
+                            context.bot,
+                            f"رسوایی اطلاعاتی: دستگیری عوامل نفوذی {c['name']} در {target_c['name']}",
+                            f"پدافند ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** یک هسته خرابکاری متعلق به **{agency_name} ({c['flag']} {c['name']})** را در حین اجرای مأموریت شناسایی و بازداشت کرد.\nشورای امنیت سازمان ملل این اقدام را محکوم کرد و ۵٪ از رضایت عمومی کشور مهاجم کسر گردید.",
+                            "رسوایی اطلاعاتی"
+                        )
                 except Exception:
                     pass
 

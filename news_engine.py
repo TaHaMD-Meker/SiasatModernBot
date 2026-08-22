@@ -134,3 +134,62 @@ async def trigger_strait_news(bot, country: dict, strait_name: str, action_type:
         category = "تحرکات ژئوپلیتیک"
 
     await post_breaking_news(bot, title, body, category)
+
+
+
+async def trigger_pipeline_sabotage_news(bot, target_c: dict, attacker_c: dict = None):
+    """انتشار خبر فوری انفجار در خطوط لوله نفت در کانال رسمی اخبار."""
+    if attacker_c:
+        title = f"رسوایی خرابکاری نفتی: دستگیری عوامل نفوذی {attacker_c['name']} در {target_c['name']}"
+        body = (
+            f"نیروهای امنیتی و ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** یک هسته خرابکاری وابسته به {attacker_c['flag']} **{attacker_c['name']}** را در حین تلاش برای انفجار خطوط لوله نفت شناسایی و بازداشت کردند.\n"
+            f"شورای امنیت سازمان ملل این اقدام را محکوم کرد و ۵٪ از رضایت عمومی کشور مهاجم کسر گردید."
+        )
+        category = "رسوایی اطلاعاتی"
+    else:
+        title = f"انفجار مهیب در خطوط لوله و مخازن نفتی {target_c['name']}"
+        body = (
+            f"منابع محلی از وقوع چند انفجار سنگین و آتش‌سوزی در تأسیسات و خطوط لوله انتقال نفت کشور {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
+            f"برآوردهای اولیه حاکی از نابودی حداقل ۱۵۰٬۰۰۰ بشکه نفت خام است. دستگاه‌های امنیتی این کشور تحقیقات گسترده‌ای را برای شناسایی منشأ این خرابکاری آغاز نموده‌اند."
+        )
+        category = "حوادث و خرابکاری امنیتی"
+
+    await post_breaking_news(bot, title, body, category)
+
+
+async def trigger_commander_assassination_news(bot, target_c: dict, commander_title: str, attacker_c: dict = None):
+    """انتشار خبر فوری ترور یا شهادت فرمانده ارشد نظامی در کانال رسمی."""
+    if attacker_c:
+        title = f"خنثی‌سازی ترور {commander_title} و رسوایی {attacker_c['name']}"
+        body = (
+            f"سرویس ضدجاسوسی کشور {target_c['flag']} **{target_c['name']}** از خنثی‌سازی نقشه ترور {commander_title} و دستگیری عوامل عملیاتی اعزامی از سوی {attacker_c['flag']} **{attacker_c['name']}** خبر داد."
+        )
+        category = "رسوایی اطلاعاتی"
+    else:
+        title = f"ترور هدفمند {commander_title} در {target_c['name']}"
+        body = (
+            f"منابع نظامی رسماً اعلام کردند {commander_title} کشور {target_c['flag']} **{target_c['name']}** در یک عملیات غافلگیرانه به شهادت رسیده / ترور گردید.\n"
+            f"ستاد کل نیروهای مسلح این کشور حالت آماده‌باش نظامی اعلام کرد و تحقیقات امنیتی آغاز شده است."
+        )
+        category = "رویداد ویژه امنیتی"
+
+    await post_breaking_news(bot, title, body, category)
+
+
+async def trigger_scientist_assassination_news(bot, target_c: dict, attacker_c: dict = None):
+    """انتشار خبر فوری ترور دانشمند ارشد هسته‌ای در کانال رسمی."""
+    if attacker_c:
+        title = f"خنثی‌سازی ترور دانشمند هسته‌ای {target_c['name']}"
+        body = (
+            f"تلاش هسته عملیاتی {attacker_c['flag']} **{attacker_c['name']}** برای ترور دانشمند هسته‌ای {target_c['name']} با هوشیاری نیروهای امنیتی ناکام ماند و عوامل نفوذی بازداشت شدند."
+        )
+        category = "رسوایی اطلاعاتی"
+    else:
+        title = f"ترور دانشمند ارشد هسته‌ای در {target_c['name']}"
+        body = (
+            f"گزارش‌های فوری از ترور هدفمند یکی از چهره‌های کلیدی و دانشمندان ارشد تحقیقات هسته‌ای در کشور {target_c['flag']} **{target_c['name']}** خبر می‌دهند.\n"
+            f"برنامه توسعه و R&D این کشور موقتاً وارد شوک و وقفه تحقیقاتی گردیده است."
+        )
+        category = "حوادث امنیتی و ترور"
+
+    await post_breaking_news(bot, title, body, category)
