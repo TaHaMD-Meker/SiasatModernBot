@@ -245,6 +245,36 @@ def cmd_check(args):
         print(build_loss_report_text(c["flag"], c["name"], p["op"], matched))
 
 
+def cmd_export(args):
+    """خروجی فشرده‌ی انبار، آماده‌ی پیست در پرامپت یک هوش مصنوعی دیگر."""
+    db, c = _boot(args.country_key)
+    assets = db.get_country_assets(c["id"])
+
+    by_cat = defaultdict(list)
+    for a in assets:
+        by_cat[a["category"]].append(a)
+
+    print(f"### انبار {c['flag']} {c['name']}")
+    print(f"خزانه: {c['treasury']:,} دلار | پرسنل فعال: {c['active_personnel']:,} نفر | "
+          f"ذخایر نفت: {c['oil_reserves']:,} بشکه | کلاهک هسته‌ای: {c['warheads']}")
+    print()
+
+    for cat, items in by_cat.items():
+        label, unit = config.ASSET_CATEGORIES.get(cat, (cat, "عدد"))
+        print(f"**{label}** (واحد: {unit})")
+        for it in sorted(items, key=lambda x: -x["amount"]):
+            print(f"- {it['equipment_name']} = {it['amount']:,}")
+        print()
+
+    owned = {k: v for k, v in (db.get_equipment(c["id"]) or {}).items() if v}
+    if owned:
+        print("**زیرساخت و صنایع** (واحد: واحد)")
+        for k, v in owned.items():
+            nm = config.ALL_SHOP_ITEMS.get(k, {}).get("name", k)
+            print(f"- {nm} = {v}")
+        print()
+
+
 def main():
     ap = argparse.ArgumentParser(description="ابزار ساخت و بررسی گزارش تلفات")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -264,9 +294,12 @@ def main():
     pc.add_argument("report")
     pc.add_argument("--render", action="store_true", help="نمایش فاکتور نهایی")
 
+    pe = sub.add_parser("export", help="انبار به‌صورت آماده‌ی پیست در پرامپت هوش مصنوعی")
+    pe.add_argument("country_key")
+
     args = ap.parse_args()
-    {"countries": cmd_countries, "list": cmd_list,
-     "find": cmd_find, "check": cmd_check}[args.cmd](args)
+    {"countries": cmd_countries, "list": cmd_list, "find": cmd_find,
+     "check": cmd_check, "export": cmd_export}[args.cmd](args)
 
 
 if __name__ == "__main__":
