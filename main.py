@@ -20,6 +20,7 @@ import approval_system
 import news_engine
 from utils import format_money, format_number, format_oil
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
+from handlers.bases import military_movements_menu
 from handlers.start import get_start_handlers
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
@@ -294,6 +295,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🏪 فروشگاه$"), shop))
     app.add_handler(MessageHandler(filters.Regex("^📜 راهنما$"), help_command))
     app.add_handler(MessageHandler(filters.Regex("^👑 پنل مدیریت$"), admin_panel))
+    app.add_handler(MessageHandler(filters.Regex(r"^(?:🎯 ستاد توسعه و اقدامات راهبردی|🎖️ تحرکات نظامی)$"), military_movements_menu))
+    app.add_handler(CommandHandler(["movements", "bases", "strategic"], military_movements_menu))
 
     # فروشگاه (دکمه‌های شیشه‌ای)
     app.add_handler(CommandHandler("shop", shop))
