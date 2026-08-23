@@ -52,7 +52,11 @@ logger = logging.getLogger(__name__)
 INCOME_INTERVAL_HOURS = 6
 INCOME_PARTS = 4
 # گرید پرداخت به وقت ایران: بازه‌های ۰۳:۰۰، ۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰ تهران
-IRAN_TZ = ZoneInfo("Asia/Tehran")
+try:
+    from zoneinfo import ZoneInfo
+    IRAN_TZ = ZoneInfo("Asia/Tehran")
+except Exception:
+    IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 SLOT_OFFSET_HOURS = 3
 
 

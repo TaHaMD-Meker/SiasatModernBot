@@ -7,7 +7,11 @@ import os
 import sys
 import tempfile
 import datetime
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+    IRAN_TZ = ZoneInfo("Asia/Tehran")
+except Exception:
+    IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 
 import pytest
 
@@ -44,7 +48,7 @@ def test_statement_recording_and_counting(db):
     db.record_country_statement(cid, 1001, "tweet", "توییت واکنش سریع")
     assert db.get_country_statement_count_today(cid) == 2
 
-    today_str = datetime.datetime.now(datetime.timezone.utc).astimezone(ZoneInfo("Asia/Tehran")).date().isoformat()
+    today_str = datetime.datetime.now(datetime.timezone.utc).astimezone(IRAN_TZ).date().isoformat()
     counts = db.get_all_country_statement_counts_for_date(today_str)
     assert counts.get(cid) == 2
 

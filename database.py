@@ -10,7 +10,11 @@ import shutil
 import json
 import sqlite3
 import datetime
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+    IRAN_TZ = ZoneInfo("Asia/Tehran")
+except Exception:
+    IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 import config
 from utils import format_money, format_number, format_oil
 
@@ -4945,7 +4949,7 @@ def record_country_statement(country_id: int, player_id: int, statement_type: st
     conn = get_connection()
     cur = conn.cursor()
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    stmt_date = now_utc.astimezone(ZoneInfo("Asia/Tehran")).date().isoformat()
+    stmt_date = now_utc.astimezone(IRAN_TZ).date().isoformat()
     now_str = now_utc.isoformat()
     cur.execute(
         "INSERT INTO daily_statements (country_id, player_id, statement_type, content, created_at, statement_date) VALUES (?, ?, ?, ?, ?, ?)",
@@ -4960,7 +4964,7 @@ def record_country_statement(country_id: int, player_id: int, statement_type: st
 def get_country_statement_count_today(country_id: int) -> int:
     """دریافت تعداد بیانیه‌ها و توییت‌های ثبت‌شده امروز کشور به وقت ایران."""
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    stmt_date = now_utc.astimezone(ZoneInfo("Asia/Tehran")).date().isoformat()
+    stmt_date = now_utc.astimezone(IRAN_TZ).date().isoformat()
     return get_country_statement_count_for_date(country_id, stmt_date)
 
 
