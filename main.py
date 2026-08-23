@@ -294,7 +294,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🛢️ وضعیت نفت$"), oil))
     app.add_handler(MessageHandler(filters.Regex("^🪖 وضعیت ارتش$"), army))
     app.add_handler(MessageHandler(filters.Regex("^🏪 فروشگاه$"), shop))
-    app.add_handler(MessageHandler(filters.Regex("^📜 راهنما$"), help_command))
+    app.add_handler(MessageHandler(filters.Regex(r"^(?:🏛️ دانشکده|📜 راهنما)$"), help_command))
     app.add_handler(MessageHandler(filters.Regex("^👑 پنل مدیریت$"), admin_panel))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:🎯 ستاد توسعه و اقدامات راهبردی|🎖️ تحرکات نظامی)$"), military_movements_menu))
     app.add_handler(CommandHandler(["movements", "bases", "strategic"], military_movements_menu))
