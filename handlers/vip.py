@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 ماژول خدمات ویژه، اشتراک‌های تومانی و مجوزهای غیردولتی (VIP & Monetization Module).
-شامل اشتراک رهبر ویژه (VIP Leader Pass) و مجوز رسمی تاسیس گروه‌های شبه‌نظامی غیردولتی (Non-State Faction).
+شامل اشتراک رهبر ویژه (VIP Leader Pass) و سیستم تعاملی تاسیس گروه‌های شبه‌نظامی غیردولتی (Non-State Factions) برای بازیکنان فاقد کشور.
 طراحی شده بر اساس مدل Non-P2W (ارائه امکانات راحتی کاربری، نشان‌های افتخاری، تحلیل‌های ویژه و اولویت بررسی بدون تخریب بالانس بازی).
 """
 
 import html
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 import database as db
 import config
@@ -32,8 +33,10 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_header = "⭐ **وضعیت رهبری شما: اشتراک VIP فعال**"
     elif is_vip:
         status_header = "⭐ **وضعیت رهبری شما: اشتراک VIP فعال**"
+    elif country:
+        status_header = f"▫️ **وضعیت رهبری شما: اشتراک عادی ({country['flag']} {country['name']})**"
     else:
-        status_header = "▫️ **وضعیت رهبری شما: اشتراک عادی**"
+        status_header = "▫️ **وضعیت فعلی شما: فاقد کشور رسمی**"
 
     text = (
         "👑 **مرکز اشتراک ویژه رهبری (VIP Leader Pass)**\n"
@@ -63,7 +66,126 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-# ==================== صفحه پرداخت و صدور فاکتور ====================
+# ==================== ویزارد تعاملی تاسیس گروه شبه‌نظامی غیردولتی ====================
+
+async def start_militia_wizard(query, context, user_id: int):
+    """آغاز فرآیند گام‌به‌گام ساخت گروه غیردولتی."""
+    country = db.get_country_by_player(user_id)
+    if country:
+        text = (
+            f"⚠️ **شما در حال حاضر هدایت کشور {country['flag']} {country['name']} را بر عهده دارید.**\n\n"
+            "مجوز تاسیس گروه غیردولتی ویژه بازیکنانی است که کشوری ندارند. در صورتی که تمایل دارید کشور فعلی شما لغو و گروه جدید جایگزین شود، می‌توانید مراحل را ادامه دهید."
+        )
+    else:
+        text = (
+            "🏴‍☠️ **سامانه هوشمند تاسیس گروه / شبه‌نظامی غیردولتی (گام ۱ از ۴)**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "در این بخش می‌توانید سازمان، جنبش چریکی یا شرکت نظامی خصوصی (PMC) اختصاصی خود را بسازید.\n\n"
+            "لطفاً **نام رسمی گروه یا سازمان** خود را ارسال فرمایید:\n\n"
+            "*(مثال: سازمان نظامی واگنر، انصارالحق، کارتل گوادالاخارا، ارتش آزاد، نیروهای مقاومت ملی)*"
+        )
+
+    context.user_data["militia_wiz"] = {"step": "name"}
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="vip:menu")]]),
+        parse_mode="Markdown"
+    )
+
+
+async def militia_wizard_step_flag(message, context):
+    """گام ۲: دریافت پرچم / ایموجی نمادین."""
+    text = (
+        "🚩 **انتخاب نماد یا پرچم گروه (گام ۲ از ۴)**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "لطفاً یک **ایموجی یا نماد اختصاصی** برای گروه خود تایپ و ارسال کنید:\n\n"
+        "*(نمادهای پیشنهادی: 🏴‍☠️, ⚔️, 🐺, 🦅, 🟡, 🛡️, 🦁, ⚡, 🔴, 💀, 🎯)*"
+    )
+    context.user_data["militia_wiz"]["step"] = "flag"
+    await message.reply_text(text, parse_mode="Markdown")
+
+
+async def militia_wizard_step_hq(message, context):
+    """گام ۳: دریافت مقر فرماندهی."""
+    text = (
+        "📍 **مقر فرماندهی و منطقه عملیاتی (گام ۳ از ۴)**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "لطفاً **موقعیت استقرار و پایگاه اصلی فرماندهی** گروه خود را تعیین فرمایید:\n\n"
+        "*(مثال: صحرای سینا، شمال حلب و ادلب، شرق اوکراین، کوهستان‌های مرزی، حوزه نفتی دیرالزور)*"
+    )
+    context.user_data["militia_wiz"]["step"] = "hq"
+    await message.reply_text(text, parse_mode="Markdown")
+
+
+async def militia_wizard_step_doctrine(message, context):
+    """گام ۴: انتخاب دکترین با دکمه شیشه‌ای."""
+    text = (
+        "🎯 **تعیین دکترین و ساختار سازمانی (گام ۴ از ۴)**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "لطفاً جهت‌گیری و دکترین نظامی گروه خود را انتخاب فرمایید:"
+    )
+    kb = [
+        [InlineKeyboardButton("⚔️ جنگ نامتقارن و چریکی", callback_data="vip:doc:guerilla")],
+        [InlineKeyboardButton("🛡️ شرکت نظامی و امنیتی خصوصی (PMC)", callback_data="vip:doc:pmc")],
+        [InlineKeyboardButton("🚀 یگان واکنش سریع موشکی و پهپادی", callback_data="vip:doc:rapid_strike")],
+        [InlineKeyboardButton("🏴‍☠️ جنبش آزادی‌بخش و مقاومت منطقه‌ای", callback_data="vip:doc:resistance")],
+    ]
+    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def militia_wizard_checkout(query, context, doctrine_key: str):
+    """صدور فاکتور نهایی و اطلاعات پرداخت برای گروه اختصاصی."""
+    wiz = context.user_data.get("militia_wiz", {})
+    doc_labels = {
+        "guerilla": "جنگ نامتقارن و چریکی",
+        "pmc": "شرکت نظامی خصوصی (PMC)",
+        "rapid_strike": "یگان واکنش سریع موشکی و پهپادی",
+        "resistance": "جنبش مقاومت منطقه‌ای"
+    }
+    wiz["doctrine"] = doc_labels.get(doctrine_key, "نظامی نامتقارن")
+
+    card_info = getattr(config, "PAYMENT_CARD_INFO", {
+        "card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵",
+        "card_holder": "زینب فیاضی",
+        "bank_name": "بانک سپه"
+    })
+    card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
+    card_holder = card_info.get("card_holder", "زینب فیاضی")
+    bank_name = card_info.get("bank_name", "بانک سپه")
+
+    price = getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 50_000)
+
+    text = (
+        "🏴‍☠️ **پیش‌نمایش پرونده و فاکتور مجوز گروه غیردولتی**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏷️ **نام سازمان:** {wiz.get('name', 'گروه اختصاصی')}\n"
+        f"🚩 **پرچم/نماد:** {wiz.get('flag', '🏴‍☠️')}\n"
+        f"📍 **مقر فرماندهی:** {wiz.get('hq', 'نامشخص')}\n"
+        f"🎯 **دکترین:** {wiz.get('doctrine')}\n\n"
+        "📊 **منابع و بسته آغازین پس از تایید:**\n"
+        "• 💰 خزانه اولیه: **۲۵ میلیون دلار**\n"
+        "• 🪖 رزمندگان آماده‌باش: **۶۰,۰۰۰ نفر**\n"
+        "• 🎖️ کاتالوگ تسلیحات: ۶۰۰ تویوتا دوشکا، ۱۸۰ BTR، ۸۰ راکت‌انداز گراد، ۲۰۰ پهپاد ابابیل، پدافند زو-۲۳ و قایق‌های تندرو\n"
+        "• ⭐ اشتراک طلایی VIP هدیه به رهبر گروه\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"💵 **مبلغ قابل پرداخت:** **{price:,} تومان**\n\n"
+        "💳 **اطلاعات حساب جهت کارت به کارت:**\n"
+        f"• **شماره کارت:** `{card_num}`\n"
+        f"• **به نام:** **{card_holder}**\n"
+        f"• **بانک:** {bank_name}\n\n"
+        "⚠️ پس از واریز، روی دکمه زیر کلیک کرده و تصویر فیش یا کد پیگیری را بفرستید تا گروه شما فوراً تاسیس شود:"
+    )
+
+    kb = [
+        [InlineKeyboardButton("📸 ارسال تصویر فیش واریزی", callback_data="vip:upload:militia")],
+        [InlineKeyboardButton("✍️ ثبت با کد پیگیری (متنی)", callback_data="vip:code:militia")],
+        [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="vip:menu")],
+    ]
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+# ==================== صفحه پرداخت و صدور فاکتور VIP ====================
 
 PLANS_METADATA = {
     "vip_1month": {
@@ -85,28 +207,25 @@ PLANS_METADATA = {
 
 
 async def vip_checkout_screen(query, context, plan_key: str, country: dict = None):
-    """نمایش فاکتور و اطلاعات کارت بانکی جهت واریز."""
+    """نمایش فاکتور و اطلاعات کارت بانکی جهت واریز VIP."""
+    if plan_key == "militia":
+        await start_militia_wizard(query, context, query.from_user.id)
+        return
+
     plan = PLANS_METADATA.get(plan_key)
     if not plan:
         await query.answer("پلن انتخابی نامعتبر است.", show_alert=True)
         return
 
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
-        "card_number": "۵۰۴۱-۷۲۱۱-۱۲۳۴-۵۶۷۸",
-        "card_holder": "مدیریت بازی سیاست مدرن",
-        "bank_name": "بانک رسالت / ملی"
+        "card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵",
+        "card_holder": "زینب فیاضی",
+        "bank_name": "بانک سپه"
     })
 
-    card_num = card_info.get("card_number", "—")
-    card_holder = card_info.get("card_holder", "مدیریت بازی")
-    bank_name = card_info.get("bank_name", "بانک عضو شتاب")
-
-    context.user_data["toman_payment_draft"] = {
-        "plan_key": plan_key,
-        "plan_title": plan["title"],
-        "amount": plan["price"],
-        "country_id": country["id"] if country else None
-    }
+    card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
+    card_holder = card_info.get("card_holder", "زینب فیاضی")
+    bank_name = card_info.get("bank_name", "بانک سپه")
 
     text = (
         f"💳 **فاکتور پرداخت و اطلاعات واریز وجه**\n"
@@ -148,6 +267,13 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if data == "vip:menu":
         await vip_main_menu(update, context)
 
+    elif data in ("vip:militia_wizard_start", "vip:plan:militia"):
+        await start_militia_wizard(query, context, user_id)
+
+    elif data.startswith("vip:doc:"):
+        doc_key = data.split(":", 2)[2]
+        await militia_wizard_checkout(query, context, doc_key)
+
     elif data.startswith("vip:plan:"):
         plan_key = data.split(":", 2)[2]
         await vip_checkout_screen(query, context, plan_key, country)
@@ -173,85 +299,47 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="vip:menu")]]), parse_mode="Markdown")
 
-    elif data == "vip:setup_militia":
-        context.user_data["militia_setup"] = {"step": "name"}
-        text = (
-            "🏴‍☠️ **فرم ثبت سازمان / گروه شبه‌نظامی غیردولتی**\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "۱. لطفاً **نام رسمی گروه یا سازمان خود** را ارسال فرمایید:\n\n"
-            "*(مثال: «سپاه مدافعان آزادی»، «لشکر سرخ کارتل»، «سازمان نظامی واگنر»)*"
-        )
-        if query.message:
-            await query.message.reply_text(text, parse_mode="Markdown")
-        else:
-            await query.edit_message_text(text, parse_mode="Markdown")
 
-
-# ==================== هاندر دریافت ورودی فیش و فرم گروه ====================
+# ==================== هاندر دریافت ورودی‌های متنی و تصویری ویزارد و فیش ====================
 
 async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """دریافت فیش یا تکمیل فرم ثبت گروه غیردولتی."""
-    # ۱. پردازش فرم ساخت گروه غیردولتی
-    if context.user_data.get("militia_setup"):
-        state = context.user_data["militia_setup"]
-        step = state.get("step")
-        user = update.effective_user
-        user_id = user.id
+    """پردازش مراحل ویزارد ساخت گروه و دریافت فیش بانکی."""
+    user = update.effective_user
+    user_id = user.id
 
-        if step == "name":
-            name = update.message.text.strip() if update.message.text else ""
-            if not name or len(name) < 3 or len(name) > 40:
-                await update.message.reply_text("❌ لطفاً نامی معتبر (بین ۳ تا ۴۰ حرف) وارد فرمایید:")
-                return True
-            context.user_data["militia_setup"] = {"step": "flag", "name": name}
-            await update.message.reply_text(
-                f"✅ **نام گروه ثبت شد:** {name}\n\n"
-                "۲. لطفاً **یک ایموجی یا نماد** به عنوان پرچم گروه خود ارسال فرمایید:\n\n"
-                "*(مثال: 🏴 یا ⚔️ یا 🦅 یا 🐺 یا 🛡️)*",
-                parse_mode="Markdown"
-            )
+    # 1. بررسی مراحل ویزارد ساخت گروه
+    militia_wiz = context.user_data.get("militia_wiz")
+    if militia_wiz and update.message.text:
+        wiz_step = militia_wiz.get("step")
+        txt = update.message.text.strip()
+
+        if wiz_step == "name":
+            militia_wiz["name"] = txt
+            await militia_wizard_step_flag(update.message, context)
             return True
 
-        elif step == "flag":
-            flag = update.message.text.strip() if update.message.text else "🏴"
-            if len(flag) > 4:
-                flag = flag[:4]
-            name = state["name"]
-            del context.user_data["militia_setup"]
-
-            # ایجاد سازمان غیردولتی در دیتابیس
-            cid = db.create_custom_militia_faction(user_id, name, flag, user.username)
-
-            succ_text = (
-                f"🎉 **سازمان غیردولتی {flag} {name} با موفقیت تاسیس شد!**\n"
-                "━━━━━━━━━━━━━━━━━━\n\n"
-                "🪖 **تجهیزات و تسلیحات سازمانی فعال‌شده:**\n"
-                "• ۵۰۰ دستگاه تویوتا تکنیکال مسلح به دوشکا و زو-۲۳\n"
-                "• ۳۰۰ تیم ضدزره مجهز به موشک‌های کورنت\n"
-                "• ۲۰۰ فروند پهپاد انتحاری نقطه‌زن و ۵۰ فروند هدهد\n"
-                "• ۲۰۰ آتشبار دوش‌پرتاب پدافندی میثاق\n"
-                "• ۲۵۰ فروند راکت فجر-۵ و ۳۰ تیر بالستیک فاتح-۱۱۰\n"
-                "• ۴۰ فروند قایق تندرو راکت‌انداز عاشورا\n\n"
-                "🌐 هم‌اکنون می‌توانید با دکمه‌های پایین صفحه کشور/گروه خود را هدایت فرمایید."
-            )
-            await update.message.reply_text(succ_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+        elif wiz_step == "flag":
+            militia_wiz["flag"] = txt[:8]
+            await militia_wizard_step_hq(update.message, context)
             return True
 
-    # ۲. پردازش ارسال فیش واریزی
+        elif wiz_step == "hq":
+            militia_wiz["hq"] = txt
+            await militia_wizard_step_doctrine(update.message, context)
+            return True
+
+    # 2. بررسی دریافت فیش یا کد واریز
     vip_state = context.user_data.get("vip_input")
     if not vip_state:
         return False
 
     del context.user_data["vip_input"]
-    step = vip_state.get("step")
     plan_key = vip_state.get("plan_key")
     plan = PLANS_METADATA.get(plan_key, PLANS_METADATA["vip_1month"])
 
-    user = update.effective_user
-    user_id = user.id
     country = db.get_country_by_player(user_id)
     c_id = country["id"] if country else None
-    c_name = f"{country['flag']} {country['name']}" if country else "فاقد کشور فعال"
+    c_name = f"{country['flag']} {country['name']}" if country else "فاقد کشور رسمی"
 
     photo_id = None
     tracking_code = ""
@@ -265,6 +353,11 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("❌ لطفاً یک پیام متنی یا تصویر فیش معتبر ارسال فرمایید.")
         return True
 
+    # پیلود سفارشی برای گروه شبه‌نظامی
+    custom_payload = ""
+    if plan_key == "militia" and "militia_wiz" in context.user_data:
+        custom_payload = json.dumps(context.user_data["militia_wiz"], ensure_ascii=False)
+
     # ثبت در دیتابیس
     req_id = db.create_payment_request(
         player_id=user_id,
@@ -273,28 +366,42 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         plan_title=plan["title"],
         amount_toman=plan["price"],
         receipt_photo_id=photo_id,
-        tracking_code=tracking_code
+        tracking_code=tracking_code,
+        custom_payload=custom_payload
     )
 
     # پیام تایید به کاربر
     conf_user = (
-        f"✅ **فیش واریزی شما با موفقیت ثبت شد! (کد پیگیری درخواست: #{req_id})**\n\n"
+        f"✅ **فیش واریزی شما با موفقیت ثبت شد! (شماره درخواست: #{req_id})**\n\n"
         f"📌 **سفارش:** {plan['title']}\n"
         f"💵 **مبلغ:** {plan['price']:,} تومان\n\n"
-        "⏳ فیش شما برای تیم مدیریت ارسال گردید و پس از بررسی حساب، سرویس شما فعال و پیام تایید برایتان ارسال خواهد شد."
+        "⏳ پرونده شما برای مدیریت ارسال گردید. به محض تایید حسابداری، گروه/خدمت شما فعال و پیام تایید برایتان ارسال خواهد شد."
     )
     await update.message.reply_text(conf_user, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
-    # ارسال اعلان فوری به ادمین‌های بازی
+    # ارسال اعلان به ادمین‌های بازی
+    militia_extra = ""
+    if plan_key == "militia" and "militia_wiz" in context.user_data:
+        wiz = context.user_data["militia_wiz"]
+        militia_extra = (
+            f"\n🏴‍☠️ <b>مشخصات گروه درخواستی:</b>\n"
+            f"• <b>نام گروه:</b> {html.escape(wiz.get('name', ''))}\n"
+            f"• <b>نماد:</b> {html.escape(wiz.get('flag', ''))}\n"
+            f"• <b>مقر:</b> {html.escape(wiz.get('hq', ''))}\n"
+            f"• <b>دکترین:</b> {html.escape(wiz.get('doctrine', ''))}\n"
+        )
+        del context.user_data["militia_wiz"]
+
     admin_text = (
         f"💳 <b>«درخواست جدید پرداخت تومانی» — شماره #{req_id}</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 <b>کاربر:</b> {html.escape(user.full_name or '')} (@{user.username or 'ندارد'})\n"
         f"🆔 <b>شناسه کاربری:</b> <code>{user_id}</code>\n"
-        f"🌐 <b>کشور فعلی:</b> {c_name}\n\n"
-        f"📌 <b>پلن درخواستی:</b> {plan['title']}\n"
-        f"💵 <b>مبلغ فاکتور:</b> <b>{plan['price']:,} تومان</b>\n"
-        f"📝 <b>کد پیگیری / توضیحات:</b> <code>{html.escape(tracking_code)}</code>\n"
+        f"🌐 <b>وضعیت کشور:</b> {c_name}\n"
+        f"{militia_extra}\n"
+        f"📌 <b>پلن:</b> {plan['title']}\n"
+        f"💵 <b>مبلغ:</b> <b>{plan['price']:,} تومان</b>\n"
+        f"📝 <b>کد پیگیری:</b> <code>{html.escape(tracking_code)}</code>\n"
     )
 
     admin_kb = [
