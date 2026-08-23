@@ -5041,8 +5041,81 @@ def get_payment_request_by_id(req_id: int):
     return dict(row) if row else None
 
 
+def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", username: str = None) -> int:
+    """ایجاد گروه / سازمان شبه‌نظامی غیردولتی اختصاصی برای بازیکن."""
+    conn = get_connection()
+    cur = conn.cursor()
+    c_key = f"faction_{player_id}"
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    cur.execute("""
+        INSERT INTO countries
+        (player_id, name, flag, population, treasury, tax_income, daily_income,
+         gold, gold_daily, oil_reserves, oil_production, grain, electricity,
+         active_personnel, reserve_personnel, last_income_date, created_at, country_key,
+         approval_rating, grain_daily, username, tech_level, combat_readiness, microchips, microchips_daily, is_vip)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    """, (
+        player_id, name, flag or "🏴‍☠️",
+        2_500_000,   # population
+        25_000_000,  # treasury $25M
+        300_000,     # tax_income
+        2_800_000,   # daily_income $2.8M
+        150,         # gold
+        20,          # gold_daily
+        500_000,     # oil_reserves 500k bbl
+        20_000,      # oil_production
+        12_000,      # grain 12k tons
+        90,          # electricity 90%
+        60_000,      # active_personnel 60k fighters
+        80_000,      # reserve_personnel 80k fighters
+        now_str,
+        now_str,
+        c_key,
+        90,          # approval_rating 90%
+        1_200,       # grain_daily
+        username or "",
+        1,           # tech_level
+        85,          # combat_readiness 85%
+        300,         # microchips
+        10           # microchips_daily
+    ))
+    country_id = cur.lastrowid
+
+    # ثبت تسلیحات و ادوات اختصاصی شبه‌نظامی
+    catalog = getattr(config, "DEFAULT_MILITIA_EQUIPMENT", config.DEFAULT_COUNTRY_EQUIPMENT)
+    for item in catalog:
+        producible_val = 1 if item.get("producible", True) else 0
+        cur.execute("""
+            INSERT INTO country_assets
+            (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            country_id, c_key, item["category"], item["name"], f"{item['key']}_{country_id}",
+            item["initial"], item["price"], item.get("maint", 0), producible_val
+        ))
+
+    # ایجاد فرماندهان کادر عملیاتی
+    commanders = [
+        ("leader", f"فرمانده کل {name}"),
+        ("chief_of_staff", "رئیس ستاد عملیات و اطلاعات"),
+        ("air_defense", "فرمانده یگان پدافند و راکتی"),
+        ("logistics", "مسئول لجستیک و تسلیحات"),
+        ("security", "فرمانده امنیت داخلی و ضداطلاعات"),
+    ]
+    for c_key_cmd, c_title in commanders:
+        cur.execute("""
+            INSERT OR IGNORE INTO country_commanders (country_id, key, title, status)
+            VALUES (?, ?, ?, 'active')
+        """, (country_id, c_key_cmd, c_title))
+
+    conn.commit()
+    conn.close()
+    return country_id
+
+
 def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict]:
-    """تایید رسمی فیش پرداخت و فعال‌سازی اشتراک VIP یا مجوز مربوطه."""
+    """تایید رسمی فیش پرداخت و فعال‌سازی اشتراک VIP یا ایجاد گروه غیردولتی."""
     conn = get_connection()
     try:
         with conn:
@@ -5061,6 +5134,7 @@ def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict
 
             item_type = p["item_type"]
             c_id = p.get("country_id")
+            player_id = p["player_id"]
 
             if item_type in ("vip_1month", "vip_3month"):
                 days = 90 if item_type == "vip_3month" else 30
@@ -5070,6 +5144,24 @@ def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict
                         "UPDATE countries SET is_vip = 1, vip_expires_at = ? WHERE id = ?",
                         (exp_dt.isoformat(), c_id)
                     )
+            elif item_type == "militia":
+                # اگر کاربر کشور ندارد، گروه اختصاصی برایش ساخته می‌شود
+                payload_str = p.get("custom_payload") or "{}"
+                try:
+                    payload = json.loads(payload_str)
+                except Exception:
+                    payload = {}
+                f_name = payload.get("name") or "گروه مقاومت اختصاصی"
+                f_flag = payload.get("flag") or "🏴‍☠️"
+                f_hq = payload.get("hq") or ""
+                f_doc = payload.get("doctrine") or ""
+                
+                # بررسی وجود کشور قبلی
+                cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
+                exist_c = cur.fetchone()
+                if not exist_c:
+                    c_id = create_custom_militia_faction(player_id, f_name, f_flag, f_hq, f_doc)
+                    p["created_country_id"] = c_id
 
             cur.execute("""
                 UPDATE payment_requests
@@ -5078,7 +5170,7 @@ def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict
             """, (now_str, admin_id, req_id))
 
             p["status"] = "approved"
-            return True, "پرداخت با موفقیت تایید و خدمات فعال گردید.", p
+            return True, "پرداخت با موفقیت تایید و گروه/خدمت برای کاربر فعال گردید.", p
     except Exception as e:
         return False, f"خطا در تایید پرداخت: {e}", {}
 

@@ -26,6 +26,9 @@ def build_country_keyboard():
             row = []
     if row:
         buttons.append(row)
+    
+    # دکمه ویژه تاسیس گروه غیردولتی
+    buttons.append([InlineKeyboardButton("🏴‍☠️ تاسیس گروه / شبه‌نظامی اختصاصی (۵۰ هزار ت)", callback_data="vip:militia_wizard_start")])
     return buttons
 
 
@@ -46,7 +49,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if existing:
         await update.message.reply_text(
-            f"{existing['flag']} کشور {existing['name']} تو از قبل ثبت شده.\n"
+            f"{existing['flag']} کشور/گروه {existing['name']} تو از قبل ثبت شده.\n"
             "از دکمه‌های پایین صفحه برای مدیریت کشورت استفاده کن 👇",
             reply_markup=get_main_keyboard(player_id)
         )
@@ -65,12 +68,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     buttons = build_country_keyboard()
-    if not buttons:
-        await update.message.reply_text("متأسفانه همه‌ی کشورها قبلاً انتخاب شدن!", parse_mode="Markdown")
+    if not buttons or (len(buttons) == 1 and buttons[0][0].callback_data == "vip:militia_wizard_start"):
+        militia_kb = [[InlineKeyboardButton("🏴‍☠️ تاسیس گروه / شبه‌نظامی اختصاصی (۵۰,۰۰۰ تومان)", callback_data="vip:militia_wizard_start")]]
+        await update.message.reply_text(
+            "😔 **تمام ۱۰۱ کشور رسمی بازی در حال حاضر دارای رهبر هستند!**\n\n"
+            "اما نگران نباشید؛ شما می‌توانید با **مجوز رسمی تاسیس گروه غیردولتی (Non-State Faction)**، رهبری سازمان نظامی، چریکی یا شرکت نظامی اختصاصی خود را بر عهده بگیرید و وارد معادلات جهان شوید:",
+            reply_markup=InlineKeyboardMarkup(militia_kb),
+            parse_mode="Markdown"
+        )
         return
 
     await update.message.reply_text(
-        "🎮 به بازی «سیاست مدرن» خوش اومدی!\n\nلطفاً کشورت رو از بین گزینه‌های زیر انتخاب کن:",
+        "🎮 به بازی «سیاست مدرن» خوش اومدی!\n\nلطفاً کشورت رو از بین گزینه‌های زیر انتخاب کن (یا گروه اختصاصی خودت رو بساز):",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 

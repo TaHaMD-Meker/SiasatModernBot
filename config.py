@@ -1975,6 +1975,22 @@ DEFAULT_COUNTRY_EQUIPMENT = [
     {"key": "gen_artillery", "name": "توپخانه خودکششی",       "category": "Artillery",    "price": 1_500_000,  "initial": 300, "maint": 4_000,  "producible": True},
 ]
 
+DEFAULT_MILITIA_EQUIPMENT = [
+    {"key": "militia_technical", "name": "تویوتا تکنیکال مجهز به دوشکا و زو-۲۳", "category": "Ground Forces", "price": 150_000, "initial": 600, "maint": 200, "producible": True},
+    {"key": "militia_apc", "name": "نفربر زرهی چرخ‌دار BTR/کبرا", "category": "Ground Forces", "price": 400_000, "initial": 180, "maint": 800, "producible": True},
+    {"key": "militia_tank", "name": "تانک رزمی تی-۶۲ / تی-۷۲ بهینه‌شده", "category": "Ground Forces", "price": 800_000, "initial": 60, "maint": 1_500, "producible": True},
+    {"key": "militia_atgm", "name": "تیم موشک ضدزره کورنت / توفان", "category": "Ground Forces", "price": 80_000, "initial": 350, "maint": 100, "producible": True},
+    {"key": "militia_grad", "name": "راکت‌انداز چندگانه گراد ۱۲۲ میلی‌متری", "category": "Artillery", "price": 450_000, "initial": 80, "maint": 1_000, "producible": True},
+    {"key": "militia_mortar", "name": "خمپاره‌انداز سنگین ۱۲۰ میلی‌متری", "category": "Artillery", "price": 60_000, "initial": 250, "maint": 80, "producible": True},
+    {"key": "militia_howitzer", "name": "توپخانه صحرایی D-30", "category": "Artillery", "price": 300_000, "initial": 50, "maint": 600, "producible": True},
+    {"key": "militia_suicide_uav", "name": "پهپاد انتحاری نقطه‌زن ابابیل/شاهد", "category": "UAV", "price": 120_000, "initial": 200, "maint": 300, "producible": True},
+    {"key": "militia_recon_uav", "name": "پهپاد شناسایی تاکتیکی مهاجر/یاسر", "category": "UAV", "price": 80_000, "initial": 100, "maint": 200, "producible": True},
+    {"key": "militia_manpads", "name": "سامانه دوش‌پرتاب میثاق / ایگلا", "category": "Air Defense", "price": 100_000, "initial": 200, "maint": 150, "producible": True},
+    {"key": "militia_zu23", "name": "آتشبار پدافند هوایی زو-۲۳ دولول", "category": "Air Defense", "price": 150_000, "initial": 120, "maint": 250, "producible": True},
+    {"key": "militia_fast_boat", "name": "قایق تندرو موشک‌انداز و راکت‌انداز", "category": "Navy", "price": 350_000, "initial": 40, "maint": 600, "producible": True},
+    {"key": "militia_ballistic", "name": "موشک بالستیک تاکتیکی کوتاه‌برد فاتح/بدر", "category": "Missiles", "price": 600_000, "initial": 35, "maint": 1_000, "producible": True},
+]
+
 # ===== فروشگاه: ساختمان‌ها =====
 BUILDINGS = {
     "house":      {"name": "🏠 مجتمع مسکونی", "price": 1_000_000, "oil_req": 0, "income_add": 60000, "max_limit": 20, "desc": "🏠 *مجتمع مسکونی شهری*\n\n💰 *هزینه ساخت:* ۱ میلیون دلار\n💵 *درآمد مالیات مسکن:* +۶۰,۰۰۰ دلار/روز\n📌 *سقف مجاز احداث:* ۲۰ واحد"},

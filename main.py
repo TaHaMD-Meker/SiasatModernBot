@@ -502,7 +502,7 @@ def main():
 
     # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها، بیانیه‌ها و فیش‌های VIP
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if context.user_data.get("vip_input"):
+        if context.user_data.get("vip_input") or context.user_data.get("militia_wiz"):
             handled = await vip_input_handler(update, context)
             if handled:
                 return
