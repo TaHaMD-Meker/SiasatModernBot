@@ -85,6 +85,89 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
+def _clean_persian_str(s: str) -> str:
+    """استانداردسازی متن فارسی/انگلیسی جهت جستجوی دقیق."""
+    if not s:
+        return ""
+    t = str(s).strip().lower()
+    t = t.replace("_", " ")
+    trans = {
+        "ي": "ی", "ى": "ی", "ك": "ک", "ؤ": "و",
+        "إ": "ا", "أ": "ا", "آ": "ا", "ة": "ه",
+        "ئ": "ی", "ـ": ""
+    }
+    for k, v in trans.items():
+        t = t.replace(k, v)
+    t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def build_dip_continent_selector(action_type: str, header_title: str):
+    continents = getattr(config, "CONTINENTS", {})
+    text = (
+        f"{header_title}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "جهت انتخاب سریع‌تر، **قاره کشور مقصد را انتخاب فرمایید** یا از **جستجوی متنی** استفاده کنید:"
+    )
+    buttons = []
+    row = []
+    for c_key, c_info in continents.items():
+        row.append(InlineKeyboardButton(c_info["name"], callback_data=f"dip:pickcont:{c_key}:{action_type}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("🔎 جستجوی نام کشور مقصد (تایپی)", callback_data=f"dip:search_start:{action_type}")])
+    buttons.append([InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")])
+    return text, InlineKeyboardMarkup(buttons)
+
+
+def build_dip_continent_countries_keyboard(cont_key: str, action_type: str, current_cid: int):
+    continents = getattr(config, "CONTINENTS", {})
+    cont_info = continents.get(cont_key, {})
+    keys = cont_info.get("keys", [])
+
+    all_countries = db.get_all_countries()
+    c_map = {c["country_key"]: c for c in all_countries if c.get("country_key")}
+
+    buttons = []
+    row = []
+    cb_prefix_map = {
+        "msg": "dip:msg_target:",
+        "trade": "dip:trade_target:",
+        "mil": "dip:mil_target:",
+        "aid": "dip:aid_target:",
+        "blockade": "dip:blockade_target:"
+    }
+    prefix = cb_prefix_map.get(action_type, "dip:target:")
+
+    for k in keys:
+        if k in c_map:
+            c = c_map[k]
+            if c["id"] == current_cid:
+                continue
+            is_sanc = db.are_sanctioned(current_cid, c["id"])
+            if is_sanc and action_type in ("trade", "mil", "aid"):
+                btn_label = f"🚫 {c['name']} (تحریم)"
+            else:
+                btn_label = f"{c['flag']} {c['name']}"
+
+            row.append(InlineKeyboardButton(btn_label, callback_data=f"{prefix}{c['id']}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton("🔎 جستجو", callback_data=f"dip:search_start:{action_type}"),
+        InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"dip:back_continents:{action_type}")
+    ])
+    return f"{cont_info.get('name', 'قاره')}\n\nکشور مورد نظر را انتخاب فرمایید:", InlineKeyboardMarkup(buttons)
+
+
 # ==================== 1. یادداشت دیپلماتیک ====================
 
 async def dip_message_start(query, context, country):
@@ -92,27 +175,8 @@ async def dip_message_start(query, context, country):
         await query.edit_message_text("🔒 **ارسال پیام‌های دیپلماتیک موقتاً قفل است.**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
         return
 
-    countries = db.get_all_countries()
-    other_countries = [c for c in countries if c["id"] != country["id"]]
-
-    if not other_countries:
-        await query.edit_message_text("❌ هیچ کشور دیگری در بازی ثبت نشده است.", parse_mode="Markdown")
-        return
-
-    text = "✉️ **ارسال یادداشت دیپلماتیک رسمی**\n\nلطفاً کشور مقصد را انتخاب فرمایید:"
-    keyboard = []
-    row = []
-    for c in other_countries:
-        btn = InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"dip:msg_target:{c['id']}")
-        row.append(btn)
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")])
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    text, kb = build_dip_continent_selector("msg", "✉️ **ارسال یادداشت دیپلماتیک رسمی**")
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
 # ==================== 2. قراردادهای تجاری ====================
@@ -122,61 +186,20 @@ async def dip_trade_start(query, context, country):
         await query.edit_message_text("🔒 **انعقاد قراردادهای تجاری موقتاً قفل است.**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
         return
 
-    countries = db.get_all_countries()
-    other_countries = [c for c in countries if c["id"] != country["id"]]
-
-    if not other_countries:
-        await query.edit_message_text("❌ هیچ کشور دیگری در بازی برای معامله وجود ندارد.", parse_mode="Markdown")
-        return
-
-    text = "📜 **پیشنهاد قرارداد تجاری رسمی**\n\nلطفاً طرف دوم قرارداد (کشور مخاطب) را انتخاب کنید:"
-    keyboard = []
-    row = []
-    for c in other_countries:
-        if db.are_sanctioned(country["id"], c["id"]):
-            btn_label = f"🚫 {c['name']} (تحریم)"
-        else:
-            btn_label = f"{c['flag']} {c['name']}"
-        btn = InlineKeyboardButton(btn_label, callback_data=f"dip:trade_target:{c['id']}")
-        row.append(btn)
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")])
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    text, kb = build_dip_continent_selector("trade", "📜 **پیشنهاد قرارداد تجاری رسمی**")
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
 # ==================== 2.5. انتقال و فروش تسلیحات نظامی ====================
 
 async def dip_military_start(query, context, country):
-    countries = db.get_all_countries()
-    other_countries = [c for c in countries if c["id"] != country["id"]]
+    text, kb = build_dip_continent_selector("mil", "🎖️ **انتقال / فروش تسلیحات نظامی**")
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
-    if not other_countries:
-        await query.edit_message_text("❌ هیچ کشور دیگری در بازی وجود ندارد.", parse_mode="Markdown")
-        return
 
-    text = "🎖️ **انتقال / فروش تسلیحات نظامی**\n\nلطفاً کشور دریافت‌کننده تسلیحات را انتخاب بفرمایید:"
-    keyboard = []
-    row = []
-    for c in other_countries:
-        if db.are_sanctioned(country["id"], c["id"]):
-            btn_label = f"🚫 {c['name']} (تحریم)"
-        else:
-            btn_label = f"{c['flag']} {c['name']}"
-        btn = InlineKeyboardButton(btn_label, callback_data=f"dip:mil_target:{c['id']}")
-        row.append(btn)
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")])
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+async def dip_aid_start(query, context, country):
+    text, kb = build_dip_continent_selector("aid", "🕊️ **ارسال کمک‌های خارجی و انسان‌دوستانه**")
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
 # ==================== 2.7. محاصره دریایی بین‌المللی ====================
@@ -335,6 +358,35 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     if data == "dip:menu":
         await diplomacy_menu(update, context)
+
+    elif data.startswith("dip:pickcont:"):
+        _, _, cont_key, action_type = data.split(":")
+        text, kb = build_dip_continent_countries_keyboard(cont_key, action_type, country["id"])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+
+    elif data.startswith("dip:back_continents:"):
+        action_type = data.split(":")[2]
+        action_titles = {
+            "msg": "✉️ **ارسال یادداشت دیپلماتیک رسمی**",
+            "trade": "📜 **پیشنهاد قرارداد تجاری رسمی**",
+            "mil": "🎖️ **انتقال / فروش تسلیحات نظامی**",
+            "aid": "🕊️ **ارسال کمک‌های خارجی و انسان‌دوستانه**",
+            "blockade": "⚓ **عملیات محاصره دریایی بین‌المللی**"
+        }
+        title = action_titles.get(action_type, "دیپلماسی بین‌المللی")
+        text, kb = build_dip_continent_selector(action_type, title)
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+
+    elif data.startswith("dip:search_start:"):
+        action_type = data.split(":")[2]
+        context.user_data["diplomacy_input"] = {"type": "dip_search_country", "action_type": action_type}
+        text = (
+            "🔎 **جستجوی کشور مقصد**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "لطفاً **نام کشور مورد نظر** را تایپ و ارسال فرمایید:\n"
+            "*(مثال: آلمان، روسیه، چین، قطر، عربستان)*"
+        )
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به لیست قاره‌ها", callback_data=f"dip:back_continents:{action_type}")]]), parse_mode="Markdown")
 
     elif data == "dip:my_contracts":
         sent = db.get_country_pending_sent_contracts(country["id"])
@@ -1732,6 +1784,63 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
     del context.user_data["diplomacy_input"]
 
     clean_num = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١۲٣٤٥٦٧٨٩", "01234567890123456789")).replace(",", "").replace("_", "")
+
+    if input_type == "dip_search_country":
+        action_type = dip_input.get("action_type", "msg")
+        user_query = text.strip()
+        clean_q = _clean_persian_str(user_query)
+
+        all_countries = db.get_all_countries()
+        matches = []
+        for c in all_countries:
+            if c["id"] == country["id"]:
+                continue
+            c_name = c.get("name", "")
+            c_key = c.get("country_key", "")
+            if clean_q in _clean_persian_str(c_name) or clean_q in _clean_persian_str(c_key):
+                matches.append(c)
+
+        if not matches:
+            text_res = f"❌ **کشوری با عنوان «{user_query}» یافت نشد.**"
+            kb_res = [
+                [InlineKeyboardButton("🔁 جستجوی مجدد", callback_data=f"dip:search_start:{action_type}")],
+                [InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"dip:back_continents:{action_type}")],
+            ]
+            await update.message.reply_text(text_res, reply_markup=InlineKeyboardMarkup(kb_res), parse_mode="Markdown")
+            return
+
+        cb_prefix_map = {
+            "msg": "dip:msg_target:",
+            "trade": "dip:trade_target:",
+            "mil": "dip:mil_target:",
+            "aid": "dip:aid_target:",
+            "blockade": "dip:blockade_target:"
+        }
+        prefix = cb_prefix_map.get(action_type, "dip:target:")
+
+        buttons = []
+        row = []
+        for c in matches:
+            is_sanc = db.are_sanctioned(country["id"], c["id"])
+            btn_label = f"🚫 {c['name']} (تحریم)" if is_sanc and action_type in ("trade", "mil", "aid") else f"{c['flag']} {c['name']}"
+            row.append(InlineKeyboardButton(btn_label, callback_data=f"{prefix}{c['id']}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+
+        buttons.append([
+            InlineKeyboardButton("🔁 جستجوی مجدد", callback_data=f"dip:search_start:{action_type}"),
+            InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"dip:back_continents:{action_type}")
+        ])
+
+        await update.message.reply_text(
+            f"🔎 **نتایج جستجو برای «{user_query}» ({len(matches)} کشور):**\n━━━━━━━━━━━━━━━━━━\nروی کشور مورد نظر کلیک کنید:",
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode="Markdown"
+        )
+        return
 
     if input_type == "send_msg":
         target_id = dip_input["target_id"]

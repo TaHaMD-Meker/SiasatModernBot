@@ -16,6 +16,24 @@ import config
 from utils import format_money, format_number, get_main_keyboard
 
 
+def _clean_persian_str(s: str) -> str:
+    """استانداردسازی متن فارسی/انگلیسی جهت جستجوی دقیق."""
+    if not s:
+        return ""
+    t = str(s).strip().lower()
+    t = t.replace("_", " ")
+    trans = {
+        "ي": "ی", "ى": "ی", "ك": "ک", "ؤ": "و",
+        "إ": "ا", "أ": "ا", "آ": "ا", "ة": "ه",
+        "ئ": "ی", "ـ": ""
+    }
+    for k, v in trans.items():
+        t = t.replace(k, v)
+    t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
 def _md_escape(text):
     return str(text).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]")
 
@@ -113,23 +131,69 @@ async def mv_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # ---------- ساخت پایگاه: انتخاب کشور میزبان ----------
     if data == "mv:newbase":
+        continents = getattr(config, "CONTINENTS", {})
         rows = []
         row = []
-        for c in db.get_all_countries():
-            if c["id"] == country["id"]:
-                continue
-            row.append(InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"mv:nb:{c['id']}"))
+        for c_key, c_info in continents.items():
+            row.append(InlineKeyboardButton(c_info["name"], callback_data=f"mv:pickcont:{c_key}"))
             if len(row) == 2:
                 rows.append(row)
                 row = []
         if row:
             rows.append(row)
-        rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="mv:menu")])
+        rows.append([InlineKeyboardButton("🔎 جستجوی کشور میزبان (تایپی)", callback_data="mv:search_host")])
+        rows.append([InlineKeyboardButton("🔙 بازگشت به ستاد راهبردی", callback_data="mv:menu")])
         await query.edit_message_text(
-            "🏗️ *ساخت پایگاه پیشروی*\n\nکشور میزبان را انتخاب کنید:\n"
-            "_(فقط کشورهای دارای بازیکن؛ درخواست باید توسط میزبان تأیید شود)_",
+            "🏗️ *ساخت پایگاه پیشروی خارجی*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "جهت انتخاب کشور میزبان، **قاره مورد نظر را انتخاب فرمایید** یا از **جستجوی متنی** استفاده کنید:\n"
+            "_(درخواست ساخت پایگاه باید توسط رهبر کشور میزبان تأیید شود)_",
             reply_markup=_kb(rows),
             parse_mode="Markdown",
+        )
+        return
+
+    elif data.startswith("mv:pickcont:"):
+        cont_key = data.split(":")[2]
+        continents = getattr(config, "CONTINENTS", {})
+        cont_info = continents.get(cont_key, {})
+        keys = cont_info.get("keys", [])
+
+        all_countries = db.get_all_countries()
+        c_map = {c["country_key"]: c for c in all_countries if c.get("country_key")}
+
+        rows = []
+        row = []
+        for k in keys:
+            if k in c_map:
+                c = c_map[k]
+                if c["id"] == country["id"] or not c.get("player_id"):
+                    continue
+                row.append(InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"mv:nb:{c['id']}"))
+                if len(row) == 2:
+                    rows.append(row)
+                    row = []
+        if row:
+            rows.append(row)
+
+        rows.append([
+            InlineKeyboardButton("🔎 جستجو", callback_data="mv:search_host"),
+            InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="mv:newbase")
+        ])
+        await query.edit_message_text(
+            f"🏗️ *کشورهای میزبان در {cont_info.get('name', 'قاره')}*\n\nکشور مورد نظر را انتخاب فرمایید:\n_(فقط کشورهای دارای بازیکن فعال نمایش داده می‌شوند)_",
+            reply_markup=_kb(rows),
+            parse_mode="Markdown"
+        )
+        return
+
+    elif data == "mv:search_host":
+        context.user_data["mv_search_host"] = True
+        await query.edit_message_text(
+            "🔎 **جستجوی کشور میزبان پایگاه**\n━━━━━━━━━━━━━━━━━━\n\n"
+            "لطفاً **نام کشور مورد نظر** را تایپ و ارسال فرمایید:\n"
+            "*(مثال: سوریه، عراق، عمان، بلاروس، کوبا)*",
+            reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به لیست قاره‌ها", callback_data="mv:newbase")]]),
+            parse_mode="Markdown"
         )
         return
 
@@ -456,6 +520,51 @@ def _base_info_text(b):
 # ==================== ورودی‌های متنی ====================
 
 async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # پردازش جستجوی کشور میزبان
+    if context.user_data.get("mv_search_host"):
+        del context.user_data["mv_search_host"]
+        user_query = (update.message.text or "").strip()
+        clean_q = _clean_persian_str(user_query)
+
+        user_id = update.effective_user.id
+        country = _player_country(user_id)
+        cid = country["id"] if country else None
+
+        all_countries = db.get_all_countries()
+        matches = [c for c in all_countries if c["id"] != cid and c.get("player_id") and (clean_q in _clean_persian_str(c.get("name", "")) or clean_q in _clean_persian_str(c.get("country_key", "")))]
+
+        if not matches:
+            await update.message.reply_text(
+                f"❌ کشوری دارای بازیکن فعال با عنوان «{user_query}» یافت نشد.",
+                reply_markup=_kb([
+                    [InlineKeyboardButton("🔁 جستجوی مجدد", callback_data="mv:search_host")],
+                    [InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="mv:newbase")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return True
+
+        rows = []
+        row = []
+        for c in matches:
+            row.append(InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"mv:nb:{c['id']}"))
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+
+        rows.append([
+            InlineKeyboardButton("🔁 جستجوی مجدد", callback_data="mv:search_host"),
+            InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="mv:newbase")
+        ])
+        await update.message.reply_text(
+            f"🔎 **نتایج جستجو برای «{user_query}»:**\n━━━━━━━━━━━━━━━━━━\nکشور میزبان را انتخاب فرمایید:",
+            reply_markup=_kb(rows),
+            parse_mode="Markdown"
+        )
+        return True
+
     d = context.user_data.get("mv_input")
     if not d:
         return False  # مربوط به ما نبود

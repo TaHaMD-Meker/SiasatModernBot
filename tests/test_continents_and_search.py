@@ -48,3 +48,17 @@ def test_continent_keyboards_structure():
     last_row = kb_mideast[-1]
     assert any("جستجو" in btn.text for btn in last_row)
     assert any("قاره‌ها" in btn.text for btn in last_row)
+
+def test_diplomacy_continent_helpers():
+    from handlers.diplomacy import build_dip_continent_selector, build_dip_continent_countries_keyboard
+    t, kb = build_dip_continent_selector("trade", "تجارت")
+    assert len(kb.inline_keyboard) >= 4
+
+    t2, kb2 = build_dip_continent_countries_keyboard("europe", "trade", 999)
+    assert len(kb2.inline_keyboard) >= 2
+
+
+def test_intel_target_continent_helpers():
+    from handlers.intel import build_intel_continent_countries_keyboard
+    t, kb = build_intel_continent_countries_keyboard("mideast", "cyber_blackout", 123)
+    assert len(kb.inline_keyboard) >= 2

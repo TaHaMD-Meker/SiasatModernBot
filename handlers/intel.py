@@ -297,6 +297,53 @@ def _generate_obfuscated_nuclear_dump(target: dict) -> str:
 
 # ==================== ۴. هندلر انتخاب کشور هدف و نوع عملیات ====================
 
+def _clean_persian_str(s: str) -> str:
+    """استانداردسازی متن فارسی/انگلیسی جهت جستجوی دقیق."""
+    if not s:
+        return ""
+    t = str(s).strip().lower()
+    t = t.replace("_", " ")
+    trans = {
+        "ي": "ی", "ى": "ی", "ك": "ک", "ؤ": "و",
+        "إ": "ا", "أ": "ا", "آ": "ا", "ة": "ه",
+        "ئ": "ی", "ـ": ""
+    }
+    for k, v in trans.items():
+        t = t.replace(k, v)
+    t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def build_intel_continent_countries_keyboard(cont_key: str, op_type: str, current_cid: int):
+    continents = getattr(config, "CONTINENTS", {})
+    cont_info = continents.get(cont_key, {})
+    keys = cont_info.get("keys", [])
+
+    all_countries = db.get_all_countries()
+    c_map = {c["country_key"]: c for c in all_countries if c.get("country_key")}
+
+    rows = []
+    row = []
+    for k in keys:
+        if k in c_map:
+            c = c_map[k]
+            if c["id"] == current_cid:
+                continue
+            row.append(InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"intel:confirm_op:{op_type}:{c['id']}"))
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+    if row:
+        rows.append(row)
+
+    rows.append([
+        InlineKeyboardButton("🔎 جستجو", callback_data=f"intel:search_start:{op_type}"),
+        InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"intel:back_continents:{op_type}")
+    ])
+    return f"🎯 <b>{cont_info.get('name', 'قاره')}</b>\n\nکشور هدف را انتخاب فرمایید:", _kb(rows)
+
+
 async def show_intel_target_picker(update: Update, context: ContextTypes.DEFAULT_TYPE, op_type: str, category_label: str):
     query = update.callback_query
     user_id = query.from_user.id
@@ -304,10 +351,8 @@ async def show_intel_target_picker(update: Update, context: ContextTypes.DEFAULT
     if not country:
         return
 
-    countries = db.get_all_countries()
-    other_countries = [c for c in countries if c["id"] != country["id"] and c.get("country_key") != "un"]
-
     op_cfg = config.INTEL_OPERATIONS_CONFIG.get(op_type, {})
+    continents = getattr(config, "CONTINENTS", {})
 
     text = (
         f"🎯 <b>انتخاب کشور هدف برای {op_cfg.get('name', category_label)}</b>\n"
@@ -315,21 +360,21 @@ async def show_intel_target_picker(update: Update, context: ContextTypes.DEFAULT
         f"<b>برآورد هزینه عملیات:</b>\n"
         f"• بودجه سیاه: <b>{format_money(op_cfg.get('cost_money', 0))}</b>\n"
         f"• میکروچیپ پردازشی: <b>{fa_num(op_cfg.get('cost_chips', 0))} عدد</b>\n\n"
-        f"لطفاً کشور هدف را جهت اجرای عملیات انتخاب کنید:"
+        f"جهت انتخاب هدف، <b>قاره کشور مقصد را انتخاب فرمایید</b> یا از <b>جستجوی سریع</b> استفاده کنید:"
     )
 
     rows = []
     row = []
-    for c in other_countries:
-        btn = InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"intel:confirm_op:{op_type}:{c['id']}")
-        row.append(btn)
+    for c_key, c_info in continents.items():
+        row.append(InlineKeyboardButton(c_info["name"], callback_data=f"intel:pickcont:{c_key}:{op_type}"))
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
 
-    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="intel:menu")])
+    rows.append([InlineKeyboardButton("🔎 جستجوی نام کشور هدف (تایپی)", callback_data=f"intel:search_start:{op_type}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت به سازمان اطلاعات", callback_data="intel:menu")])
     await query.edit_message_text(text, reply_markup=_kb(rows), parse_mode="HTML")
 
 
@@ -446,6 +491,27 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("intel:pick_target:"):
         op_type = data.split(":")[2]
         await show_intel_target_picker(update, context, op_type, "عملیات اطلاعاتی")
+
+    elif data.startswith("intel:pickcont:"):
+        _, _, cont_key, op_type = data.split(":")
+        text, kb = build_intel_continent_countries_keyboard(cont_key, op_type, country["id"])
+        await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+
+    elif data.startswith("intel:back_continents:"):
+        op_type = data.split(":")[2]
+        op_cfg = config.INTEL_OPERATIONS_CONFIG.get(op_type, {})
+        await show_intel_target_picker(update, context, op_type, op_cfg.get("name", "عملیات اطلاعاتی"))
+
+    elif data.startswith("intel:search_start:"):
+        op_type = data.split(":")[2]
+        context.user_data["intel_search"] = {"op_type": op_type}
+        text = (
+            "🔎 <b>جستجوی کشور هدف برای عملیات اطلاعاتی</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "لطفاً <b>نام کشور مورد نظر</b> را تایپ و ارسال فرمایید:\n"
+            "<i>(مثال: اسرائیل، آمریکا، عربستان، فرانسه، انگلیس)</i>"
+        )
+        await query.edit_message_text(text, reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به لیست قاره‌ها", callback_data=f"intel:back_continents:{op_type}")]]), parse_mode="HTML")
 
     # ---------------- صفحه تایید نهایی عملیات ----------------
     elif data.startswith("intel:confirm_op:"):
@@ -681,3 +747,61 @@ async def intel_history_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(text, reply_markup=_kb(buttons), parse_mode="HTML")
     elif update.message:
         await update.message.reply_text(text, reply_markup=_kb(buttons), parse_mode="HTML")
+
+
+async def intel_search_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """پردازش جستجوی کشور هدف برای عملیات اطلاعاتی."""
+    search_state = context.user_data.get("intel_search")
+    if not search_state:
+        return False
+
+    del context.user_data["intel_search"]
+    op_type = search_state.get("op_type", "espionage_military")
+    user = update.effective_user
+    country = db.get_country_by_player(user.id)
+    if not country:
+        return False
+
+    user_query = update.message.text.strip()
+    clean_q = _clean_persian_str(user_query)
+
+    all_countries = db.get_all_countries()
+    matches = []
+    for c in all_countries:
+        if c["id"] == country["id"] or c.get("country_key") == "un":
+            continue
+        c_name = c.get("name", "")
+        c_key = c.get("country_key", "")
+        if clean_q in _clean_persian_str(c_name) or clean_q in _clean_persian_str(c_key):
+            matches.append(c)
+
+    if not matches:
+        text_res = f"❌ <b>کشوری با عنوان «{html.escape(user_query)}» در بازی یافت نشد.</b>"
+        kb_res = [
+            [InlineKeyboardButton("🔁 جستجوی دوباره", callback_data=f"intel:search_start:{op_type}")],
+            [InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"intel:back_continents:{op_type}")],
+        ]
+        await update.message.reply_text(text_res, reply_markup=_kb(kb_res), parse_mode="HTML")
+        return True
+
+    rows = []
+    row = []
+    for c in matches:
+        row.append(InlineKeyboardButton(f"{c['flag']} {c['name']}", callback_data=f"intel:confirm_op:{op_type}:{c['id']}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+
+    rows.append([
+        InlineKeyboardButton("🔁 جستجوی مجدد", callback_data=f"intel:search_start:{op_type}"),
+        InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"intel:back_continents:{op_type}")
+    ])
+
+    await update.message.reply_text(
+        f"🎯 <b>نتایج جستجو برای «{html.escape(user_query)}» ({len(matches)} کشور):</b>\n━━━━━━━━━━━━━━━━━━\nکشور هدف را انتخاب فرمایید:",
+        reply_markup=_kb(rows),
+        parse_mode="HTML"
+    )
+    return True

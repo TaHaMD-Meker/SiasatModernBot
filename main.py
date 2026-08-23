@@ -548,6 +548,11 @@ def main():
             handled = await start_country_search_input_handler(update, context)
             if handled:
                 return
+        if context.user_data.get("intel_search"):
+            from handlers.intel import intel_search_input_handler
+            handled = await intel_search_input_handler(update, context)
+            if handled:
+                return
         if context.user_data.get("vip_input") or context.user_data.get("militia_wiz"):
             handled = await vip_input_handler(update, context)
             if handled:

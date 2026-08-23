@@ -88,27 +88,26 @@ async def admin_locks_menu(query, context):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-# ==================== لیست کشورها با صفحه‌بندی ====================
+# ==================== لیست کشورها با صفحه‌بندی و فیلتر قاره‌ها ====================
 
-async def show_countries_list(query, context, page: int = 0):
-    countries = db.get_all_countries()
-    if not countries:
+async def show_countries_list(query, context, page: int = 0, filter_continent: str = None):
+    all_countries = db.get_all_countries()
+    if not all_countries:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
-        try:
-            await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception:
-            try:
-                await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard))
-            except Exception:
-                pass
+        await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
+    filtered = all_countries
+    if filter_continent and filter_continent != "all":
+        cont_keys = config.CONTINENTS.get(filter_continent, {}).get("keys", [])
+        filtered = [c for c in all_countries if c.get("country_key") in cont_keys or (filter_continent == "mideast" and (c.get("country_key") or "").startswith("faction_"))]
+
     per_page = 5
-    total_pages = max(1, math.ceil(len(countries) / per_page))
+    total_pages = max(1, math.ceil(len(filtered) / per_page))
     page = max(0, min(page, total_pages - 1))
 
     start_idx = page * per_page
-    page_countries = countries[start_idx:start_idx + per_page]
+    page_countries = filtered[start_idx:start_idx + per_page]
 
     keyboard = []
     for c in page_countries:
@@ -120,18 +119,35 @@ async def show_countries_list(query, context, page: int = 0):
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"admin:c:{c['id']}")])
 
     nav_row = []
+    cont_param = filter_continent or "all"
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:list:{page - 1}"))
+        nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:list:{page - 1}:{cont_param}"))
     if total_pages > 1:
         nav_row.append(InlineKeyboardButton(f"صفحه {page + 1} از {total_pages}", callback_data="ignore"))
     if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:list:{page + 1}"))
+        nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:list:{page + 1}:{cont_param}"))
 
     if nav_row:
         keyboard.append(nav_row)
+
+    # دکمه‌های فیلتر قاره‌ها در پنل ادمین
+    filter_row1 = [
+        InlineKeyboardButton("🌍 خاورمیانه", callback_data="admin:list:0:mideast"),
+        InlineKeyboardButton("🇪🇺 اروپا", callback_data="admin:list:0:europe"),
+        InlineKeyboardButton("🌏 آسیا", callback_data="admin:list:0:asia"),
+    ]
+    filter_row2 = [
+        InlineKeyboardButton("🌎 آمریکا", callback_data="admin:list:0:americas"),
+        InlineKeyboardButton("🌍 آفریقا", callback_data="admin:list:0:africa"),
+        InlineKeyboardButton("🌐 همه کشورها", callback_data="admin:list:0:all"),
+    ]
+    keyboard.append(filter_row1)
+    keyboard.append(filter_row2)
+    keyboard.append([InlineKeyboardButton("🔎 جستجوی نام کشور (تایپی)", callback_data="admin:search_country_prompt")])
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin:menu")])
 
-    text = f"📋 *لیست کشورهای فعال (تعداد کل: {len(countries)})*\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
+    cont_title = f" (فیلتر: {config.CONTINENTS.get(filter_continent, {}).get('short_name', filter_continent)})" if filter_continent and filter_continent != "all" else ""
+    text = f"📋 *لیست کشورهای فعال (نمایش {len(filtered)} از مجموع {len(all_countries)} کشور)*{cont_title}\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     except Exception:
@@ -768,8 +784,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await admin_locks_menu(query, context)
 
     elif data.startswith("admin:list:"):
-        page = int(data.split(":")[2])
-        await show_countries_list(query, context, page)
+        parts = data.split(":")
+        page = int(parts[2])
+        filter_cont = parts[3] if len(parts) > 3 else None
+        await show_countries_list(query, context, page=page, filter_continent=filter_cont)
+
+    elif data == "admin:search_country_prompt":
+        context.user_data["admin_awaiting_input"] = {"type": "admin_search_country"}
+        await query.edit_message_text(
+            "🔎 **جستجوی کشور در پنل مدیریت**\n━━━━━━━━━━━━━━━━━━\n\nلطفاً **نام کشور، کلید کشور یا شناسه بازیکن** را ارسال فرمایید:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به لیست کشورها", callback_data="admin:list:0")]]),
+            parse_mode="Markdown"
+        )
 
     elif data.startswith("admin:c:"):
         c_id = int(data.split(":")[2])
@@ -2275,6 +2301,40 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
     if input_type and str(input_type).startswith("ls_"):
         from handlers.losses import handle_losses_input
         await handle_losses_input(update, context, user_id, input_state)
+        return
+
+    if input_type == "admin_search_country":
+        context.user_data["admin_awaiting_input"] = None
+        user_query = text.strip()
+        clean_q = _clean_persian_str(user_query)
+
+        all_countries = db.get_all_countries()
+        matches = [c for c in all_countries if clean_q in _clean_persian_str(c.get("name", "")) or clean_q in _clean_persian_str(c.get("country_key", "")) or str(c.get("player_id", "")) == user_query]
+
+        if not matches:
+            await update.message.reply_text(
+                f"❌ کشوری با مشخصات «{user_query}» در پایگاه داده یافت نشد.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔁 جستجوی دوباره", callback_data="admin:search_country_prompt")],
+                    [InlineKeyboardButton("🔙 لیست کشورها", callback_data="admin:list:0")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
+        rows = []
+        for c in matches:
+            tr = format_money(c.get("treasury") or 0)
+            pid = c.get("player_id") or "—"
+            btn_text = f"{c.get('flag', '🏳️')} {c.get('name', '')} | 🏦 {tr} (ID: {pid})"
+            rows.append([InlineKeyboardButton(btn_text, callback_data=f"admin:c:{c['id']}")])
+        rows.append([InlineKeyboardButton("🔙 بازگشت به لیست کشورها", callback_data="admin:list:0")])
+
+        await update.message.reply_text(
+            f"🔎 **نتایج جستجو برای «{user_query}» ({len(matches)} کشور):**\n━━━━━━━━━━━━━━━━━━\nروی کشور مورد نظر کلیک کنید:",
+            reply_markup=InlineKeyboardMarkup(rows),
+            parse_mode="Markdown"
+        )
         return
 
     if input_type == "rename_militia_and_approve":
