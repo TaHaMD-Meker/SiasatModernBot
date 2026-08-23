@@ -180,11 +180,71 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="vip:menu")]]), parse_mode="Markdown")
 
+    elif data == "vip:setup_militia":
+        context.user_data["militia_setup"] = {"step": "name"}
+        text = (
+            "🏴‍☠️ **فرم ثبت سازمان / گروه شبه‌نظامی غیردولتی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "۱. لطفاً **نام رسمی گروه یا سازمان خود** را ارسال فرمایید:\n\n"
+            "*(مثال: «سپاه مدافعان آزادی»، «لشکر سرخ کارتل»، «سازمان نظامی واگنر»)*"
+        )
+        if query.message:
+            await query.message.reply_text(text, parse_mode="Markdown")
+        else:
+            await query.edit_message_text(text, parse_mode="Markdown")
 
-# ==================== هاندر دریافت ورودی فیش (عکس یا کد متنی) ====================
+
+# ==================== هاندر دریافت ورودی فیش و فرم گروه ====================
 
 async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """دریافت فیش و ارسال مستقیم به پنل ادمین جهت تایید سریع."""
+    """دریافت فیش یا تکمیل فرم ثبت گروه غیردولتی."""
+    # ۱. پردازش فرم ساخت گروه غیردولتی
+    if context.user_data.get("militia_setup"):
+        state = context.user_data["militia_setup"]
+        step = state.get("step")
+        user = update.effective_user
+        user_id = user.id
+
+        if step == "name":
+            name = update.message.text.strip() if update.message.text else ""
+            if not name or len(name) < 3 or len(name) > 40:
+                await update.message.reply_text("❌ لطفاً نامی معتبر (بین ۳ تا ۴۰ حرف) وارد فرمایید:")
+                return True
+            context.user_data["militia_setup"] = {"step": "flag", "name": name}
+            await update.message.reply_text(
+                f"✅ **نام گروه ثبت شد:** {name}\n\n"
+                "۲. لطفاً **یک ایموجی یا نماد** به عنوان پرچم گروه خود ارسال فرمایید:\n\n"
+                "*(مثال: 🏴 یا ⚔️ یا 🦅 یا 🐺 یا 🛡️)*",
+                parse_mode="Markdown"
+            )
+            return True
+
+        elif step == "flag":
+            flag = update.message.text.strip() if update.message.text else "🏴"
+            if len(flag) > 4:
+                flag = flag[:4]
+            name = state["name"]
+            del context.user_data["militia_setup"]
+
+            # ایجاد سازمان غیردولتی در دیتابیس
+            cid = db.create_custom_militia_faction(user_id, name, flag, user.username)
+
+            succ_text = (
+                f"🎉 **سازمان غیردولتی {flag} {name} با موفقیت تاسیس شد!**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "🪖 **تجهیزات و تسلیحات سازمانی فعال‌شده:**\n"
+                "• ۵۰۰ دستگاه تویوتا تکنیکال مسلح به دوشکا و زو-۲۳\n"
+                "• ۳۰۰ تیم ضدزره مجهز به موشک‌های کورنت\n"
+                "• ۲۰۰ فروند پهپاد انتحاری نقطه‌زن و ۵۰ فروند هدهد\n"
+                "• ۲۰۰ آتشبار دوش‌پرتاب پدافندی میثاق\n"
+                "• ۲۵۰ فروند راکت فجر-۵ و ۳۰ تیر بالستیک فاتح-۱۱۰\n"
+                "• ۴۰ فروند قایق تندرو راکت‌انداز عاشورا\n\n"
+                "🌐 هم‌اکنون می‌توانید با دکمه‌های پایین صفحه کشور/گروه خود را هدایت فرمایید."
+            )
+            await update.message.reply_text(succ_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+            return True
+
+    # ۲. پردازش ارسال فیش واریزی
     vip_state = context.user_data.get("vip_input")
     if not vip_state:
         return False

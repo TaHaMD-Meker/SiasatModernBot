@@ -587,18 +587,32 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         # ارسال پیام تبریک و فعال‌سازی به کاربر
         player_id = p["player_id"]
-        success_msg = (
-            f"🎉 **پرداخت شما با موفقیت تایید شد!**\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"📌 **سفارش:** {p['plan_title']}\n"
-            f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
-            "✅ **خدمات و دسترسی‌های ویژه برای شما فعال گردید.**\n"
-            "از همراهی و حمایت شما از بازی «سیاست مدرن» صمیمانه سپاسگزاریم. 👑"
-        )
-        try:
-            await context.bot.send_message(chat_id=player_id, text=success_msg, parse_mode="Markdown")
-        except Exception as e:
-            print(f"Failed to notify user of payment approval: {e}")
+        if p.get("item_type") == "militia":
+            success_msg = (
+                f"🎉 **مجوز رسمی تاسیس گروه غیردولتی شما صادر گردید!**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"📌 **سفارش:** {p['plan_title']}\n"
+                f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
+                "👇 لطفاً جهت ثبت نام سازمان، انتخاب پرچم/نماد و استقرار نیروها روی دکمه زیر کلیک فرمایید:"
+            )
+            militia_kb = [[InlineKeyboardButton("🏴‍☠️ ثبت مشخصات و تاسیس گروه", callback_data="vip:setup_militia")]]
+            try:
+                await context.bot.send_message(chat_id=player_id, text=success_msg, reply_markup=InlineKeyboardMarkup(militia_kb), parse_mode="Markdown")
+            except Exception as e:
+                print(f"Failed to notify user of militia license approval: {e}")
+        else:
+            success_msg = (
+                f"🎉 **پرداخت شما با موفقیت تایید شد!**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"📌 **سفارش:** {p['plan_title']}\n"
+                f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
+                "✅ **خدمات و دسترسی‌های ویژه VIP برای شما فعال گردید.**\n"
+                "از همراهی و حمایت شما از بازی «سیاست مدرن» صمیمانه سپاسگزاریم. 👑"
+            )
+            try:
+                await context.bot.send_message(chat_id=player_id, text=success_msg, parse_mode="Markdown")
+            except Exception as e:
+                print(f"Failed to notify user of payment approval: {e}")
 
         await query.edit_message_text(
             f"✅ **فیش #{req_id} با موفقیت تایید و خدمات برای کاربر فعال شد.**",

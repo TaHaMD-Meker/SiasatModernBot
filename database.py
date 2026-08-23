@@ -5112,3 +5112,52 @@ def reject_payment_request(req_id: int, admin_id: int, reason: str = "") -> tupl
         return False, f"خطا در رد پرداخت: {e}", {}
 
 
+def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴", username: str = None) -> int:
+    """ایجاد گروه/شبه‌نظامی غیردولتی اختصاصی برای بازیکن دارای مجوز."""
+    conn = get_connection()
+    cur = conn.cursor()
+    c_key = f"militia_{player_id}"
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    # حذف کشور قبلی کاربر در صورت وجود
+    cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
+    old = cur.fetchone()
+    if old:
+        delete_country_by_id(old["id"])
+
+    cur.execute("""
+        INSERT INTO countries
+        (player_id, name, flag, population, treasury, tax_income, daily_income, gold, gold_daily,
+         oil_reserves, oil_production, grain, electricity, active_personnel, reserve_personnel,
+         last_income_date, created_at, country_key, approval_rating, grain_daily, username, tech_level,
+         microchips, microchips_daily, uranium_ore, uranium_ore_daily, nuclear_fuel, nuclear_fuel_daily, warheads, is_vip)
+        VALUES (?, ?, ?, 5000000, 30000000, 600000, 3500000, 150, 20,
+                300000, 0, 5000, 80, 50000, 100000,
+                ?, ?, ?, 85, 800, ?, 1,
+                150, 5, 0, 0, 0, 0, 0, 1)
+    """, (player_id, name, flag, now_str, now_str, c_key, username))
+    cid = cur.lastrowid
+
+    # دارایی‌های آغازین جنگ نامتقارن چریکی (تویوتا مسلح، موشک‌های دوش‌پرتاب، پهپادهای انتحاری و تیم‌های کورنت)
+    militia_starter_assets = [
+        ("UAV", "پهپاد انتحاری نقطه‌زن", f"kamikaze_drone_{player_id}", 200, 150_000, 500),
+        ("UAV", "پهپاد شناسایی هدهد", f"recon_drone_{player_id}", 50, 300_000, 1_000),
+        ("Ground Forces", "تویوتا تکنیکال مسلح به دوشکا و زو-۲۳", f"technical_truck_{player_id}", 500, 100_000, 300),
+        ("Ground Forces", "تیم‌های ضدزره مجهز به کورنت و دهلاویه", f"atgm_team_{player_id}", 300, 80_000, 200),
+        ("Air Defense", "دوش‌پرتاب پدافندی میثاق / ایگلا", f"manpads_{player_id}", 200, 120_000, 400),
+        ("Missiles", "راکت‌های توپخانه‌ای فجر-۵ و گراد", f"mlrs_rocket_{player_id}", 250, 200_000, 600),
+        ("Missiles", "موشک بالستیک تاکتیکی فاتح-۱۱۰", f"fateh110_{player_id}", 30, 1_500_000, 2_000),
+        ("Navy", "قایق‌های تندرو راکت‌انداز عاشورا", f"speedboat_{player_id}", 40, 500_000, 1_500),
+    ]
+    for cat, aname, akey, init_amt, price, maint in militia_starter_assets:
+        cur.execute("""
+            INSERT INTO country_assets
+            (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+        """, (cid, c_key, cat, aname, akey, init_amt, price, maint))
+
+    conn.commit()
+    conn.close()
+    return cid
+
+
