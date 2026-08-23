@@ -41,6 +41,10 @@ from handlers.admin import (
     admin_panel, admin_callback_handler, admin_input_text_handler,
     addmoney, removemoney, listcountries
 )
+from handlers.losses import get_losses_handlers
+from handlers.bases import get_bases_handlers, mv_text_input_handler
+from handlers.guide import get_guide_handlers
+from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -480,22 +484,18 @@ def main():
         app.add_handler(handler)
 
     # سیستم مدیریت تلفات تجهیزات (ماژول مستقل)
-    from handlers.losses import get_losses_handlers
     for handler in get_losses_handlers():
         app.add_handler(handler)
 
     # سیستم تحرکات نظامی (مانور + پایگاه‌های پیشروی)
-    from handlers.bases import get_bases_handlers
     for handler in get_bases_handlers():
         app.add_handler(handler)
 
     # دانشکده و کتابخانه جامع راهنمای بازی (/help, /guide, /academy)
-    from handlers.guide import get_guide_handlers
     for handler in get_guide_handlers():
         app.add_handler(handler)
 
     # سیستم خدمات ویژه و پرداخت‌های تومانی (/vip, /premium)
-    from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
     for handler in get_vip_handlers():
         app.add_handler(handler)
 
@@ -510,7 +510,6 @@ def main():
             handled = await vip_input_handler(update, context)
             if handled:
                 return
-        from handlers.bases import mv_text_input_handler
         if context.user_data.get("mv_input"):
             handled = await mv_text_input_handler(update, context)
             if handled:
