@@ -162,23 +162,5 @@ async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    is_adm = user_id in config.ADMIN_IDS
-
-    text = (
-        "📜 راهنمای بازی «سیاست مدرن»\n\n"
-        "شما می‌توانید از دکمه‌های ثابت پایین صفحه یا دستورات زیر استفاده کنید:\n\n"
-        "🌐 *وضعیت کشور* (`/country`)\n"
-        "🎯 *ستاد توسعه و اقدامات راهبردی* (`/movements` یا `/nuclear`)\n"
-        "🎯 *عملیات‌های نظامی* (`/role`)\n"
-        "🏦 *خزانه و طلا* (`/treasury`)\n"
-        "🛢️ *وضعیت نفت* (`/oil`)\n"
-        "🎖️ *دارایی‌های نظامی* (`/assets`)\n"
-        "🏪 *فروشگاه* (`/shop`)\n"
-        "📜 *راهنما* (`/help`)"
-    )
-
-    if is_adm:
-        text += "\n\n👑 *پنل مدیریت:* فقط برای ادمین اصلی بازی فعال است."
-
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
+    from handlers.guide import guide_main_menu
+    await guide_main_menu(update, context)

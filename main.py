@@ -378,6 +378,11 @@ def main():
     for handler in get_bases_handlers():
         app.add_handler(handler)
 
+    # دانشکده و کتابخانه جامع راهنمای بازی (/help, /guide, /academy)
+    from handlers.guide import get_guide_handlers
+    for handler in get_guide_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
