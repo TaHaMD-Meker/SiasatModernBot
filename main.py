@@ -405,10 +405,39 @@ def main():
 
     app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO & ~filters.COMMAND, combined_text_input_handler))
 
-    # درآمد روزانه: هر روز ساعت 00:05 به وقت سرور
+    # مدیریت سراسری خطاها (جهت پایداری و عدم کرش بات در ترافیک بالا)
+    async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+        import telegram.error
+        err = context.error
+        if isinstance(err, telegram.error.Forbidden):
+            logger.info(f"Forbidden error ignored: {err}")
+            return
+        elif isinstance(err, telegram.error.RetryAfter):
+            logger.warning(f"FloodControl: retry after {err.retry_after}s")
+            return
+        elif isinstance(err, (telegram.error.TimedOut, telegram.error.NetworkError)):
+            logger.warning(f"Network transient error: {err}")
+            return
+        elif isinstance(err, telegram.error.BadRequest):
+            logger.warning(f"Telegram BadRequest ignored: {err}")
+            return
+        logger.error(f"Unhandled error in bot: {err}", exc_info=err)
+
+    app.add_error_handler(global_error_handler)
+
+    # جاب پشتیبان‌گیری خودکار از دیتابیس
+    async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
+        ok, res = db.backup_database()
+        if ok:
+            logger.info(f"Database auto-backup created: {res}")
+        else:
+            logger.warning(f"Database auto-backup failed: {res}")
+
+    # جاب‌ها: درآمد روزانه و پشتیبان‌گیری دوره‌ای
     job_queue = app.job_queue
     if job_queue:
         job_queue.run_repeating(daily_income_job, interval=900, first=10)  # چک هر ۱۵ دقیقه؛ پرداخت هر ۶ ساعت
+        job_queue.run_repeating(auto_backup_job, interval=14400, first=120)  # پشتیبان‌گیری خودکار هر ۴ ساعت
 
     logger.info("بات در حال اجراست...")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)

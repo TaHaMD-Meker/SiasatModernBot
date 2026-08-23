@@ -2093,6 +2093,52 @@ def get_refinery_effect(country_key):
 # ثبت عرضه نفت در بورس بازیکن‌ها با قیمتی کمتر از این مقدار مجاز نیست.
 OIL_GLOBAL_PRICE = 5  # دلار به ازای هر بشکه
 
+# ===== 📊 بازه مجاز قیمت‌گذاری کالاها در بورس جهانی (جلوگیری از تقلب و دامپینگ مولتی‌اکانت) =====
+COMMODITY_MARKET_BOUNDS = {
+    "oil": {
+        "name": "نفت خام",
+        "unit": "بشکه",
+        "min_price": 3,
+        "max_price": 20,
+        "default_price": 5
+    },
+    "gold": {
+        "name": "شمش طلا",
+        "unit": "شمش",
+        "min_price": 400_000,
+        "max_price": 2_500_000,
+        "default_price": 1_000_000
+    },
+    "grain": {
+        "name": "غلات و گندم",
+        "unit": "تن",
+        "min_price": 50,
+        "max_price": 800,
+        "default_price": 200
+    },
+    "microchips": {
+        "name": "میکروچیپ",
+        "unit": "عدد",
+        "min_price": 5_000,
+        "max_price": 50_000,
+        "default_price": 15_000
+    },
+    "uranium_ore": {
+        "name": "کیک زرد اورانیوم",
+        "unit": "تن",
+        "min_price": 20_000,
+        "max_price": 150_000,
+        "default_price": 50_000
+    },
+    "nuclear_fuel": {
+        "name": "سوخت غنی‌شده هسته‌ای",
+        "unit": "کیلوگرم",
+        "min_price": 100_000,
+        "max_price": 600_000,
+        "default_price": 250_000
+    }
+}
+
 # ===== مأموریت‌های روزانه (پاداش خودکار در اولین انجام در روز) =====
 DAILY_MISSIONS = {
     "statement": ("ثبت بیانیه یا توییت رسمی", 100_000),

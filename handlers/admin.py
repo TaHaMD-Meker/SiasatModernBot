@@ -38,9 +38,11 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({pending_count})", callback_data="admin:pending_countries")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
+        [InlineKeyboardButton("🚨 رادار ضدتقلب و تراکنش‌های مشکوک", callback_data="admin:anti_cheat_radar")],
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
-                [InlineKeyboardButton("📥 رول‌های دریافتی (مدیریت عملیات‌ها)", callback_data="admin:roleplays_hub")],
+        [InlineKeyboardButton("📥 رول‌های دریافتی (مدیریت عملیات‌ها)", callback_data="admin:roleplays_hub")],
         [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
+        [InlineKeyboardButton("💾 پشتیبان‌گیری فوری از دیتابیس (Backup)", callback_data="admin:backup_db")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
@@ -591,6 +593,50 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:anti_cheat_radar":
+        suspicious_list = db.get_suspicious_activities(15)
+        text = (
+            "🚨 <b>رادار ضدتقلب و مانیتورینگ تراکنش‌های مشکوک</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "این سیستم به‌صورت هوشمند تراکنش‌های سنگین، کمک‌های مالی بالای ۲۰ میلیون دلار و نقل‌وانتقالات غیرعادی را جهت کشف مولتی‌اکانت رصد می‌کند:\n\n"
+        )
+        keyboard = []
+        if not suspicious_list:
+            text += "✅ <b>هیچ تراکنش یا فعالیت مشکوکی در سیستم ثبت نشده است.</b>\n"
+        else:
+            for item in suspicious_list[:8]:
+                dt = str(item.get("created_at", ""))[:19].replace("T", " ")
+                c_flag = item.get("country_flag", "🏴")
+                c_name = item.get("country_name", "نامشخص")
+                amt = item.get("amount", 0)
+                desc = item.get("description", "")
+                text += f"• <code>{dt}</code> | {c_flag} <b>{c_name}</b>\n  ⚠️ <i>شرح:</i> {desc} (مبلغ: <b>{format_money(amt)}</b>)\n\n"
+
+        keyboard.append([InlineKeyboardButton("💾 تهیه پشتیبان فوری دیتابیس (Backup)", callback_data="admin:backup_db")])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+    elif data == "admin:backup_db":
+        ok, res = db.backup_database()
+        if ok:
+            import os
+            file_size = os.path.getsize(res) / (1024 * 1024) if os.path.exists(res) else 0
+            text = (
+                "💾 <b>پشتیبان‌گیری از دیتابیس با موفقیت انجام شد!</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"• 📁 <b>نام فایل:</b> <code>{os.path.basename(res)}</code>\n"
+                f"• 📦 <b>حجم فایل:</b> <code>{file_size:.2f} MB</code>\n"
+                "• 🔒 فایل در مسیر امن <code>backups/</code> سرور با آخرین وضعیت ذخیره گردید."
+            )
+        else:
+            text = f"❌ <b>خطا در تهیه بک‌آپ دیتابیس:</b>\n\n<code>{res}</code>"
+
+        keyboard = [
+            [InlineKeyboardButton("🚨 بازگشت به رادار ضدتقلب", callback_data="admin:anti_cheat_radar")],
+            [InlineKeyboardButton("🔙 منوی ادمین", callback_data="admin:menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     elif data == "admin:monitor_menu":
         text = (
@@ -1804,39 +1850,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             )
         except Exception as e:
             print(f"Error sending approval message to player {p_id}: {e}")
-
-    elif data.startswith("admin:reject_country:") and len(data.split(":")) == 3:
-        req_id = int(data.split(":")[2])
-        req = db.get_pending_country_request(req_id)
-        if not req:
-            await query.edit_message_text(
-                "❌ این درخواست قبلاً تعیین تکلیف شده است.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="admin:pending_countries")]])
-            )
-            return
-
-        c_key = req["country_key"]
-        c_info = config.COUNTRIES.get(c_key, {})
-        flag = c_info.get("flag", "🏴")
-        c_name = c_info.get("name", c_key)
-        u_display = f"@{req['username']}" if req.get('username') else f"ID: {req['player_id']}"
-
-        text = (
-            f"❌ <b>رد درخواست انتخاب کشور {flag} {c_name}</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"👤 <b>متقاضی:</b> {u_display} (ID: <code>{req['player_id']}</code>)\n\n"
-            "لطفاً دلیل رد درخواست را جهت اطلاع بازیکن انتخاب کنید یا دلیل اختصاصی بنویسید:"
-        )
-
-        kb = [
-            [InlineKeyboardButton("🚫 عدم احراز هویت / اکانت مشکوک", callback_data=f"admin:do_reject:{req_id}:fake")],
-            [InlineKeyboardButton("⚠️ سابقه تخلف / چند اکانتی (مولتی)", callback_data=f"admin:do_reject:{req_id}:multi")],
-            [InlineKeyboardButton("🔒 کشور برای بازیکن دیگری رزرو است", callback_data=f"admin:do_reject:{req_id}:reserved")],
-            [InlineKeyboardButton("✍️ نوشتن دلیل اختصاصی...", callback_data=f"admin:rej_prompt:{req_id}")],
-            [InlineKeyboardButton("❌ رد فوری (بدون ذکر دلیل)", callback_data=f"admin:do_reject:{req_id}:none")],
-            [InlineKeyboardButton("🔙 انصراف و بازگشت به پرونده", callback_data=f"admin:view_req:{req_id}")],
-        ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
     # منوهای ویرایش
     elif data.startswith("admin:menu_treasury:"):

@@ -508,8 +508,34 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
         unit_price = num_val
         amount = draft.get("amount")
 
-        # یادآوری قیمت کف نفت پیش از ثبت عرضه
-        if res_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
+        # بررسی بازه مجاز قیمت‌گذاری برای جلوگیری از تبانی و دامپینگ
+        bounds = getattr(config, "COMMODITY_MARKET_BOUNDS", {}).get(res_type)
+        if bounds:
+            min_p = bounds["min_price"]
+            max_p = bounds["max_price"]
+            unit_title = bounds["unit"]
+            c_title = bounds["name"]
+
+            if unit_price < min_p:
+                await update.message.reply_text(
+                    f"⛔ <b>قیمت زیر کف مجاز بازار است!</b>\n\n"
+                    f"جهت حفظ سلامت اقتصاد و جلوگیری از تبانی و انتقال منابع بین اکانت‌ها:\n"
+                    f"• حداقل قیمت مجاز {c_title}: <b>{format_money(min_p)} / {unit_title}</b>\n"
+                    f"• قیمت پیشنهادی شما: {format_money(unit_price)}\n\n"
+                    f"لطفاً قیمتی در بازه مجاز ({format_money(min_p)} تا {format_money(max_p)}) وارد فرمایید:",
+                    parse_mode="HTML"
+                )
+                return
+            elif unit_price > max_p:
+                await update.message.reply_text(
+                    f"⛔ <b>قیمت بالاتر از سقف مجاز بازار است!</b>\n\n"
+                    f"• حداکثر قیمت مجاز {c_title}: <b>{format_money(max_p)} / {unit_title}</b>\n"
+                    f"• قیمت پیشنهادی شما: {format_money(unit_price)}\n\n"
+                    f"لطفاً قیمتی در بازه مجاز ({format_money(min_p)} تا {format_money(max_p)}) وارد فرمایید:",
+                    parse_mode="HTML"
+                )
+                return
+        elif res_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
             await update.message.reply_text(
                 f"⛔ **قیمت زیر کف بازار مجاز نیست!**\n\n"
                 f"قیمت کف نفت در بورس: **{config.OIL_GLOBAL_PRICE:,} $/بشکه**\n"

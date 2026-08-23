@@ -5,6 +5,8 @@
 """
 
 import os
+import glob
+import shutil
 import json
 import sqlite3
 import datetime
@@ -4730,3 +4732,55 @@ def get_country_intel_history(country_id: int, limit: int = 10) -> list:
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ==================== 🛡️ ماژول‌های امنیت، بک‌آپ و رادار ضدتقلب ====================
+
+def backup_database() -> tuple[bool, str]:
+    """تهیه نسخه پشتیبان امن از دیتابیس SQLite با حفظ آخرین ۱۰ بک‌آپ."""
+    try:
+        backup_dir = os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        now_tag = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"game_backup_{now_tag}.db"
+        backup_filepath = os.path.join(backup_dir, backup_filename)
+
+        src_conn = get_connection()
+        dst_conn = sqlite3.connect(backup_filepath)
+        with dst_conn:
+            src_conn.backup(dst_conn)
+        dst_conn.close()
+        src_conn.close()
+
+        # حذف بک‌آپ‌های قدیمی و نگه داشتن ۱۰ فایل اخیر
+        all_backups = sorted(glob.glob(os.path.join(backup_dir, "game_backup_*.db")))
+        if len(all_backups) > 10:
+            for old_f in all_backups[:-10]:
+                try:
+                    os.remove(old_f)
+                except Exception:
+                    pass
+
+        return True, backup_filepath
+    except Exception as e:
+        return False, str(e)
+
+
+def get_suspicious_activities(limit: int = 20) -> list[dict]:
+    """استخراج تراکنش‌ها و رویدادهای مشکوک برای رادار ضدتقلب ادمین."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT t.id, t.country_id, t.type, t.description, t.amount, t.created_at,
+               c.name as country_name, c.flag as country_flag, c.player_id, c.username
+        FROM transactions t
+        LEFT JOIN countries c ON t.country_id = c.id
+        WHERE (t.type IN ('aid', 'grant', 'direct_transfer') AND (t.amount >= 20000000 OR t.amount <= -20000000))
+           OR (t.description LIKE '%مشکوک%' OR t.description LIKE '%هشدار%' OR t.description LIKE '%انتقال%')
+        ORDER BY t.id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
