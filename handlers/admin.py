@@ -582,22 +582,37 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         req_id = int(data.split(":")[2])
         ok, msg, p = db.approve_payment_request(req_id, user_id)
         if not ok:
-            await query.edit_message_text(f"❌ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            err_text = f"❌ {msg}"
+            err_kb = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]
+            if query.message and query.message.photo:
+                try:
+                    await query.edit_message_caption(caption=err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
+                except Exception:
+                    await query.message.reply_text(err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
+            else:
+                await query.edit_message_text(err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
             return
 
         # ارسال پیام تبریک و فعال‌سازی به کاربر
         player_id = p["player_id"]
         if p.get("item_type") == "militia":
+            created_c = db.get_country_by_player(player_id)
+            c_name = f"{created_c['flag']} {created_c['name']}" if created_c else "گروه اختصاصی شما"
             success_msg = (
-                f"🎉 **مجوز رسمی تاسیس گروه غیردولتی شما صادر گردید!**\n"
+                f"🎉 **تاسیس گروه غیردولتی {c_name} تایید و فعال گردید!**\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"📌 **سفارش:** {p['plan_title']}\n"
-                f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
-                "👇 لطفاً جهت ثبت نام سازمان، انتخاب پرچم/نماد و استقرار نیروها روی دکمه زیر کلیک فرمایید:"
+                "• 💰 **خزانه اولیه:** ۲۵ میلیون دلار\n"
+                "• 🪖 **رزمندگان آماده‌باش:** ۶۰,۰۰۰ نفر\n"
+                "• 🎖️ **تسلیحات نامتقارن:** تویوتا دوشکا، راکت‌انداز گراد، پهپاد ابابیل و قایق‌های تندرو در انبار مستقر شد\n"
+                "• ⭐ **اشتراک طلایی VIP:** برای رهبر گروه فعال گردید\n\n"
+                "👇 از دکمه‌های پایین صفحه برای هدایت و فرماندهی نیروهای خود استفاده فرمایید!"
             )
-            militia_kb = [[InlineKeyboardButton("🏴‍☠️ ثبت مشخصات و تاسیس گروه", callback_data="vip:setup_militia")]]
+            militia_kb = [[InlineKeyboardButton("🏴‍☠️ ثبت مشخصات و تاسیس گروه", callback_data="vip:setup_militia")]] if not created_c else None
             try:
-                await context.bot.send_message(chat_id=player_id, text=success_msg, reply_markup=InlineKeyboardMarkup(militia_kb), parse_mode="Markdown")
+                if militia_kb:
+                    await context.bot.send_message(chat_id=player_id, text=success_msg, reply_markup=InlineKeyboardMarkup(militia_kb), parse_mode="Markdown")
+                else:
+                    await context.bot.send_message(chat_id=player_id, text=success_msg, reply_markup=get_main_keyboard(player_id), parse_mode="Markdown")
             except Exception as e:
                 print(f"Failed to notify user of militia license approval: {e}")
         else:
@@ -610,24 +625,39 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 "از همراهی و حمایت شما از بازی «سیاست مدرن» صمیمانه سپاسگزاریم. 👑"
             )
             try:
-                await context.bot.send_message(chat_id=player_id, text=success_msg, parse_mode="Markdown")
+                await context.bot.send_message(chat_id=player_id, text=success_msg, reply_markup=get_main_keyboard(player_id), parse_mode="Markdown")
             except Exception as e:
                 print(f"Failed to notify user of payment approval: {e}")
 
-        await query.edit_message_text(
-            f"✅ **فیش #{req_id} با موفقیت تایید و خدمات برای کاربر فعال شد.**",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
-                [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
-            ]),
-            parse_mode="Markdown"
-        )
+        succ_admin_text = f"✅ **فیش #{req_id} با موفقیت تایید و خدمات ({p['plan_title']}) برای کاربر فعال شد.**"
+        admin_kb = [
+            [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
+            [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
+        ]
+        if query.message and query.message.photo:
+            try:
+                await query.edit_message_caption(caption=succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+        else:
+            try:
+                await query.edit_message_text(succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
 
     elif data.startswith("admin:pay_rej:"):
         req_id = int(data.split(":")[2])
         ok, msg, p = db.reject_payment_request(req_id, user_id, "عدم واریز وجه یا فیش نامعتبر")
         if not ok:
-            await query.edit_message_text(f"❌ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            err_text = f"❌ {msg}"
+            err_kb = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]
+            if query.message and query.message.photo:
+                try:
+                    await query.edit_message_caption(caption=err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
+                except Exception:
+                    await query.message.reply_text(err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
+            else:
+                await query.edit_message_text(err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
             return
 
         # اطلاع به کاربر
@@ -645,14 +675,21 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         except Exception as e:
             print(f"Failed to notify user of payment rejection: {e}")
 
-        await query.edit_message_text(
-            f"❌ **فیش #{req_id} رد شد و به کاربر اطلاع داده شد.**",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
-                [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
-            ]),
-            parse_mode="Markdown"
-        )
+        rej_admin_text = f"❌ **فیش #{req_id} رد شد و به کاربر اطلاع داده شد.**"
+        admin_kb = [
+            [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
+            [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
+        ]
+        if query.message and query.message.photo:
+            try:
+                await query.edit_message_caption(caption=rej_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(rej_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+        else:
+            try:
+                await query.edit_message_text(rej_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(rej_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
 
     elif data == "admin:claim_un":
         admin_c = db.get_country_by_player(user_id)
