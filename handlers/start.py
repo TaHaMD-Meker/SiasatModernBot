@@ -149,13 +149,14 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.add_log(actor=str(player_id), action="request_country", details=key)
 
     # Send approval request to Admin
-    u_name_display = f"@{user.username}" if user.username else "ندارد"
+    u_name_display = f"`@{user.username}`" if user.username else "ندارد"
     user_url = f"https://t.me/{user.username}" if user.username else f"tg://user?id={player_id}"
+    safe_name = f"{user.first_name or ''} {user.last_name or ''}".strip().replace("_", "\\_").replace("*", "\\*")
     admin_msg = (
         "📥 *درخواست جدید انتخاب کشور*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"• *کشور درخواستی:* {info['flag']} {info['name']} (`{key}`)\n"
-        f"• *نام کاربر:* {user.first_name or ''} {user.last_name or ''}\n"
+        f"• *نام کاربر:* {safe_name}\n"
         f"• *یوزرنیم تلگرام:* {u_name_display}\n"
         f"• *شناسه عددی (ID):* `{player_id}`\n\n"
         f"🔍 برای بررسی هویت و پیام دادن به بازیکن، روی دکمه زیر کلیک کنید:"
@@ -178,6 +179,14 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
         except Exception:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=admin_msg.replace("*", "").replace("`", ""),
+                    reply_markup=InlineKeyboardMarkup(admin_kb)
+                )
+            except Exception:
+                pass
             pass
 
     await query.edit_message_text(

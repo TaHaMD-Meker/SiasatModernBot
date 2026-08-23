@@ -1246,15 +1246,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         prev_country = db.get_country_by_player(p_id)
 
+        safe_c_name = str(c_name).replace("_", "\\_").replace("*", "\\*")
+        safe_full_name = str(full_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "")
+
         text = (
-            "📋 **پرونده متقاضی دریافت کشور (بررسی ادمین)**\n"
+            "📋 *پرونده متقاضی دریافت کشور (بررسی ادمین)*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"🏳️ **کشور درخواستی:** {flag} {c_name} (`{c_key}`)\n"
-            f"👤 **نام و نام‌خانوادگی:** {full_name}\n"
-            f"🆔 **شناسه عددی (Player ID):** `{p_id}`\n"
-            f"🔗 **یوزرنیم تلگرام:** {u_name}\n"
-            f"🕒 **تاریخ ثبت درخواست:** `{created_time}`\n\n"
-            "🛡️ **ارزیابی امنیتی و سوابق:**\n"
+            f"🏳️ *کشور درخواستی:* {flag} {safe_c_name} (`{c_key}`)\n"
+            f"👤 *نام و نام‌خانوادگی:* {safe_full_name}\n"
+            f"🆔 *شناسه عددی (Player ID):* `{p_id}`\n"
+            f"🔗 *یوزرنیم تلگرام:* `{u_name}`\n"
+            f"🕒 *تاریخ ثبت درخواست:* `{created_time}`\n\n"
+            "🛡️ *ارزیابی امنیتی و سوابق:*\n"
         )
 
         if not req.get("username"):
@@ -1277,7 +1280,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             ],
             [InlineKeyboardButton("🔙 بازگشت به لیست درخواست‌ها", callback_data="admin:pending_countries")]
         ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        except Exception:
+            await query.edit_message_text(text.replace("*", "").replace("`", ""), reply_markup=InlineKeyboardMarkup(kb))
 
     elif data in ("admin:roleplays_hub", "admin:pending_roles"):
         rc = db.get_roleplay_counts()
@@ -1640,15 +1646,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.delete_pending_country_request(req_id)
         db.add_log(actor=str(user_id), action="approve_country", details=f"{c_key} to {req['player_id']}")
 
-        u_display = f"@{req['username']}" if req.get('username') else f"ID: {req['player_id']}"
-        await query.edit_message_text(
-            f"✅ *کشور {c_info['flag']} {c_info['name']} با موفقیت به کاربر {u_display} (ID: `{req['player_id']}`) واگذار گردید.*",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
-                [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
-            ]),
-            parse_mode="Markdown"
-        )
+        u_display = f"`@{req['username']}`" if req.get('username') else f"ID: `{req['player_id']}`"
+        try:
+            await query.edit_message_text(
+                f"✅ *کشور {c_info['flag']} {c_info['name']} با موفقیت به کاربر {u_display} (ID: `{req['player_id']}`) واگذار گردید.*",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
+                    [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await query.edit_message_text(
+                f"✅ کشور {c_info['flag']} {c_info['name']} با موفقیت به کاربر @{req.get('username', req['player_id'])} واگذار گردید.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
+                    [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+                ])
+            )
 
         p_id = req["player_id"]
         congratulations_msg = (
@@ -1681,15 +1696,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.delete_pending_country_request(req_id)
         db.add_log(actor=str(user_id), action="reject_country", details=f"{c_key} for {p_id}")
 
-        u_display = f"@{req['username']}" if req.get('username') else f"ID: {req['player_id']}"
-        await query.edit_message_text(
-            f"❌ *درخواست کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} برای کاربر {u_display} رد شد.*",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
-                [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
-            ]),
-            parse_mode="Markdown"
-        )
+        u_display = f"`@{req['username']}`" if req.get('username') else f"ID: `{req['player_id']}`"
+        try:
+            await query.edit_message_text(
+                f"❌ *درخواست کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} برای کاربر {u_display} رد شد.*",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
+                    [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await query.edit_message_text(
+                f"❌ درخواست کشور {c_info.get('flag', '')} {c_info.get('name', c_key)} برای کاربر @{req.get('username', req['player_id'])} رد شد.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
+                    [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
+                ])
+            )
 
         try:
             await context.bot.send_message(
