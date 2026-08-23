@@ -1644,7 +1644,13 @@ def update_country_field(country_id: int, field: str, value):
         "last_blockade_date",
         # فیلدهای چرخه هسته‌ای (ویرایش از پنل ادمین)
         "uranium_ore", "uranium_ore_daily", "nuclear_fuel", "nuclear_fuel_daily", "warheads",
-        "warhead_cap_override",
+        "warhead_cap_override", "enriched_60", "weapons_grade_90", "medical_isotopes", "medical_isotopes_daily",
+        "enrichment_tier", "enrichment_suspended", "npt_withdrawn", "un_sanctioned", "nuclear_tested",
+        # فیلدهای سایبری و اطلاعات
+        "firewall_level", "air_defense_disrupted_until", "blackout_until", "r_and_d_frozen_until", "command_disrupted_until",
+        "intel_ops_today", "intel_ops_date", "last_intel_op_time",
+        # فیلدهای اشتراک VIP
+        "is_vip", "vip_tier", "vip_expires_at"
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
@@ -5364,5 +5370,253 @@ def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴",
     conn.commit()
     conn.close()
     return cid
+
+
+# ==================== توابع پرونده جامع و دسترسی همه‌جانبه ادمین به کشورها ====================
+
+def get_country_all_trade_contracts(country_id: int, limit: int = 50) -> list:
+    """دریافت کلیه قراردادهای تجاری (معلق، انجام‌شده، لغو‌شده) مربوط به یک کشور به همراه مشخصات کامل طرفین."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT t.*,
+               cp.name as proposer_name, cp.flag as proposer_flag, cp.country_key as proposer_key,
+               cr.name as recipient_name, cr.flag as recipient_flag, cr.country_key as recipient_key
+        FROM trade_contracts t
+        LEFT JOIN countries cp ON t.proposer_id = cp.id
+        LEFT JOIN countries cr ON t.recipient_id = cr.id
+        WHERE t.proposer_id = ? OR t.recipient_id = ?
+        ORDER BY t.id DESC
+        LIMIT ?
+    """, (country_id, country_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def admin_cancel_trade_contract(contract_id: int) -> tuple[bool, str]:
+    """ابطال قرارداد تجاری توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM trade_contracts WHERE id = ?", (contract_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "قرارداد مورد نظر یافت نشد."
+            cur.execute("UPDATE trade_contracts SET status = 'canceled' WHERE id = ?", (contract_id,))
+        return True, f"قرارداد تجاری #{contract_id} با موفقیت توسط ادمین ابطال شد."
+    except Exception as e:
+        return False, f"خطا در ابطال قرارداد: {e}"
+
+
+def admin_delete_trade_contract(contract_id: int) -> tuple[bool, str]:
+    """حذف کامل رکورد قرارداد تجاری از سیستم توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM trade_contracts WHERE id = ?", (contract_id,))
+        return True, f"قرارداد #{contract_id} با موفقیت از دیتابیس حذف گردید."
+    except Exception as e:
+        return False, f"خطا در حذف قرارداد: {e}"
+
+
+def admin_cancel_market_order(order_id: int) -> tuple[bool, str]:
+    """لغو سفارش بورس کالا توسط ادمین و عودت اقلام به انبار کشور فروشنده."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM market_orders WHERE id = ?", (order_id,))
+            order = cur.fetchone()
+            if not order:
+                return False, "سفارش بورس یافت نشد."
+
+            ord_dict = dict(order)
+            seller_id = ord_dict["seller_id"]
+            rem_amount = ord_dict["amount"]
+            res_type = ord_dict["resource_type"]
+
+            resource_cols = {
+                "oil": "oil_reserves",
+                "gold": "gold",
+                "grain": "grain",
+                "microchips": "microchips",
+                "uranium_ore": "uranium_ore",
+                "nuclear_fuel": "nuclear_fuel"
+            }
+            col = resource_cols.get(res_type)
+
+            if col and rem_amount > 0 and seller_id:
+                cur.execute(f"UPDATE countries SET {col} = {col} + ? WHERE id = ?", (rem_amount, seller_id))
+
+            cur.execute("DELETE FROM market_orders WHERE id = ?", (order_id,))
+        return True, "سفارش بورس با موفقیت لغو و اقلام به انبار کشور بازگردانده شد."
+    except Exception as e:
+        return False, f"خطا در لغو سفارش بورس: {e}"
+
+
+def get_country_diplomatic_relations_all(country_id: int) -> list:
+    """دریافت کلیه وضعیت‌ها و روابط دیپلماتیک ثبت‌شده یک کشور با سایر کشورها."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT d.*,
+               c1.name as c1_name, c1.flag as c1_flag, c1.country_key as c1_key,
+               c2.name as c2_name, c2.flag as c2_flag, c2.country_key as c2_key
+        FROM diplomatic_relations d
+        JOIN countries c1 ON d.country1_id = c1.id
+        JOIN countries c2 ON d.country2_id = c2.id
+        WHERE d.country1_id = ? OR d.country2_id = ?
+        ORDER BY d.id DESC
+    """, (country_id, country_id))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def admin_set_country_vip(country_id: int, tier: str, days: int = 30) -> tuple[bool, str]:
+    """تنظیم مستقیم سطح VIP و تاریخ انقضا برای یک کشور توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return False, "کشور مورد نظر یافت نشد."
+            now = datetime.datetime.now(datetime.timezone.utc)
+            expires_at = (now + datetime.timedelta(days=days)).isoformat()
+            tier_clean = tier.replace("vip_", "")
+            cur.execute("UPDATE countries SET is_vip = 1, vip_tier = ?, vip_expires_at = ? WHERE id = ?", (tier_clean, expires_at, country_id))
+        return True, f"اشتراک {tier} با موفقیت به مدت {days} روز فعال گردید."
+    except Exception as e:
+        return False, f"خطا در فعال‌سازی اشتراک: {e}"
+
+
+def admin_revoke_country_vip(country_id: int) -> tuple[bool, str]:
+    """لغو اشتراک VIP کشور توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE countries SET is_vip = 0, vip_tier = NULL, vip_expires_at = NULL WHERE id = ?", (country_id,))
+        return True, "اشتراک VIP کشور با موفقیت لغو شد."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
+
+def admin_transfer_country_ownership(country_id: int, new_player_id: int, new_username: str = "") -> tuple[bool, str]:
+    """واگذاری و انتقال کامل مالکیت یک کشور به بازیکن جدید."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, name, flag FROM countries WHERE player_id = ? AND id != ?", (new_player_id, country_id))
+            existing = cur.fetchone()
+            if existing:
+                return False, f"این بازیکن در حال حاضر رهبر کشور {existing['flag']} {existing['name']} (شناسه {existing['id']}) است."
+            cur.execute("UPDATE countries SET player_id = ?, username = ? WHERE id = ?", (new_player_id, new_username or "", country_id))
+        return True, f"مالکیت کشور با موفقیت به بازیکن با شناسه `{new_player_id}` واگذار شد."
+    except Exception as e:
+        return False, f"خطا در انتقال مالکیت: {e}"
+
+
+def admin_rename_country(country_id: int, new_name: str, new_flag: str = None) -> tuple[bool, str]:
+    """تغییر نام و پرچم کشور توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            if new_flag:
+                cur.execute("UPDATE countries SET name = ?, flag = ? WHERE id = ?", (new_name, new_flag, country_id))
+            else:
+                cur.execute("UPDATE countries SET name = ? WHERE id = ?", (new_name, country_id))
+        return True, f"مشخصات کشور به {new_flag or ''} {new_name} تغییر یافت."
+    except Exception as e:
+        return False, f"خطا در تغییر نام: {e}"
+
+
+def get_country_statements_history(country_id: int, limit: int = 20) -> list:
+    """دریافت تاریخچه بیانیه‌ها و توییت‌های ثبت‌شده توسط یک کشور."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM daily_statements WHERE country_id = ? ORDER BY id DESC LIMIT ?", (country_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def admin_force_add_statement(country_id: int, player_id: int, content: str = "بیانیه رسمی ثبت‌شده توسط مدیریت ستاد") -> tuple[bool, str]:
+    """ثبت دستی یک بیانیه رسمی برای کشور جهت تکمیل حدنصاب روزانه."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            now = datetime.datetime.now(IRAN_TZ)
+            today_str = now.strftime("%Y-%m-%d")
+            now_iso = now.isoformat()
+            cur.execute("""
+                INSERT INTO daily_statements (country_id, player_id, statement_type, content, statement_date, created_at)
+                VALUES (?, ?, 'statement', ?, ?, ?)
+            """, (country_id, player_id, content, today_str, now_iso))
+        return True, "بیانیه رسمی با موفقیت ثبت گردید و حدنصاب فعالیت روزانه افزایش یافت."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
+
+def admin_clear_cyber_disruptions(country_id: int) -> tuple[bool, str]:
+    """پاکسازی و لغو کلیه اختلالات و خاموشی‌های سایبری اعمال‌شده روی کشور."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE countries
+                SET air_defense_disrupted_until = NULL,
+                    blackout_until = NULL,
+                    r_and_d_frozen_until = NULL,
+                    command_disrupted_until = NULL
+                WHERE id = ?
+            """, (country_id,))
+        return True, "تمامی اختلالات و خاموشی‌های سایبری کشور پاکسازی گردید."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
+
+def get_country_payment_history(country_id: int, limit: int = 20) -> list:
+    """دریافت سوابق فیش‌ها و خریدهای تومانی بازیکن این کشور."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM payment_requests WHERE country_id = ? ORDER BY id DESC LIMIT ?", (country_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def admin_add_commander(country_id: int, key: str, title: str) -> tuple[bool, str]:
+    """افزودن یا انتصاب فرمانده جدید برای کشور توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("INSERT OR REPLACE INTO country_commanders (country_id, key, title, status) VALUES (?, ?, ?, 'active')", (country_id, key, title))
+        return True, f"فرمانده «{title}» با موفقیت منصوب و فعال گردید."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
+
+def admin_delete_commander(country_id: int, commander_key: str) -> tuple[bool, str]:
+    """حذف رکورد فرمانده از کشور توسط ادمین."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM country_commanders WHERE country_id = ? AND key = ?", (country_id, commander_key))
+        return True, f"فرمانده با شناسه {commander_key} حذف گردید."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
 
 

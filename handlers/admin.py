@@ -6,6 +6,8 @@
 
 import math
 import json
+import html
+import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
@@ -14,6 +16,23 @@ import approval_system
 import config
 import asyncio
 from utils import format_money, format_number, format_oil, get_main_keyboard
+from handlers.admin_dossier import (
+    show_country_dashboard,
+    show_country_trades_menu,
+    show_country_trade_detail,
+    show_country_bases_menu,
+    show_country_nuclear_menu,
+    show_country_military_menu,
+    show_country_economy_menu,
+    show_country_diplomacy_menu,
+    show_country_intel_menu,
+    show_country_losses_menu,
+    show_country_statements_menu,
+    show_country_vip_finance_menu,
+    show_country_godmode_menu,
+    handle_dossier_callbacks,
+    handle_dossier_inputs
+)
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
@@ -148,77 +167,6 @@ async def show_countries_list(query, context, page: int = 0, filter_continent: s
 
     cont_title = f" (فیلتر: {config.CONTINENTS.get(filter_continent, {}).get('short_name', filter_continent)})" if filter_continent and filter_continent != "all" else ""
     text = f"📋 *لیست کشورهای فعال (نمایش {len(filtered)} از مجموع {len(all_countries)} کشور)*{cont_title}\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
-    try:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    except Exception:
-        try:
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception:
-            pass
-
-
-# ==================== داشبورد اختصاصی مدیریت یک کشور ====================
-
-async def show_country_dashboard(query, context, country_id: int, notice: str = ""):
-    c = db.get_country_by_id(country_id)
-    if not c:
-        await query.edit_message_text("❌ این کشور پیدا نشد یا قبلاً حذف شده است.",
-                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:list:0")]]))
-        return
-
-    if c.get("country_key"):
-        db.seed_country_assets(c["id"], c["country_key"])
-
-    assets = db.get_country_assets(country_id)
-    asset_summary = []
-    for a in assets[:5]:
-        unit = config.ASSET_CATEGORIES.get(a['category'], ("", "عدد"))[1]
-        asset_summary.append(f"  • {a['equipment_name']}: {format_number(a['amount'])} {unit}")
-
-    if len(assets) > 5:
-        asset_summary.append(f"  • ... و {len(assets) - 5} تجهیز دیگر")
-
-    eq_text = "\n".join(asset_summary) if asset_summary else "  • بدون دارایی نظامی"
-
-    text = (
-        f"{notice}\n\n" if notice else ""
-    ) + (
-        f"🌐 *مدیریت کشور {c['flag']} {c['name']}*\n"
-        f"👤 شناسه تلگرام بازیکن: `{c['player_id']}`\n"
-        f"🔑 کلید کشور: `{c['country_key'] or 'نامشخص'}`\n\n"
-        f"👥 جمعیت: {format_number(c['population'])}\n"
-        f"🏦 خزانه: {format_money(c['treasury'])}\n"
-        f"🪙 طلا: {format_number(c['gold'])}\n"
-        f"📈 درآمد روزانه: {format_money(c['daily_income'])}\n\n"
-        f"🛢️ ذخایر نفت: {format_oil(c['oil_reserves'])}\n"
-        f"🛢️ نرخ تولید نفت: {format_oil(c['oil_production'])}/روز\n\n"
-        f"🎖️ خلاصه دارایی‌های نظامی اختصاصی:\n{eq_text}"
-    )
-
-    keyboard = [
-        [
-            InlineKeyboardButton("🏦 ویرایش خزانه", callback_data=f"admin:menu_treasury:{c['id']}"),
-            InlineKeyboardButton("🪙 ویرایش طلا", callback_data=f"admin:menu_gold:{c['id']}"),
-        ],
-        [
-            InlineKeyboardButton("🛢️ ویرایش نفت", callback_data=f"admin:menu_oil:{c['id']}"),
-            InlineKeyboardButton("🎖️ مدیریت دارایی‌های نظامی", callback_data=f"admin:menu_assets:{c['id']}"),
-        ],
-        [
-            InlineKeyboardButton("⚙️ اقتصاد و وضعیت داخلی", callback_data=f"admin:cstatmenu:{c['id']}"),
-            InlineKeyboardButton("📜 تراکنش‌ها", callback_data=f"admin:c_tx_logs:{c['id']}"),
-        ],
-        [
-            InlineKeyboardButton("✉️ ارسال پیام مستقیم به بازیکن", callback_data=f"admin:msg_prompt:{c['id']}"),
-        ],
-        [
-            InlineKeyboardButton("🗑️ حذف کامل کشور", callback_data=f"admin:delconfirm:{c['id']}"),
-        ],
-        [
-            InlineKeyboardButton("🔙 بازگشت به لیست کشورها", callback_data="admin:list:0"),
-        ]
-    ]
-
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     except Exception:
@@ -376,24 +324,43 @@ async def menu_assets_category(query, country_id: int, category: str):
 # ==================== ویرایش اقتصاد و وضعیت داخلی کشور ====================
 
 COUNTRY_STAT_FIELDS = {
-    "daily_income":     ("📈 درآمد روزانه", "دلار", 1_000_000, "money"),
+    "treasury":         ("🏦 موجودی خزانه", "دلار", 10_000_000, "money"),
+    "daily_income":     ("📈 درآمد ناخالص روزانه", "دلار", 1_000_000, "money"),
     "tax_income":       ("💰 درآمد مالیاتی", "دلار", 500_000, "money"),
+    "gold":             ("🪙 ذخایر طلا", "شمش", 100, "num"),
+    "gold_daily":       ("🪙 تولید روزانه طلا", "شمش", 10, "num"),
+    "oil_reserves":     ("🛢️ ذخایر نفت", "بشکه", 500_000, "num"),
+    "oil_production":   ("🛢️ تولید روزانه نفت", "بشکه", 100_000, "num"),
+    "grain":            ("🌾 ذخایر غلات", "تن", 10_000, "num"),
+    "grain_daily":      ("🌾 تولید روزانه غلات", "تن", 1_000, "num"),
+    "electricity":      ("⚡ توان شبکه برق", "MW", 50, "num"),
+    "microchips":       ("💻 ذخیره میکروچیپ", "چیپ", 100, "num"),
+    "microchips_daily": ("💻 تولید روزانه میکروچیپ", "چیپ", 10, "num"),
     "approval_rating":  ("😀 رضایت عمومی", "٪", 5, "pct"),
     "combat_readiness": ("⚔️ آمادگی رزمی", "٪", 5, "pct"),
     "population":       ("👥 جمعیت", "نفر", 1_000_000, "num"),
-    "active_personnel": ("🪖 نیروی فعال", "نفر", 10_000, "num"),
-    "reserve_personnel":("🎖 نیروی ذخیره", "نفر", 10_000, "num"),
-    "tech_level":       ("🔬 سطح فناوری", "سطح", 1, "num"),
-    "electricity":      ("⚡ برق", "واحد", 10, "num"),
-    "grain":            ("🌾 غلات", "تن", 10_000, "num"),
-    "gold_daily":       ("🪙 تولید روزانه طلا", "سکه", 10, "num"),
-    "oil_production":   ("🛢️ تولید روزانه نفت", "بشکه", 100_000, "num"),
+    "active_personnel": ("🪖 پرسنل فعال ارتش", "نفر", 10_000, "num"),
+    "reserve_personnel":("🎖 پرسنل ذخیره ارتش", "نفر", 10_000, "num"),
+    "tech_level":       ("🔬 سطح فناوری و صنعت", "سطح", 1, "num"),
+    "firewall_level":   ("🔒 سطح فایروال سایبری", "سطح", 1, "num"),
     "uranium_ore":      ("☢️ ذخیره کیک زرد", "تن", 100, "num"),
+    "uranium_ore_daily":("☢️ استخراج روزانه کیک زرد", "تن", 10, "num"),
     "nuclear_fuel":     ("🧪 سوخت هسته‌ای", "کیلوگرم", 50, "num"),
-    "warheads":         ("🚀 کلاهک هسته‌ای", "عدد", 1, "num"),
+    "nuclear_fuel_daily":("🧪 تولید روزانه سوخت هسته‌ای", "کیلوگرم", 10, "num"),
+    "medical_isotopes": ("🏥 رادیوداروهای پزشکی", "دوز", 50, "num"),
+    "enriched_60":      ("⚛️ اورانیوم غنی‌شده ۶۰٪", "کیلوگرم", 20, "num"),
+    "weapons_grade_90": ("☢️ اورانیوم نظامی ۹۰٪ (HEU)", "کیلوگرم", 10, "num"),
+    "warheads":         ("🚀 کلاهک‌های هسته‌ای", "عدد", 1, "num"),
+    "warhead_cap_override": ("📊 بازنویسی سقف کلاهک", "عدد", 5, "num"),
 }
 
-_CSTAT_LIMITS = {"approval_rating": (0, 100), "combat_readiness": (0, 100), "tech_level": (1, 10)}
+_CSTAT_LIMITS = {
+    "approval_rating": (0, 100),
+    "combat_readiness": (0, 100),
+    "tech_level": (1, 10),
+    "firewall_level": (0, 5),
+    "enrichment_tier": (0, 4)
+}
 
 
 def _fmt_stat(value, kind):
@@ -530,6 +497,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
 
     if data == "ignore":
+        return
+
+    if await handle_dossier_callbacks(query, context, data):
         return
 
     if data == "admin:menu":
@@ -2269,6 +2239,10 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
     text = update.message.text.strip()
     input_type = input_state.get("type")
+
+    if await handle_dossier_inputs(update, context, input_type, text, input_state):
+        context.user_data["admin_awaiting_input"] = None
+        return
 
     if input_type == "cstat_set":
         import re as _re
