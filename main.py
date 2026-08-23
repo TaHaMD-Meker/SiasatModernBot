@@ -574,7 +574,7 @@ def main():
         elif context.user_data.get("statement_input"):
             await statements_text_input_handler(update, context)
 
-    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO & ~filters.COMMAND, combined_text_input_handler))
+    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, combined_text_input_handler))
 
     # مدیریت سراسری خطاها (جهت پایداری و عدم کرش بات در ترافیک بالا)
     async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
