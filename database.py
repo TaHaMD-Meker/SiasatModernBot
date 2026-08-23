@@ -3718,7 +3718,7 @@ STRAITS_MAPPING = {
         "strait_key": "hormuz",
         "name": "تنگه استراتژیک هرمز",
         "desc": "شریان حیاتی انرژی خلیج فارس (مسیر اصلی صادرات نفت امارات، قطر، عربستان، کویت، عراق و بحرین)",
-        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "bahrain", "israel"]
+        "affected_keys": ["uae", "qatar", "saudi", "iraq", "kuwait", "bahrain"]
     },
     "oman": {
         "strait_key": "hormuz_south",
@@ -3730,31 +3730,90 @@ STRAITS_MAPPING = {
         "strait_key": "suez",
         "name": "کانال استراتژیک سوئز",
         "desc": "شاهراه ترانزیت دریایی آسیا به اروپا و دریای مدیترانه",
-        "affected_keys": ["uk", "france", "germany", "italy", "india", "china", "israel", "jordan"]
+        "affected_keys": [
+            "uk", "france", "germany", "italy", "greece", "cyprus", "turkey", "romania", "bulgaria",
+            "georgia", "russia", "ukraine", "israel", "jordan", "saudi", "sudan", "eritrea", "somalia",
+            "india", "pakistan", "china", "japan", "south_korea", "singapore", "malaysia", "thailand",
+            "vietnam", "bangladesh", "sri_lanka"
+        ]
     },
     "yemen": {
         "strait_key": "bab_el_mandeb",
         "name": "تنگه استراتژیک باب‌المندب و دریای سرخ",
         "desc": "گلوگاه ترانزیت دریای سرخ و باب‌المندب (کلید امنیت کشتیرانی تجاری به کانال سوئز)",
-        "affected_keys": ["israel", "usa", "uk", "france", "germany", "egypt", "saudi", "jordan"]
+        "affected_keys": [
+            "israel", "jordan", "sudan", "egypt", "saudi", "usa", "uk", "france", "germany",
+            "italy", "china", "india", "japan", "south_korea", "somalia"
+        ]
+    },
+    "eritrea": {
+        "strait_key": "bab_el_mandeb_west",
+        "name": "تنگه باب‌المندب و جزایر دهلک (ضلع غربی)",
+        "desc": "گذرگاه غربی ورودی دریای سرخ و آبراه‌های شاخ آفریقا",
+        "affected_keys": ["israel", "jordan", "sudan", "egypt", "saudi", "yemen", "usa", "uk", "france"]
     },
     "turkey": {
         "strait_key": "bosphorus",
         "name": "تنگه بسفر و دردانل (پیمان مونترو)",
-        "desc": "دروازه انحصاری عبور و مرور دریای سیاه به آب‌های آزاد",
-        "affected_keys": ["russia", "ukraine", "poland"]
+        "desc": "دروازه انحصاری عبور و مرور دریای سیاه به آب‌های آزاد و مدیترانه",
+        "affected_keys": ["russia", "ukraine", "romania", "bulgaria", "georgia"]
+    },
+    "morocco": {
+        "strait_key": "gibraltar_south",
+        "name": "تنگه استراتژیک جبل‌الطارق (ضلع جنوبی)",
+        "desc": "دروازه ورود و خروج اقیانوس اطلس به دریای مدیترانه",
+        "affected_keys": [
+            "italy", "greece", "cyprus", "turkey", "romania", "bulgaria", "georgia", "russia", "ukraine",
+            "egypt", "israel", "tunisia", "algeria", "libya", "syria", "lebanon", "croatia"
+        ]
+    },
+    "spain": {
+        "strait_key": "gibraltar_north",
+        "name": "تنگه استراتژیک جبل‌الطارق (ضلع شمالی)",
+        "desc": "دروازه ورود و خروج اقیانوس اطلس به دریای مدیترانه",
+        "affected_keys": [
+            "italy", "greece", "cyprus", "turkey", "romania", "bulgaria", "georgia", "russia", "ukraine",
+            "egypt", "israel", "tunisia", "algeria", "libya", "syria", "lebanon", "croatia"
+        ]
+    },
+    "denmark": {
+        "strait_key": "danish_straits",
+        "name": "تنگه‌های بالتیک (اورسوند و گریت بلت)",
+        "desc": "شریان حیاتی ورود و خروج دریای شمال به دریای بالتیک",
+        "affected_keys": ["sweden", "finland", "poland", "germany", "russia"]
     },
     "indonesia": {
         "strait_key": "malacca",
-        "name": "تنگه مالاکا و اقیانوس هند",
-        "desc": "گلوگاه ترانزیت انرژی و تجارت شرق آسیا (تحت تسلط مشترک اندونزی، مالزی و سنگاپور)",
-        "affected_keys": ["china", "japan", "south_korea", "taiwan", "india", "australia"]
+        "name": "تنگه مالاکا و سوندا",
+        "desc": "گلوگاه ترانزیت انرژی و تجارت شرق آسیا و اقیانوس آرام",
+        "affected_keys": [
+            "china", "japan", "south_korea", "taiwan", "thailand", "vietnam", "cambodia",
+            "philippines", "myanmar", "bangladesh", "australia", "new_zealand"
+        ]
+    },
+    "malaysia": {
+        "strait_key": "malacca_north",
+        "name": "تنگه مالاکا (ضلع شمالی)",
+        "desc": "مسیر اصلی کشتیرانی بین‌المللی شرق آسیا",
+        "affected_keys": [
+            "china", "japan", "south_korea", "taiwan", "thailand", "vietnam", "cambodia",
+            "philippines", "singapore", "indonesia"
+        ]
+    },
+    "singapore": {
+        "strait_key": "singapore_strait",
+        "name": "گلوگاه تنگه سنگاپور",
+        "desc": "پرترافیک‌ترین تقاطع و شریان کانتینری و نفتی جهان",
+        "affected_keys": [
+            "china", "japan", "south_korea", "taiwan", "vietnam", "thailand", "cambodia",
+            "philippines", "indonesia", "malaysia"
+        ]
     },
     "china": {
         "strait_key": "taiwan_strait_cn",
-        "name": "تنگه تایوان",
-        "desc": "گلوگاه ترانزیت دریای چین جنوبی",
-        "affected_keys": ["taiwan", "japan", "usa", "south_korea"]
+        "name": "تنگه تایوان (ضلع غربی)",
+        "desc": "گلوگاه ترانزیت دریای چین جنوبی و شرقی",
+        "affected_keys": ["taiwan", "japan", "south_korea", "philippines", "usa"]
     },
     "taiwan": {
         "strait_key": "taiwan_strait_tw",
@@ -3766,7 +3825,16 @@ STRAITS_MAPPING = {
         "strait_key": "andaman_malacca",
         "name": "آبراه استراتژیک آندامان و ورودی مالاکا (Andaman & Nicobar Command)",
         "desc": "شاهراه ترانزیت انرژی خلیج فارس به شرق آسیا و دهانه ورودی غربی تنگه مالاکا",
-        "affected_keys": ["china", "japan", "south_korea", "taiwan", "singapore", "malaysia"]
+        "affected_keys": [
+            "china", "japan", "south_korea", "taiwan", "singapore", "malaysia", "thailand",
+            "vietnam", "indonesia", "cambodia"
+        ]
+    },
+    "chile": {
+        "strait_key": "magellan_drake",
+        "name": "تنگه ماژلان و گذرگاه دریک",
+        "desc": "شاهراه ترانزیت بین اقیانوس اطلس و اقیانوس آرام در جنوب قاره آمریکا",
+        "affected_keys": ["argentina", "brazil", "peru", "ecuador", "colombia", "usa"]
     }
 }
 
