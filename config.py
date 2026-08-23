@@ -48,9 +48,9 @@ REQUIRED_DAILY_STATEMENTS = 2  # حداقل تعداد بیانیه یا توی�
 
 # ===== تنظیمات فروشگاه تومانی و پرداخت کارت به کارت =====
 PAYMENT_CARD_INFO = {
-    "card_number": os.environ.get("PAYMENT_CARD_NUMBER", "۵۰۴۱-۷۲۱۱-۱۲۳۴-۵۶۷۸"),
-    "card_holder": os.environ.get("PAYMENT_CARD_HOLDER", "مدیریت بازی سیاست مدرن"),
-    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک رسالت / ملی"),
+    "card_number": os.environ.get("PAYMENT_CARD_NUMBER", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵"),
+    "card_holder": os.environ.get("PAYMENT_CARD_HOLDER", "زینب فیاضی"),
+    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک سپه"),
 }
 
 VIP_PASS_PRICE_TOMAN = 79_000         # اشتراک ۱ ماهه VIP رهبر

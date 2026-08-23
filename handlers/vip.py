@@ -36,32 +36,25 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status_header = "▫️ **وضعیت رهبری شما: اشتراک عادی**"
 
     text = (
-        "👑 **مرکز خدمات ویژه و اشتراک‌های حاکمیتی (VIP)**\n"
+        "👑 **مرکز اشتراک ویژه رهبری (VIP Leader Pass)**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"{status_header}\n\n"
-        "💎 **مزایای اشتراک رهبر ویژه (VIP Leader Pass):**\n"
+        "💎 **مزایای اشتراک رهبر ویژه (VIP):**\n"
         "• ⭐ **نشان طلایی VIP:** درج تگ و بج رسمی VIP در پروفایل کشور، بیانیه‌ها و توییت‌ها\n"
         "• ⚡ **اولویت صف بررسی رول‌ها:** تحلیل سریع‌تر و ارزیابی اختصاصی رول‌های نظامی و عملیات‌ها\n"
         "• 🎯 **رزمایش اضافه:** امکان انجام **۱ رزمایش نظامی اضافه** در هر روز جهت افزایش آمادگی رزمی ارتش\n"
         "• 🛡️ **دسترسی به رادار امنیتی:** مشاهده هشدارهای پیشرفته اطلاعاتی و تحرکات منطقه‌ای\n"
         "• 🏆 **جایگاه ممتاز در رنکینگ:** نمایش نشان ستاره‌دار در فهرست رهبران جهان\n\n"
-        "🏴‍☠️ **مجوز تاسیس گروه / شبه‌نظامی غیردولتی (Non-State Faction):**\n"
-        "• ثبت سازمان یا گروه مسلح مستقل (مشابه واگنر، انصارالله، پیشمرگه، کارتل و...)\n"
-        "• انتخاب نام دلخواه، پرچم/نماد اختصاصی، مقر فرماندهی و کاتالوگ تسلیحات سفارشی\n"
-        "• استقلال کامل ساختاری و رول‌پلی نامحدود در معادلات منطقه‌ای\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "لطفاً خدمت مورد نظر را جهت مشاهده شرایط و واریز انتخاب فرمایید:"
+        "لطفاً دوره اشتراک مورد نظر را جهت مشاهده فاکتور و واریز انتخاب فرمایید:"
     )
 
     p_vip1 = getattr(config, "VIP_PASS_PRICE_TOMAN", 79_000)
     p_vip3 = getattr(config, "VIP_PASS_3MONTH_PRICE_TOMAN", 199_000)
-    p_militia = getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 50_000)
 
     keyboard = [
-        [InlineKeyboardButton(f"👑 خرید VIP یک‌ماهه — {p_vip1:,} تومان", callback_data="vip:plan:vip_1month")],
-        [InlineKeyboardButton(f"💎 خرید VIP سه‌ماهه (ویژه) — {p_vip3:,} تومان", callback_data="vip:plan:vip_3month")],
-        [InlineKeyboardButton(f"🏴‍☠️ مجوز تاسیس گروه غیردولتی — {p_militia:,} تومان", callback_data="vip:plan:militia")],
-        [InlineKeyboardButton("🏪 بازگشت به فروشگاه", callback_data="shopback")],
+        [InlineKeyboardButton(f"👑 اشتراک VIP یک‌ماهه — {p_vip1:,} تومان", callback_data="vip:plan:vip_1month")],
+        [InlineKeyboardButton(f"💎 اشتراک VIP سه‌ماهه (با تخفیف ویژه) — {p_vip3:,} تومان", callback_data="vip:plan:vip_3month")],
     ]
 
     if update.message:
