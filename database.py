@@ -5041,10 +5041,7 @@ def get_payment_request_by_id(req_id: int):
     return dict(row) if row else None
 
 
-def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", username: str = None) -> int:
-    """ایجاد گروه / سازمان شبه‌نظامی غیردولتی اختصاصی برای بازیکن."""
-    conn = get_connection()
-    cur = conn.cursor()
+def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", username: str = None) -> int:
     c_key = f"faction_{player_id}"
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -5109,9 +5106,19 @@ def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴�
             VALUES (?, ?, ?, 'active')
         """, (country_id, c_key_cmd, c_title))
 
-    conn.commit()
-    conn.close()
     return country_id
+
+
+def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", username: str = None) -> int:
+    """ایجاد گروه / سازمان شبه‌نظامی غیردولتی اختصاصی برای بازیکن."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            country_id = _create_custom_militia_with_cur(cur, player_id, name, flag, hq_desc, doctrine, username)
+        return country_id
+    finally:
+        conn.close()
 
 
 def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict]:
@@ -5160,7 +5167,7 @@ def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict
                 cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
                 exist_c = cur.fetchone()
                 if not exist_c:
-                    c_id = create_custom_militia_faction(player_id, f_name, f_flag, f_hq, f_doc)
+                    c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc)
                     p["created_country_id"] = c_id
 
             cur.execute("""
