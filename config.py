@@ -43,6 +43,9 @@ STARTING_VALUES = {
 # ===== توکن بات =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_ATO_EINJA_BEZAR")
 
+# ===== قوانین فعالیت روزانه (بیانیه‌ها و توییت‌ها) =====
+REQUIRED_DAILY_STATEMENTS = 2  # حداقل تعداد بیانیه یا توییت در روز جهت حفظ مالکیت کشور
+
 # ===== آیدی عددی ادمین اصلی =====
 admin_env = os.environ.get("ADMIN_IDS", "")
 if admin_env:

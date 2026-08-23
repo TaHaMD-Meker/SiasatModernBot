@@ -10,6 +10,7 @@ import shutil
 import json
 import sqlite3
 import datetime
+from zoneinfo import ZoneInfo
 import config
 from utils import format_money, format_number, format_oil
 
@@ -551,6 +552,25 @@ def init_db():
         FOREIGN KEY(defender_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
+
+    # جدول پایش بیانیه‌ها و فعالیت روزانه کشورها
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS daily_statements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        statement_type TEXT NOT NULL,
+        content TEXT,
+        created_at TEXT NOT NULL,
+        statement_date TEXT NOT NULL,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_statements_country_date ON daily_statements(country_id, statement_date)")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
@@ -4789,4 +4809,58 @@ def get_suspicious_activities(limit: int = 20) -> list[dict]:
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ==================== پایش بیانیه‌ها و فعالیت روزانه ====================
+
+def record_country_statement(country_id: int, player_id: int, statement_type: str = "statement", content: str = "") -> int:
+    """ثبت بیانیه یا توییت رسمی با تاریخ روز (به وقت ایران) جهت پایش فعالیت روزانه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    stmt_date = now_utc.astimezone(ZoneInfo("Asia/Tehran")).date().isoformat()
+    now_str = now_utc.isoformat()
+    cur.execute(
+        "INSERT INTO daily_statements (country_id, player_id, statement_type, content, created_at, statement_date) VALUES (?, ?, ?, ?, ?, ?)",
+        (country_id, player_id, statement_type, content[:500] if content else "", now_str, stmt_date)
+    )
+    stmt_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return stmt_id
+
+
+def get_country_statement_count_today(country_id: int) -> int:
+    """دریافت تعداد بیانیه‌ها و توییت‌های ثبت‌شده امروز کشور به وقت ایران."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    stmt_date = now_utc.astimezone(ZoneInfo("Asia/Tehran")).date().isoformat()
+    return get_country_statement_count_for_date(country_id, stmt_date)
+
+
+def get_country_statement_count_for_date(country_id: int, date_str: str) -> int:
+    """دریافت تعداد بیانیه‌ها و توییت‌های ثبت‌شده کشور در یک تاریخ مشخص (YYYY-MM-DD)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM daily_statements WHERE country_id = ? AND statement_date = ?",
+        (country_id, date_str)
+    )
+    row = cur.fetchone()
+    count = row["cnt"] if row else 0
+    conn.close()
+    return count
+
+
+def get_all_country_statement_counts_for_date(date_str: str) -> dict:
+    """نگاشت شناسه کشور → تعداد بیانیه‌های ثبت‌شده در تاریخ مشخص."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT country_id, COUNT(*) AS cnt FROM daily_statements WHERE statement_date = ? GROUP BY country_id",
+        (date_str,)
+    )
+    rows = cur.fetchall()
+    counts = {r["country_id"]: r["cnt"] for r in rows}
+    conn.close()
+    return counts
 

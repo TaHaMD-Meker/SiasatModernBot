@@ -173,8 +173,23 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         p_id = c.get("player_id")
         if p_id:
             try:
+                # وضعیت بیانیه‌های روزانه و اخطار عدم فعالیت
+                stmt_count = db.get_country_statement_count_today(c["id"])
+                req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
+                if stmt_count >= req_stmts:
+                    stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* ✅ `{stmt_count} از {req_stmts}` بیانیه/توییت ثبت شده (تکمیل شد)."
+                else:
+                    needed = req_stmts - stmt_count
+                    stmt_status_section = (
+                        f"\n\n⚠️ *هشدار فعالیت و بیانیه روزانه (الزامی):*\n"
+                        f"• بیانیه‌های ثبت‌شده امروز شما: *{stmt_count} از {req_stmts}*\n"
+                        f"⏳ *اخطار مهم:* جهت حفظ حاکمیت کشور، ثبت روزانه حداقل {req_stmts} بیانیه یا توییت رسمی الزامی است. "
+                        f"شما نیاز به ثبت *{needed} بیانیه/توییت دیگر* دارید. در صورت عدم ثبت تا ساعت ۰۰:۰۰ بامداد به وقت ایران، کشور شما سلب مالکیت و آزاد خواهد شد!"
+                    )
+
                 if first_of_day and app_res is not None:
                     report_msg = approval_system.build_daily_country_report_message(db.get_country_by_id(c["id"]), app_res, today)
+                    report_msg += stmt_status_section
                 else:
                     c2 = db.get_country_by_id(c["id"])
                     chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""
@@ -186,6 +201,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         f"• طلا: +{gold_payment}{chips_line}{u_line}{fuel_line}\n"
                         f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
                         f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
+                        f"{stmt_status_section}"
                     )
                 await context.bot.send_message(chat_id=p_id, text=report_msg, parse_mode="Markdown")
             except Exception as e:
@@ -255,6 +271,96 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
     return updated_count
+
+
+async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_date: str = None):
+    """بررسی روزانه ساعت ۰۰:۰۰ به وقت ایران — سلب مالکیت کشورهایی که در روز گذشته کمتر از ۲ بیانیه داده‌اند."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    now_tehran = now_utc.astimezone(IRAN_TZ)
+    today_str = now_tehran.date().isoformat()
+    yesterday_str = force_date or (now_tehran.date() - datetime.timedelta(days=1)).isoformat()
+
+    last_checked = db.get_setting("last_inactivity_check_date")
+    if not last_checked:
+        # اولین اجرا روی سیستم: ذخیره امروز تا بازیکنان فعلی اشتباهاً حذف نشوند
+        db.set_setting("last_inactivity_check_date", today_str)
+        return
+
+    if last_checked == today_str and not force_date:
+        return  # بررسی تاریخ امروز قبلاً انجام شده است
+
+    req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
+    countries = db.get_all_countries()
+    counts_map = db.get_all_country_statement_counts_for_date(yesterday_str)
+
+    revoked_count = 0
+    for c in countries:
+        c_id = c["id"]
+        p_id = c.get("player_id")
+        c_key = c.get("country_key")
+
+        # معافیت‌ها: ادمین‌ها، بازیگر سیستم، تست یا بدون بازیکن
+        if not p_id or p_id in config.ADMIN_IDS or p_id <= 0 or c_key == "un":
+            continue
+
+        # مهلت برای ثبت‌نام‌های تازه: اگر دیروز بعد از ساعت ۱۲ ظهر یا امروز ثبت‌نام کرده، روز اول معاف است
+        created_at_raw = c.get("created_at") or ""
+        if created_at_raw:
+            try:
+                created_dt = datetime.datetime.fromisoformat(created_at_raw)
+                created_date = created_dt.astimezone(IRAN_TZ).date().isoformat()
+                if created_date == today_str or (created_date == yesterday_str and created_dt.astimezone(IRAN_TZ).hour >= 12):
+                    continue
+            except Exception:
+                pass
+
+        user_stmts = counts_map.get(c_id, 0)
+        if user_stmts < req_stmts:
+            flag = c.get("flag", "🏳️")
+            name = c.get("name", "کشور")
+            username = c.get("username") or ""
+
+            # سلب مالکیت و حذف کشور
+            db.delete_country_by_id(c_id)
+            revoked_count += 1
+
+            # ارسال اخطار و اطلاعیه به خود بازیکن
+            revoke_msg = (
+                f"🏛️ *سلب مالکیت کشور به دلیل عدم فعالیت روزانه*\n\n"
+                f"کاربر گرامی،\n"
+                f"به دلیل عدم ثبت حداقل {req_stmts} بیانیه یا توییت رسمی در روز گذشته ({yesterday_str})، "
+                f"مالکیت کشور *{flag} {name}* از شما سلب شد و این کشور برای انتخاب مجدد سایر کاربران آزاد گردید.\n\n"
+                f"• تعداد بیانیه‌های ثبت‌شده شما: *{user_stmts} از {req_stmts} بیانیه*\n\n"
+                f"💡 *قوانین بازی:* جهت حفظ رهبری کشور، ثبت روزانه حداقل ۲ بیانیه یا توییت رسمی در ربات الزامی است."
+            )
+            try:
+                await context.bot.send_message(chat_id=p_id, text=revoke_msg, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"Could not notify player {p_id} of country revocation: {e}")
+
+            # اطلاع فوری به ادمین‌های بازی
+            admin_note = (
+                f"⚠️ *سلب مالکیت خودکار کشور به دلیل عدم فعالیت روزانه:*\n\n"
+                f"• کشور: *{flag} {name}* (`{c_key}`)\n"
+                f"• بازیکن: @{username} (شناسه: `{p_id}`)\n"
+                f"• بیانیه‌های ثبت‌شده: *{user_stmts} از {req_stmts}*\n"
+                f"• تاریخ بررسی: `{yesterday_str}`"
+            )
+            for adm in config.ADMIN_IDS:
+                try:
+                    await context.bot.send_message(chat_id=adm, text=admin_note, parse_mode="Markdown")
+                except Exception:
+                    pass
+
+            # خبر فوری در کانال رسمی بازی
+            try:
+                await news_engine.trigger_inactivity_removal_news(context.bot, c)
+            except Exception:
+                pass
+
+    db.set_setting("last_inactivity_check_date", today_str)
+    if revoked_count:
+        logger.info(f"Daily inactivity audit completed: {revoked_count} countries revoked.")
 
 
 def main():
@@ -438,11 +544,12 @@ def main():
         else:
             logger.warning(f"Database auto-backup failed: {res}")
 
-    # جاب‌ها: درآمد روزانه و پشتیبان‌گیری دوره‌ای
+    # جاب‌ها: درآمد روزانه، پشتیبان‌گیری دوره‌ای و بررسی فعالیت نیمه‌شب (۰۰:۰۰)
     job_queue = app.job_queue
     if job_queue:
         job_queue.run_repeating(daily_income_job, interval=900, first=10)  # چک هر ۱۵ دقیقه؛ پرداخت هر ۶ ساعت
         job_queue.run_repeating(auto_backup_job, interval=14400, first=120)  # پشتیبان‌گیری خودکار هر ۴ ساعت
+        job_queue.run_repeating(check_daily_inactivity_job, interval=300, first=30)  # بررسی سلب مالکیت روزانه ۰۰:۰۰ (چک هر ۵ دقیقه)
 
     logger.info("بات در حال اجراست...")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)

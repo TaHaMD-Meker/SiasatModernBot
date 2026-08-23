@@ -209,3 +209,15 @@ async def trigger_foiled_sabotage_news(bot, target_c: dict, op_type: str):
         )
 
     await post_breaking_news(bot, headline, body)
+
+
+async def trigger_inactivity_removal_news(bot, country: dict):
+    """انتشار خبر تغییر دولت یا استعفای رهبر به دلیل عدم فعالیت و بیانیه."""
+    headline = f"انحلال دولت و اعلام وضعیت فوق‌العاده در {country['name']}"
+    body = (
+        f"به دلیل عدم صدور بیانیه رسمی و رکود در مدیریت اجرایی کشور {country['flag']} **{country['name']}**، "
+        f"کابینه دولت این کشور منحل اعلام گردید و فرآیند واگذاری به رهبری جدید آغاز شد.\n\n"
+        f"🌐 این کشور هم‌اکنون برای تعیین رهبری جدید آزاد است."
+    )
+    await post_breaking_news(bot, headline, body)
+

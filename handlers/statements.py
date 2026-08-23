@@ -35,9 +35,18 @@ async def statements_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not c:
         return
 
+    today_count = db.get_country_statement_count_today(c["id"])
+    req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
+    if today_count >= req_stmts:
+        status_text = f"✅ *وضعیت فعالیت امروز:* `{today_count} از {req_stmts}` بیانیه ثبت شده (تکمیل شده)"
+    else:
+        status_text = f"⚠️ *وضعیت فعالیت امروز:* `{today_count} از {req_stmts}` بیانیه ثبت شده (نیاز به {req_stmts - today_count} بیانیه دیگر تا ۰۰:۰۰)"
+
     text = (
         f"📢 *سامانه بیانیه‌ها و تریبون رسمی کشور {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{status_text}\n"
+        f"💡 *قانون حاکمیت:* ثبت روزانه حداقل ۲ بیانیه یا توییت رسمی برای حفظ مالکیت کشور الزامی است (بررسی در ساعت ۰۰:۰۰ بامداد).\n\n"
         "لطفاً یک بخش را انتخاب کنید:\n\n"
         "• *📢 ثبت بیانیه رسمی:* ثبت بیانیه رسمی با پوستر تصویری و ارسال به کانال\n"
         "• *✍️ رسمی‌سازی متن (AI):* تبدیل متون محاوره‌ای به بیانیه‌های فاخر دیپلماتیک جهت کپی\n"
@@ -194,12 +203,14 @@ async def process_official_statement_input(update: Update, context: ContextTypes
         except Exception as adm_e:
             print(f"Failed to notify admin of statement channel error: {adm_e}")
 
-    try:
-        _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
-        if _mok:
-            await update.message.reply_text(f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
-    except Exception:
-        pass
+    db.record_country_statement(country["id"], update.effective_user.id, "statement", caption)
+    today_cnt = db.get_country_statement_count_today(country["id"])
+    req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
+    conf_msg += f"\n\n📊 *مجموع بیانیه‌ها و توییت‌های امروز شما:* `{today_cnt} از {req_stmts}`"
+    if today_cnt >= req_stmts:
+        conf_msg += " (✅ سهمیه فعالیت امروز تکمیل شد)"
+    else:
+        conf_msg += f" (⚠️ نیاز به {req_stmts - today_cnt} بیانیه دیگر تا ساعت ۰۰:۰۰)"
 
     try:
         _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
@@ -397,8 +408,17 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
                     ),
                     parse_mode="Markdown"
                 )
-        except Exception as adm_e:
-            print(f"Failed to notify admin of tweet channel error: {adm_e}")
+    except Exception as adm_e:
+        print(f"Failed to notify admin of tweet channel error: {adm_e}")
+
+    db.record_country_statement(country["id"], update.effective_user.id, "tweet", tweet_text)
+    today_cnt = db.get_country_statement_count_today(country["id"])
+    req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
+    conf_msg += f"\n\n📊 *مجموع بیانیه‌ها و توییت‌های امروز شما:* `{today_cnt} از {req_stmts}`"
+    if today_cnt >= req_stmts:
+        conf_msg += " (✅ سهمیه فعالیت امروز تکمیل شد)"
+    else:
+        conf_msg += f" (⚠️ نیاز به {req_stmts - today_cnt} بیانیه دیگر تا ساعت ۰۰:۰۰)"
 
     try:
         _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
