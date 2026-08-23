@@ -223,30 +223,39 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
         r_type = order["resource_type"]
 
+        sea_lim = config.TRANSPORT_CAPACITY_LIMITS["sea"]["limits"].get(r_type, 500_000)
+        land_lim = config.TRANSPORT_CAPACITY_LIMITS["land"]["limits"].get(r_type, 50_000)
+        air_lim = config.TRANSPORT_CAPACITY_LIMITS["air"]["limits"].get(r_type, 10_000)
+
+        sea_btn_label = "🚢 دریایی (۳۰۰ هزار $)" if qty <= sea_lim else f"🚢 دریایی (مازاد سقف {sea_lim:,})"
+        land_btn_label = "🚛 زمینی (۱ میلیون $)" if qty <= land_lim else f"🚛 زمینی (مازاد سقف {land_lim:,})"
+        air_btn_label = "✈️ هوایی (۲ میلیون $)" if qty <= air_lim else f"✈️ هوایی (مازاد سقف {air_lim:,})"
+
         text = (
-            f"🌐 **انتخاب روش ترابری معامله بورس**\n"
+            f"🌐 <b>انتخاب روش ترابری معامله بورس</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            f"• **کالای درخواستی:** {qty:,} {unit_names.get(r_type, '')} {res_names.get(r_type, '')}\n"
-            f"• **ارزش خالص کالا:** **{format_money(commodity_cost)}**\n"
-            f"• **فروشنده:** {order['seller_flag']} **{order['seller_name']}**\n\n"
-            "لطفاً روش ترابری و انتقال را انتخاب کنید:\n\n"
-            "🚢 **دریایی (۳۰۰,۰۰۰ $):** ارزان‌ترین روش (غیرقابل استفاده در زمان محاصره بنادر/تنگه‌ها)\n"
-            "🚛 **زمینی (۱,۰۰۰,۰۰۰ $):** بای‌پاس محاصره دریایی و تنگه‌ها\n"
-            "✈️ **هوایی (۲,۰۰۰,۰۰۰ $):** سریع‌ترین روش، بای‌پاس کامل تمام محاصره‌ها"
+            f"• <b>کالای درخواستی:</b> {qty:,} {unit_names.get(r_type, '')} <b>{res_names.get(r_type, '')}</b>\n"
+            f"• <b>ارزش خالص کالا:</b> <b>{format_money(commodity_cost)}</b>\n"
+            f"• <b>فروشنده:</b> {order['seller_flag']} <b>{order['seller_name']}</b>\n\n"
+            "📦 <b>ظرفیت مجاز ناوگان‌های ترانزیت:</b>\n"
+            f"🚢 <b>دریایی (۳۰۰ هزار $):</b> حداکثر {sea_lim:,} {unit_names.get(r_type, '')} (کشتی باری/نفتکش فله)\n"
+            f"🚛 <b>زمینی (۱ میلیون $):</b> حداکثر {land_lim:,} {unit_names.get(r_type, '')} (قطار باری و تریلی)\n"
+            f"✈️ <b>هوایی (۲ میلیون $):</b> حداکثر {air_lim:,} {unit_names.get(r_type, '')} (هواپیمای کارگو — های‌تک/سریع)\n\n"
+            "لطفاً روش ترابری متناسب با حجم محموله را انتخاب فرمایید:"
         )
 
         buttons = [
             [
-                InlineKeyboardButton("🚢 دریایی (۳۰۰ هزار $)", callback_data=f"market:do_buy:{order_id}:{qty}:sea"),
+                InlineKeyboardButton(sea_btn_label, callback_data=f"market:do_buy:{order_id}:{qty}:sea"),
             ],
             [
-                InlineKeyboardButton("🚛 زمینی (۱ میلیون $)", callback_data=f"market:do_buy:{order_id}:{qty}:land"),
-                InlineKeyboardButton("✈️ هوایی (۲ میلیون $)", callback_data=f"market:do_buy:{order_id}:{qty}:air"),
+                InlineKeyboardButton(land_btn_label, callback_data=f"market:do_buy:{order_id}:{qty}:land"),
+                InlineKeyboardButton(air_btn_label, callback_data=f"market:do_buy:{order_id}:{qty}:air"),
             ],
             [InlineKeyboardButton("❌ انصراف", callback_data=f"market:view:{order_id}")],
         ]
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="HTML")
 
     elif data.startswith("market:do_buy:"):
         parts = data.split(":")

@@ -3128,6 +3128,12 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             t_payer = c["transport_payer"]
             t_cost = c["transport_cost"]
 
+            # Check capacity limits for commodity transport
+            t_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("limits", {})
+            if off_type in t_limits and off_amt > t_limits[off_type]:
+                t_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("name", t_mode)
+                return False, f"⛔ **مازاد ظرفیت بارگیری ناوگان ({t_name}):** حداکثر ظرفیت قابل انتقال در هر محموله برابر با **{t_limits[off_type]:,} واحد** است."
+
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
 
@@ -4167,6 +4173,18 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                         if st_status["status"] == "closed":
                             return False, f"⚓ **گلوگاه دریایی مسدود است:** مسیر ترانزیت دریایی از {strait_info['name']} مسدود شده است.", {}
 
+            res_type = order["resource_type"]
+            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
+            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+            res_label = res_names.get(res_type, res_type)
+
+            # بررسی سقف ظرفیت بارگیری ناوگان ترابری
+            t_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(transport_mode, {}).get("limits", {})
+            max_cap = t_limits.get(res_type, 999_999_999)
+            if buy_amount > max_cap:
+                t_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(transport_mode, {}).get("name", transport_mode)
+                return False, f"⛔ **مازاد ظرفیت بارگیری ناوگان:**\n\nحداکثر ظرفیت قابل حمل برای **{res_label}** در {t_name} برابر با **{max_cap:,} {unit_names.get(res_type, 'واحد')}** در هر محموله است.\n\n💡 لطفاً روش ترابری با ظرفیت بالاتر (مثل دریایی/زمینی) انتخاب فرمایید یا حجم خرید را کاهش دهید.", {}
+
             transport_costs = {"sea": 300_000, "land": 1_000_000, "air": 2_000_000}
             t_cost = transport_costs.get(transport_mode, 300_000)
 
@@ -4177,7 +4195,6 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
             if buyer_c["treasury"] < total_buyer_cost:
                 return False, f"موجودی خزانه کافی نیست!\nارزش کالا: {format_money(commodity_cost)}\nهزینه ترابری: {format_money(t_cost)}\nمجموع هزینه: {format_money(total_buyer_cost)}\nخزانه شما: {format_money(buyer_c['treasury'])}", {}
 
-            res_type = order["resource_type"]
             resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col = resource_cols[res_type]
 
@@ -4195,9 +4212,6 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 INSERT INTO market_history (seller_id, buyer_id, resource_type, amount, unit_price, total_price, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (seller_id, buyer_id, res_type, buy_amount, unit_price, commodity_cost, now_str))
-
-            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات"}
-            res_label = res_names.get(res_type, res_type)
 
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
