@@ -3250,6 +3250,12 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             if are_sanctioned(donor_id, recipient_id):
                 return False, "امکان ارسال کمک به کشور تحریم‌شده یا کشوری که شما را تحریم کرده وجود ندارد."
 
+            # اعمال سقف ظرفیت ترابری ناوگان برای کمک‌های خارجی (جلوگیری از دور زدن لجستیک و سوءاستفاده مولتی‌اکانت)
+            sea_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get("sea", {}).get("limits", {})
+            aid_max = 20_000_000 if resource_type == "treasury" else sea_limits.get(resource_type, 100_000)
+            if amount > aid_max:
+                return False, f"⛔ میزان کمک ارسالی ({amount:,}) از حداکثر سقف مجاز بارگیری ناوگان ({aid_max:,}) در هر محموله بیشتر است."
+
             cur.execute("SELECT * FROM countries WHERE id = ?", (donor_id,))
             donor_c = cur.fetchone()
             cur.execute("SELECT * FROM countries WHERE id = ?", (recipient_id,))
@@ -3279,11 +3285,6 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'aid_in', ?, ?, ?)
             """, (recipient_id, f"دریافت کمک خارجی از {d_c['name']}", amount if resource_type == "treasury" else 0, now_str))
-
-            cur.execute("""
-                INSERT INTO logs (actor, action, details, created_at)
-                VALUES (?, 'foreign_aid', ?, ?)
-            """, (str(donor_id), f"Aid {resource_type} x{amount} to {recipient_id}", now_str))
 
             return True, "کمک خارجی با موفقیت ارسال شد."
     except Exception as e:

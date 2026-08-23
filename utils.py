@@ -3,7 +3,10 @@
 توابع کمکی، فرمت‌دهی اعداد و کیبورد اصلی بازی.
 """
 
-from telegram import ReplyKeyboardMarkup
+try:
+    from telegram import ReplyKeyboardMarkup
+except ImportError:
+    ReplyKeyboardMarkup = None
 import config
 
 

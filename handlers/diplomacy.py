@@ -1525,8 +1525,18 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data["diplomacy_input"] = {"type": "aid_amount"}
 
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        
+        sea_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get("sea", {}).get("limits", {})
+        aid_max = 20_000_000 if res_type == "treasury" else sea_limits.get(res_type, 100_000)
+
+        col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
+        user_avail = country.get(col_map.get(res_type, "treasury"), 0) or 0
+
         await query.edit_message_text(
-            f"🕊️ **میزان کمک اهدایی ({type_labels.get(res_type, res_type)})** را وارد فرمایید:",
+            f"🕊️ **ارسال کمک اهدایی ({type_labels.get(res_type, res_type)})**\n\n"
+            f"• موجودی کشور شما: `{user_avail:,} {type_labels.get(res_type, res_type)}`\n"
+            f"• 📦 حداکثر سقف مجاز در هر محموله: `{aid_max:,} {type_labels.get(res_type, res_type)}`\n\n"
+            f"لطفاً میزان مورد نظر را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
             parse_mode="Markdown"
         )
@@ -1760,6 +1770,19 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             draft = context.user_data.get("aid_draft", {})
             target_id = draft["target_id"]
             res_type = draft["resource_type"]
+            type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+
+            # بررسی سقف ظرفیت لجستیک و ترابری برای کمک‌های خارجی
+            sea_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get("sea", {}).get("limits", {})
+            aid_max = 20_000_000 if res_type == "treasury" else sea_limits.get(res_type, 100_000)
+            if amt > aid_max:
+                await update.message.reply_text(
+                    f"⛔ **مازاد بر سقف مجاز بارگیری ناوگان ترابری:**\n\n"
+                    f"حداکثر سقف ارسال برای **{type_labels.get(res_type, res_type)}** در هر محموله اهدایی برابر با **{aid_max:,} {type_labels.get(res_type, res_type)}** است.\n\n"
+                    f"💡 لطفاً عددی کمتر یا مساوی سقف مجاز وارد فرمایید.",
+                    parse_mode="Markdown"
+                )
+                return
 
             succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt)
 
@@ -1768,7 +1791,6 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                 return
 
             target_c = db.get_country_by_id(target_id)
-            type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
 
             # Trigger Anti-cheat Alert
             if amt >= 5_000_000 or res_type in ["gold", "oil"]:
