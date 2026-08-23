@@ -277,6 +277,44 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
     except Exception as e:
         logger.warning(f"Error checking strait reopening: {e}")
 
+    # 6. هزینه روزانه عملیات و گشت رزمی برای تنگه‌های مسدودشده بین‌المللی (جلوگیری از اسپم انسداد)
+    if db.get_setting("strait_blockade_cost_date") != today:
+        db.set_setting("strait_blockade_cost_date", today)
+        for owner_key, strait_info in db.STRAITS_MAPPING.items():
+            s_key = strait_info["strait_key"]
+            st_data = db.get_strait_status(s_key)
+            if st_data.get("status") == "blocked":
+                owner_c = db.get_country_by_key(owner_key)
+                if not owner_c:
+                    continue
+
+                money_cost = 2_500_000
+                oil_cost = 100_000
+                s_name = strait_info["name"]
+
+                if (owner_c.get("treasury") or 0) < money_cost or (owner_c.get("oil_reserves") or 0) < oil_cost:
+                    db.set_strait_status(s_key, "open", 0)
+                    lift_msg = (
+                        f"🌊 **بازگشایی خودکار تنگه استراتژیک!**\n\n"
+                        f"کشور {owner_c['flag']} {owner_c['name']} به دلیل عدم تأمین سوخت روزانه (۱۰۰,۰۰۰ بشکه) "
+                        f"یا هزینه‌های گشت رزمی ({format_money(money_cost)})، کنترل نظامی بر **{s_name}** را متوقف و این آبراه فوراً بازگشایی شد."
+                    )
+                    if owner_c.get("player_id"):
+                        try:
+                            await context.bot.send_message(chat_id=owner_c["player_id"], text=lift_msg, parse_mode="Markdown")
+                        except Exception:
+                            pass
+                    await news_engine.trigger_strait_news(context.bot, owner_c, s_name, "open")
+                else:
+                    db.adjust_treasury(owner_c["id"], -money_cost)
+                    db.adjust_oil(owner_c["id"], -oil_cost)
+                    db.add_transaction(
+                        owner_c["id"],
+                        "strait_blockade_cost",
+                        f"هزینه روزانه گشت رزمی و ناوگان جهت انسداد {s_name}",
+                        -money_cost
+                    )
+
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
     return updated_count
 

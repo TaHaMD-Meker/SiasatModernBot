@@ -507,13 +507,28 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 return
 
         if act == "block":
-            db.set_strait_status(s_key, "blocked")
-            await news_engine.trigger_strait_news(context.bot, country, s_name, "block")
-            await query.edit_message_text(
-                f"🔴 **{s_name} به طور کامل مسدود گردید.**\n\n📢 خبر فوری انسداد آبراه در کانال اصلی بازی منتشر شد.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
-                parse_mode="Markdown"
+            # گام تایید و اخطار هزینه عملیاتی قبل از انسداد تنگه
+            treasury_val = country.get("treasury", 0) or 0
+            oil_val = country.get("oil_reserves", 0) or 0
+            block_prompt = (
+                f"⚠️ **تأییدیه عملیات نظامی و مسدودسازی تنگه بین‌المللی**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"🌊 **آبراه هدف:** {s_name}\n"
+                f"👑 **کشور کنترل‌کننده:** {country['flag']} {country['name']}\n\n"
+                "💸 **هزینه‌های نگهداری و گشت رزمی روزانه ناوگان:**\n"
+                f"• 💵 **هزینه مالی:** **۲.۵ میلیون دلار / روز** (موجودی خزانه شما: {format_money(treasury_val)})\n"
+                f"• 🛢️ **سوخت مصرفی:** **۱۰۰,۰۰۰ بشکه نفت / روز** (ذخایر نفت شما: {format_oil(oil_val)})\n\n"
+                "⚠️ **نکات مهم ژئوپلیتیک:**\n"
+                "۱. مسدودسازی آبراه کلیه خطوط ترانزیت دریایی مرتبط را مختل می‌کند.\n"
+                "۲. در صورت اتمام سوخت یا کسری بودجه، تنگه **به‌صورت خودکار بازگشایی** خواهد شد.\n\n"
+                f"❓ **آیا از اعزام ناوگان جنگی و مسدودسازی کامل {s_name} اطمینان دارید؟**"
             )
+            confirm_kb = [
+                [InlineKeyboardButton("🔴 بله، تنگه مسدود شود (اعزام ناوگان)", callback_data="dip:strait_block_confirm")],
+                [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="dip:strait_menu")],
+            ]
+            await query.edit_message_text(block_prompt, reply_markup=InlineKeyboardMarkup(confirm_kb), parse_mode="Markdown")
+            return
         elif act == "toll":
             toll_text = (
                 f"🟡 **تعیین عوارض ترانزیت (حق عبور) — {s_name}**\n"
@@ -546,6 +561,45 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
                 parse_mode="Markdown"
             )
+
+    elif data == "dip:strait_block_confirm":
+        c_key = country.get("country_key")
+        strait_info = db.get_strait_info_by_country_key(c_key)
+        if not strait_info:
+            await query.edit_message_text("❌ شما تسلطی بر تنگه‌های استراتژیک ندارید.", parse_mode="Markdown")
+            return
+
+        s_key = strait_info["strait_key"]
+        s_name = strait_info["name"]
+
+        qualified, units, val = db.check_strait_navy_qualification(country["id"])
+        if not qualified:
+            await query.edit_message_text("❌ حداقل توان رزمی دریایی جهت انسداد تنگه احراز نشد.", parse_mode="Markdown")
+            return
+
+        treasury_val = country.get("treasury", 0) or 0
+        oil_val = country.get("oil_reserves", 0) or 0
+        if treasury_val < 2_500_000 or oil_val < 100_000:
+            await query.edit_message_text(
+                f"❌ **کسری منابع جهت آغاز عملیات انسداد:**\n\n"
+                f"برای آغاز انسداد و اعزام ناوگان، حداقل **۲.۵ میلیون دلار** در خزانه و **۱۰۰,۰۰۰ بشکه نفت** در ذخایر کشور الزامی است.\n\n"
+                f"• خزانه شما: {format_money(treasury_val)}\n"
+                f"• ذخایر نفت شما: {format_oil(oil_val)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی تنگه", callback_data="dip:strait_menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        db.set_strait_status(s_key, "blocked")
+        await news_engine.trigger_strait_news(context.bot, country, s_name, "block")
+        await query.edit_message_text(
+            f"🔴 **{s_name} به طور کامل مسدود گردید.**\n\n"
+            f"• ناوگان جنگی در دهانه آبراه مستقر شد.\n"
+            f"• هزینه روزانه عملیات و گشت رزمی (۲.۵M دلار + ۱۰۰k بشکه نفت) در چرخه‌های روزانه از خزانه و ذخایر شما کسر می‌گردد.\n\n"
+            f"📢 خبر فوری انسداد آبراه در کانال رسمی بازی منتشر گردید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
 
 
     elif data.startswith("dip:strait_toll_val:"):

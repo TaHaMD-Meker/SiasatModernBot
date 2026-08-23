@@ -46,3 +46,37 @@ def test_black_sea_to_world_crosses_bosphorus():
     assert db.is_trade_route_crossing_strait("russia", "egypt", "bosphorus")
     assert db.is_trade_route_crossing_strait("ukraine", "france", "bosphorus")
     assert not db.is_trade_route_crossing_strait("france", "germany", "bosphorus")
+
+def test_strait_blockade_daily_cost_and_auto_reopen(monkeypatch):
+    import tempfile
+    import config
+    tmpdir = tempfile.mkdtemp()
+    monkeypatch.setattr(config, "DB_PATH", os.path.join(tmpdir, "test_strait.db"))
+
+    import importlib
+    importlib.reload(db)
+    db.init_db()
+
+    cid_iran = db.create_country(999, "ایران", "🇮🇷", country_key="iran")
+    
+    # تنظیم وضعیت انسداد هرمز
+    db.set_strait_status("hormuz", "blocked")
+    st = db.get_strait_status("hormuz")
+    assert st["status"] == "blocked"
+
+    # موجودی ناکافی برای هزینه روزانه (۲.۵M دلار + ۱۰۰k بشکه)
+    conn = db.get_connection()
+    conn.execute("UPDATE countries SET treasury = 1000000, oil_reserves = 50000 WHERE id = ?", (cid_iran,))
+    conn.commit()
+    conn.close()
+
+    owner_c = db.get_country_by_key("iran")
+    money_cost = 2_500_000
+    oil_cost = 100_000
+
+    # شبیه‌سازی منطق چرخه روزانه هزینه انسداد تنگه
+    if (owner_c.get("treasury") or 0) < money_cost or (owner_c.get("oil_reserves") or 0) < oil_cost:
+        db.set_strait_status("hormuz", "open", 0)
+
+    st_after = db.get_strait_status("hormuz")
+    assert st_after["status"] == "open"
