@@ -5045,8 +5045,8 @@ def get_payment_request_by_id(req_id: int):
     return dict(row) if row else None
 
 
-def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", username: str = None) -> int:
-    c_key = f"faction_{player_id}"
+def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", faction_key: str = None, username: str = None) -> int:
+    c_key = f"faction_{faction_key}" if faction_key and faction_key in getattr(config, "PREDEFINED_MILITIA_FACTIONS", {}) else f"faction_{player_id}"
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     cur.execute("""
@@ -5083,16 +5083,22 @@ def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = 
     ))
     country_id = cur.lastrowid
 
-    # ثبت تسلیحات و ادوات اختصاصی شبه‌نظامی
-    catalog = getattr(config, "DEFAULT_MILITIA_EQUIPMENT", config.DEFAULT_COUNTRY_EQUIPMENT)
+    # ثبت تسلیحات و ادوات اختصاصی شبه‌نظامی (از کاتالوگ گروه آماده یا کاتالوگ پیش‌فرض)
+    militia_cats = getattr(config, "MILITIA_EQUIPMENT_CATALOG", {})
+    if faction_key and faction_key in militia_cats:
+        catalog = militia_cats[faction_key]
+    else:
+        catalog = getattr(config, "DEFAULT_MILITIA_EQUIPMENT", config.DEFAULT_COUNTRY_EQUIPMENT)
+
     for item in catalog:
         producible_val = 1 if item.get("producible", True) else 0
+        eq_key = item.get("key", f"item_{country_id}")
         cur.execute("""
             INSERT INTO country_assets
             (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            country_id, c_key, item["category"], item["name"], f"{item['key']}_{country_id}",
+            country_id, c_key, item["category"], item["name"], eq_key,
             item["initial"], item["price"], item.get("maint", 0), producible_val
         ))
 
@@ -5113,20 +5119,34 @@ def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = 
     return country_id
 
 
-def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", username: str = None) -> int:
+def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", faction_key: str = None, username: str = None) -> int:
     """ایجاد گروه / سازمان شبه‌نظامی غیردولتی اختصاصی برای بازیکن."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            country_id = _create_custom_militia_with_cur(cur, player_id, name, flag, hq_desc, doctrine, username)
+            country_id = _create_custom_militia_with_cur(cur, player_id, name, flag, hq_desc, doctrine, faction_key, username)
         return country_id
     finally:
         conn.close()
 
 
+def get_taken_militia_faction_keys() -> set:
+    """دریافت کلید تمام گروه‌های غیردولتی که قبلاً توسط بازیکنان انتخاب شده‌اند."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT country_key FROM countries WHERE country_key LIKE 'faction_%'")
+    rows = cur.fetchall()
+    conn.close()
+    taken = set()
+    for r in rows:
+        k = r["country_key"].replace("faction_", "")
+        taken.add(k)
+    return taken
+
+
 def approve_payment_request(req_id: int, admin_id: int, override_name: str = None) -> tuple[bool, str, dict]:
-    """تایید رسمی فیش پرداخت و فعال‌سازی اشتراک VIP یا ایجاد گروه غیردولتی."""
+    """تایید رسمی فیش پرداخت و فعال‌سازی اشتراک VIP یا ایجاد گروه غیردولتی با نام نهایی."""
     conn = get_connection()
     try:
         with conn:
@@ -5156,7 +5176,6 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
                         (exp_dt.isoformat(), c_id)
                     )
             elif item_type == "militia":
-                # اگر کاربر کشور ندارد، گروه اختصاصی برایش ساخته می‌شود
                 payload_str = p.get("custom_payload") or "{}"
                 try:
                     payload = json.loads(payload_str)
@@ -5166,14 +5185,15 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
                 f_flag = payload.get("flag") or "🏴‍☠️"
                 f_hq = payload.get("hq") or ""
                 f_doc = payload.get("doctrine") or ""
+                f_key = payload.get("faction_key")
                 
                 # بررسی وجود کشور قبلی
                 cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
                 exist_c = cur.fetchone()
                 if not exist_c:
-                    c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc)
+                    c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc, f_key)
                     p["created_country_id"] = c_id
-                    p["created_faction_name"] = f_name
+                p["final_faction_name"] = f_name
 
             cur.execute("""
                 UPDATE payment_requests
