@@ -53,9 +53,52 @@ PAYMENT_CARD_INFO = {
     "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک سپه"),
 }
 
-VIP_PASS_PRICE_TOMAN = 79_000         # اشتراک ۱ ماهه VIP رهبر
+# ===== تعرفه‌های اشتراک ۴ سطحی VIP (ماهانه) =====
+VIP_TIERS = {
+    "vip_bronze": {
+        "title": "🥉 اشتراک برنز (Bronze Leader)",
+        "tier": "bronze",
+        "badge": "🥉",
+        "price": 79_000,
+        "maint_discount": 5,
+        "extra_drills": 1,
+        "max_contracts": 4,
+        "desc": "تخفیف ۵٪ نگهداری ارتش، ۱ مانور اضافه روزانه، ۴ اسلات معاهده تجاری و نشان برنزی."
+    },
+    "vip_silver": {
+        "title": "🥈 اشتراک نقره (Silver Leader)",
+        "tier": "silver",
+        "badge": "🥈",
+        "price": 179_000,
+        "maint_discount": 10,
+        "extra_drills": 2,
+        "max_contracts": 6,
+        "desc": "تخفیف ۱۰٪ نگهداری ارتش، اولویت رده ۲ بررسی رول‌ها، ۲ مانور اضافه، رادار امنیتی و ۶ اسلات قرارداد."
+    },
+    "vip_gold": {
+        "title": "🥇 اشتراک طلا (Gold Leader)",
+        "tier": "gold",
+        "badge": "🥇",
+        "price": 349_000,
+        "maint_discount": 15,
+        "extra_drills": 3,
+        "max_contracts": 8,
+        "desc": "تخفیف ۱۵٪ نگهداری ارتش، اولویت فوری VIP بررسی رول‌ها، ۳ مانور اضافه، ۱۵٪ تخفیف ترانزیت، ضداطلاعات و ۸ اسلات قرارداد."
+    },
+    "vip_diamond": {
+        "title": "💎 اشتراک الماس (Diamond Supreme Pass)",
+        "tier": "diamond",
+        "badge": "💎",
+        "price": 650_000,
+        "maint_discount": 25,
+        "extra_drills": 999,
+        "max_contracts": 999,
+        "desc": "تخفیف ۲۵٪ نگهداری ارتش، بررسی آنی اختصاصی رول‌ها، مانور نامحدود، ۵۰٪ تخفیف پایگاه‌ها، قراردادهای نامحدود و نشان درخشان الماس."
+    }
+}
+
+VIP_PASS_PRICE_TOMAN = 79_000         # قیمت پایه برنز
 MILITIA_LICENSE_PRICE_TOMAN = 50_000   # مجوز تاسیس گروه / شبه‌نظامی غیردولتی
-VIP_PASS_3MONTH_PRICE_TOMAN = 199_000 # اشتراک ۳ ماهه VIP با تخفیف ویژه
 
 # ===== فهرست گروه‌های شبه‌نظامی و سازمان‌های غیردولتی معتبر و واقعی جهان =====
 REAL_NON_STATE_FACTIONS = {

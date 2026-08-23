@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-تست‌های سیستم خدمات ویژه، اشتراک‌های تومانی و ساخت گروه‌های غیردولتی (VIP & Custom Militia).
+تست‌های سیستم خدمات ویژه ۴ سطحی، اشتراک‌های تومانی و تخفیف نگهداری ارتش (VIP 4-Tier System).
 """
 
 import os
@@ -26,38 +26,45 @@ def db_temp(monkeypatch):
     return db
 
 
-def test_vip_payment_creation_and_approval(db_temp):
+def test_4tier_vip_approval_and_maintenance_discounts(db_temp):
     cid = db_temp.create_country(555, "ایران", "🇮🇷", country_key="iran")
     
-    # کشور در ابتدا VIP نیست
-    c_before = db_temp.get_country_by_id(cid)
-    assert not c_before.get("is_vip")
+    # اضافه کردن تسلیحات نمونه جهت محاسبه هزینه نگهداری
+    conn = db_temp.get_connection()
+    conn.execute("INSERT INTO country_assets (country_id, country_key, category, equipment_name, equipment_key, amount, maintenance_cost) VALUES (?, 'iran', 'Aircraft', 'F-14', 'f14', 100, 10000)", (cid,))
+    conn.commit()
+    conn.close()
 
-    # ثبت فیش واریز VIP ۱ ماهه (۷۹ هزار تومان)
-    req_id = db_temp.create_payment_request(
-        player_id=555,
-        country_id=cid,
-        item_type="vip_1month",
-        plan_title="👑 اشتراک ۱ ماهه VIP",
-        amount_toman=79_000,
-        receipt_photo_id="photo_file_123",
-        tracking_code="TRX-987654"
-    )
+    # هزینه نگهداری در حالت عادی (بدون VIP)
+    maint_normal = db_temp.calculate_country_maintenance_cost(cid)
+    assert maint_normal["vip_discount_pct"] == 0
 
-    pending = db_temp.get_pending_payment_requests()
-    assert len(pending) == 1
-    assert pending[0]["id"] == req_id
-    assert pending[0]["amount_toman"] == 79_000
-
-    # تایید پرداخت توسط ادمین
-    ok, msg, p = db_temp.approve_payment_request(req_id, admin_id=8052987465)
+    # ۱. خرید و تایید پلن برنز (۷۹ تومن -> ۵٪ تخفیف)
+    req_b = db_temp.create_payment_request(555, cid, "vip_bronze", "🥉 اشتراک برنز", 79_000, tracking_code="TRX-B")
+    ok, _, _ = db_temp.approve_payment_request(req_b, admin_id=8052987465)
     assert ok
-    assert p["status"] == "approved"
+    maint_bronze = db_temp.calculate_country_maintenance_cost(cid)
+    assert maint_bronze["vip_discount_pct"] == 5
+    assert maint_bronze["total_maint"] < maint_normal["total_maint"]
 
-    # کشور باید اکنون VIP فعال داشته باشد با تاریخ انقضا ۳۰ روزه
-    c_after = db_temp.get_country_by_id(cid)
-    assert c_after["is_vip"] == 1
-    assert c_after["vip_expires_at"] is not None
+    # ۲. خرید و تایید پلن نقره (۱۷۹ تومن -> ۱۰٪ تخفیف)
+    req_s = db_temp.create_payment_request(555, cid, "vip_silver", "🥈 اشتراک نقره", 179_000, tracking_code="TRX-S")
+    db_temp.approve_payment_request(req_s, admin_id=8052987465)
+    maint_silver = db_temp.calculate_country_maintenance_cost(cid)
+    assert maint_silver["vip_discount_pct"] == 10
+
+    # ۳. خرید و تایید پلن طلا (۳۴۹ تومن -> ۱۵٪ تخفیف)
+    req_g = db_temp.create_payment_request(555, cid, "vip_gold", "🥇 اشتراک طلا", 349_000, tracking_code="TRX-G")
+    db_temp.approve_payment_request(req_g, admin_id=8052987465)
+    maint_gold = db_temp.calculate_country_maintenance_cost(cid)
+    assert maint_gold["vip_discount_pct"] == 15
+
+    # ۴. خرید و تایید پلن الماس (۶۵۰ تومن -> ۲۵٪ تخفیف)
+    req_d = db_temp.create_payment_request(555, cid, "vip_diamond", "💎 اشتراک الماس", 650_000, tracking_code="TRX-D")
+    db_temp.approve_payment_request(req_d, admin_id=8052987465)
+    maint_diamond = db_temp.calculate_country_maintenance_cost(cid)
+    assert maint_diamond["vip_discount_pct"] == 25
+    assert maint_diamond["total_maint"] < maint_gold["total_maint"]
 
 
 def test_predefined_faction_creation_with_40_assets(db_temp):

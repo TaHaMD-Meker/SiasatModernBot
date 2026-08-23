@@ -28,6 +28,22 @@ async def require_country(update: Update):
 
 # ==================== منوی عملیات ====================
 
+def get_country_max_drills(country: dict) -> int:
+    """محاسبه سقف روزانه مجاز مانورهای نظامی بر اساس سطح اشتراک VIP."""
+    if not country or not country.get("is_vip"):
+        return 1
+    vt = country.get("vip_tier") or ""
+    if vt == "diamond":
+        return 999
+    elif vt == "gold":
+        return 4
+    elif vt == "silver":
+        return 3
+    elif vt == "bronze":
+        return 2
+    return 2
+
+
 async def operations_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c = await require_country(update)
     if not c:
@@ -40,14 +56,17 @@ async def operations_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     readiness = c.get("combat_readiness", 70)
     last_drill_date = c.get("last_drill_date")
     daily_drill_count = c.get("daily_drill_count", 0) if last_drill_date == today_str else 0
-    remaining_drills = max(0, 1 - daily_drill_count)
+    
+    max_drills = get_country_max_drills(c)
+    max_drill_str = "نامحدود (الماس)" if max_drills >= 999 else str(max_drills)
+    rem_drill_str = "نامحدود" if max_drills >= 999 else str(max(0, max_drills - daily_drill_count))
 
     text = (
         f"🎯 *ستاد فرماندهی و ابلاغ عملیات {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🪖 *شاخص آمادگی رزمی نیروها:* ⚔️ `{readiness}٪`\n"
         f"• *رول‌های نظامی ثبت‌شده امروز:* {daily_count} از ۲ (باقی‌مانده: {remaining_roles})\n"
-        f"• *مانورهای رزمی برگزارشده امروز:* {daily_drill_count} از ۱ (باقی‌مانده: {remaining_drills})\n\n"
+        f"• *مانورهای رزمی برگزارشده امروز:* {daily_drill_count} از {max_drill_str} (باقی‌مانده: {rem_drill_str})\n\n"
         "لطفاً یکی از بخش‌های زیر را انتخاب کنید:"
     )
 
@@ -85,6 +104,10 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         daily_drill_count = country.get("daily_drill_count", 0) if last_drill_date == today_str else 0
         readiness = country.get("combat_readiness", 70)
 
+        max_drills = get_country_max_drills(country)
+        max_drill_str = "نامحدود (الماس)" if max_drills >= 999 else str(max_drills)
+        rem_drill_str = "نامحدود" if max_drills >= 999 else str(max(0, max_drills - daily_drill_count))
+
         DRILL_MONEY_COST = 1_000_000
         DRILL_OIL_COST = 100_000
 
@@ -92,14 +115,14 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             f"🪖 *ستاد برگزاری مانور و تمرینات رزمی — {country['flag']} {country['name']}*\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"• *شاخص آمادگی رزمی فعلی:* ⚔️ `{readiness}٪`\n"
-            f"• *تعداد مانورهای برگزارشده امروز:* `{daily_drill_count} از ۱`\n\n"
+            f"• *تعداد مانورهای برگزارشده امروز:* `{daily_drill_count} از {max_drill_str}` (باقی‌مانده: {rem_drill_str})\n\n"
             "⚠️ **هزینه‌ها و دستاوردهای برگزاری مانور رزمی:**\n"
             f"💵 **هزینه پشتیبانی و لجستیک:** {format_money(DRILL_MONEY_COST)}\n"
             f"🛢️ **سوخت مصرفی ناودسته‌ها و یگان‌ها:** {format_oil(DRILL_OIL_COST)}\n\n"
             "🏆 **دستاوردهای مانور:**\n"
             "📈 **ارتقای آمادگی رزمی نیروها:** +۴٪ (افزایش کارایی و روحیه دفاعی)\n"
             "📊 **افزایش رضایت عمومی و روحیه ملی:** +۲٪\n"
-            "⭐ **تعداد مجاز:** ۱ بار در روز\n\n"
+            f"⭐ **سقف روزانه مجاز:** {max_drill_str}\n\n"
             "آیا مایل به آغاز مانور رزمی نیروهای مسلح هستید؟"
         )
 
@@ -115,12 +138,14 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         last_drill_date = country.get("last_drill_date")
         daily_drill_count = country.get("daily_drill_count", 0) if last_drill_date == today_str else 0
 
+        max_drills = get_country_max_drills(country)
+
         DRILL_MONEY_COST = 1_000_000
         DRILL_OIL_COST = 100_000
 
-        if daily_drill_count >= 1:
+        if daily_drill_count >= max_drills:
             await query.edit_message_text(
-                "⛔ **سقف روزانه مانور رزمی پر شده است!**\n\nشما امروز مانور نظامی روزانه‌ی خود را برگزار کرده‌اید. جهت استراحت یگان‌ها، مانور بعدی فردا امکان‌پذیر است.",
+                "⛔ **سقف روزانه مانور رزمی پر شده است!**\n\nشما امروز حداکثر مانورهای نظامی مجاز خود را برگزار کرده‌اید. جهت استراحت یگان‌ها، مانور بعدی فردا امکان‌پذیر است.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
                 parse_mode="Markdown"
             )
@@ -169,13 +194,15 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             "اقتدار دفاعی"
         )
 
+        rem_str = "نامحدود" if max_drills >= 999 else f"{max(0, max_drills - new_drill_count)} از {max_drills}"
+
         await query.edit_message_text(
             f"🪖 **مانور نظامی کشور {country['flag']} {country['name']} با موفقیت کامل برگزار شد!**\n━━━━━━━━━━━━━━━━━━\n\n"
             f"• **شاخص آمادگی رزمی جدید:** ⚔️ `{new_readiness}٪` (+۴٪ افزایش)\n"
             f"• **رضایت عمومی:** `{new_app}٪` (+۲٪ افزایش)\n"
             f"• **هزینه پرداختی خزانه:** {format_money(DRILL_MONEY_COST)}\n"
             f"• **سوخت مصرفی:** {format_oil(DRILL_OIL_COST)}\n"
-            f"• **مانورهای باقی‌مانده امروز:** `{1 - new_drill_count} از ۱`\n\n"
+            f"• **مانورهای باقی‌مانده امروز:** `{rem_str}`\n\n"
             "📢 خبر موفقیت مانور نظامی در کانال رسمی بازی منتشر گردید.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
             parse_mode="Markdown"

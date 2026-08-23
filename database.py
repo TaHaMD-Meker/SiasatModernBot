@@ -246,6 +246,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN vip_tier TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     # جدول سران و کادر فرماندهی نظامی کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS country_commanders (
@@ -3656,31 +3661,49 @@ def get_industrial_oil_consumption(country_id: int) -> int:
 
 
 def calculate_country_maintenance_cost(country_id: int) -> dict:
-    """محاسبه متوازن هزینه نگهداری روزانه تسلیحات و ارتش با تخفیف سطح فناوری (Tech Level)."""
+    """محاسبه متوازن هزینه نگهداری روزانه تسلیحات و ارتش با تخفیف سطح فناوری (Tech Level) و اشتراک VIP."""
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT active_personnel, tech_level, warheads FROM countries WHERE id = ?", (country_id,))
+    cur.execute("SELECT active_personnel, tech_level, warheads, is_vip, vip_tier FROM countries WHERE id = ?", (country_id,))
     c_row = cur.fetchone()
     if not c_row:
         conn.close()
-        return {"assets_maint": 0, "personnel_maint": 0, "warheads_maint": 0, "warheads_chips_maint": 0, "total_maint": 0, "discount_pct": 0, "tech_level": 1, "warheads": 0}
+        return {"assets_maint": 0, "personnel_maint": 0, "warheads_maint": 0, "warheads_chips_maint": 0, "total_maint": 0, "discount_pct": 0, "vip_discount_pct": 0, "tech_level": 1, "warheads": 0}
 
-    active_p = c_row["active_personnel"] or 0
-    tech_lvl = c_row["tech_level"] or 1
-    warheads_count = (c_row["warheads"] or 0) if "warheads" in c_row.keys() else 0
+    c_data = dict(c_row)
+    active_p = c_data.get("active_personnel") or 0
+    tech_lvl = c_data.get("tech_level") or 1
+    warheads_count = c_data.get("warheads") or 0
 
     discount_pct = min(40, (tech_lvl - 1) * 10)
+
+    # تخفیف نگهداری ارتش سطح VIP
+    vip_discount_pct = 0
+    if c_data.get("is_vip"):
+        vt = c_data.get("vip_tier") or ""
+        if vt == "diamond":
+            vip_discount_pct = 25
+        elif vt == "gold":
+            vip_discount_pct = 15
+        elif vt == "silver":
+            vip_discount_pct = 10
+        elif vt == "bronze":
+            vip_discount_pct = 5
+        else:
+            vip_discount_pct = 10
 
     cur.execute("SELECT amount, maintenance_cost FROM country_assets WHERE country_id = ? AND amount > 0", (country_id,))
     asset_rows = cur.fetchall()
     conn.close()
 
     raw_assets_maint = sum(r["amount"] * (r["maintenance_cost"] or 0) for r in asset_rows)
-    scaled_maint = int(raw_assets_maint * 0.01)  # بالانس v2: نصف شدن هزینه نگهداری
-    assets_maint = int(scaled_maint * (1 - (discount_pct / 100.0)))
+    scaled_maint = int(raw_assets_maint * 0.01)
+    tech_factor = (1 - (discount_pct / 100.0))
+    vip_factor = (1 - (vip_discount_pct / 100.0))
 
-    personnel_maint = int(active_p * 0.5)
+    assets_maint = int(scaled_maint * tech_factor * vip_factor)
+    personnel_maint = int(active_p * 0.5 * vip_factor)
     warheads_maint = int(warheads_count * getattr(config, "WARHEAD_MAINTENANCE_COST", 5_000_000))
     warheads_chips_maint = int(warheads_count * getattr(config, "WARHEAD_CHIPS_MAINTENANCE", 2))
     total_maint = assets_maint + personnel_maint + warheads_maint
@@ -3692,6 +3715,7 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
         "warheads_chips_maint": warheads_chips_maint,
         "total_maint": total_maint,
         "discount_pct": discount_pct,
+        "vip_discount_pct": vip_discount_pct,
         "tech_level": tech_lvl,
         "warheads": warheads_count
     }
@@ -5221,13 +5245,16 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
             c_id = p.get("country_id")
             player_id = p["player_id"]
 
-            if item_type in ("vip_1month", "vip_3month"):
+            if item_type.startswith("vip_") or item_type in ("vip_1month", "vip_3month"):
+                tier = "gold" if item_type == "vip_3month" else (item_type.replace("vip_", "") if item_type.startswith("vip_") else "silver")
+                if tier not in ("bronze", "silver", "gold", "diamond"):
+                    tier = "silver"
                 days = 90 if item_type == "vip_3month" else 30
                 exp_dt = now_dt + datetime.timedelta(days=days)
                 if c_id:
                     cur.execute(
-                        "UPDATE countries SET is_vip = 1, vip_expires_at = ? WHERE id = ?",
-                        (exp_dt.isoformat(), c_id)
+                        "UPDATE countries SET is_vip = 1, vip_tier = ?, vip_expires_at = ? WHERE id = ?",
+                        (tier, exp_dt.isoformat(), c_id)
                     )
             elif item_type == "militia":
                 payload_str = p.get("custom_payload") or "{}"

@@ -17,46 +17,72 @@ from utils import format_money, format_number, get_main_keyboard
 # ==================== منوی اصلی اشتراک‌های VIP ====================
 
 async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش تعرفه‌های اشتراک طلایی VIP به بازیکن."""
+    """نمایش تعرفه‌های اشتراک ۴ سطحی VIP به بازیکن."""
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
 
     is_vip = bool(country.get("is_vip") or 0) if country else False
     vip_exp = country.get("vip_expires_at") if country else None
+    vip_tier = country.get("vip_tier") if country else ""
+
+    tier_labels = {
+        "diamond": "💎 الماس (Diamond Supreme)",
+        "gold": "🥇 طلا (Gold Leader)",
+        "silver": "🥈 نقره (Silver Leader)",
+        "bronze": "🥉 برنز (Bronze Leader)"
+    }
 
     if is_vip and vip_exp:
         try:
             exp_date_str = vip_exp[:10]
-            status_header = f"⭐ **وضعیت رهبری شما: اشتراک VIP فعال (تا {exp_date_str})**"
+            status_header = f"⭐ **وضعیت رهبری شما: {tier_labels.get(vip_tier, 'اشتراک VIP فعال')} (تا {exp_date_str})**"
         except Exception:
-            status_header = "⭐ **وضعیت رهبری شما: اشتراک VIP فعال**"
+            status_header = f"⭐ **وضعیت رهبری شما: {tier_labels.get(vip_tier, 'اشتراک VIP فعال')}**"
     elif is_vip:
-        status_header = "⭐ **وضعیت رهبری شما: اشتراک VIP فعال**"
+        status_header = f"⭐ **وضعیت رهبری شما: {tier_labels.get(vip_tier, 'اشتراک VIP فعال')}**"
     elif country:
         status_header = f"▫️ **وضعیت رهبری شما: اشتراک عادی ({country['flag']} {country['name']})**"
     else:
         status_header = "▫️ **وضعیت فعلی شما: فاقد کشور رسمی**"
 
     text = (
-        "👑 **مرکز اشتراک ویژه رهبری (VIP Leader Pass)**\n"
+        "👑 **مرکز خدمات ویژه و اشتراک‌های حاکمیتی (VIP)**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"{status_header}\n\n"
-        "💎 **مزایای اشتراک رهبر ویژه (VIP):**\n"
-        "• ⭐ **نشان طلایی VIP:** درج تگ و بج رسمی VIP در پروفایل کشور، بیانیه‌ها و توییت‌ها\n"
-        "• ⚡ **اولویت صف بررسی رول‌ها:** تحلیل سریع‌تر و ارزیابی اختصاصی رول‌های نظامی و عملیات‌ها\n"
-        "• 🎯 **رزمایش اضافه:** امکان انجام **۱ رزمایش نظامی اضافه** در هر روز جهت افزایش آمادگی رزمی ارتش\n"
-        "• 🛡️ **دسترسی به رادار امنیتی:** مشاهده هشدارهای پیشرفته اطلاعاتی و تحرکات منطقه‌ای\n"
-        "• 🏆 **جایگاه ممتاز در رنکینگ:** نمایش نشان ستاره‌دار در فهرست رهبران جهان\n\n"
+        "🔹 **سطوح اشتراک ماهانه (۳۰ روزه):**\n\n"
+        "🥉 **۱. اشتراک برنز (۷۹,۰۰۰ ت):**\n"
+        "• 📉 تخفیف ۵٪ در هزینه نگهداری ارتش\n"
+        "• 🎯 +۱ رزمایش نظامی اضافه روزانه\n"
+        "• 📜 ۴ اسلات قرارداد تجاری همزمان\n\n"
+        "🥈 **۲. اشتراک نقره (۱۷۹,۰۰۰ ت):**\n"
+        "• 📉 تخفیف ۱۰٪ در هزینه نگهداری ارتش\n"
+        "• ⚡ اولویت رده ۲ در صف بررسی رول‌ها\n"
+        "• 🎯 +۲ رزمایش نظامی اضافه روزانه\n"
+        "• 🛡️ رادار پایش امنیتی تحرکات مرزی\n"
+        "• 📜 ۶ اسلات قرارداد تجاری\n\n"
+        "🥇 **۳. اشتراک طلا (۳۴۹,۰۰۰ ت):**\n"
+        "• 📉 تخفیف ۱۵٪ در هزینه نگهداری ارتش\n"
+        "• 🚀 اولویت فوری VIP در بررسی رول‌ها و جنگ‌ها\n"
+        "• 🎯 +۳ رزمایش نظامی اضافه روزانه\n"
+        "• 🚢 ۱۵٪ تخفیف ترانزیت لجستیک معاهدات\n"
+        "• 🛡️ تقویت ضداطلاعات و امنیت سایبری\n"
+        "• 📜 ۸ اسلات قرارداد تجاری\n\n"
+        "💎 **۴. اشتراک الماس (۶۵۰,۰۰۰ ت):**\n"
+        "• 📉 تخفیف ۲۵٪ در کل هزینه نگهداری ارتش و زرادخانه‌ها\n"
+        "• ⚡⚡ بررسی آنی و اختصاصی رول‌ها (اولویت صفر)\n"
+        "• 🎯 رزمایش نامحدود روزانه (آمادگی رزمی ۱۰۰٪ همیشگی)\n"
+        "• 🏢 ۵۰٪ تخفیف نگهداری و اجاره پایگاه‌های راهبردی\n"
+        "• 📜 قراردادهای تجاری نامحدود\n"
+        "• 👑 مشاوره مستقیم تنظیم دکترین نظامی با تحلیلگر ارشد\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "لطفاً دوره اشتراک مورد نظر را جهت مشاهده فاکتور و واریز انتخاب فرمایید:"
+        "سطح اشتراک مورد نظر را انتخاب فرمایید:"
     )
 
-    p_vip1 = getattr(config, "VIP_PASS_PRICE_TOMAN", 79_000)
-    p_vip3 = getattr(config, "VIP_PASS_3MONTH_PRICE_TOMAN", 199_000)
-
     keyboard = [
-        [InlineKeyboardButton(f"👑 اشتراک VIP یک‌ماهه — {p_vip1:,} تومان", callback_data="vip:plan:vip_1month")],
-        [InlineKeyboardButton(f"💎 اشتراک VIP سه‌ماهه (با تخفیف ویژه) — {p_vip3:,} تومان", callback_data="vip:plan:vip_3month")],
+        [InlineKeyboardButton("🥉 اشتراک برنز — ۷۹,۰۰۰ تومان", callback_data="vip:plan:vip_bronze")],
+        [InlineKeyboardButton("🥈 اشتراک نقره — ۱۷۹,۰۰۰ تومان", callback_data="vip:plan:vip_silver")],
+        [InlineKeyboardButton("🥇 اشتراک طلا — ۳۴۹,۰۰۰ تومان", callback_data="vip:plan:vip_gold")],
+        [InlineKeyboardButton("💎 اشتراک الماس — ۶۵۰,۰۰۰ تومان", callback_data="vip:plan:vip_diamond")],
     ]
 
     if update.message:
@@ -277,19 +303,33 @@ async def custom_militia_checkout(query, context, doctrine_key: str):
 # ==================== صفحه پرداخت VIP ====================
 
 PLANS_METADATA = {
-    "vip_1month": {
-        "title": "👑 اشتراک ۱ ماهه رهبر ویژه (VIP Leader Pass)",
-        "price": getattr(config, "VIP_PASS_PRICE_TOMAN", 79_000),
-        "desc": "فعال‌سازی ۳۰ روزه نشان طلایی، اولویت بررسی رول‌ها، رزمایش اضافه روزانه و رادار پیشرفته."
+    "vip_bronze": {
+        "title": "🥉 اشتراک برنز رهبری (Bronze Leader)",
+        "tier": "bronze",
+        "price": 79_000,
+        "desc": "تخفیف ۵٪ نگهداری ارتش، ۱ مانور اضافه روزانه، ۴ اسلات معاهده تجاری و نشان برنزی."
     },
-    "vip_3month": {
-        "title": "💎 اشتراک ۳ ماهه رهبر ویژه (VIP Leader Pass - ویژه)",
-        "price": getattr(config, "VIP_PASS_3MONTH_PRICE_TOMAN", 199_000),
-        "desc": "فعال‌سازی ۹۰ روزه خدمات VIP همراه با تخفیف ویژه دوره ۳ ماهه."
+    "vip_silver": {
+        "title": "🥈 اشتراک نقره‌ای رهبری (Silver Leader)",
+        "tier": "silver",
+        "price": 179_000,
+        "desc": "تخفیف ۱۰٪ نگهداری ارتش، اولویت رده ۲ بررسی رول‌ها، ۲ مانور اضافه، رادار امنیتی و ۶ اسلات قرارداد."
+    },
+    "vip_gold": {
+        "title": "🥇 اشتراک طلایی رهبری (Gold Leader)",
+        "tier": "gold",
+        "price": 349_000,
+        "desc": "تخفیف ۱۵٪ نگهداری ارتش، اولویت فوری VIP بررسی رول‌ها، ۳ مانور اضافه، ۱۵٪ تخفیف ترانزیت، ضداطلاعات و ۸ اسلات قرارداد."
+    },
+    "vip_diamond": {
+        "title": "💎 اشتراک الماس (Diamond Supreme Pass)",
+        "tier": "diamond",
+        "price": 650_000,
+        "desc": "تخفیف ۲۵٪ نگهداری ارتش، بررسی آنی اختصاصی رول‌ها، مانور نامحدود، ۵۰٪ تخفیف پایگاه‌ها، قراردادهای نامحدود و نشان درخشان الماس."
     },
     "militia": {
         "title": "🏴‍☠️ مجوز رسمی تاسیس گروه شبه‌نظامی غیردولتی",
-        "price": getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 50_000),
+        "price": 50_000,
         "desc": "صدور مجوز ایجاد گروه نظامی اختصاصی، نماد سفارشی و کاتالوگ تسلیحاتی اختصاصی."
     }
 }

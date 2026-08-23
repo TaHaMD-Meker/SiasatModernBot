@@ -46,7 +46,14 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ms_parts.append(f"{mark} {mlabel} (+{format_money(mreward)})")
     missions_str = ("\n\n🎯 **مأموریت‌های روزانه:**\n" + "\n".join(ms_parts)) if ms_parts else ""
 
-    vip_badge = f"<b>سطح رهبری:</b> ⭐ <b>اشتراک طلایی VIP</b>\n" if c.get("is_vip") else ""
+    vip_tier = c.get("vip_tier") or ""
+    tier_badges = {
+        "diamond": "💎 <b>اشتراک الماس (Diamond Supreme)</b>",
+        "gold": "🥇 <b>اشتراک طلایی (Gold Leader)</b>",
+        "silver": "🥈 <b>اشتراک نقره‌ای (Silver Leader)</b>",
+        "bronze": "🥉 <b>اشتراک برنزی (Bronze Leader)</b>"
+    }
+    vip_badge = f"<b>سطح رهبری:</b> {tier_badges.get(vip_tier, '⭐ <b>اشتراک طلایی VIP</b>')}\n" if c.get("is_vip") else ""
 
     text = (
         f"{pe('globe', '🌐')} <b>شناسنامه و وضعیت جامع کشور</b>\n"
