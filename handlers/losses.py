@@ -306,14 +306,21 @@ def match_building(name: str, country_id: int):
     return best
 
 def parse_loss_report_text(text: str):
-    """استخراج کشور، عملیات، اقلام تجهیزاتی و تلفات انسانی از متن گزارش استاندارد."""
+    """استخراج کشور، پایگاه، عملیات، اقلام تجهیزاتی و تلفات انسانی از متن گزارش استاندارد."""
     t = to_english_digits(str(text))
     lines = [ln.strip() for ln in t.splitlines()]
-    result = {"country": None, "op": "", "items": [], "human": {"mil": 0, "wounded": 0, "civilians": 0}}
+    result = {"country": None, "base": None, "op": "", "items": [], "human": {"mil": 0, "wounded": 0, "civilians": 0}}
 
-    # هدر: 📄 تلفات تجهیزات [پرچم] کشور — عملیات «نام»
+    # استخراج نام پایگاه از هدر یا متن گزارش (مثلاً: پایگاه «Desert Shield» یا پایگاه: Desert Shield)
+    base_m = re.search(r"پایگاه(?:\s*هوایی|\s*دریایی|\s*نظامی|\s*پیشروی)?\s*[«'\x22]([^»'\x22]+)[»'\x22]", t)
+    if not base_m:
+        base_m = re.search(r"(?:پایگاه|مقر|پایگاه هوایی|پایگاه دریایی|پایگاه پیشروی)\s*:\s*([^\n\r]+)", t)
+    if base_m:
+        result["base"] = base_m.group(1).strip()
+
+    # هدر: 📄 تلفات تجهیزات [پرچم] کشور — عملیات «نام» یا 📄 تلفات پایگاه «...»
     for ln in lines[:6]:
-        m = re.search(r"تلفات\s*تجهیزات\s*(.*)", ln)
+        m = re.search(r"تلفات\s*(?:تجهیزات|پایگاه)?\s*(.*)", ln)
         if not m:
             continue
         rest = m.group(1)
@@ -321,6 +328,7 @@ def parse_loss_report_text(text: str):
         if mo:
             result["op"] = mo.group(1).strip()
         country_part = re.split(r"عملیات|—|–|-", rest)[0]
+        country_part = re.sub(r"پایگاه(?:\s*هوایی|\s*دریایی|\s*نظامی|\s*پیشروی)?\s*[«'\x22][^»'\x22]+[»'\x22]", " ", country_part)
         country_part = re.sub(r"[^\w\s]", " ", country_part, flags=re.UNICODE)
         country_part = re.sub(r"\s+", " ", country_part).strip()
         result["country"] = country_part or None
@@ -903,8 +911,9 @@ def _preview_text(draft):
     items = draft.get("items", [])
     if not items:
         return "سبد خالی است."
+    base_line = f"\n📍 پایگاه هدف: *{draft['base_name']}*" if draft.get("base_name") else ""
     lines = [f"7️⃣ *پیش‌نمایش گزارش تلفات*", "━━━━━━━━━━━━━━━━━━",
-             f"کشور: {draft['cflag']} {draft['cname']}",
+             f"کشور: {draft['cflag']} {draft['cname']}{base_line}",
              f"عملیات: «{draft.get('op') or 'بدون نام'}»", ""]
     for it in items:
         lines.append(f"• {it['emoji']} {it['name']} — تلفات: {format_number(it['qty'])} {it['unit']}")
@@ -994,7 +1003,27 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_markup=_kb([[InlineKeyboardButton("🔁 دوباره متن بفرست", callback_data="ls:fast")]]),
             )
             return
-        assets = db.get_country_assets(country["id"])
+
+        # بررسی تطبیق پایگاه نظامی اختصاصی در صورت ذکر نام پایگاه در گزارش
+        base_match = None
+        if parsed.get("base"):
+            country_bases = db.get_bases(owner_id=country["id"])
+            clean_bquery = _clean_str(parsed["base"])
+            for b in country_bases:
+                b_clean = _clean_str(b["name"])
+                if b_clean in clean_bquery or clean_bquery in b_clean:
+                    base_match = b
+                    break
+
+        if base_match:
+            assets = db.get_base_assets(base_match["id"])
+            base_id = base_match["id"]
+            base_name = base_match["name"]
+        else:
+            assets = db.get_country_assets(country["id"])
+            base_id = None
+            base_name = None
+
         matched, unmatched = [], []
         for name, qty, unit in parsed["items"]:
             a = match_asset_by_name(name, assets)
@@ -1004,11 +1033,15 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                     existing["qty"] += qty
                     continue
                 sub, emo = classify_subcat(a)
-                matched.append({
-                    "key": a["equipment_key"], "name": a["equipment_name"], "category": a["category"],
+                item_dict = {
+                    "key": a["equipment_key"], "name": a["equipment_name"], "category": a.get("category", ""),
                     "subcat": sub, "emoji": emo,
-                    "unit": _UNIT_BY_CATEGORY.get(a["category"], "عدد"), "qty": qty,
-                })
+                    "unit": _UNIT_BY_CATEGORY.get(a.get("category", ""), "عدد"), "qty": qty,
+                }
+                if base_id:
+                    item_dict["base_id"] = base_id
+                    item_dict["base_name"] = base_name
+                matched.append(item_dict)
                 continue
 
             # تطبیق با ذخایر استراتژیک (اورانیوم، سوخت، کلاهک، میکروچیپ، طلا)
@@ -1077,7 +1110,7 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                             "category": "Personnel", "subcat": "تلفات انسانی", "emoji": "👤", "unit": "نفر", "qty": int(h["civilians"])})
         draft = {
             "cid": country["id"], "cname": country["name"], "cflag": country["flag"],
-            "op": parsed["op"], "note": "", "items": matched,
+            "op": parsed["op"], "note": "", "base_name": base_name, "items": matched,
         }
         if unmatched:
             draft["note"] = "اقلام شناخته‌نشده (ثبت نشد): " + "، ".join(unmatched)

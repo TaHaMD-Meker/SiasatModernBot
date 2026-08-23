@@ -414,3 +414,46 @@ class TestReportRendering:
                   "subcat": "م", "emoji": "🪙", "unit": "شمش", "qty": 5}]
         out = build_loss_report_text("🇮🇷", "ایران", "تست", items)
         assert "جمع تلفات ثبت‌شده" not in out
+
+class TestBaseLosses:
+    def test_loss_applied_specifically_to_base(self, db, country):
+        cid = country["id"]
+        # ایجاد پایگاه پیشروی برای کشور
+        conn = db.get_connection()
+        conn.execute("INSERT INTO foreign_bases (owner_id, host_id, name, capacity, level) VALUES (?, ?, 'پایگاه Desert Shield', 20, 1)", (cid, cid))
+        base_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("INSERT INTO base_assets (base_id, equipment_key, equipment_name, category, amount) VALUES (?, 'f35_usa', 'جنگنده F-35A', 'Aircraft', 12)", (base_id,))
+        conn.commit()
+        conn.close()
+
+        # ثبت گزارش تلفات برای پایگاه
+        items = [{"key": "f35_usa", "name": "جنگنده F-35A", "qty": 4, "base_id": base_id}]
+        ok, rid, err = db.create_loss_report(cid, items, "ضربه به پایگاه", "", 1)
+        assert ok, err
+
+        # موجودی پایگاه باید از ۱۲ به ۸ کاهش یابد
+        conn = db.get_connection()
+        base_amt = conn.execute("SELECT amount FROM base_assets WHERE base_id = ? AND equipment_key = 'f35_usa'", (base_id,)).fetchone()["amount"]
+        conn.close()
+        assert base_amt == 8
+
+        # بازگردانی تلفات باید به پایگاه برگرداند
+        ok_rev, _ = db.revert_loss_report(rid)
+        assert ok_rev
+        conn = db.get_connection()
+        base_amt_rev = conn.execute("SELECT amount FROM base_assets WHERE base_id = ? AND equipment_key = 'f35_usa'", (base_id,)).fetchone()["amount"]
+        conn.close()
+        assert base_amt_rev == 12
+
+    def test_parser_extracts_base_name_from_header(self):
+        from handlers.losses import parse_loss_report_text
+        text = """📄 تلفات تجهیزات 🇺🇸 آمریکا — پایگاه «Desert Shield» — عملیات «طوفان صحرا»
+━━━━━━━━━━━━━━━━━━
+✈️ جنگنده F-35A
+تلفات: 2 فروند"""
+        parsed = parse_loss_report_text(text)
+        assert parsed["country"] == "آمریکا"
+        assert parsed["base"] == "Desert Shield"
+        assert parsed["op"] == "طوفان صحرا"
+        assert parsed["items"][0][0] == "جنگنده F-35A"
+        assert parsed["items"][0][1] == 2

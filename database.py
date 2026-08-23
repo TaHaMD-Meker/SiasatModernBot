@@ -930,7 +930,7 @@ def _apply_building_effects(cur, country_id: int, effects: dict, sign: int):
 
 
 def _restore_loss_items(cur, country_id: int, items: list):
-    """بازگردانی کاملِ اقلام یک گزارش به موجودی کشور (مشترک بین revert و delete)."""
+    """بازگردانی کاملِ اقلام یک گزارش به موجودی کشور یا پایگاه (مشترک بین revert و delete)."""
     for it in items:
         qty = int(it.get("qty", 0) or 0)
         if qty <= 0:
@@ -957,20 +957,21 @@ def _restore_loss_items(cur, country_id: int, items: list):
                 (qty, country_id),
             )
             continue
+        if it.get("base_id"):
+            cur.execute(
+                "INSERT INTO base_assets (base_id, equipment_key, equipment_name, category, amount) VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT(base_id, equipment_key) DO UPDATE SET amount = amount + ?",
+                (it["base_id"], it["key"], it.get("name", it["key"]), it.get("category", ""), qty, qty)
+            )
+            continue
         cur.execute(
             "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
             (qty, country_id, it["key"]),
         )
 
 
-def create_loss_report(country_id: int, items: list, operation_name: str = "", note: str = "", admin_id=None):
-    """ثبت و اعمال تراکنشیِ گزارش تلفات — همه یا هیچ.
-
-    items = [{key, name, category, subcat, emoji, unit, qty}, ...]
-    اعتبارسنجی کامل همه‌ی اقلام قبل از اعمال انجام می‌شود؛ اگر حتی یک قلم
-    نامعتبر باشد (ناموجود یا بیش از موجودی)، هیچ تغییری اعمال نمی‌شود.
-    قلم با qty=0 فقط در گزارش ثبت می‌شود و تغییری در موجودی نمی‌دهد.
-    """
+def create_loss_report(country_id: int, items: list, operation_name: str = "", note: str = "", admin_id=None, base_id=None):
+    """ثبت و اعمال تراکنشیِ گزارش تلفات — همه یا هیچ (پشتیبانی از تفکیک پایگاه و انبار ملی)."""
     conn = get_connection()
     try:
         with conn:
@@ -1018,6 +1019,17 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     have = (crow[column] or 0) if crow else 0
                     it["qty"] = min(int(it["qty"]), max(0, have))
                     continue
+                target_base_id = it.get("base_id") or base_id
+                if target_base_id:
+                    cur.execute(
+                        "SELECT amount FROM base_assets WHERE base_id = ? AND equipment_key = ?",
+                        (target_base_id, it["key"]),
+                    )
+                    row = cur.fetchone()
+                    have = (row["amount"] or 0) if row else 0
+                    it["qty"] = min(int(it["qty"]), max(0, have))
+                    it["base_id"] = target_base_id
+                    continue
                 cur.execute(
                     "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
                     (country_id, it["key"]),
@@ -1043,6 +1055,12 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     cur.execute(
                         f"UPDATE countries SET {column} = MAX(0, COALESCE({column}, 0) - ?) WHERE id = ?",
                         (int(it["qty"]), country_id),
+                    )
+                    continue
+                if it.get("base_id"):
+                    cur.execute(
+                        "UPDATE base_assets SET amount = MAX(0, amount - ?) WHERE base_id = ? AND equipment_key = ?",
+                        (int(it["qty"]), it["base_id"], it["key"]),
                     )
                     continue
                 cur.execute(
