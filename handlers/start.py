@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-دستور /start : انتخاب کشور از بین لیست، با دکمه شیشه‌ای.
-پس از انتخاب کشور، کیبورد اصلی دکمه‌های پایین صفحه (Reply Keyboard) برای کاربر فعال می‌شود.
+دستور /start : انتخاب کشور از بین لیست با دسته‌بندی قاره‌ای و امکان جستجوی سریع نام کشور.
+پشتیبانی از تفکیک قاره‌ها، وضعیت ظرفیت، جستجوی هوشمند و هدایت به ساخت گروه‌های غیردولتی.
 """
 
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
@@ -12,23 +13,77 @@ import config
 from utils import get_main_keyboard
 
 
-def build_country_keyboard():
-    """دکمه‌های کشورهایی که هنوز کسی انتخاب یا درخواست نداده رو می‌سازه."""
-    taken = db.get_taken_and_pending_country_keys()
+def _clean_persian_str(s: str) -> str:
+    """استانداردسازی متن فارسی/انگلیسی جهت جستجوی دقیق."""
+    if not s:
+        return ""
+    t = str(s).strip().lower()
+    t = t.replace("_", " ")
+    trans = {
+        "ي": "ی", "ى": "ی", "ك": "ک", "ؤ": "و",
+        "إ": "ا", "أ": "ا", "آ": "ا", "ة": "ه",
+        "ئ": "ی", "ـ": ""
+    }
+    for k, v in trans.items():
+        t = t.replace(k, v)
+    t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def build_continent_keyboard():
+    """کیبورد دسته‌بندی قاره‌ها + دکمه جستجو و گروه‌های غیردولتی."""
+    continents = getattr(config, "CONTINENTS", {})
     buttons = []
     row = []
-    for key, info in config.COUNTRIES.items():
-        if key in taken or key in ("un", "kurdistan"):
-            continue
-        row.append(InlineKeyboardButton(f"{info['flag']} {info['name']}", callback_data=f"pickcountry:{key}"))
+
+    for c_key, c_info in continents.items():
+        row.append(InlineKeyboardButton(c_info["name"], callback_data=f"pickcont:{c_key}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
-    
-    # دکمه ویژه تاسیس گروه غیردولتی (شبه‌نظامیان و سازمان‌های مستقل)
-    buttons.append([InlineKeyboardButton("🏴‍☠️ تاسیس گروه / شبه‌نظامی اختصاصی (۵۰ هزار ت)", callback_data="vip:militia_wizard_start")])
+
+    buttons.append([InlineKeyboardButton("🔎 جستجوی سریع نام کشور (تایپی)", callback_data="start_search_country")])
+    buttons.append([InlineKeyboardButton("🏴‍☠️ تاسیس و رهبری گروه غیردولتی (۵۰ هزار ت)", callback_data="vip:militia_wizard_start")])
+    return buttons
+
+
+def build_continent_countries_keyboard(cont_key: str):
+    """کیبورد کشورهای یک قاره مشخص همراه با تفکیک کشورهای آزاد و پرشده."""
+    continents = getattr(config, "CONTINENTS", {})
+    cont_info = continents.get(cont_key)
+    if not cont_info:
+        return []
+
+    taken_and_pending = db.get_taken_and_pending_country_keys()
+    buttons = []
+    row = []
+
+    for key in cont_info["keys"]:
+        info = config.COUNTRIES.get(key)
+        if not info:
+            continue
+        is_taken = key in taken_and_pending
+        if is_taken:
+            btn_label = f"🔒 {info['flag']} {info['name']}"
+            cb_data = f"pickcountry_taken:{key}"
+        else:
+            btn_label = f"{info['flag']} {info['name']}"
+            cb_data = f"pickcountry:{key}"
+
+        row.append(InlineKeyboardButton(btn_label, callback_data=cb_data))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton("🔎 جستجوی کشور", callback_data="start_search_country"),
+        InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="start_back_continents")
+    ])
     return buttons
 
 
@@ -38,7 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not user.username:
         await update.message.reply_text(
-            "⛔ *خطا در ساخت کشور (احراز هویت تلگرام):*\n\n"
+            "⛔ *خطا در ورود (احراز هویت تلگرام):*\n\n"
             "جهت حفظ امنیت بازی و جلوگیری از حساب‌های ناشناس و فیک، حساب تلگرام شما باید دارای *آیدی / یوزرنیم (@username)* باشد.\n\n"
             "لطفاً در تنظیمات تلگرام خود یک آیدی (Username) تنظیم فرموده و سپس مجدداً دستور /start را ارسال کنید.",
             parse_mode="Markdown"
@@ -46,42 +101,167 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     existing = db.get_country_by_player(player_id)
-
     if existing:
         await update.message.reply_text(
-            f"{existing['flag']} کشور/گروه {existing['name']} تو از قبل ثبت شده.\n"
-            "از دکمه‌های پایین صفحه برای مدیریت کشورت استفاده کن 👇",
-            reply_markup=get_main_keyboard(player_id)
+            f"{existing['flag']} کشور/گروه **{existing['name']}** تو از قبل ثبت شده است.\n"
+            "از دکمه‌های پایین صفحه برای هدایت و مدیریت کشورت استفاده کن 👇",
+            reply_markup=get_main_keyboard(player_id),
+            parse_mode="Markdown"
         )
         return
 
-    # Check lock status
+    # بررسی قفل ثبت‌نام
     is_adm = player_id in config.ADMIN_IDS
     if not is_adm and db.get_setting("country_creation_locked") == "1":
         await update.message.reply_text(
             f"🔒 **ثبت‌نام و انتخاب کشورها موقتاً قفل است!**\n\n"
-            "بازی «سیاست مدرن» در حال حاضر در فاز آماده‌سازی نهایی قبل از افتتاحیه قرار دارد.\n"
+            "بازی «سیاست مدرن» در حال حاضر در فاز آماده‌سازی نهایی قرار دارد.\n"
             "زمان شروع رسمی به‌زودی در کانال تلگرام اعلام خواهد شد.\n\n"
             f"📢 **کانال رسمی بازی:** {config.get_channel_id()}",
             parse_mode="Markdown"
         )
         return
 
-    buttons = build_country_keyboard()
-    if not buttons or (len(buttons) == 1 and buttons[0][0].callback_data == "vip:militia_wizard_start"):
-        militia_kb = [[InlineKeyboardButton("🏴‍☠️ تاسیس گروه / شبه‌نظامی اختصاصی (۵۰,۰۰۰ تومان)", callback_data="vip:militia_wizard_start")]]
-        await update.message.reply_text(
-            "😔 **تمام ۱۰۱ کشور رسمی بازی در حال حاضر دارای رهبر هستند!**\n\n"
-            "اما نگران نباشید؛ شما می‌توانید با **مجوز رسمی تاسیس گروه غیردولتی (Non-State Faction)**، رهبری سازمان نظامی، چریکی یا شرکت نظامی اختصاصی خود را بر عهده بگیرید و وارد معادلات جهان شوید:",
-            reply_markup=InlineKeyboardMarkup(militia_kb),
-            parse_mode="Markdown"
-        )
+    text = (
+        "🎮 **به بازی ژئوپلیتیک «سیاست مدرن» خوش آمدید!**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "بیش از ۱۰۰ کشور مستقل و سازمان راهبردی در بازی شبیه‌سازی شده‌اند.\n\n"
+        "جهت انتخاب کشور، **قاره مورد نظر خود را انتخاب فرمایید** یا از **جستجوی سریع** استفاده کنید:"
+    )
+
+    buttons = build_continent_keyboard()
+    if update.message:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+
+async def pick_continent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش لیست کشورهای قاره انتخاب‌شده."""
+    query = update.callback_query
+    await query.answer()
+
+    cont_key = query.data.split(":", 1)[1]
+    continents = getattr(config, "CONTINENTS", {})
+    cont_info = continents.get(cont_key)
+
+    if not cont_info:
+        await query.edit_message_text("قاره مورد نظر یافت نشد.", reply_markup=InlineKeyboardMarkup(build_continent_keyboard()), parse_mode="Markdown")
         return
 
-    await update.message.reply_text(
-        "🎮 به بازی «سیاست مدرن» خوش اومدی!\n\nلطفاً کشورت رو از بین گزینه‌های زیر انتخاب کن (یا گروه اختصاصی خودت رو بساز):",
-        reply_markup=InlineKeyboardMarkup(buttons)
+    text = (
+        f"{cont_info['name']}\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "لطفاً کشور مورد نظر خود را جهت ارسال درخواست انتخاب فرمایید:\n"
+        "*(کشورهای دارای نشان 🔒 قبلاً توسط سایر بازیکنان انتخاب شده‌اند)*"
     )
+
+    buttons = build_continent_countries_keyboard(cont_key)
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+
+async def start_back_continents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بازگشت به منوی انتخاب قاره‌ها."""
+    query = update.callback_query
+    await query.answer()
+    if "start_country_search" in context.user_data:
+        del context.user_data["start_country_search"]
+
+    text = (
+        "🎮 **به بازی ژئوپلیتیک «سیاست مدرن» خوش آمدید!**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "جهت انتخاب کشور، **قاره مورد نظر خود را انتخاب فرمایید** یا از **جستجوی سریع** استفاده کنید:"
+    )
+    buttons = build_continent_keyboard()
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+
+async def start_search_country_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """فعال‌سازی حالت جستجوی تایپی نام کشور."""
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data["start_country_search"] = True
+
+    text = (
+        "🔎 **جستجوی سریع نام کشور**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "لطفاً **نام فارسی یا انگلیسی کشور مورد نظر** را تایپ و ارسال فرمایید:\n\n"
+        "*(مثال: آلمان، فرانسه، ژاپن، برزیل، چین، کانادا، egypt)*"
+    )
+    kb = [[InlineKeyboardButton("🔙 بازگشت به لیست قاره‌ها", callback_data="start_back_continents")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def start_country_search_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """پردازش ورودی جستجوی متنی نام کشور در صفحه شروع."""
+    if not context.user_data.get("start_country_search"):
+        return False
+
+    del context.user_data["start_country_search"]
+    user_query = update.message.text.strip()
+    clean_q = _clean_persian_str(user_query)
+
+    if not clean_q:
+        await update.message.reply_text("❌ لطفاً یک نام معتبر برای جستجو وارد کنید.")
+        return True
+
+    taken_and_pending = db.get_taken_and_pending_country_keys()
+    matches = []
+
+    for key, info in config.COUNTRIES.items():
+        if key in ("un", "kurdistan"):
+            continue
+        c_name = info.get("name", "")
+        clean_name = _clean_persian_str(c_name)
+        clean_key = _clean_persian_str(key)
+
+        if clean_q in clean_name or clean_name in clean_q or clean_q in clean_key:
+            is_taken = key in taken_and_pending
+            matches.append((key, info, is_taken))
+
+    if not matches:
+        text = (
+            f"❌ **کشوری با عنوان «{user_query}» یافت نشد.**\n\n"
+            "💡 لطفاً نام را به فارسی یا انگلیسی صحیح وارد کرده یا از لیست قاره‌ها انتخاب بفرمایید:"
+        )
+        kb = [
+            [InlineKeyboardButton("🔁 جستجوی دوباره", callback_data="start_search_country")],
+            [InlineKeyboardButton("🔙 مشاهده لیست قاره‌ها", callback_data="start_back_continents")],
+        ]
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        return True
+
+    text = (
+        f"🔎 **نتایج جستجو برای «{user_query}» ({len(matches)} کشور):**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "روی کشور مورد نظر کلیک کنید:"
+    )
+
+    buttons = []
+    row = []
+    for key, info, is_taken in matches:
+        if is_taken:
+            btn_label = f"🔒 {info['flag']} {info['name']} (تکمیل)"
+            cb_data = f"pickcountry_taken:{key}"
+        else:
+            btn_label = f"{info['flag']} {info['name']}"
+            cb_data = f"pickcountry:{key}"
+
+        row.append(InlineKeyboardButton(btn_label, callback_data=cb_data))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton("🔁 جستجوی مجدد", callback_data="start_search_country"),
+        InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="start_back_continents")
+    ])
+
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+    return True
 
 
 async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,6 +271,12 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     player_id = user.id
 
+    if query.data.startswith("pickcountry_taken:"):
+        key = query.data.split(":", 1)[1]
+        info = config.COUNTRIES.get(key, {})
+        await query.answer(f"کشور {info.get('name', key)} قبلاً توسط کاربر دیگری انتخاب شده است!", show_alert=True)
+        return
+
     if not user.username:
         await query.edit_message_text(
             "⛔ *حساب تلگرام شما فاقد یوزرنیم (@username) است.*\nلطفاً ابتدا در تنظیمات تلگرام آیدی ست کرده و سپس /start بزنید.",
@@ -98,7 +284,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Check lock status
+    # بررسی قفل ثبت‌نام
     is_adm = player_id in config.ADMIN_IDS
     if not is_adm and db.get_setting("country_creation_locked") == "1":
         await query.edit_message_text(
@@ -119,7 +305,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Check if user already has a pending request
+    # بررسی درخواست معلق قبلی
     pending_req = db.get_pending_request_by_player(player_id)
     if pending_req:
         await query.edit_message_text(
@@ -131,22 +317,19 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = query.data.split(":", 1)[1]
     info = config.COUNTRIES.get(key)
     if not info:
-        await query.edit_message_text("این کشور دیگه در دسترس نیست.", parse_mode="Markdown")
+        await query.edit_message_text("این کشور دیگر در دسترس نیست.", parse_mode="Markdown")
         return
 
     # جلوگیری از انتخاب همزمان کشور توسط دو کاربر
     if key in db.get_taken_and_pending_country_keys():
-        buttons = build_country_keyboard()
-        if not buttons:
-            await query.edit_message_text("این کشور همین الان توسط کاربر دیگری درخواست شد!", parse_mode="Markdown")
-            return
         await query.edit_message_text(
-            "این کشور همین الان توسط یه بازیکن دیگه درخواست شد! یکی دیگه رو انتخاب کن:",
-            reply_markup=InlineKeyboardMarkup(buttons)
+            f"🔒 کشور {info['flag']} {info['name']} همین الان توسط بازیکن دیگری درخواست شد!\nلطفاً کشور دیگری انتخاب فرمایید.",
+            reply_markup=InlineKeyboardMarkup(build_continent_keyboard()),
+            parse_mode="Markdown"
         )
         return
 
-    # Save pending request
+    # ثبت درخواست معلق
     req_id = db.create_pending_country_request(
         player_id=player_id,
         first_name=user.first_name or "",
@@ -157,7 +340,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db.add_log(actor=str(player_id), action="request_country", details=key)
 
-    # Send approval request to Admin
+    # ارسال اعلان و پرونده به ادمین
     u_name_display = f"`@{user.username}`" if user.username else "ندارد"
     user_url = f"https://t.me/{user.username}" if user.username else f"tg://user?id={player_id}"
     safe_name = f"{user.first_name or ''} {user.last_name or ''}".strip().replace("_", "\\_").replace("*", "\\*")
@@ -196,7 +379,6 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-            pass
 
     await query.edit_message_text(
         f"⏳ *درخواست انتخاب کشور ثبت گردید!*\n\n"
@@ -207,7 +389,7 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reset_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور تست: کشور خودتو پاک می‌کنه تا بتونی دوباره از /start شروع کنی."""
+    """دستور تست: کشور خود را پاک می‌کند تا بتوانید دوباره از /start شروع کنید."""
     player_id = update.effective_user.id
     deleted = db.delete_country_by_player(player_id)
     if deleted:
@@ -220,5 +402,8 @@ def get_start_handlers():
     return [
         CommandHandler("start", start),
         CommandHandler("resetme", reset_me),
-        CallbackQueryHandler(pick_country, pattern=r"^pickcountry:"),
+        CallbackQueryHandler(pick_continent_callback, pattern=r"^pickcont:"),
+        CallbackQueryHandler(start_search_country_callback, pattern=r"^start_search_country$"),
+        CallbackQueryHandler(start_back_continents_callback, pattern=r"^start_back_continents$"),
+        CallbackQueryHandler(pick_country, pattern=r"^pickcountry"),
     ]

@@ -22,7 +22,7 @@ from utils import format_money, format_number, format_oil
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
 from handlers.intel import intel_main_menu, intel_callback_handler
 from handlers.bases import military_movements_menu
-from handlers.start import get_start_handlers
+from handlers.start import get_start_handlers, start_country_search_input_handler
 from handlers.country import country_profile, treasury, oil, army, help_command, approval_command, country_callback_handler
 from handlers.diplomacy import diplomacy_menu, diplomacy_callback_handler, diplomacy_text_input_handler
 from handlers.operations import operations_menu, operations_callback_handler, operations_text_input_handler
@@ -544,6 +544,10 @@ def main():
 
     # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها، بیانیه‌ها و فیش‌های VIP
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.user_data.get("start_country_search"):
+            handled = await start_country_search_input_handler(update, context)
+            if handled:
+                return
         if context.user_data.get("vip_input") or context.user_data.get("militia_wiz"):
             handled = await vip_input_handler(update, context)
             if handled:

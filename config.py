@@ -183,7 +183,70 @@ else:
         8052987465,
     ]
 
-# ===== لیست کامل کشورهای قابل انتخاب در بازی (۱۷ کشور) =====
+# ===== تقسیم‌بندی قاره‌ای و منطقه‌ای کشورهای بازی =====
+CONTINENTS = {
+    "mideast": {
+        "name": "🌍 خاورمیانه و غرب آسیا",
+        "short_name": "خاورمیانه",
+        "emoji": "🌍",
+        "keys": [
+            "iran", "saudi", "turkey", "israel", "uae", "qatar", "oman", "kuwait", "iraq",
+            "syria", "lebanon", "palestine", "yemen", "jordan", "bahrain", "cyprus",
+            "azerbaijan", "armenia", "georgia", "hezbollah"
+        ]
+    },
+    "europe": {
+        "name": "🇪🇺 قاره اروپا",
+        "short_name": "اروپا",
+        "emoji": "🇪🇺",
+        "keys": [
+            "russia", "ukraine", "uk", "france", "germany", "italy", "spain", "poland",
+            "sweden", "netherlands", "norway", "finland", "switzerland", "greece",
+            "belarus", "romania", "czech", "serbia", "belgium", "hungary", "austria",
+            "portugal", "denmark", "bulgaria", "croatia", "slovakia"
+        ]
+    },
+    "asia": {
+        "name": "🌏 شرق، جنوب و مرکز آسیا",
+        "short_name": "آسیا",
+        "emoji": "🌏",
+        "keys": [
+            "china", "india", "japan", "south_korea", "north_korea", "taiwan", "pakistan",
+            "indonesia", "malaysia", "singapore", "thailand", "vietnam", "philippines",
+            "myanmar", "bangladesh", "cambodia", "sri_lanka", "laos", "nepal",
+            "afghanistan", "kazakhstan", "uzbekistan", "turkmenistan", "tajikistan",
+            "kyrgyzstan", "mongolia"
+        ]
+    },
+    "americas": {
+        "name": "🌎 قاره آمریکا (شمالی و لاتین)",
+        "short_name": "آمریکا",
+        "emoji": "🌎",
+        "keys": [
+            "usa", "canada", "mexico", "brazil", "argentina", "chile", "colombia",
+            "cuba", "venezuela", "peru", "ecuador", "bolivia"
+        ]
+    },
+    "africa": {
+        "name": "🌍 قاره آفریقا",
+        "short_name": "آفریقا",
+        "emoji": "🌍",
+        "keys": [
+            "egypt", "algeria", "morocco", "south_africa", "nigeria", "sudan", "ethiopia",
+            "kenya", "angola", "tunisia", "libya", "eritrea", "somalia"
+        ]
+    },
+    "oceania": {
+        "name": "🌊 اقیانوسیه",
+        "short_name": "اقیانوسیه",
+        "emoji": "🌊",
+        "keys": [
+            "australia", "new_zealand"
+        ]
+    }
+}
+
+# ===== لیست کامل کشورهای قابل انتخاب در بازی =====
 COUNTRIES = {
     "iran": {'name': 'ایران', 'flag': '🇮🇷', 'uranium_ore': 0, 'uranium_ore_daily': 0, 'nuclear_fuel': 0, 'nuclear_fuel_daily': 0, 'warheads': 0},
     "germany": {'name': 'آلمان', 'flag': '🇩🇪', 'uranium_ore': 0, 'uranium_ore_daily': 0, 'nuclear_fuel': 0, 'nuclear_fuel_daily': 0, 'warheads': 0},
