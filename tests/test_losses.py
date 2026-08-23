@@ -158,32 +158,39 @@ class TestApplyAndRevert:
         assert db.get_country_by_id(cid)["warheads"] == 10
 
 
-class TestAtomicity:
-    def test_nothing_applied_when_one_item_exceeds_stock(self, db, country):
+class TestStockClamping:
+    def test_loss_exceeding_stock_clamps_to_zero(self, db, country):
+        """اگر تلفات بیشتر از موجودی انبار باشد، موجودی صفر می‌شود و ارور نمی‌دهد."""
         cid = country["id"]
         _seed(db, cid, warheads=2)
-        before = _snapshot(db, cid)
+        # F-14 has 24 units, warheads has 2 units
         items = [
-            {"key": "f14", "name": "F-14", "subcat": "ج", "emoji": "✈️", "unit": "فروند", "qty": 4},
+            {"key": "f14", "name": "F-14", "subcat": "ج", "emoji": "✈️", "unit": "فروند", "qty": 30},  # 30 > 24
             {"key": "__warheads__", "name": "کلاهک", "special": "warheads",
-             "subcat": "ه", "emoji": "🚀", "unit": "عدد", "qty": 99},  # بیش از موجودی
+             "subcat": "ه", "emoji": "🚀", "unit": "عدد", "qty": 10},  # 10 > 2
         ]
-        ok, rid, err = db.create_loss_report(cid, items, "op", "", 1)
-        assert ok is False
-        assert err
-        assert _snapshot(db, cid) == before, "هیچ تغییری نباید اعمال می‌شد"
+        ok, rid, err = db.create_loss_report(cid, items, "عملیات سنگین", "", 1)
+        assert ok is True, f"گزارش نباید ریجکت شود: {err}"
+        assert db.get_asset_by_key(cid, "f14")["amount"] == 0
+        assert db.get_country_by_id(cid)["warheads"] == 0
 
-    def test_unknown_asset_aborts_report(self, db, country):
+        # بازگردانی فقط مقداری که واقعاً کسر شده بود را برمی‌گرداند
+        ok_rev, _ = db.revert_loss_report(rid)
+        assert ok_rev is True
+        assert db.get_asset_by_key(cid, "f14")["amount"] == 24
+        assert db.get_country_by_id(cid)["warheads"] == 2
+
+    def test_unknown_asset_or_zero_stock_clamps_safely(self, db, country):
+        """تجهیز ناشناخته یا با موجودی صفر بدون ایجاد خطا یا منفی شدن ثبت می‌شود."""
         cid = country["id"]
         _seed(db, cid)
-        before = _snapshot(db, cid)
         items = [
-            {"key": "f14", "name": "F-14", "subcat": "ج", "emoji": "✈️", "unit": "فروند", "qty": 2},
-            {"key": "does_not_exist", "name": "؟", "subcat": "ج", "emoji": "✈️", "unit": "فروند", "qty": 1},
+            {"key": "f14", "name": "F-14", "subcat": "ج", "emoji": "✈️", "unit": "فروند", "qty": 4},
+            {"key": "does_not_exist", "name": "؟", "subcat": "ج", "emoji": "✈️", "unit": "فروند", "qty": 5},
         ]
-        ok, _, err = db.create_loss_report(cid, items, "op", "", 1)
-        assert ok is False
-        assert _snapshot(db, cid) == before
+        ok, rid, err = db.create_loss_report(cid, items, "op", "", 1)
+        assert ok is True, f"گزارش نباید ریجکت شود: {err}"
+        assert db.get_asset_by_key(cid, "f14")["amount"] == 20
 
 
 class TestBuildings:

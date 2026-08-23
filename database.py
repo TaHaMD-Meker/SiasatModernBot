@@ -966,23 +966,15 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     cur.execute(f"SELECT {column} FROM countries WHERE id = ?", (country_id,))
                     crow = cur.fetchone()
                     have = (crow[column] or 0) if crow else 0
-                    need = int(it["qty"])
-                    if need > have:
-                        raise ValueError(
-                            f"{_LOSS_SPECIAL_LABELS.get(special, 'مقدار')} ({need:,}) بیشتر از موجودی کشور ({have:,}) است."
-                        )
+                    it["qty"] = min(int(it["qty"]), max(0, have))
                     continue
                 cur.execute(
                     "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
                     (country_id, it["key"]),
                 )
                 row = cur.fetchone()
-                if not row:
-                    raise ValueError(f"تجهیز «{it.get('name', it['key'])}» در انبار این کشور یافت نشد.")
-                if int(it["qty"]) > (row["amount"] or 0):
-                    raise ValueError(
-                        f"تلفات «{it.get('name', it['key'])}» ({it['qty']:,}) بیشتر از موجودی ({(row['amount'] or 0):,}) است."
-                    )
+                have = (row["amount"] or 0) if row else 0
+                it["qty"] = min(int(it["qty"]), max(0, have))
             for it in valid_items:
                 if int(it.get("qty", 0) or 0) <= 0:
                     continue
@@ -1004,7 +996,7 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     )
                     continue
                 cur.execute(
-                    "UPDATE country_assets SET amount = amount - ? WHERE country_id = ? AND equipment_key = ?",
+                    "UPDATE country_assets SET amount = MAX(0, amount - ?) WHERE country_id = ? AND equipment_key = ?",
                     (int(it["qty"]), country_id, it["key"]),
                 )
             now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
