@@ -94,3 +94,37 @@ def test_inactivity_revocation_logic(db):
     # آلمان باید حذف شده باشد و فرانسه باید باقی مانده باشد
     assert db.get_country_by_id(cid1) is None
     assert db.get_country_by_id(cid2) is not None
+
+
+def test_inactivity_revocation_paused_by_admin_lock(db):
+    """تست توقف سلب مالکیت در صورت روشن بودن قفل مصونیت ادمین."""
+    import asyncio
+    import main
+
+    cid = db.create_country(3001, "اسپانیا", "🇪🇸", country_key="spain")
+    # زمان ساخت کشور را به ۳ روز پیش می‌بریم
+    conn = db.get_connection()
+    conn.execute("UPDATE countries SET created_at = '2026-08-19T10:00:00+00:00' WHERE id = ?", (cid,))
+    conn.commit()
+    conn.close()
+
+    # روشن کردن قفل توقف حذف
+    db.set_setting("inactivity_revocation_paused", "1")
+    assert db.get_setting("inactivity_revocation_paused") == "1"
+
+    # اجرای جاب بررسی با تاریخ دیروز در حالی که هیچ بیانیه‌ای ثبت نشده است
+    class MockContext:
+        bot = None
+
+    asyncio.run(main.check_daily_inactivity_job(MockContext(), force_date="2026-08-22"))
+
+    # کشور اسپانیا به دلیل روشن بودن قفل توقف نباید حذف شده باشد
+    assert db.get_country_by_id(cid) is not None
+
+    # اکنون قفل توقف را خاموش می‌کنیم
+    db.set_setting("inactivity_revocation_paused", "0")
+    db.set_setting("last_inactivity_check_date", "2026-08-20")  # ریست آخرین تاریخ چک
+    asyncio.run(main.check_daily_inactivity_job(MockContext(), force_date="2026-08-22"))
+
+    # اکنون اسپانیا به دلیل نداشتن بیانیه حذف می‌شود
+    assert db.get_country_by_id(cid) is None

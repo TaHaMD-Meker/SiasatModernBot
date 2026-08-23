@@ -88,11 +88,28 @@ async def admin_locks_menu(query, context):
     trade_lock = db.get_setting("trade_contracts_locked") == "1"
     notes_lock = db.get_setting("diplomatic_notes_locked") == "1"
     role_lock = db.get_setting("role_submit_locked") == "1"
+    inactivity_paused = db.get_setting("inactivity_revocation_paused") == "1"
+
+    status_lines = [
+        f"• ثبت‌نام و ساخت کشور: {'🔒 قفل' if country_lock else '🟢 باز'}",
+        f"• محاصره دریایی: {'🔒 قفل' if blockade_lock else '🟢 باز'}",
+        f"• معاهدات تجاری: {'🔒 قفل' if trade_lock else '🟢 باز'}",
+        f"• پیام‌های دیپلماتیک: {'🔒 قفل' if notes_lock else '🟢 باز'}",
+        f"• ارسال رول و عملیات: {'🔒 قفل' if role_lock else '🟢 باز'}",
+        f"• حذف ساعت ۰۰:۰۰ (بیانیه‌ها): {'🛡️ متوقف و مصونیت فعال (روشن)' if inactivity_paused else '⚡ فعال (حذف خودکار کاربران بدون ۲ بیانیه)'}",
+    ]
 
     text = (
-        "🔐 **سیستم قفل‌ها و کنترل محدودیت‌های بازی**\n"
+        "🔐 **سیستم قفل‌ها و کنترل محدودیت‌های سراسری بازی**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "از این بخش می‌توانید بخش‌های مختلف بازی را به‌صورت لحظه‌ای قفل یا آزاد فرمایید:\n"
+        "📊 **وضعیت فعلی قفل‌ها:**\n"
+        + "\n".join(status_lines) + "\n\n"
+        "👇 جهت تغییر وضعیت هر بخش، روی دکمه مربوطه کلیک فرمایید:"
+    )
+
+    inactivity_btn = InlineKeyboardButton(
+        "▶️ ازسرگیری حذف ساعت ۰۰:۰۰ (خاموش کردن توقف)" if inactivity_paused else "⏸️ توقف حذف ساعت ۰۰:۰۰ (روشن کردن مصونیت سراسری)",
+        callback_data="admin:toggle_lock:inactivity_revocation_paused"
     )
 
     keyboard = [
@@ -101,6 +118,7 @@ async def admin_locks_menu(query, context):
         [InlineKeyboardButton("🔓 باز کردن قراردادهای تجاری" if trade_lock else "🔒 قفل کردن قراردادهای تجاری", callback_data="admin:toggle_lock:trade_contracts_locked")],
         [InlineKeyboardButton("🔓 باز کردن پیام‌های دیپلماتیک" if notes_lock else "🔒 قفل کردن پیام‌های دیپلماتیک", callback_data="admin:toggle_lock:diplomatic_notes_locked")],
         [InlineKeyboardButton("🔓 باز کردن ارسال رول" if role_lock else "🔒 قفل کردن ارسال رول", callback_data="admin:toggle_lock:role_submit_locked")],
+        [inactivity_btn],
         [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
     ]
 

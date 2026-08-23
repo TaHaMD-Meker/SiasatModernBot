@@ -184,7 +184,11 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 # وضعیت بیانیه‌های روزانه و اخطار عدم فعالیت
                 stmt_count = db.get_country_statement_count_today(c["id"])
                 req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
-                if stmt_count >= req_stmts:
+                inact_paused = db.get_setting("inactivity_revocation_paused") == "1"
+
+                if inact_paused:
+                    stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* `{stmt_count} از {req_stmts}` بیانیه (🛡️ سیستم سلب مالکیت ساعت ۰۰:۰۰ موقتاً متوقف و مصونیت فعال است)."
+                elif stmt_count >= req_stmts:
                     stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* ✅ `{stmt_count} از {req_stmts}` بیانیه/توییت ثبت شده (تکمیل شد)."
                 else:
                     needed = req_stmts - stmt_count
@@ -325,6 +329,12 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
     now_tehran = now_utc.astimezone(IRAN_TZ)
     today_str = now_tehran.date().isoformat()
     yesterday_str = force_date or (now_tehran.date() - datetime.timedelta(days=1)).isoformat()
+
+    # بررسی قفل/توقف سراسری سلب مالکیت توسط ادمین در پنل قفل‌ها
+    if db.get_setting("inactivity_revocation_paused") == "1":
+        logger.info("Midnight inactivity country revocation is currently paused by admin setting.")
+        db.set_setting("last_inactivity_check_date", today_str)
+        return
 
     last_checked = db.get_setting("last_inactivity_check_date")
     if not last_checked:
