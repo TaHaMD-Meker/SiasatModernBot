@@ -3271,7 +3271,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
         return False, f"خطا در اجرای قرارداد: {e}"
 
 
-def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int) -> tuple[bool, str]:
+def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int, transport_mode: str = "sea") -> tuple[bool, str]:
     conn = get_connection()
     try:
         with conn:
@@ -3279,12 +3279,6 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
 
             if are_sanctioned(donor_id, recipient_id):
                 return False, "امکان ارسال کمک به کشور تحریم‌شده یا کشوری که شما را تحریم کرده وجود ندارد."
-
-            # اعمال سقف ظرفیت ترابری ناوگان برای کمک‌های خارجی (جلوگیری از دور زدن لجستیک و سوءاستفاده مولتی‌اکانت)
-            sea_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get("sea", {}).get("limits", {})
-            aid_max = 20_000_000 if resource_type == "treasury" else sea_limits.get(resource_type, 100_000)
-            if amount > aid_max:
-                return False, f"⛔ میزان کمک ارسالی ({amount:,}) از حداکثر سقف مجاز بارگیری ناوگان ({aid_max:,}) در هر محموله بیشتر است."
 
             cur.execute("SELECT * FROM countries WHERE id = ?", (donor_id,))
             donor_c = cur.fetchone()
@@ -3296,12 +3290,54 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
 
             d_c = dict(donor_c)
             r_c = dict(recip_c)
+            d_key = d_c.get("country_key")
+            r_key = r_c.get("country_key")
 
+            cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
+            t_cost = cost_map.get(transport_mode, 300_000)
+
+            # بررسی سقف ظرفیت بارگیری برای روش ترابری انتخاب‌شده
+            t_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(transport_mode, {}).get("limits", {})
+            max_cap = 20_000_000 if resource_type == "treasury" else t_limits.get(resource_type, 100_000)
+            if amount > max_cap:
+                t_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(transport_mode, {}).get("name", transport_mode)
+                return False, f"⛔ **مازاد بر ظرفیت بارگیری ناوگان ({t_name}):** حداکثر سقف ارسال برای این کالا برابر با **{max_cap:,} واحد** در هر محموله است."
+
+            # بررسی دسترسی دریایی و محاصره در ترابری دریایی
+            if transport_mode == "sea":
+                if not has_open_sea_access(d_key) or not has_open_sea_access(r_key):
+                    no_sea = d_c if not has_open_sea_access(d_key) else r_c
+                    return False, f"⚓ **ترابری دریایی ممکن نیست:** کشور {no_sea['flag']} {no_sea['name']} محصور در خشکی است. لطفاً از ترابری هوایی یا زمینی استفاده فرمایید."
+
+                if is_country_blockaded(donor_id) or is_country_blockaded(recipient_id):
+                    return False, "⚓ **ترابری دریایی مسدود است:** خطوط کشتیرانی یکی از دو کشور تحت محاصره دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده فرمایید."
+
+                # بررسی انسداد و عوارض تنگه‌ها
+                for owner_key, strait_info in STRAITS_MAPPING.items():
+                    s_key = strait_info["strait_key"]
+                    if is_trade_route_crossing_strait(d_key, r_key, s_key):
+                        st_data = get_strait_status(s_key)
+                        if st_data.get("status") == "blocked" and owner_key not in (d_key, r_key):
+                            return False, f"⛔ **مسیر ترانزیت دریایی مسدود است:** {strait_info['name']} توسط کشور {owner_key} مسدود گردیده است. از ترابری هوایی یا زمینی استفاده کنید."
+                        elif st_data.get("status") == "toll" and owner_key not in (d_key, r_key):
+                            st_toll = st_data.get("toll", 0)
+                            if st_toll > 0:
+                                t_cost += st_toll
+
+            # بررسی موجودی کالا و هزینه ترانزیت
             col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col_name = col_map.get(resource_type, "treasury")
 
+            donor_money_avail = d_c["treasury"] - (amount if resource_type == "treasury" else 0)
+            if donor_money_avail < t_cost:
+                return False, f"💵 **کسری بودجه برای پرداخت هزینه ترانزیت:** هزینه حمل‌ونقل و ترانزیت این محموله برابر با **{format_money(t_cost)}** است و موجودی خزانه شما کافی نیست."
+
             if d_c[col_name] < amount:
                 return False, f"موجودی {resource_type} کشور شما برای ارسال این کمک کافی نیست."
+
+            # کسر هزینه ترانزیت از اهداکننده
+            if t_cost > 0:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (t_cost, donor_id))
 
             cur.execute(f"UPDATE countries SET {col_name} = {col_name} - ? WHERE id = ?", (amount, donor_id))
             cur.execute(f"UPDATE countries SET {col_name} = {col_name} + ? WHERE id = ?", (amount, recipient_id))
@@ -3310,13 +3346,13 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'aid_out', ?, ?, ?)
-            """, (donor_id, f"ارسال کمک خارجی به {r_c['name']}", -amount if resource_type == "treasury" else 0, now_str))
+            """, (donor_id, f"ارسال کمک خارجی ({transport_mode}) به {r_c['name']} (هزینه ترانزیت: {format_money(t_cost)})", -amount if resource_type == "treasury" else 0, now_str))
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'aid_in', ?, ?, ?)
-            """, (recipient_id, f"دریافت کمک خارجی از {d_c['name']}", amount if resource_type == "treasury" else 0, now_str))
+            """, (recipient_id, f"دریافت کمک خارجی ({transport_mode}) از {d_c['name']}", amount if resource_type == "treasury" else 0, now_str))
 
-            return True, "کمک خارجی با موفقیت ارسال شد."
+            return True, "کمک خارجی با موفقیت و پرداخت هزینه ترانزیت ارسال شد."
     except Exception as e:
         return False, f"خطا در ارسال کمک: {e}"
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-تست‌های سقف ظرفیت بارگیری و ترابری برای کمک‌های خارجی (Foreign Aid Capacity Limits).
+تست‌های سقف ظرفیت بارگیری، روش ترابری و هزینه ترانزیت برای کمک‌های خارجی (Foreign Aid Transport).
 """
 
 import os
@@ -13,7 +13,7 @@ import config  # noqa: E402
 import database as db  # noqa: E402
 
 
-def test_foreign_aid_capacity_limits(monkeypatch):
+def test_foreign_aid_capacity_and_transport_costs(monkeypatch):
     import tempfile
     tmpdir = tempfile.mkdtemp()
     monkeypatch.setattr(config, "DB_PATH", os.path.join(tmpdir, "test.db"))
@@ -22,26 +22,33 @@ def test_foreign_aid_capacity_limits(monkeypatch):
     importlib.reload(db)
     db.init_db()
 
-    cid1 = db.create_country(111, "کشور الف", "🅰️", country_key="usa")
-    cid2 = db.create_country(222, "کشور ب", "🅱️", country_key="uk")
+    cid1 = db.create_country(111, "آمریکا", "🇺🇸", country_key="usa")
+    cid2 = db.create_country(222, "بریتانیا", "🇬🇧", country_key="uk")
 
     conn = db.get_connection()
     conn.execute("UPDATE countries SET oil_reserves = 10000000, treasury = 50000000 WHERE id = ?", (cid1,))
     conn.commit()
     conn.close()
 
-    # تلاش برای ارسال ۶۰۰ هزار بشکه نفت (سقف ۵۰۰ هزار بشکه است)
-    ok, msg = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 600_000)
-    assert not ok
-    assert "سقف مجاز" in msg
+    # ۱. تلاش برای ارسال ۶۰ هزار بشکه با ترابری زمینی (سقف زمینی ۵۰ هزار است)
+    ok_land, msg_land = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 60_000, transport_mode="land")
+    assert not ok_land
+    assert "مازاد" in msg_land
 
-    # ارسال ۵۰۰ هزار بشکه نفت (در محدوده سقف)
-    before_oil = db.get_country_by_id(cid2)["oil_reserves"] or 0
-    ok, msg = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 500_000)
-    assert ok
-    assert db.get_country_by_id(cid2)["oil_reserves"] == before_oil + 500_000
+    # ۲. ارسال ۵۰ هزار بشکه با ترابری زمینی (هزینه ترانزیت زمینی ۱ میلیون دلار از خزانه آمریکا کسر می‌شود)
+    usa_treasury_before = db.get_country_by_id(cid1)["treasury"]
+    ok_land_ok, _ = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 50_000, transport_mode="land")
+    assert ok_land_ok
+    assert db.get_country_by_id(cid1)["treasury"] == usa_treasury_before - 1_000_000
 
-    # تلاش برای ارسال ۳۰ میلیون دلار کمک مالی (سقف ۲۰ میلیون دلار است)
-    ok_m, msg_m = db.execute_foreign_aid_transaction(cid1, cid2, "treasury", 30_000_000)
-    assert not ok_m
-    assert "سقف مجاز" in msg_m
+    # ۳. ارسال ۵۰۰ هزار بشکه با ترابری دریایی (هزینه ۳۰۰ هزار دلار)
+    usa_tr_sea = db.get_country_by_id(cid1)["treasury"]
+    ok_sea, _ = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 500_000, transport_mode="sea")
+    assert ok_sea
+    assert db.get_country_by_id(cid1)["treasury"] == usa_tr_sea - 300_000
+
+    # ۴. اگر کشور تحت محاصره دریایی باشد، ترابری دریایی مسدود است
+    db.create_naval_blockade(cid1, cid2)
+    ok_block, msg_block = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 10_000, transport_mode="sea")
+    assert not ok_block
+    assert "محاصره" in msg_block

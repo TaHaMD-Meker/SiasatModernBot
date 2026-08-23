@@ -1589,11 +1589,53 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text(
             f"🕊️ **ارسال کمک اهدایی ({type_labels.get(res_type, res_type)})**\n\n"
             f"• موجودی کشور شما: `{user_avail:,} {type_labels.get(res_type, res_type)}`\n"
-            f"• 📦 حداکثر سقف مجاز در هر محموله: `{aid_max:,} {type_labels.get(res_type, res_type)}`\n\n"
+            f"• 📦 حداکثر سقف مجاز دریایی: `{aid_max:,} {type_labels.get(res_type, res_type)}`\n\n"
             f"لطفاً میزان مورد نظر را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
             parse_mode="Markdown"
         )
+
+    elif data.startswith("dip:aid_finish:"):
+        mode = data.split(":")[2]
+        draft = context.user_data.get("aid_draft")
+        if not draft or "target_id" not in draft or "amount" not in draft:
+            await query.edit_message_text("❌ اطلاعات ارسال کمک منقضی شده است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
+            return
+
+        target_id = draft["target_id"]
+        res_type = draft["resource_type"]
+        amt = draft["amount"]
+
+        succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt, transport_mode=mode)
+        if not succ:
+            await query.edit_message_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
+            return
+
+        target_c = db.get_country_by_id(target_id)
+        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        mode_labels = {"sea": "🚢 ترابری دریایی (۳۰۰k $)", "land": "🚛 ترابری زمینی (۱M $)", "air": "✈️ ترابری هوایی (۲M $)"}
+
+        # Trigger Anti-cheat Alert
+        if amt >= 5_000_000 or res_type in ["gold", "oil"]:
+            await check_and_alert_anti_cheat(context, country, target_c, f"{amt:,} {type_labels.get(res_type, res_type)}", f"کمک خارجی اهدایی ({mode})")
+
+        aid_receipt = (
+            f"📄 **فیش اهدای کمک‌های خارجی و انسان‌دوستانه**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"• **اهداکننده:** {country['flag']} {country['name']}\n"
+            f"• **دریافت‌کننده:** {target_c['flag']} {target_c['name']}\n"
+            f"• **نوع و مقدار کمک:** {amt:,} {type_labels.get(res_type, res_type)}\n"
+            f"• **روش ترابری ناوگان:** {mode_labels.get(mode, mode)}\n\n"
+            "✅ محموله با موفقیت بارگیری و تحویل کشور مقصد گردید."
+        )
+
+        await query.edit_message_text(aid_receipt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]), parse_mode="Markdown")
+
+        if target_c and target_c.get("player_id"):
+            try:
+                await context.bot.send_message(chat_id=target_c["player_id"], text=aid_receipt, parse_mode="Markdown")
+            except Exception:
+                pass
 
     elif data == "dip:rel_start":
         await dip_relations_menu(query, context, country)
@@ -1824,49 +1866,30 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             draft = context.user_data.get("aid_draft", {})
             target_id = draft["target_id"]
             res_type = draft["resource_type"]
-            type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
-
-            # بررسی سقف ظرفیت لجستیک و ترابری برای کمک‌های خارجی
-            sea_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get("sea", {}).get("limits", {})
-            aid_max = 20_000_000 if res_type == "treasury" else sea_limits.get(res_type, 100_000)
-            if amt > aid_max:
-                await update.message.reply_text(
-                    f"⛔ **مازاد بر سقف مجاز بارگیری ناوگان ترابری:**\n\n"
-                    f"حداکثر سقف ارسال برای **{type_labels.get(res_type, res_type)}** در هر محموله اهدایی برابر با **{aid_max:,} {type_labels.get(res_type, res_type)}** است.\n\n"
-                    f"💡 لطفاً عددی کمتر یا مساوی سقف مجاز وارد فرمایید.",
-                    parse_mode="Markdown"
-                )
-                return
-
-            succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt)
-
-            if not succ:
-                await update.message.reply_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", parse_mode="Markdown")
-                return
+            draft["amount"] = amt
 
             target_c = db.get_country_by_id(target_id)
+            type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
 
-            # Trigger Anti-cheat Alert
-            if amt >= 5_000_000 or res_type in ["gold", "oil"]:
-                await check_and_alert_anti_cheat(context, country, target_c, f"{amt:,} {type_labels.get(res_type, res_type)}", "کمک خارجی اهدایی")
-
-            # Send receipt to recipient
-            aid_receipt = (
-                f"📄 **فیش اهدای کمک‌های خارجی و انسان‌دوستانه**\n"
+            text = (
+                f"🕊️ **ارسال کمک‌های انسان‌دوستانه — انتخاب ناوگان و روش ترابری**\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
-                f"• **اهداکننده:** {country['flag']} {country['name']}\n"
-                f"• **دریافت‌کننده:** {target_c['flag']} {target_c['name']}\n"
-                f"• **نوع و مقدار کمک:** {amt:,} {type_labels.get(res_type, res_type)}\n\n"
-                "تراکنش مالی و انتقال منابع با موفقیت ثبت شد."
+                f"• **کشور مقصد:** {target_c['flag']} {target_c['name']}\n"
+                f"• **محموله ارسالی:** {amt:,} {type_labels.get(res_type, res_type)}\n\n"
+                "لطفاً روش ترابری و لجستیک انتقال این کمک را انتخاب فرمایید:\n"
+                "*(هزینه ترانزیت از خزانه کشور اهداکننده کسر می‌شود)*"
             )
 
-            await update.message.reply_text(aid_receipt, parse_mode="Markdown")
+            kb = [
+                [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:sea")],
+                [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")],
+                [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")],
+                [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")],
+            ]
 
-            if target_c and target_c.get("player_id"):
-                try:
-                    await context.bot.send_message(chat_id=target_c["player_id"], text=aid_receipt, parse_mode="Markdown")
-                except Exception:
-                    pass
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        except ValueError:
+            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد.", parse_mode="Markdown")
 
         except ValueError:
             await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد.", parse_mode="Markdown")
