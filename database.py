@@ -237,6 +237,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN vip_expires_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     # جدول سران و کادر فرماندهی نظامی کشورها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS country_commanders (
@@ -571,6 +576,27 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_statements_country_date ON daily_statements(country_id, statement_date)")
     except sqlite3.OperationalError:
         pass
+
+    # جدول درخواست‌ها و فیش‌های پرداخت تومانی (VIP و گروه‌های غیردولتی)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL,
+        country_id INTEGER,
+        item_type TEXT NOT NULL,
+        plan_title TEXT NOT NULL,
+        amount_toman INTEGER NOT NULL,
+        receipt_photo_id TEXT,
+        tracking_code TEXT,
+        custom_payload TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        reviewed_at TEXT,
+        admin_id INTEGER,
+        admin_note TEXT,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE SET NULL
+    )
+    """)
 
     conn.commit()
     conn.close()
@@ -4964,4 +4990,125 @@ def get_all_country_statement_counts_for_date(date_str: str) -> dict:
     counts = {r["country_id"]: r["cnt"] for r in rows}
     conn.close()
     return counts
+
+
+# ==================== پرداخت‌های تومانی و سیستم VIP ====================
+
+def create_payment_request(player_id: int, country_id: int, item_type: str, plan_title: str, amount_toman: int, receipt_photo_id: str = None, tracking_code: str = "", custom_payload: str = "") -> int:
+    """ثبت درخواست و فیش پرداخت تومانی برای بررسی توسط مدیریت."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cur.execute("""
+        INSERT INTO payment_requests
+        (player_id, country_id, item_type, plan_title, amount_toman, receipt_photo_id, tracking_code, custom_payload, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    """, (player_id, country_id, item_type, plan_title, amount_toman, receipt_photo_id, tracking_code, custom_payload, now_str))
+    req_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return req_id
+
+
+def get_pending_payment_requests() -> list:
+    """دریافت تمام فیش‌های پرداخت در انتظار تایید مدیریت."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.*, c.name as country_name, c.flag as country_flag, c.username as country_username
+        FROM payment_requests p
+        LEFT JOIN countries c ON p.country_id = c.id
+        WHERE p.status = 'pending'
+        ORDER BY p.id ASC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_payment_request_by_id(req_id: int):
+    """دریافت اطلاعات یک فیش پرداخت بر اساس شناسه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.*, c.name as country_name, c.flag as country_flag, c.username as country_username
+        FROM payment_requests p
+        LEFT JOIN countries c ON p.country_id = c.id
+        WHERE p.id = ?
+    """, (req_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict]:
+    """تایید رسمی فیش پرداخت و فعال‌سازی اشتراک VIP یا مجوز مربوطه."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM payment_requests WHERE id = ?", (req_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "درخواست پرداخت یافت نشد.", {}
+
+            p = dict(row)
+            if p["status"] != "pending":
+                return False, f"این درخواست قبلاً تعیین تکلیف شده است (وضعیت: {p['status']}).", p
+
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            now_str = now_dt.isoformat()
+
+            item_type = p["item_type"]
+            c_id = p.get("country_id")
+
+            if item_type in ("vip_1month", "vip_3month"):
+                days = 90 if item_type == "vip_3month" else 30
+                exp_dt = now_dt + datetime.timedelta(days=days)
+                if c_id:
+                    cur.execute(
+                        "UPDATE countries SET is_vip = 1, vip_expires_at = ? WHERE id = ?",
+                        (exp_dt.isoformat(), c_id)
+                    )
+
+            cur.execute("""
+                UPDATE payment_requests
+                SET status = 'approved', reviewed_at = ?, admin_id = ?
+                WHERE id = ?
+            """, (now_str, admin_id, req_id))
+
+            p["status"] = "approved"
+            return True, "پرداخت با موفقیت تایید و خدمات فعال گردید.", p
+    except Exception as e:
+        return False, f"خطا در تایید پرداخت: {e}", {}
+
+
+def reject_payment_request(req_id: int, admin_id: int, reason: str = "") -> tuple[bool, str, dict]:
+    """رد فیش پرداخت به دلیل نامعتبر بودن یا عدم واریز."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM payment_requests WHERE id = ?", (req_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "درخواست پرداخت یافت نشد.", {}
+
+            p = dict(row)
+            if p["status"] != "pending":
+                return False, f"این درخواست قبلاً تعیین تکلیف شده است (وضعیت: {p['status']}).", p
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                UPDATE payment_requests
+                SET status = 'rejected', reviewed_at = ?, admin_id = ?, admin_note = ?
+                WHERE id = ?
+            """, (now_str, admin_id, reason or "عدم واریز وجه یا فیش نامعتبر", req_id))
+
+            p["status"] = "rejected"
+            p["admin_note"] = reason or "عدم واریز وجه یا فیش نامعتبر"
+            return True, "درخواست پرداخت رد شد.", p
+    except Exception as e:
+        return False, f"خطا در رد پرداخت: {e}", {}
+
 

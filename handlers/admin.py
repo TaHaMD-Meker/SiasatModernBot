@@ -31,11 +31,14 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pending_reqs = db.get_all_pending_country_requests()
     pending_count = len(pending_reqs)
+    pending_payments = db.get_pending_payment_requests()
+    pay_count = len(pending_payments)
 
     text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
     keyboard = [
         un_btn,
         [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({pending_count})", callback_data="admin:pending_countries")],
+        [InlineKeyboardButton(f"💳 فیش‌های پرداخت تومانی ({pay_count})", callback_data="admin:toman_requests")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
         [InlineKeyboardButton("🚨 رادار ضدتقلب و تراکنش‌های مشکوک", callback_data="admin:anti_cheat_radar")],
@@ -518,6 +521,124 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:close":
         await query.delete_message()
+
+    elif data == "admin:toman_requests":
+        pending = db.get_pending_payment_requests()
+        if not pending:
+            await query.edit_message_text(
+                "💳 **هیچ فیش پرداخت تومانی در انتظار بررسی وجود ندارد.**",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        text = f"💳 **لیست فیش‌های واریزی در انتظار بررسی ({len(pending)} مورد):**\n\nبرای مشاهده پرونده و فیش، روی مورد نظر کلیک کنید:"
+        keyboard = []
+        for p in pending:
+            p_id = p["id"]
+            user_lbl = f"@{p['country_username']}" if p.get("country_username") else f"ID: {p['player_id']}"
+            btn_text = f"💰 #{p_id} | {p['amount_toman']:,} ت | {p['plan_title'][:20]} | {user_lbl}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"admin:view_pay:{p_id}")])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:view_pay:"):
+        req_id = int(data.split(":")[2])
+        p = db.get_payment_request_by_id(req_id)
+        if not p:
+            await query.edit_message_text("❌ فیش پرداخت یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            return
+
+        user_handle = f"@{p['country_username']}" if p.get("country_username") else "ندارد"
+        c_label = f"{p['country_flag']} {p['country_name']}" if p.get("country_name") else "فاقد کشور فعال"
+        dossier = (
+            f"💳 <b>پرونده پرداخت تومانی — شماره #{p['id']}</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>کاربر:</b> {user_handle} (<code>{p['player_id']}</code>)\n"
+            f"🌐 <b>کشور:</b> {c_label}\n"
+            f"📌 <b>پلن درخواستی:</b> {p['plan_title']}\n"
+            f"💵 <b>مبلغ فاکتور:</b> <b>{p['amount_toman']:,} تومان</b>\n"
+            f"📝 <b>کد پیگیری / توضیحات:</b> <code>{html.escape(p.get('tracking_code') or 'ثبت شده با عکس')}</code>\n"
+            f"📅 <b>تاریخ ثبت:</b> <code>{p['created_at'][:19]}</code>\n"
+            f"📊 <b>وضعیت فعلی:</b> <code>{p['status']}</code>\n"
+        )
+        kb = [
+            [
+                InlineKeyboardButton("✅ تایید و فعال‌سازی فوری", callback_data=f"admin:pay_app:{p['id']}"),
+                InlineKeyboardButton("❌ رد فیش", callback_data=f"admin:pay_rej:{p['id']}"),
+            ],
+            [InlineKeyboardButton("🔙 بازگشت به لیست فیش‌ها", callback_data="admin:toman_requests")]
+        ]
+        if p.get("receipt_photo_id"):
+            try:
+                await query.message.reply_photo(photo=p["receipt_photo_id"], caption=dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+                await query.delete_message()
+            except Exception:
+                await query.edit_message_text(dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+        else:
+            await query.edit_message_text(dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+    elif data.startswith("admin:pay_app:"):
+        req_id = int(data.split(":")[2])
+        ok, msg, p = db.approve_payment_request(req_id, user_id)
+        if not ok:
+            await query.edit_message_text(f"❌ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            return
+
+        # ارسال پیام تبریک و فعال‌سازی به کاربر
+        player_id = p["player_id"]
+        success_msg = (
+            f"🎉 **پرداخت شما با موفقیت تایید شد!**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 **سفارش:** {p['plan_title']}\n"
+            f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
+            "✅ **خدمات و دسترسی‌های ویژه برای شما فعال گردید.**\n"
+            "از همراهی و حمایت شما از بازی «سیاست مدرن» صمیمانه سپاسگزاریم. 👑"
+        )
+        try:
+            await context.bot.send_message(chat_id=player_id, text=success_msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to notify user of payment approval: {e}")
+
+        await query.edit_message_text(
+            f"✅ **فیش #{req_id} با موفقیت تایید و خدمات برای کاربر فعال شد.**",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
+                [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
+            ]),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("admin:pay_rej:"):
+        req_id = int(data.split(":")[2])
+        ok, msg, p = db.reject_payment_request(req_id, user_id, "عدم واریز وجه یا فیش نامعتبر")
+        if not ok:
+            await query.edit_message_text(f"❌ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            return
+
+        # اطلاع به کاربر
+        player_id = p["player_id"]
+        rej_msg = (
+            f"❌ **فیش پرداخت شما تایید نشد**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 **سفارش:** {p['plan_title']}\n"
+            f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
+            "⚠️ **علت:** عدم انطباق با گردش حساب یا فیش نامعتبر.\n"
+            "در صورت بروز اشتباه، لطفاً با پشتیبانی یا ارسال مجدد فیش معتبر پیگیری فرمایید."
+        )
+        try:
+            await context.bot.send_message(chat_id=player_id, text=rej_msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to notify user of payment rejection: {e}")
+
+        await query.edit_message_text(
+            f"❌ **فیش #{req_id} رد شد و به کاربر اطلاع داده شد.**",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
+                [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
+            ]),
+            parse_mode="Markdown"
+        )
 
     elif data == "admin:claim_un":
         admin_c = db.get_country_by_player(user_id)

@@ -46,6 +46,17 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_ATO_EINJA_BEZAR")
 # ===== قوانین فعالیت روزانه (بیانیه‌ها و توییت‌ها) =====
 REQUIRED_DAILY_STATEMENTS = 2  # حداقل تعداد بیانیه یا توییت در روز جهت حفظ مالکیت کشور
 
+# ===== تنظیمات فروشگاه تومانی و پرداخت کارت به کارت =====
+PAYMENT_CARD_INFO = {
+    "card_number": os.environ.get("PAYMENT_CARD_NUMBER", "۵۰۴۱-۷۲۱۱-۱۲۳۴-۵۶۷۸"),
+    "card_holder": os.environ.get("PAYMENT_CARD_HOLDER", "مدیریت بازی سیاست مدرن"),
+    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک رسالت / ملی"),
+}
+
+VIP_PASS_PRICE_TOMAN = 79_000         # اشتراک ۱ ماهه VIP رهبر
+MILITIA_LICENSE_PRICE_TOMAN = 50_000   # مجوز تاسیس گروه / شبه‌نظامی غیردولتی
+VIP_PASS_3MONTH_PRICE_TOMAN = 199_000 # اشتراک ۳ ماهه VIP با تخفیف ویژه
+
 # ===== آیدی عددی ادمین اصلی =====
 admin_env = os.environ.get("ADMIN_IDS", "")
 if admin_env:

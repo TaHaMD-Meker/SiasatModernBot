@@ -489,13 +489,22 @@ def main():
     for handler in get_guide_handlers():
         app.add_handler(handler)
 
+    # سیستم خدمات ویژه و پرداخت‌های تومانی (/vip, /premium)
+    from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
+    for handler in get_vip_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
     app.add_handler(CommandHandler("listcountries", listcountries))
 
-    # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها و بیانیه‌ها
+    # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها، بیانیه‌ها و فیش‌های VIP
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.user_data.get("vip_input"):
+            handled = await vip_input_handler(update, context)
+            if handled:
+                return
         from handlers.bases import mv_text_input_handler
         if context.user_data.get("mv_input"):
             handled = await mv_text_input_handler(update, context)
