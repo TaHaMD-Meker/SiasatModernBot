@@ -408,8 +408,8 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
                     ),
                     parse_mode="Markdown"
                 )
-    except Exception as adm_e:
-        print(f"Failed to notify admin of tweet channel error: {adm_e}")
+        except Exception as adm_e:
+            print(f"Failed to notify admin of tweet channel error: {adm_e}")
 
     db.record_country_statement(country["id"], update.effective_user.id, "tweet", tweet_text)
     today_cnt = db.get_country_statement_count_today(country["id"])
