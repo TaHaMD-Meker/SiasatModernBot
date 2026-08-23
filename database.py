@@ -3104,7 +3104,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 if is_country_blockaded(p_id) or is_country_blockaded(r_id):
                     return False, "⚓ **امکان اجرای معاهده از طریق ترابری دریایی وجود ندارد:** خطوط مواصلاتی دریایی یکی از دو کشور تحت محاصره کامل دریایی است. لطفا برای این معاهده از ترابری هوایی یا زمینی استفاده بفرمایید."
 
-                # Check Strait Blockades & Tolls
+                # Check Strait Blockades & Tolls based on realistic geographic maritime route
                 for owner_key, strait_info in STRAITS_MAPPING.items():
                     s_key = strait_info["strait_key"]
                     st_data = get_strait_status(s_key)
@@ -3114,7 +3114,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                     p_c_key = p_c.get("country_key")
                     r_c_key = r_c.get("country_key")
 
-                    if p_c_key in strait_info["affected_keys"] or r_c_key in strait_info["affected_keys"]:
+                    if is_trade_route_crossing_strait(p_c_key, r_c_key, s_key):
                         if st_status == "blocked" and owner_key not in [p_c_key, r_c_key]:
                             owner_c = get_country_by_key(owner_key)
                             owner_name = owner_c["name"] if owner_c else owner_key
@@ -3859,6 +3859,107 @@ STRAITS_MAPPING = {
 }
 
 
+def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_key: str) -> bool:
+    """بررسی واقعی عبور مسیر دریایی بین دو کشور از یک تنگه یا کانال استراتژیک بر اساس جغرافیای دریایی."""
+    if not country1_key or not country2_key:
+        return False
+
+    c1, c2 = country1_key.lower(), country2_key.lower()
+    if c1 == c2:
+        return False
+
+    # حوزه خلیج فارس
+    PERSIAN_GULF = {"iran", "iraq", "kuwait", "saudi", "bahrain", "qatar", "uae", "oman"}
+
+    # حوزه غرب/شمال سوئز (اروپا، مدیترانه، قاره آمریکا، اقیانوس اطلس)
+    SUEZ_WEST = {
+        "uk", "france", "germany", "italy", "spain", "portugal", "belgium", "netherlands", "denmark",
+        "norway", "sweden", "finland", "poland", "croatia", "greece", "cyprus", "turkey", "romania",
+        "bulgaria", "russia", "ukraine", "georgia", "algeria", "tunisia", "libya", "morocco", "syria",
+        "lebanon", "israel", "usa", "canada", "mexico", "brazil", "argentina", "chile", "colombia",
+        "peru", "ecuador", "nigeria", "angola", "south_africa", "cuba", "venezuela", "austria", "belarus",
+        "czech", "hungary", "serbia", "slovakia"
+    }
+
+    # حوزه شرق/جنوب سوئز (دریای سرخ، خلیج فارس، اقیانوس هند، آسیای جنوبی و شرقی، اقیانوسیه)
+    SUEZ_EAST = {
+        "saudi", "yemen", "oman", "uae", "qatar", "kuwait", "iraq", "iran", "sudan", "eritrea",
+        "somalia", "kenya", "ethiopia", "pakistan", "india", "sri_lanka", "bangladesh", "myanmar",
+        "thailand", "cambodia", "vietnam", "malaysia", "singapore", "indonesia", "philippines",
+        "taiwan", "china", "japan", "south_korea", "north_korea", "australia", "new_zealand"
+    }
+
+    # کشورهای ساحلی دریای سرخ
+    RED_SEA_LITTORAL = {"jordan", "sudan", "egypt", "israel", "saudi", "yemen", "eritrea"}
+
+    # حوزه دریای سیاه
+    BLACK_SEA = {"russia", "ukraine", "romania", "bulgaria", "georgia"}
+
+    # حوزه دریای مدیترانه
+    MEDITERRANEAN = {
+        "italy", "greece", "cyprus", "croatia", "turkey", "romania", "bulgaria", "georgia",
+        "russia", "ukraine", "egypt", "israel", "lebanon", "syria", "libya", "tunisia", "algeria"
+    }
+
+    # کشورهای اقیانوس اطلس و آمریکا (خارج از مدیترانه)
+    ATLANTIC_OUTSIDE = {
+        "usa", "canada", "mexico", "cuba", "venezuela", "brazil", "argentina", "chile", "colombia",
+        "peru", "ecuador", "uk", "norway", "sweden", "finland", "denmark", "germany", "netherlands",
+        "belgium", "poland", "portugal", "south_africa", "nigeria", "angola"
+    }
+
+    # حوزه غرب مالاکا (اقیانوس هند، خاورمیانه، آفریقا، اروپا)
+    MALACCA_WEST = {
+        "india", "pakistan", "sri_lanka", "bangladesh", "iran", "iraq", "kuwait", "saudi", "qatar",
+        "uae", "oman", "yemen", "egypt", "sudan", "somalia", "kenya", "south_africa",
+        "uk", "france", "germany", "italy", "spain", "netherlands", "turkey", "russia", "greece"
+    }
+
+    # حوزه شرق مالاکا (شرق و جنوب شرق آسیا در اقیانوس آرام)
+    MALACCA_EAST = {
+        "china", "japan", "south_korea", "north_korea", "taiwan", "philippines", "vietnam", "cambodia", "thailand"
+    }
+
+    if strait_key in ("hormuz", "hormuz_south"):
+        return (c1 in PERSIAN_GULF) != (c2 in PERSIAN_GULF)
+
+    elif strait_key == "suez":
+        # کانال سوئز تنها زمانی طی می‌شود که یک طرف در غرب/شمال سوئز و طرف دیگر در شرق/جنوب سوئز باشد
+        return (c1 in SUEZ_WEST and c2 in SUEZ_EAST) or (c1 in SUEZ_EAST and c2 in SUEZ_WEST)
+
+    elif strait_key in ("bab_el_mandeb", "bab_el_mandeb_west"):
+        # باب‌المندب اتصال دریای سرخ/اروپا به اقیانوس هند و آسیا است
+        is_c1_north = c1 in RED_SEA_LITTORAL or c1 in SUEZ_WEST
+        is_c2_north = c2 in RED_SEA_LITTORAL or c2 in SUEZ_WEST
+        is_c1_south = c1 in SUEZ_EAST and c1 not in RED_SEA_LITTORAL
+        is_c2_south = c2 in SUEZ_EAST and c2 not in RED_SEA_LITTORAL
+        return (is_c1_north and is_c2_south) or (is_c2_north and is_c1_south)
+
+    elif strait_key == "bosphorus":
+        return (c1 in BLACK_SEA) != (c2 in BLACK_SEA)
+
+    elif strait_key in ("gibraltar_north", "gibraltar_south"):
+        # جبل‌الطارق دروازه ورود/خروج مدیترانه به اقیانوس اطلس است
+        return (c1 in MEDITERRANEAN and c2 in ATLANTIC_OUTSIDE) or (c1 in ATLANTIC_OUTSIDE and c2 in MEDITERRANEAN)
+
+    elif strait_key == "danish_straits":
+        baltic_countries = {"sweden", "finland", "poland"}
+        return (c1 in baltic_countries and c2 not in baltic_countries and c2 not in MEDITERRANEAN) or \
+               (c2 in baltic_countries and c1 not in baltic_countries and c1 not in MEDITERRANEAN)
+
+    elif strait_key in ("malacca", "malacca_north", "singapore_strait", "andaman_malacca"):
+        return (c1 in MALACCA_WEST and c2 in MALACCA_EAST) or (c1 in MALACCA_EAST and c2 in MALACCA_WEST)
+
+    elif strait_key in ("taiwan_strait_cn", "taiwan_strait_tw"):
+        return (c1 == "taiwan" and c2 == "china") or (c1 == "china" and c2 == "taiwan")
+
+    elif strait_key == "magellan_drake":
+        return (c1 in {"argentina", "brazil"} and c2 in {"chile", "peru", "ecuador"}) or \
+               (c2 in {"argentina", "brazil"} and c1 in {"chile", "peru", "ecuador"})
+
+    return False
+
+
 def get_strait_info_by_country_key(country_key: str):
     return STRAITS_MAPPING.get(country_key)
 
@@ -4177,13 +4278,12 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                     return False, "⚓ **ترابری دریایی مسدود است:** یکی از دو کشور تحت محاصره کامل دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده بفرمایید.", {}
 
                 for owner_key, strait_info in STRAITS_MAPPING.items():
-                    affected_keys = strait_info.get("affected_keys", [])
                     s_key = seller_c.get("country_key")
                     b_key = buyer_c.get("country_key")
-                    if (s_key in affected_keys or b_key in affected_keys) and owner_key not in (s_key, b_key):
+                    if is_trade_route_crossing_strait(s_key, b_key, strait_info["strait_key"]) and owner_key not in (s_key, b_key):
                         st_status = get_strait_status(strait_info["strait_key"])
-                        if st_status["status"] == "closed":
-                            return False, f"⚓ **گلوگاه دریایی مسدود است:** مسیر ترانزیت دریایی از {strait_info['name']} مسدود شده است.", {}
+                        if st_status["status"] in ("blocked", "closed"):
+                            return False, f"⚓ **گلوگاه دریایی مسدود است:** مسیر ترانزیت دریایی از {strait_info['name']} توسط کشور {owner_key} مسدود شده است.", {}
 
             res_type = order["resource_type"]
             res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
