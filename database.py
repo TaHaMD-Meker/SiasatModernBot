@@ -5125,7 +5125,7 @@ def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴�
         conn.close()
 
 
-def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict]:
+def approve_payment_request(req_id: int, admin_id: int, override_name: str = None) -> tuple[bool, str, dict]:
     """تایید رسمی فیش پرداخت و فعال‌سازی اشتراک VIP یا ایجاد گروه غیردولتی."""
     conn = get_connection()
     try:
@@ -5162,7 +5162,7 @@ def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict
                     payload = json.loads(payload_str)
                 except Exception:
                     payload = {}
-                f_name = payload.get("name") or "گروه مقاومت اختصاصی"
+                f_name = override_name or payload.get("name") or "گروه مقاومت اختصاصی"
                 f_flag = payload.get("flag") or "🏴‍☠️"
                 f_hq = payload.get("hq") or ""
                 f_doc = payload.get("doctrine") or ""
@@ -5173,6 +5173,7 @@ def approve_payment_request(req_id: int, admin_id: int) -> tuple[bool, str, dict
                 if not exist_c:
                     c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc)
                     p["created_country_id"] = c_id
+                    p["created_faction_name"] = f_name
 
             cur.execute("""
                 UPDATE payment_requests

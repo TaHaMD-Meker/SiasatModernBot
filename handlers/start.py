@@ -18,7 +18,7 @@ def build_country_keyboard():
     buttons = []
     row = []
     for key, info in config.COUNTRIES.items():
-        if key in taken or key == "un":
+        if key in taken or key in ("un", "kurdistan"):
             continue
         row.append(InlineKeyboardButton(f"{info['flag']} {info['name']}", callback_data=f"pickcountry:{key}"))
         if len(row) == 2:
@@ -27,7 +27,7 @@ def build_country_keyboard():
     if row:
         buttons.append(row)
     
-    # دکمه ویژه تاسیس گروه غیردولتی
+    # دکمه ویژه تاسیس گروه غیردولتی (شبه‌نظامیان و سازمان‌های مستقل)
     buttons.append([InlineKeyboardButton("🏴‍☠️ تاسیس گروه / شبه‌نظامی اختصاصی (۵۰ هزار ت)", callback_data="vip:militia_wizard_start")])
     return buttons
 

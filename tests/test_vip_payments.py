@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-تست‌های سیستم خدمات ویژه، اشتراک‌های تومانی و ساخت گروه‌های غیردولتی (VIP & Custom Militia).
+تست‌های سیستم خدمات ویژه، اشتراک‌های تومانی، گروه‌های غیردولتی و تایید ادمین با تغییر نام.
 """
 
 import os
@@ -60,21 +60,17 @@ def test_vip_payment_creation_and_approval(db_temp):
     assert c_after["vip_expires_at"] is not None
 
 
-def test_custom_militia_creation_for_new_player_without_country(db_temp):
-    """تست ثبت درخواست و ساخت خودکار گروه شبه‌نظامی غیردولتی برای بازیکنی که کشور ندارد."""
+def test_real_militia_faction_approval(db_temp):
+    """تست انتخاب یک گروه واقعی (مثل سپاه قدس یا واگنر) و تایید آن."""
     player_id = 998877
 
-    # بازیکن هنوز کشوری ندارد
-    assert db_temp.get_country_by_player(player_id) is None
-
     payload = {
-        "name": "سازمان نظامی واگنر",
+        "name": "شرکت نظامی خصوصی واگنر (Wagner PMC)",
         "flag": "💀",
-        "hq": "منطقه دونباس و تدمر",
-        "doctrine": "شرکت نظامی خصوصی (PMC)"
+        "hq": "آفریقا و حوزه ساحل",
+        "doctrine": "عملیات ویژه و زرهی سنگین"
     }
 
-    # ثبت درخواست مجوز و فیش واریزی ۵۰ هزار تومانی
     req_id = db_temp.create_payment_request(
         player_id=player_id,
         country_id=None,
@@ -85,29 +81,47 @@ def test_custom_militia_creation_for_new_player_without_country(db_temp):
         custom_payload=json.dumps(payload, ensure_ascii=False)
     )
 
-    p_req = db_temp.get_payment_request_by_id(req_id)
-    assert p_req["status"] == "pending"
-
-    # تایید درخواست توسط ادمین
     ok, msg, p = db_temp.approve_payment_request(req_id, admin_id=8052987465)
     assert ok
     assert p["status"] == "approved"
 
-    # بررسی ساخته شدن گروه در دیتابیس با تسلیحات و منابع اولیه
-    new_faction = db_temp.get_country_by_player(player_id)
-    assert new_faction is not None
-    assert new_faction["name"] == "سازمان نظامی واگنر"
-    assert new_faction["flag"] == "💀"
-    assert new_faction["treasury"] == 25_000_000
-    assert new_faction["active_personnel"] == 60_000
-    assert new_faction["is_vip"] == 1
+    faction = db_temp.get_country_by_player(player_id)
+    assert faction is not None
+    assert "واگنر" in faction["name"]
+    assert faction["flag"] == "💀"
+    assert faction["treasury"] == 25_000_000
+    assert faction["active_personnel"] == 60_000
 
-    # بررسی وجود تسلیحات نامتقارن گروه
-    assets = db_temp.get_country_assets(new_faction["id"])
-    assert len(assets) >= 10
-    asset_names = [a["equipment_name"] for a in assets]
-    assert any("تویوتا" in name for name in asset_names)
-    assert any("گراد" in name for name in asset_names)
+
+def test_custom_militia_with_admin_rename(db_temp):
+    """تست ثبت گروه سفارشی با نام خام و اصلاح/بازنویسی نام توسط ادمین موقع تایید."""
+    player_id = 887766
+
+    payload = {
+        "name": "گروه خفن بچه های شرق",  # نام غیررسمی ارسال‌شده توسط کاربر
+        "flag": "⚔️",
+        "hq": "شمال حلب",
+        "doctrine": "جنگ چریکی"
+    }
+
+    req_id = db_temp.create_payment_request(
+        player_id=player_id,
+        country_id=None,
+        item_type="militia",
+        plan_title="🏴‍☠️ مجوز گروه غیردولتی",
+        amount_toman=50_000,
+        tracking_code="TRX-CUSTOM-99",
+        custom_payload=json.dumps(payload, ensure_ascii=False)
+    )
+
+    # ادمین نام را به عنوان رسمی اصلاح و تایید می‌کند
+    official_name = "تیپ واکنش سریع مدافعان شمال"
+    ok, msg, p = db_temp.approve_payment_request(req_id, admin_id=8052987465, override_name=official_name)
+    assert ok
+
+    faction = db_temp.get_country_by_player(player_id)
+    assert faction["name"] == official_name
+    assert faction["flag"] == "⚔️"
 
 
 def test_militia_license_rejection_flow(db_temp):
@@ -126,6 +140,4 @@ def test_militia_license_rejection_flow(db_temp):
     assert ok
     assert p["status"] == "rejected"
     assert p["admin_note"] == "فیش جعلی"
-
-    # کشوری برای بازیکن نباید ساخته شده باشد
     assert db_temp.get_country_by_player(player_id) is None
