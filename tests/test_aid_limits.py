@@ -41,13 +41,18 @@ def test_foreign_aid_capacity_and_transport_costs(monkeypatch):
     assert ok_land_ok
     assert db.get_country_by_id(cid1)["treasury"] == usa_treasury_before - 1_000_000
 
-    # ۳. ارسال ۵۰۰ هزار بشکه با ترابری دریایی (هزینه ۳۰۰ هزار دلار)
+    # ۳. تلاش برای ارسال ۲.۵ میلیون بشکه با ترابری دریایی (سقف جدید ۲ میلیون بشکه است)
+    ok_sea_exceed, msg_sea_exceed = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 2_500_000, transport_mode="sea")
+    assert not ok_sea_exceed
+    assert "مازاد" in msg_sea_exceed
+
+    # ۴. ارسال ۱.۵ میلیون بشکه با ترابری دریایی / نفتکش (هزینه ۳۰۰ هزار دلار)
     usa_tr_sea = db.get_country_by_id(cid1)["treasury"]
-    ok_sea, _ = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 500_000, transport_mode="sea")
+    ok_sea, _ = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 1_500_000, transport_mode="sea")
     assert ok_sea
     assert db.get_country_by_id(cid1)["treasury"] == usa_tr_sea - 300_000
 
-    # ۴. اگر کشور تحت محاصره دریایی باشد، ترابری دریایی مسدود است
+    # ۵. اگر کشور تحت محاصره دریایی باشد، ترابری دریایی مسدود است
     db.create_naval_blockade(cid1, cid2)
     ok_block, msg_block = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 10_000, transport_mode="sea")
     assert not ok_block
