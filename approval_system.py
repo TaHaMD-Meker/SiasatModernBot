@@ -299,9 +299,10 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     total_maint = maint_info["total_maint"]
     disc_pct = maint_info["discount_pct"]
 
-    tax_income = c.get("tax_income", 0)
-    daily_income = c.get("daily_income", 0)
-    net_income = daily_income - total_maint
+    tax_income = c.get("tax_income", 0) or 0
+    daily_income = c.get("daily_income", 0) or 0
+    gross_income = daily_income + tax_income
+    net_income = gross_income - total_maint
 
     gold_daily = c.get("gold_daily", 0)
     oil_prod = c.get("oil_production", 0)
@@ -316,14 +317,14 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     lines.append("━━━━━━━━━━━━━━━━━━\n")
     lines.append("*خلاصه مالی و تغییرات اقتصادی روزانه:*\n")
 
-    lines.append(f"• *درآمد پایه و مالیاتی:* +{format_money(daily_income)}/روز\n")
+    lines.append(f"• *درآمد ناخالص روزانه:* +{format_money(gross_income)}/روز (صنعتی: {format_money(daily_income)} | مالیات مردم: +{format_money(tax_income)})\n")
 
     if total_maint > 0:
         disc_str = f" (تخفیف فناوری: {disc_pct}٪)" if disc_pct > 0 else ""
         lines.append(f"• *هزینه نگهداری تجهیزات و ارتش:* -{format_money(total_maint)}/روز{disc_str}\n")
 
     net_sign = "+" if net_income >= 0 else ""
-    lines.append(f"• *خالص تغییر روزانه خزانه:* {net_sign}{format_money(net_income)}/روز (اعمال گردید)\n")
+    lines.append(f"• *خالص واریز روزانه به خزانه:* {net_sign}{format_money(net_income)}/روز (شامل مالیات و کسر ارتش)\n")
 
     if gold_daily > 0:
         lines.append(f"• *تولید روزانه طلا:* +{gold_daily:,} شمش طلا\n")

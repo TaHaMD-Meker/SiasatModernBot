@@ -178,11 +178,15 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             except Exception:
                 pass
 
+        tax_part = tax_income if force else int(tax_income / INCOME_PARTS)
+        daily_part = c["daily_income"] if force else int(c["daily_income"] / INCOME_PARTS)
+        maint_part = maint_info["total_maint"] if force else int(maint_info["total_maint"] / INCOME_PARTS)
+
         db.update_country_field(c["id"], "last_income_date", now.isoformat())
         if force:
-            db.add_transaction(c["id"], "daily_income", "توزیع فوری درآمد روزانه (ادمین)", net_full)
+            db.add_transaction(c["id"], "daily_income", f"توزیع فوری درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)})", net_full)
         else:
-            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد (هر {INCOME_INTERVAL_HOURS} ساعت){sanction_note}", net_payment)
+            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)}){sanction_note}", net_payment)
 
         p_id = c.get("player_id")
         if p_id:
@@ -215,11 +219,16 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                     u_line = f"\n• ☢️ کیک زرد: +{u_payment:,} تن" if u_payment > 0 else ""
                     fuel_line = f"\n• 🧪 سوخت غنی‌شده: +{fuel_payment:,} ک‌گ" if fuel_payment > 0 else ""
                     report_msg = (
-                        f"💵 *واریز دوره‌ای درآمد — {c2['flag']} {c2['name']}*\n\n"
-                        f"• مبلغ واریزی: *{format_money(net_payment)}*\n"
-                        f"• طلا: +{gold_payment}{chips_line}{iron_line}{u_line}{fuel_line}\n"
-                        f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
-                        f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
+                        f"💵 *واریز دوره‌ای درآمد و مالیات — {c2['flag']} {c2['name']}*\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"• 💰 *مالیات وصول‌شده از شهروندان:* +{format_money(tax_part)}\n"
+                        f"• 🏭 *درآمد پایه و کارخانجات:* +{format_money(daily_part)}\n"
+                        f"• 🪖 *هزینه نگهداری نیروهای مسلح:* -{format_money(maint_part)}\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"• 📥 *خالص واریز این نوبت به خزانه:* *{format_money(net_payment)}*\n"
+                        f"• 🏦 *موجودی جدید خزانه:* {format_money(c2['treasury'])}\n"
+                        f"• 🪙 طلا: +{gold_payment}{chips_line}{iron_line}{u_line}{fuel_line}\n\n"
+                        f"_درآمدها در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شوند._"
                         f"{stmt_status_section}"
                     )
                 await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=get_main_keyboard(p_id), parse_mode="Markdown")
