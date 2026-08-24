@@ -515,7 +515,18 @@ async def _handle_health_check(reader: asyncio.StreamReader, writer: asyncio.Str
 
 
 async def on_post_init(application: Application):
-    """راه‌اندازی سرور سبک بررسی سلامت برای Railway در صورت وجود متغیر PORT."""
+    """راه‌اندازی سرور سبک بررسی سلامت و تضمین اتصال مستقیم به تلگرام."""
+    if not config.BOT_TOKEN or config.BOT_TOKEN == "TOKEN_ATO_EINJA_BEZAR":
+        logger.critical("⚠️ هشدار مهم: متغیر BOT_TOKEN در تنظیمات سرور (Railway Variables) ست نشده است!")
+        return
+
+    try:
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        me = await application.bot.get_me()
+        logger.info(f"✅ ربات با موفقیت به تلگرام متصل شد: @{me.username} (ID: {me.id})")
+    except Exception as e:
+        logger.error(f"❌ خطا در احراز هویت توکن تلگرام یا حذف وب‌هوک: {e}")
+
     port_str = os.environ.get("PORT")
     if port_str:
         try:

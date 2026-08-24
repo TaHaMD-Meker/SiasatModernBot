@@ -43,7 +43,14 @@ STARTING_VALUES = {
 }
 
 # ===== توکن بات =====
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_ATO_EINJA_BEZAR")
+BOT_TOKEN = (
+    os.environ.get("BOT_TOKEN")
+    or os.environ.get("TELEGRAM_TOKEN")
+    or os.environ.get("TOKEN")
+    or os.environ.get("BOT_API_TOKEN")
+    or os.environ.get("TG_BOT_TOKEN")
+    or "TOKEN_ATO_EINJA_BEZAR"
+).strip().strip('"').strip("'")
 
 # ===== قوانین فعالیت روزانه (بیانیه‌ها و توییت‌ها) =====
 REQUIRED_DAILY_STATEMENTS = 2  # حداقل تعداد بیانیه یا توییت در روز جهت حفظ مالکیت کشور
