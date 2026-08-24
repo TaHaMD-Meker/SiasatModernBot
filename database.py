@@ -729,7 +729,9 @@ def init_db():
         pass
 
     try:
-        rebalance_existing_countries_income()
+        if not get_setting("rebalance_done_v3"):
+            rebalance_existing_countries_income()
+            set_setting("rebalance_done_v3", "1")
     except Exception:
         pass
 

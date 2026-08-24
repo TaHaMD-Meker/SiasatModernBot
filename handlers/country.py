@@ -70,6 +70,16 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     vip_badge = f"<b>سطح رهبری:</b> {tier_badges.get(vip_tier, '⭐ <b>اشتراک طلایی VIP</b>')}\n" if c.get("is_vip") else ""
 
+    maint_info = db.calculate_country_maintenance_cost(c["id"])
+    tax_val = c.get("tax_income", 0) or 0
+    daily_val = c.get("daily_income", 0) or 0
+    gross_val = daily_val + tax_val
+    total_maint = maint_info.get("total_maint", 0) or 0
+    net_val = gross_val - total_maint
+    net_quarter = int(net_val / 4)
+    net_sign = "+" if net_val >= 0 else ""
+    net_color = "🟢" if net_val >= 0 else "🔴"
+
     text = (
         f"{pe('globe', '🌐')} <b>شناسنامه و وضعیت جامع کشور</b>\n"
         f"<blockquote>"
@@ -80,9 +90,10 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"</blockquote>\n"
         f"<b>اقتصاد و خزانه ملی</b>\n"
         f"• {pe('bank', '🏦')} <b>خزانه کشور:</b> {format_money(c['treasury'])}\n"
-        f"• {pe('money', '📈')} <b>درآمد روزانه کل:</b> {format_money(c['daily_income'])}\n"
-        f"• {pe('gold', '🪙')} <b>پشتوانه طلا:</b> {format_number(c['gold'])} شمش\n"
-        f"• {pe('money', '💰')} <b>درآمد مالیاتی:</b> {format_money(c['tax_income'])}\n\n"
+        f"• {pe('money', '📈')} <b>درآمد ناخالص روزانه:</b> {format_money(gross_val)} (پایه: {format_money(daily_val)} | مالیات: {format_money(tax_val)})\n"
+        f"• {pe('shield', '🪖')} <b>هزینه نگهداری ارتش:</b> -{format_money(total_maint)}/روز\n"
+        f"• {net_color} <b>درآمد خالص روزانه:</b> {net_sign}{format_money(net_val)}/روز (واریز هر ۶ ساعت: {net_sign}{format_money(net_quarter)})\n"
+        f"• {pe('gold', '🪙')} <b>پشتوانه طلا:</b> {format_number(c['gold'])} شمش\n\n"
         f"<b>انرژی، غلات و صنایع استراتژیک</b>\n"
         f"• {pe('oil', '🛢️')} <b>ذخایر نفت:</b> {format_oil(c['oil_reserves'])} (تولید: {format_oil(c['oil_production'])}/روز)\n"
         f"• {pe('grain', '🌾')} <b>ذخایر غلات:</b> {format_number(c['grain'])} تن (+{format_number(c.get('grain_daily') or 0)} تن/روز)\n"
