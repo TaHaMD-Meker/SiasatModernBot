@@ -81,9 +81,9 @@ def get_main_keyboard(user_id: int):
         ["🎯 ستاد توسعه و اقدامات راهبردی", "🏛️ دانشکده"],
     ]
     if user_id in config.ADMIN_IDS:
-        buttons.append(["⭐️ بتل‌پس فصلی", "💎 خدمات ویژه VIP", "👑 پنل مدیریت"])
+        buttons.append(["💎 خدمات ویژه VIP", "👑 پنل مدیریت"])
     else:
-        buttons.append(["⭐️ بتل‌پس فصلی", "💎 خدمات ویژه VIP"])
+        buttons.append(["💎 خدمات ویژه VIP"])
 
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 

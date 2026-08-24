@@ -8,6 +8,7 @@
 import datetime
 import logging
 from zoneinfo import ZoneInfo
+import telegram.error
 
 from telegram import Update
 from telegram.ext import (
@@ -594,9 +595,11 @@ def main():
 
     # مدیریت سراسری خطاها (جهت پایداری و عدم کرش بات در ترافیک بالا)
     async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-        import telegram.error
         err = context.error
-        if isinstance(err, telegram.error.Forbidden):
+        if isinstance(err, telegram.error.Conflict):
+            logger.warning(f"Telegram Conflict error ignored: {err}")
+            return
+        elif isinstance(err, telegram.error.Forbidden):
             logger.info(f"Forbidden error ignored: {err}")
             return
         elif isinstance(err, telegram.error.RetryAfter):
