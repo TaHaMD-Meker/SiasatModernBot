@@ -129,29 +129,58 @@ async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== فهرست سازمان‌ها و گروه‌های شبه‌نظامی غیردولتی ====================
 
 async def show_predefined_factions_menu(query, context, user_id: int):
-    """نمایش لیست گروه‌های آماده معتبر به همراه گزینه سفارشی."""
+    """نمایش لیست گروه‌های آماده معتبر به همراه گزینه سفارشی و ارزیابی انطباق ژئوپلیتیک با کشور کاربر."""
     factions = getattr(config, "PREDEFINED_MILITIA_FACTIONS", {})
     taken_keys = db.get_taken_militia_faction_keys()
+    country = db.get_country_by_player(user_id)
+    c_key = country.get("country_key") if country else None
 
-    text = (
-        "🏴‍☠️ **فهرست سازمان‌ها و گروه‌های شبه‌نظامی غیردولتی معتبر جهان**\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "یکی از گروه‌های آماده زیر را جهت هدایت انتخاب فرمایید، یا در انتها گروه سفارشی با مشخصات دلخواه خود بسازید:\n\n"
-        "📊 **بسته آغازین هر گروه:**\n"
-        "• 💰 **۲۵ میلیون دلار** خزانه و بودجه اولیه\n"
-        "• 🪖 **۶۰,۰۰۰ رزمنده** آماده‌باش\n"
-        "• 🎖️ **+۴۰ قلم تسلیحات و تجهیزات واقعی و تخصصی**\n"
-        "• ⭐ **اشتراک طلایی VIP هدیه به رهبر گروه**\n"
-        "• 💵 **تعرفه صدور مجوز:** ۵۰,۰۰۰ تومان (یک‌بار پرداخت)\n"
-    )
+    price = getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 100_000)
+
+    if country and not (c_key or "").startswith("faction_"):
+        header_text = (
+            f"🏴‍☠️ **تاسیس بازوی نیابتی / ارتش خصوصی برای دولت {country['flag']} {country['name']}**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "به عنوان رهبر کشور، می‌توانید یکی از یگان‌های هم‌پیمان زیر را به عنوان **«بازوی نیابتی و نیروی نامتقارن»** کشور خود فعال فرمایید:\n\n"
+            "• 💰 **۲۵ میلیون دلار** بودجه و خزانه اولیه سازمانی\n"
+            "• 🪖 **۶۰,۰۰۰ رزمنده** آماده‌باش\n"
+            "• 🎖️ **تسلیحات و ادوات تخصصی بومی**\n"
+            "• ⭐ **اشتراک طلایی VIP هدیه به رهبر**\n"
+            f"• 💵 **تعرفه صدور مجوز:** {price:,} تومان (یک‌بار پرداخت)\n\n"
+            "*(یگان‌های ناسازگار با دکترین سیاسی کشور شما قفل هستند؛ ساخت گروه سفارشی برای همه آزاد است)*"
+        )
+    else:
+        header_text = (
+            "🏴‍☠️ **فهرست سازمان‌ها و گروه‌های شبه‌نظامی غیردولتی معتبر جهان**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "یکی از گروه‌های آماده زیر را جهت هدایت انتخاب فرمایید، یا در انتها گروه سفارشی با مشخصات دلخواه خود بسازید:\n\n"
+            "• 💰 **۲۵ میلیون دلار** خزانه و بودجه اولیه\n"
+            "• 🪖 **۶۰,۰۰۰ رزمنده** آماده‌باش\n"
+            "• 🎖️ **تسلیحات و تجهیزات واقعی و تخصصی**\n"
+            "• ⭐ **اشتراک طلایی VIP هدیه به رهبر گروه**\n"
+            f"• 💵 **تعرفه صدور مجوز:** {price:,} تومان (یک‌بار پرداخت)\n"
+        )
 
     keyboard = []
     row = []
     for f_key, f_info in factions.items():
         is_taken = f_key in taken_keys
-        status_icon = "🔒 " if is_taken else f"{f_info['flag']} "
-        btn_label = f"{status_icon}{f_info['short_name']}"
-        cb_data = "ignore" if is_taken else f"vip:fpick:{f_key}"
+        allowed_allies = f_info.get("allowed_countries", [])
+        
+        is_compatible = True
+        if country and c_key and not c_key.startswith("faction_") and allowed_allies:
+            is_compatible = c_key in allowed_allies
+
+        if is_taken:
+            btn_label = f"🔒 {f_info['short_name']}"
+            cb_data = "ignore"
+        elif not is_compatible:
+            btn_label = f"🔒 {f_info['short_name']} (نامنطبق)"
+            cb_data = f"vip:f_incompat:{f_key}"
+        else:
+            btn_label = f"{f_info['flag']} {f_info['short_name']}"
+            cb_data = f"vip:fpick:{f_key}"
+
         row.append(InlineKeyboardButton(btn_label, callback_data=cb_data))
         if len(row) == 2:
             keyboard.append(row)
@@ -161,9 +190,9 @@ async def show_predefined_factions_menu(query, context, user_id: int):
 
     # دکمه گروه سفارشی با نام دلخواه
     keyboard.append([InlineKeyboardButton("✨ ساخت گروه سفارشی (نام و نماد دلخواه)", callback_data="vip:fpick:custom")])
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت به صفحه اصلی", callback_data="vip:menu")])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به فروشگاه ویژه", callback_data="vip:menu")])
 
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text(header_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def preview_predefined_faction_checkout(query, context, faction_key: str):
@@ -463,6 +492,15 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await start_custom_militia_wizard(query, context)
         else:
             await preview_predefined_faction_checkout(query, context, f_key)
+
+    elif data.startswith("vip:f_incompat:"):
+        f_key = data.split(":", 2)[2]
+        f_info = getattr(config, "PREDEFINED_MILITIA_FACTIONS", {}).get(f_key, {})
+        c_name = country['name'] if country else "کشور شما"
+        await query.answer(
+            f"⛔ یگان «{f_info.get('name', f_key)}» با جبهه سیاسی و دکترین {c_name} هم‌پوشانی ندارد.\n\n💡 لطفاً یگان‌های هم‌پیمان یا «ساخت گروه سفارشی» را انتخاب فرمایید.",
+            show_alert=True
+        )
 
     elif data.startswith("vip:doc:"):
         doc_key = data.split(":", 2)[2]

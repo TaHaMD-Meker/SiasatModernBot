@@ -358,3 +358,64 @@ def test_dual_state_and_militia_switching(db_temp):
     assert target2["id"] == state_id
     assert db_temp.get_country_by_player(player_id)["id"] == state_id
     assert db_temp.get_country_by_player(player_id)["name"] == "ایران"
+
+
+def test_geopolitical_affinity_and_new_factions(db_temp):
+    """تست اعتبارسنجی انطباق ژئوپلیتیک یگان‌ها با کشور بازیکن و وجود ۱۴ گروه."""
+    import asyncio
+    from handlers.vip import show_predefined_factions_menu, vip_callback_handler
+
+    async def _test():
+        # بررسی وجود ۱۴ گروه و یگان‌های جدید
+        factions = config.PREDEFINED_MILITIA_FACTIONS
+        assert len(factions) >= 14
+        assert "nohead_65" in factions
+        assert "blackwater" in factions
+        assert "task_force" in factions
+        assert "french_legion" in factions
+        assert "ansarullah" in factions
+        assert "gurkha" in factions
+
+        # ۱. کاربر بدون کشور (استارت اولیه) -> تمام گروه‌ها برایش باز و قابل انتخاب هستند
+        class MockUser:
+            id = 112233
+
+        class MockQuery:
+            def __init__(self):
+                self.from_user = MockUser()
+                self.last_text = ""
+                self.last_reply_markup = None
+                self.answered = False
+                self.alert_text = None
+
+            async def answer(self, text=None, show_alert=False):
+                self.answered = True
+                self.alert_text = text
+
+            async def edit_message_text(self, text, reply_markup=None, parse_mode=None):
+                self.last_text = text
+                self.last_reply_markup = reply_markup
+
+        q_onboarding = MockQuery()
+        await show_predefined_factions_menu(q_onboarding, None, 112233)
+        # تمام دکمه‌ها باید دارای fpick باشند و قفل نامنطبق نباشند
+        callbacks = [btn.callback_data for row in q_onboarding.last_reply_markup.inline_keyboard for btn in row]
+        assert "vip:fpick:sepah" in callbacks
+        assert "vip:fpick:nohead_65" in callbacks
+        assert "vip:fpick:blackwater" in callbacks
+        assert "vip:fpick:ansarullah" in callbacks
+
+        # ۲. کاربر دارای کشور ایران -> بلک‌واتر باید قفل نامنطبق باشد ولی سپاه و نوهد باز باشند
+        cid_iran = db_temp.create_country(445566, "ایران", "🇮🇷", country_key="iran")
+        q_iran = MockQuery()
+        q_iran.from_user.id = 445566
+        await show_predefined_factions_menu(q_iran, None, 445566)
+        iran_cbs = [btn.callback_data for row in q_iran.last_reply_markup.inline_keyboard for btn in row]
+        assert "vip:fpick:sepah" in iran_cbs
+        assert "vip:fpick:nohead_65" in iran_cbs
+        assert "vip:fpick:ansarullah" in iran_cbs
+        # بلک‌واتر و لژیون فرانسه برای ایران قفل نامنطبق هستند
+        assert "vip:f_incompat:blackwater" in iran_cbs
+        assert "vip:f_incompat:french_legion" in iran_cbs
+
+    asyncio.run(_test())
