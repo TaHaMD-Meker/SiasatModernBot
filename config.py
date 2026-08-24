@@ -21036,3 +21036,30 @@ for _ck, _vals in IRON_RICH_COUNTRIES_STATS.items():
     if _ck in COUNTRY_STARTING_OVERRIDES:
         COUNTRY_STARTING_OVERRIDES[_ck].update(_vals)
 
+
+# ==================== تنظیمات بحران حاد نفتی اروپا (اتمام ذخایر ظرف ۱ تا ۳ روز) ====================
+
+EUROPEAN_ENERGY_CRISIS_OIL_STATS = {
+    # ذخایر نفت بحرانی ۱ تا ۳ روزه برای کشورهای صنعتی و وابسته اروپا
+    "germany":     {"oil_reserves": 650_000, "oil_production": 30_000},   # اتمام در ۱.۴ روز
+    "france":      {"oil_reserves": 600_000, "oil_production": 15_000},   # اتمام در ۱.۵ روز
+    "italy":       {"oil_reserves": 450_000, "oil_production": 10_000},   # اتمام در ۱.۲ روز
+    "spain":       {"oil_reserves": 400_000, "oil_production": 20_000},   # اتمام در ۱.۳ روز
+    "poland":      {"oil_reserves": 350_000, "oil_production": 20_000},   # اتمام در ۱.۴ روز
+    "netherlands": {"oil_reserves": 250_000, "oil_production": 50_000},   # اتمام در ۲.۳ روز
+    "belgium":     {"oil_reserves": 200_000, "oil_production": 0},        # اتمام در ۱.۷ روز
+    "switzerland": {"oil_reserves": 150_000, "oil_production": 0},        # اتمام در ۱.۶ روز
+    "austria":     {"oil_reserves": 160_000, "oil_production": 10_000},   # اتمام در ۱.۸ روز
+    "sweden":      {"oil_reserves": 180_000, "oil_production": 0},        # اتمام در ۱.۷ روز
+    "czech":       {"oil_reserves": 180_000, "oil_production": 5_000},    # اتمام در ۱.۷ روز
+    "greece":      {"oil_reserves": 170_000, "oil_production": 10_000},   # اتمام در ۱.۷ روز
+    "portugal":    {"oil_reserves": 170_000, "oil_production": 0},        # اتمام در ۱.۶ روز
+    "hungary":     {"oil_reserves": 160_000, "oil_production": 15_000},   # اتمام در ۱.۸ روز
+    "finland":     {"oil_reserves": 120_000, "oil_production": 0},        # اتمام در ۱.۷ روز
+    "serbia":      {"oil_reserves": 130_000, "oil_production": 20_000},   # اتمام در ۲.۲ روز
+}
+
+for _ck, _vals in EUROPEAN_ENERGY_CRISIS_OIL_STATS.items():
+    if _ck in COUNTRY_STARTING_OVERRIDES:
+        COUNTRY_STARTING_OVERRIDES[_ck].update(_vals)
+

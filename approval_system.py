@@ -47,16 +47,16 @@ def calculate_country_requirements(c: dict):
             pass
     elec_need = 100 + ind_elec_need
 
-    # 2. مصرف سوخت و نفت روزانه (با اعمال ضریب شدت مصرف انرژی برای کشورهای صنعتی و واردکننده اروپا و آسیا)
+    # 2. مصرف سوخت و نفت روزانه (با اعمال ضریب بحران حاد انرژی برای کشورهای صنعتی اروپا — اتمام ذخایر در ۱ تا ۳ روز)
     c_key = c.get("country_key", "")
     is_industrial_importer = c_key in (
         "germany", "france", "uk", "italy", "spain", "netherlands",
         "switzerland", "japan", "south_korea", "taiwan", "poland", "belgium",
-        "austria", "sweden", "finland"
+        "austria", "sweden", "finland", "czech", "greece", "portugal", "hungary", "serbia"
     )
-    energy_intensity = 1.6 if is_industrial_importer else 1.0
+    energy_intensity = 2.0 if is_industrial_importer else 1.0
 
-    pop_oil_need = max(1_500, int((pop_millions ** 0.70) * 8_000 * energy_intensity))
+    pop_oil_need = max(2_000, int((pop_millions ** 0.72) * 10_000 * energy_intensity))
     ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
     total_oil_need_daily = pop_oil_need + ind_oil_need
 
