@@ -612,12 +612,65 @@ async def show_country_economy_menu(query, context, country_id: int):
             InlineKeyboardButton("😀 رضایت عمومی", callback_data=f"admin:cstat:{country_id}:approval_rating"),
         ],
         [
-            InlineKeyboardButton("⚙️ منوی تفصیلی ویرایش کلیه فیلدها", callback_data=f"admin:cstatmenu:{country_id}"),
-            InlineKeyboardButton("🔙 بازگشت به داشبورد", callback_data=f"admin:c:{country_id}"),
+            InlineKeyboardButton("🏗️ مدیریت ساخت‌وسازها و کارخانجات", callback_data=f"admin:c_civ_constructions:{country_id}"),
+            InlineKeyboardButton("⚙️ ویرایش تفصیلی فیلدها", callback_data=f"admin:cstatmenu:{country_id}"),
+        ],
+        [
+            InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{country_id}"),
         ]
     ]
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+
+async def show_country_constructions_menu(query, context, country_id: int):
+    """مدیریت و مشاهده تمام کارخانجات، زیرساخت‌ها و ساخت‌وسازهای غیرنظامی کشور."""
+    c = db.get_country_by_id(country_id)
+    if not c:
+        return
+
+    equipment = db.get_equipment(country_id)
+    c_name_esc = html.escape(c["name"])
+    lines = [
+        f"🏗️ <b>پروژه‌ها و ساخت‌وسازهای غیرنظامی — {c['flag']} {c_name_esc}</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "در زیر لیست تمام ساختمان‌ها، کارخانجات، نیروگاه‌ها و مزارع احداث‌شده این کشور را مشاهده می‌فرمایید:\n"
+    ]
+
+    keyboard = []
+    has_any = False
+    for item_key, qty in equipment.items():
+        if qty > 0 and item_key in config.ALL_SHOP_ITEMS:
+            has_any = True
+            item_data = config.ALL_SHOP_ITEMS[item_key]
+            lines.append(f"• <b>{item_data['name']}:</b> <code>{qty:,}</code> واحد")
+            keyboard.append([
+                InlineKeyboardButton("➖ ۱", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:-1"),
+                InlineKeyboardButton(f"{item_data['name']} ({qty:,})", callback_data="ignore"),
+                InlineKeyboardButton("➕ ۱", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:1"),
+                InlineKeyboardButton("➕ ۵", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:5"),
+            ])
+
+    if not has_any:
+        lines.append("❌ <i>هیچ ساخت‌وساز یا کارخانه‌ای برای این کشور ثبت نشده است.</i>\n")
+
+    lines.append("\n💡 <i>می‌توانید با دکمه‌های زیر، هر پروژه جدیدی را فوراً به کشور اضافه فرمایید:</i>")
+
+    keyboard.append([
+        InlineKeyboardButton("➕ پالایشگاه نفت", callback_data=f"admin:c_civ_adj:{country_id}:oil_refinery:1"),
+        InlineKeyboardButton("➕ کارخانه فب تراشه", callback_data=f"admin:c_civ_adj:{country_id}:chip_fab:1"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("➕ مجتمع کشاورزی", callback_data=f"admin:c_civ_adj:{country_id}:agro_complex:1"),
+        InlineKeyboardButton("➕ نیروگاه فسیلی", callback_data=f"admin:c_civ_adj:{country_id}:fossil_plant:1"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("➕ مجتمع صنعتی", callback_data=f"admin:c_civ_adj:{country_id}:industrial_complex:1"),
+        InlineKeyboardButton("➕ سیلوی غلات", callback_data=f"admin:c_civ_adj:{country_id}:grain_silo:1"),
+    ])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی اقتصاد", callback_data=f"admin:c_economy:{country_id}")])
+
+    await query.edit_message_text(chr(10).join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 
 # ==================== ۶. زیرمنوی دیپلماسی، پیمان‌ها و تحریم‌ها ====================
@@ -1085,6 +1138,24 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
     elif data.startswith("admin:c_economy:"):
         cid = int(data.split(":")[2])
         await show_country_economy_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_civ_constructions:"):
+        cid = int(data.split(":")[2])
+        await show_country_constructions_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_civ_adj:"):
+        parts = data.split(":")
+        cid = int(parts[2])
+        item_key = parts[3]
+        delta = int(parts[4])
+        curr_eq = db.get_equipment(cid)
+        new_qty = max(0, curr_eq.get(item_key, 0) + delta)
+        db.add_equipment(cid, item_key, new_qty)
+        item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
+        await query.answer(f"تعداد {item_data.get('name', item_key)} به {new_qty} تغییر یافت.", show_alert=True)
+        await show_country_constructions_menu(query, context, cid)
         return True
 
     elif data.startswith("admin:c_diplomacy:"):

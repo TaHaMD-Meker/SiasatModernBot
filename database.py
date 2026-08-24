@@ -729,6 +729,11 @@ def init_db():
         pass
 
     try:
+        auto_recover_constructions()
+    except Exception as e:
+        print(f"[auto-recover-constructions] error: {e}")
+
+    try:
         if not get_setting("rebalance_done_v3"):
             rebalance_existing_countries_income()
             set_setting("rebalance_done_v3", "1")
@@ -784,6 +789,61 @@ def init_db():
         fix_bab_el_mandeb_status()
     except Exception:
         pass
+
+
+def auto_recover_constructions():
+    """بازیابی خودکار ساخت‌وسازها و کارخانجات از فایل‌های پشتیبان و تاریخچه تراکنش‌ها."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            # ۱. بازیابی از فایل‌های پشتیبان backups/*.db
+            backup_dir = os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "backups")
+            if os.path.exists(backup_dir):
+                for b_path in glob.glob(os.path.join(backup_dir, "*.db")):
+                    try:
+                        b_conn = sqlite3.connect(b_path)
+                        b_cur = b_conn.cursor()
+                        b_cur.execute("SELECT country_id, item_key, quantity FROM equipment WHERE quantity > 0")
+                        for cid, ikey, qty in b_cur.fetchall():
+                            cur.execute("SELECT id FROM countries WHERE id = ?", (cid,))
+                            if cur.fetchone():
+                                cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = ?", (cid, ikey))
+                                ex = cur.fetchone()
+                                if not ex:
+                                    cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)", (cid, ikey, qty))
+                                elif ex[0] < qty:
+                                    cur.execute("UPDATE equipment SET quantity = ? WHERE country_id = ? AND item_key = ?", (qty, cid, ikey))
+                        b_conn.close()
+                    except Exception:
+                        pass
+
+            # ۲. بازیابی از تاریخچه تراکنش‌های خرید (Transactions)
+            name_to_key = {}
+            for k, v in config.ALL_SHOP_ITEMS.items():
+                clean_name = re.sub(r"[^\w\s]", "", v["name"]).strip()
+                name_to_key[clean_name] = k
+                name_to_key[v["name"]] = k
+
+            cur.execute("SELECT country_id, description FROM transactions WHERE type='purchase' AND description LIKE 'احداث%'")
+            for cid, desc in cur.fetchall():
+                m = re.search(r"احداث\s+(.+?)\s+x(\d+)", desc)
+                if m:
+                    p_name = m.group(1).strip()
+                    qty = int(m.group(2))
+                    p_clean = re.sub(r"[^\w\s]", "", p_name).strip()
+                    ikey = name_to_key.get(p_name) or name_to_key.get(p_clean)
+                    if ikey:
+                        cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = ?", (cid, ikey))
+                        ex = cur.fetchone()
+                        if not ex:
+                            cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)", (cid, ikey, qty))
+                        elif ex[0] < qty:
+                            cur.execute("UPDATE equipment SET quantity = ? WHERE country_id = ? AND item_key = ?", (qty, cid, ikey))
+    except Exception as e:
+        logger.warning(f"Error in auto_recover_constructions: {e}")
+    finally:
+        conn.close()
 
 
 def fix_legacy_grain_scale():
