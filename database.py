@@ -5,11 +5,15 @@
 """
 
 import os
+import re
 import glob
 import shutil
 import json
 import sqlite3
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 try:
     from zoneinfo import ZoneInfo
     IRAN_TZ = ZoneInfo("Asia/Tehran")
@@ -6025,6 +6029,164 @@ def admin_set_battle_pass_tier(country_id: int, tier: int) -> tuple[bool, str]:
         return True, f"پله بتل‌پس کشور به Tier {tier} تنظیم شد."
     except Exception as e:
         return False, f"خطا: {e}"
+
+
+# ==================== سامانه‌های جبران و بازیابی درآمد بازیکنان ====================
+
+def boost_all_player_countries_income(delta_income: int) -> int:
+    """افزایش همگانی درآمد روزانه برای تمامی بازیکنان فعال."""
+    conn = get_connection()
+    count = 0
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE countries
+                SET daily_income = MAX(100000, daily_income + ?)
+                WHERE player_id > 0
+            """, (delta_income,))
+            count = cur.rowcount
+    except Exception as e:
+        logger.warning(f"Error boosting country incomes: {e}")
+    finally:
+        conn.close()
+    return count
+
+
+def grant_cash_to_all_player_countries(amount: int, description: str = "بسته حمایتی و هدیه جبرانی مدیریت ستاد") -> int:
+    """واریز فوری پول نقد به خزانه تمامی بازیکنان فعال همراه با ثبت تراکنش."""
+    conn = get_connection()
+    count = 0
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM countries WHERE player_id > 0")
+            c_rows = cur.fetchall()
+            for r in c_rows:
+                cid = r["id"]
+                cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (amount, cid))
+                cur.execute("""
+                    INSERT INTO transactions (country_id, type, description, amount, created_at)
+                    VALUES (?, 'compensation_grant', ?, ?, ?)
+                """, (cid, description, amount, now_str))
+                count += 1
+    except Exception as e:
+        logger.warning(f"Error granting cash to countries: {e}")
+    finally:
+        conn.close()
+    return count
+
+
+def recalculate_all_countries_income_from_equipment() -> int:
+    """بازمحاسبه و همگام‌سازی کامل عواید و درآمد تمام کشورها بر اساس پروژه‌ها و کارخانجات احداث‌شده."""
+    conn = get_connection()
+    count = 0
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key FROM countries")
+            countries = cur.fetchall()
+
+            for c in countries:
+                cid = c["id"]
+                ckey = c["country_key"]
+                overrides = config.COUNTRY_STARTING_OVERRIDES.get(ckey, config.STARTING_VALUES)
+                base_daily = overrides.get("daily_income", config.STARTING_VALUES["daily_income"])
+                base_grain_daily = overrides.get("grain_daily", config.STARTING_VALUES.get("grain_daily", 2500))
+                base_elec = overrides.get("electricity", config.STARTING_VALUES["electricity"])
+                base_gold_daily = overrides.get("gold_daily", config.STARTING_VALUES["gold_daily"])
+                base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 1_000_000))
+                base_chips_daily = overrides.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25))
+
+                cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ? AND quantity > 0", (cid,))
+                eq_rows = cur.fetchall()
+                civ_income = 0
+                civ_elec = 0
+                civ_grain_daily = 0
+                civ_gold_daily = 0
+                civ_oil_prod = 0
+                civ_chips_daily = 0
+
+                for eq in eq_rows:
+                    i_key = eq["item_key"]
+                    qty = eq["quantity"]
+                    item = config.ALL_SHOP_ITEMS.get(i_key, {})
+                    inc = item.get("income_add", 0)
+                    oil_p = item.get("oil_prod_add", 0)
+                    if i_key == "oil_refinery":
+                        eff = config.get_refinery_effect(ckey)
+                        inc = eff.get("income", inc)
+                        oil_p = eff.get("oil_prod", oil_p)
+                    elif i_key == "chip_fab":
+                        eff = config.get_chip_fab_effect(ckey)
+                        civ_chips_daily += eff.get("chips_daily", 25) * qty
+
+                    civ_income += inc * qty
+                    civ_oil_prod += oil_p * qty
+                    civ_elec += item.get("elec_add", 0) * qty
+                    civ_grain_daily += item.get("grain_daily_add", 0) * qty
+                    civ_gold_daily += item.get("gold_daily_add", 0) * qty
+
+                new_daily = base_daily + civ_income
+                new_grain_daily = base_grain_daily + civ_grain_daily
+                new_elec = base_elec + civ_elec
+                new_gold_daily = base_gold_daily + civ_gold_daily
+                new_oil_prod = base_oil_prod + civ_oil_prod
+                new_chips_daily = base_chips_daily + civ_chips_daily
+
+                cur.execute("""
+                    UPDATE countries SET
+                    daily_income = MAX(daily_income, ?),
+                    grain_daily = MAX(grain_daily, ?),
+                    electricity = MAX(electricity, ?),
+                    gold_daily = MAX(gold_daily, ?),
+                    oil_production = MAX(oil_production, ?),
+                    microchips_daily = MAX(microchips_daily, ?)
+                    WHERE id = ?
+                """, (new_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_chips_daily, cid))
+                count += 1
+    except Exception as e:
+        logger.warning(f"Error recalculating countries income: {e}")
+    finally:
+        conn.close()
+    return count
+
+
+def grant_infrastructure_package_to_all() -> int:
+    """اعطای بسته حمایتی زیرساخت (۲ کارخانه متوسط + ۲ مزرعه گندم + ۱ نیروگاه) به تمامی بازیکنان فعال."""
+    conn = get_connection()
+    count = 0
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key FROM countries WHERE player_id > 0")
+            c_rows = cur.fetchall()
+
+            for r in c_rows:
+                cid = r["id"]
+                # 2x medium factory (+800k income)
+                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'medium_factory', 2) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 2", (cid,))
+                # 2x wheat farm (+350k income, +4k grain)
+                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'wheat_farm', 2) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 2", (cid,))
+                # 1x fossil plant (+50 MW)
+                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'fossil_plant', 1) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 1", (cid,))
+
+                # اعمال افزایش روی کشور
+                cur.execute("""
+                    UPDATE countries SET
+                    daily_income = daily_income + 1150000,
+                    grain_daily = grain_daily + 4000,
+                    electricity = electricity + 50
+                    WHERE id = ?
+                """, (cid,))
+                count += 1
+    except Exception as e:
+        logger.warning(f"Error granting infra package: {e}")
+    finally:
+        conn.close()
+    return count
+
 
 
 

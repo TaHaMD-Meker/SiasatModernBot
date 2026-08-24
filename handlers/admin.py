@@ -129,6 +129,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
+        [InlineKeyboardButton("🎁 سامانه جبران و بازیابی درآمد بازیکنان", callback_data="admin:income_recovery_hub")],
         [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
         [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
@@ -1948,6 +1949,90 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         text = "⚡ *همگام‌سازی کامل انجام شد!*\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:income_recovery_hub":
+        countries = db.get_all_countries()
+        player_count = len([c for c in countries if c.get("player_id") and c["player_id"] > 0])
+
+        text = (
+            "🎁 **سامانه جامع جبران و بازیابی درآمد و دارایی بازیکنان**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👥 تعداد بازیکنان فعال تحت پوشش: `{player_count}` کشور\n\n"
+            "از گزینه‌های زیر برای ترمیم فوری و جبران درآمد بازیکنان استفاده فرمایید:\n\n"
+            "۱. 🔄 **بازمحاسبه درآمدها:** بازمحاسبه عواید از روی تمام کارخانجات و ساختمان‌های احداث‌شده.\n"
+            "۲. 📈 **افزایش همگانی درآمد:** افزودن دائم مبلغ مشخصی به درآمد روزانه همه بازیکنان.\n"
+            "۳. 💰 **واریز نقدی هدیه جبرانی:** شارژ مستقیم دلار به خزانه تمامی کشورها.\n"
+            "۴. 🏗️ **اعطای بسته زیرساخت:** افزودن ۲ کارخانه، ۲ مزرعه و ۱ نیروگاه به همه."
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 بازمحاسبه درآمدها از پروژه‌ها", callback_data="admin:do_recalc_all_incomes")],
+            [
+                InlineKeyboardButton("➕ ۱ میلیون درآمد دائم به همه", callback_data="admin:boost_all_incomes:1000000"),
+                InlineKeyboardButton("➕ ۲ میلیون درآمد دائم به همه", callback_data="admin:boost_all_incomes:2000000"),
+            ],
+            [
+                InlineKeyboardButton("➕ ۳ میلیون درآمد دائم به همه", callback_data="admin:boost_all_incomes:3000000"),
+                InlineKeyboardButton("➕ ۵ میلیون درآمد دائم به همه", callback_data="admin:boost_all_incomes:5000000"),
+            ],
+            [
+                InlineKeyboardButton("💰 واریز ۲۰ میلیون به خزانه همه", callback_data="admin:grant_cash_all:20000000"),
+                InlineKeyboardButton("💰 واریز ۵۰ میلیون به خزانه همه", callback_data="admin:grant_cash_all:50000000"),
+            ],
+            [
+                InlineKeyboardButton("🏗️ اعطای بسته کامل کارخانجات و مزارع به همه", callback_data="admin:grant_civ_package_all"),
+            ],
+            [InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin:menu")]
+        ]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:do_recalc_all_incomes":
+        count = db.recalculate_all_countries_income_from_equipment()
+        await query.answer(f"درآمد {count} کشور بر اساس ساخت‌وسازها با موفقیت به‌روزرسانی شد!", show_alert=True)
+        # بازگشت به هاب
+        countries = db.get_all_countries()
+        player_count = len([c for c in countries if c.get("player_id") and c["player_id"] > 0])
+        text = f"✅ **درآمد تمام کشورها با موفقیت بر اساس پروژه‌های احداث‌شده بازسازی شد!**\n\nتعداد کشورها: `{count}`"
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به سامانه جبران", callback_data="admin:income_recovery_hub")]]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:boost_all_incomes:"):
+        delta = int(data.split(":")[2])
+        count = db.boost_all_player_countries_income(delta)
+        await query.answer(f"به درآمد روزانه {count} بازیکن مبلغ +{format_money(delta)} اضافه شد!", show_alert=True)
+        text = (
+            f"✅ **عملیات افزایش درآمد همگانی با موفقیت انجام شد!**\n\n"
+            f"• 📈 مبلغ افزوده شده به هر بازیکن: **+{format_money(delta)}/روز**\n"
+            f"• 👥 تعداد بازیکنان بهره‌مند: `{count} کشور`"
+        )
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به سامانه جبران", callback_data="admin:income_recovery_hub")]]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:grant_cash_all:"):
+        amount = int(data.split(":")[2])
+        count = db.grant_cash_to_all_player_countries(amount, f"بسته حمایتی و هدیه جبرانی مدیریت ستاد ({format_money(amount)})")
+        await query.answer(f"مبلغ {format_money(amount)} به خزانه {count} بازیکن واریز گردید!", show_alert=True)
+        text = (
+            f"✅ **واریز هدیه نقدی به خزانه تمام بازیکنان انجام شد!**\n\n"
+            f"• 💰 مبلغ واریزی به هر بازیکن: **{format_money(amount)}**\n"
+            f"• 👥 تعداد بازیکنان: `{count} کشور`\n"
+            f"• 📝 رسید تراکنش در بخش گردش مالی بازیکنان ثبت شد."
+        )
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به سامانه جبران", callback_data="admin:income_recovery_hub")]]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:grant_civ_package_all":
+        count = db.grant_infrastructure_package_to_all()
+        await query.answer(f"بسته زیرساخت به {count} بازیکن فعال با موفقیت اعطا شد!", show_alert=True)
+        text = (
+            f"✅ **بسته کامل زیرساخت و کارخانجات به تمام بازیکنان فعال اعطا گردید!**\n\n"
+            f"• 🏭 کارخانجات متوسط: +۲ واحد (+۸۰۰,۰۰۰ دلار/روز)\n"
+            f"• 🌾 مزارع مکانیزه گندم: +۲ واحد (+۳۵۰,۰۰۰ دلار/روز و +۴,۰۰۰ تن غلات/روز)\n"
+            f"• ⚡ نیروگاه برق: +۱ واحد (+۵۰ MW برق)\n"
+            f"• 👥 تعداد کشورهای دریافت‌کننده: `{count} کشور`"
+        )
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به سامانه جبران", callback_data="admin:income_recovery_hub")]]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:sync_all_keyboards":
         countries = db.get_all_countries()
