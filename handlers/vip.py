@@ -17,7 +17,7 @@ from utils import format_money, format_number, get_main_keyboard
 # ==================== منوی اصلی اشتراک‌های VIP ====================
 
 async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش تعرفه‌های اشتراک ۴ سطحی VIP به بازیکن."""
+    """نمایش هاب اصلی فروشگاه خدمات ویژه با دسته‌بندی‌های تفکیک‌شده."""
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
 
@@ -35,21 +35,52 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_vip and vip_exp:
         try:
             exp_date_str = vip_exp[:10]
-            status_header = f"⭐ **وضعیت رهبری شما: {tier_labels.get(vip_tier, 'اشتراک VIP فعال')} (تا {exp_date_str})**"
+            status_header = f"⭐ **اشتراک رهبری شما: {tier_labels.get(vip_tier, 'VIP فعال')} (تا {exp_date_str})**"
         except Exception:
-            status_header = f"⭐ **وضعیت رهبری شما: {tier_labels.get(vip_tier, 'اشتراک VIP فعال')}**"
+            status_header = f"⭐ **اشتراک رهبری شما: {tier_labels.get(vip_tier, 'VIP فعال')}**"
     elif is_vip:
-        status_header = f"⭐ **وضعیت رهبری شما: {tier_labels.get(vip_tier, 'اشتراک VIP فعال')}**"
+        status_header = f"⭐ **اشتراک رهبری شما: {tier_labels.get(vip_tier, 'VIP فعال')}**"
     elif country:
-        status_header = f"▫️ **وضعیت رهبری شما: اشتراک عادی ({country['flag']} {country['name']})**"
+        status_header = f"▫️ **وضعیت رهبری: اشتراک عادی ({country['flag']} {country['name']})**"
     else:
-        status_header = "▫️ **وضعیت فعلی شما: فاقد کشور رسمی**"
+        status_header = "▫️ **وضعیت فعلی: فاقد کشور رسمی**"
 
     text = (
-        "👑 **مرکز خدمات ویژه و اشتراک‌های حاکمیتی (VIP)**\n"
+        "👑 **مرکز خدمات ویژه و فروشگاه حاکمیتی «سیاست مدرن»**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"{status_header}\n\n"
-        "🔹 **سطوح اشتراک ماهانه (۳۰ روزه):**\n\n"
+        "تمامی خدمات و امکانات ویژه بازی در ۳ بخش تفکیک‌شده در دسترس هستند:\n\n"
+        "👑 **۱. اشتراک‌های ویژه رهبری (VIP Passes):**\n"
+        "• تخفیف‌های ۵ تا ۲۵ درصدی در نگهداری ارتش، سهمیه رزمایش اضافه، اولویت صف رول‌ها و نشان‌های طلایی و الماس.\n\n"
+        "⭐️ **۲. بتل‌پس استراتژیک فصلی (Battle Pass):**\n"
+        "• ۲۰ لول جوایز کلان اقتصادی (تا ۷۰M$ پول، ۲۰M نفت، طلا و میکروچیپ) با انجام ماموریت‌ها و لول‌آپ.\n\n"
+        "🏴‍☠️ **۳. تاسیس و مجوز گروه‌های غیردولتی (Militia Licenses):**\n"
+        "• دریافت مجوز رسمی هدایت گروه‌های مقاومت و ارتش‌های خصوصی با کاتالوگ تسلیحات نامتقارن.\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "👇 لطفاً بخش مورد نظر خود را انتخاب فرمایید:"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("👑 ۱. اشتراک‌های ویژه رهبری (VIP Leader Passes)", callback_data="vip:cat:vip_passes")],
+        [InlineKeyboardButton("⭐️ ۲. بتل‌پس استراتژیک فصلی (Season 1 Pass)", callback_data="bp:menu")],
+        [InlineKeyboardButton("🏴‍☠️ ۳. تاسیس و مجوز گروه‌های غیردولتی", callback_data="vip:cat:militia")],
+        [InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")],
+    ]
+
+    if update.message:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    elif update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception:
+            pass
+
+
+async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش تعرفه‌ها و سطوح ۴ گانه اشتراک رهبری VIP."""
+    text = (
+        "👑 **اشتراک‌های ۴ سطحی رهبری ویژه (VIP Leader Passes)**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
         "🥉 **۱. اشتراک برنز (۷۹,۰۰۰ ت):**\n"
         "• 📉 تخفیف ۵٪ در هزینه نگهداری ارتش\n"
         "• 🎯 +۱ رزمایش نظامی اضافه روزانه\n"
@@ -75,7 +106,7 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 📜 قراردادهای تجاری نامحدود\n"
         "• 👑 مشاوره مستقیم تنظیم دکترین نظامی با تحلیلگر ارشد\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "سطح اشتراک مورد نظر را انتخاب فرمایید:"
+        "پلن اشتراک مورد نظر را جهت دریافت فاکتور انتخاب فرمایید:"
     )
 
     keyboard = [
@@ -83,13 +114,16 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🥈 اشتراک نقره — ۱۷۹,۰۰۰ تومان", callback_data="vip:plan:vip_silver")],
         [InlineKeyboardButton("🥇 اشتراک طلا — ۳۴۹,۰۰۰ تومان", callback_data="vip:plan:vip_gold")],
         [InlineKeyboardButton("💎 اشتراک الماس — ۶۵۰,۰۰۰ تومان", callback_data="vip:plan:vip_diamond")],
-        [InlineKeyboardButton("⭐️ بتل‌پس فصلی — ۳۰۰,۰۰۰ تومان (۲۰ لول جوایز)", callback_data="bp:menu")],
+        [InlineKeyboardButton("🔙 بازگشت به فروشگاه ویژه", callback_data="vip:menu")],
     ]
 
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception:
+            pass
 
 
 # ==================== فهرست سازمان‌ها و گروه‌های شبه‌نظامی غیردولتی ====================
@@ -413,8 +447,15 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if data == "vip:menu":
         await vip_main_menu(update, context)
 
-    elif data in ("vip:militia_wizard_start", "vip:plan:militia"):
+    elif data == "vip:cat:vip_passes":
+        await vip_passes_menu(update, context)
+
+    elif data in ("vip:cat:militia", "vip:militia_wizard_start", "vip:plan:militia"):
         await show_predefined_factions_menu(query, context, user_id)
+
+    elif data == "vip:cat:battle_pass":
+        from handlers.battlepass import battlepass_menu
+        await battlepass_menu(update, context)
 
     elif data.startswith("vip:fpick:"):
         f_key = data.split(":", 2)[2]

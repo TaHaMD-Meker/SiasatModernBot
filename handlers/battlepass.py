@@ -113,7 +113,10 @@ async def battlepass_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_premium:
         keyboard.append([InlineKeyboardButton("⭐️ خرید بتل‌پس پرمیوم (۳۰۰ هزار تومان)", callback_data="bp:buy_pass")])
 
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")])
+    keyboard.append([
+        InlineKeyboardButton("🔙 بازگشت به فروشگاه ویژه", callback_data="vip:menu"),
+        InlineKeyboardButton("🌐 وضعیت کشور", callback_data="country:back_profile")
+    ])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
