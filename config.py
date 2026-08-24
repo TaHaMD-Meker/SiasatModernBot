@@ -21000,3 +21000,32 @@ def is_light_weapon(category: str, item_key: str, item_name: str) -> bool:
 
     return False
 
+
+# ==================== ذخایر و استخراج سنگ آهن کشورهای غنی و معدنی جهان ====================
+
+IRON_RICH_COUNTRIES_STATS = {
+    # ابرقدرت‌های رتبه ۱ تا ۳ سنگ آهن و فولاد جهان
+    "australia":    {"iron_ore": 200_000, "iron_ore_daily": 12_000},  # بزرگ‌ترین صادرکننده سنگ آهن جهان (پیلبارا)
+    "brazil":       {"iron_ore": 160_000, "iron_ore_daily": 9_500},   # غول معدنی واله و کاراخاس
+    "china":        {"iron_ore": 180_000, "iron_ore_daily": 15_000},  # بزرگ‌ترین تولیدکننده فولاد جهان
+    "india":        {"iron_ore": 110_000, "iron_ore_daily": 7_000},   # معادن بزرگ اودیشا و جارکند
+    "russia":       {"iron_ore": 100_000, "iron_ore_daily": 6_500},   # آنومالی مغناطیسی کورسک و سیبری
+    "iran":         {"iron_ore": 75_000,  "iron_ore_daily": 4_800},   # معادن چادرملو، گل‌گهر و سنگان
+    "south_africa": {"iron_ore": 65_000,  "iron_ore_daily": 4_000},   # سیسشن و کمبری
+    "usa":          {"iron_ore": 80_000,  "iron_ore_daily": 4_500},   # دریاچه‌های بزرگ و میشیگان
+    "ukraine":      {"iron_ore": 50_000,  "iron_ore_daily": 3_500},   # حوضه کریوی‌ریه
+    "canada":       {"iron_ore": 60_000,  "iron_ore_daily": 3_500},   # لابرادور و کبک
+    "sweden":       {"iron_ore": 45_000,  "iron_ore_daily": 3_000},   # معادن مشهور کیرونا و لاپ‌لند
+    "kazakhstan":   {"iron_ore": 40_000,  "iron_ore_daily": 2_500},   # معادن سوکولوف-ساربای
+    "turkey":       {"iron_ore": 30_000,  "iron_ore_daily": 1_800},   # سیواس و دیوریغی
+    "egypt":        {"iron_ore": 25_000,  "iron_ore_daily": 1_500},   # الواحات البحریه
+    "chile":        {"iron_ore": 35_000,  "iron_ore_daily": 2_000},   # آتاکاما
+    "peru":         {"iron_ore": 30_000,  "iron_ore_daily": 1_800},   # مارکونا
+    "mauritania":   {"iron_ore": 30_000,  "iron_ore_daily": 1_800},   # زویرات
+    "algeria":      {"iron_ore": 25_000,  "iron_ore_daily": 1_500},   # غار جبيلات
+}
+
+for _ck, _vals in IRON_RICH_COUNTRIES_STATS.items():
+    if _ck in COUNTRY_STARTING_OVERRIDES:
+        COUNTRY_STARTING_OVERRIDES[_ck].update(_vals)
+
