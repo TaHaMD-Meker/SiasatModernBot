@@ -84,7 +84,7 @@ def test_predefined_faction_creation_with_40_assets(db_temp):
         country_id=None,
         item_type="militia",
         plan_title="🏴‍☠️ هدایت واگنر",
-        amount_toman=50_000,
+        amount_toman=100_000,
         tracking_code="TRX-WAGNER-101",
         custom_payload=json.dumps(payload, ensure_ascii=False)
     )
@@ -121,7 +121,7 @@ def test_custom_militia_admin_renaming_approval(db_temp):
         country_id=None,
         item_type="militia",
         plan_title="🏴‍☠️ مجوز گروه سفارشی",
-        amount_toman=50_000,
+        amount_toman=100_000,
         tracking_code="TRX-CUSTOM-101",
         custom_payload=json.dumps(payload, ensure_ascii=False)
     )
@@ -314,3 +314,47 @@ def test_admin_receipt_viewing_and_callback_navigation(db_temp):
         assert c["vip_tier"] == "gold"
 
     asyncio.run(_test())
+
+
+def test_dual_state_and_militia_switching(db_temp):
+    """تست فرماندهی همزمان دولت رسمی و گروه نیابتی و سوییچ حساب."""
+    player_id = 666777
+
+    # ۱. بازیکن ابتدا کشور رسمی ایران را دارد
+    state_id = db_temp.create_country(player_id, "ایران", "🇮🇷", country_key="iran")
+    assert db_temp.get_country_by_player(player_id)["id"] == state_id
+
+    # ۲. بازیکن گروه نیابتی نیروی قدس را با ۱۰۰ هزار تومان ثبت می‌کند
+    militia_id = db_temp.create_custom_militia_faction(
+        player_id=player_id,
+        name="سپاه قدس",
+        flag="🟢",
+        hq_desc="پایگاه‌های برون‌مرزی",
+        doctrine="جنگ نامتقارن و موشکی",
+        faction_key="irgc_quds"
+    )
+
+    # ۳. هر دو نهاد همزمان در دیتابیس بدون حذف کشور اصلی وجود دارند
+    all_entities = db_temp.get_player_all_entities(player_id)
+    assert len(all_entities) == 2
+    ids = [e["id"] for e in all_entities]
+    assert state_id in ids
+    assert militia_id in ids
+
+    # ۴. پیش‌فرض روی دولت رسمی است
+    curr = db_temp.get_country_by_player(player_id)
+    assert curr["id"] == state_id
+
+    # ۵. سوییچ به بازوی نیابتی
+    ok, msg, target = db_temp.switch_player_active_entity(player_id)
+    assert ok is True
+    assert target["id"] == militia_id
+    assert db_temp.get_country_by_player(player_id)["id"] == militia_id
+    assert db_temp.get_country_by_player(player_id)["name"] == "سپاه قدس"
+
+    # ۶. سوییچ مجدد به دولت رسمی
+    ok2, msg2, target2 = db_temp.switch_player_active_entity(player_id)
+    assert ok2 is True
+    assert target2["id"] == state_id
+    assert db_temp.get_country_by_player(player_id)["id"] == state_id
+    assert db_temp.get_country_by_player(player_id)["name"] == "ایران"

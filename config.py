@@ -98,7 +98,7 @@ VIP_TIERS = {
 }
 
 VIP_PASS_PRICE_TOMAN = 79_000         # قیمت پایه برنز
-MILITIA_LICENSE_PRICE_TOMAN = 50_000   # مجوز تاسیس گروه / شبه‌نظامی غیردولتی
+MILITIA_LICENSE_PRICE_TOMAN = 100_000  # مجوز تاسیس گروه / شبه‌نظامی غیردولتی (۱۰۰ هزار تومان)
 BATTLE_PASS_PRICE_TOMAN = 300_000      # قیمت خرید بتل‌پس پرمیوم فصل (۳۰۰ هزار تومان)
 BATTLE_PASS_XP_PER_TIER = 1000         # میزان XP لازم برای باز کردن هر لول بتل‌پس
 BATTLE_PASS_SEASON = 1

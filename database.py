@@ -41,7 +41,7 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS countries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        player_id INTEGER UNIQUE NOT NULL,
+        player_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         flag TEXT DEFAULT '🏳️',
         population INTEGER DEFAULT 0,
@@ -249,6 +249,75 @@ def init_db():
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN vip_tier TEXT")
     except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='countries'")
+        row = cur.fetchone()
+        if row and "player_id INTEGER UNIQUE" in row[0]:
+            cur.execute("ALTER TABLE countries RENAME TO _countries_old")
+            cur.execute("""
+            CREATE TABLE countries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                flag TEXT DEFAULT '🏳️',
+                population INTEGER DEFAULT 0,
+                treasury INTEGER DEFAULT 0,
+                tax_income INTEGER DEFAULT 0,
+                daily_income INTEGER DEFAULT 0,
+                gold INTEGER DEFAULT 0,
+                gold_daily INTEGER DEFAULT 0,
+                oil_reserves INTEGER DEFAULT 0,
+                oil_production INTEGER DEFAULT 0,
+                grain INTEGER DEFAULT 0,
+                electricity INTEGER DEFAULT 0,
+                active_personnel INTEGER DEFAULT 0,
+                reserve_personnel INTEGER DEFAULT 0,
+                last_income_date TEXT,
+                created_at TEXT,
+                country_key TEXT UNIQUE,
+                approval_rating INTEGER DEFAULT 80,
+                grain_daily INTEGER DEFAULT 0,
+                username TEXT,
+                tech_level INTEGER DEFAULT 1,
+                last_blockade_date TEXT,
+                combat_readiness INTEGER DEFAULT 80,
+                last_drill_date TEXT,
+                daily_drill_count INTEGER DEFAULT 0,
+                microchips INTEGER DEFAULT 0,
+                microchips_daily INTEGER DEFAULT 0,
+                uranium_ore INTEGER DEFAULT 0,
+                uranium_ore_daily INTEGER DEFAULT 0,
+                nuclear_fuel INTEGER DEFAULT 0,
+                nuclear_fuel_daily INTEGER DEFAULT 0,
+                warheads INTEGER DEFAULT 0,
+                enrichment_suspended INTEGER DEFAULT 0,
+                npt_withdrawn INTEGER DEFAULT 0,
+                un_sanctioned INTEGER DEFAULT 0,
+                warhead_cap_override INTEGER DEFAULT 0,
+                medical_isotopes INTEGER DEFAULT 0,
+                medical_isotopes_daily INTEGER DEFAULT 0,
+                enriched_60 INTEGER DEFAULT 0,
+                weapons_grade_90 INTEGER DEFAULT 0,
+                enrichment_tier INTEGER DEFAULT 1,
+                nuclear_tested INTEGER DEFAULT 0,
+                firewall_level INTEGER DEFAULT 0,
+                air_defense_disrupted_until TEXT,
+                blackout_until TEXT,
+                r_and_d_frozen_until TEXT,
+                command_disrupted_until TEXT,
+                last_intel_op_time TEXT,
+                intel_ops_today INTEGER DEFAULT 0,
+                intel_ops_date TEXT,
+                is_vip INTEGER DEFAULT 0,
+                vip_expires_at TEXT,
+                vip_tier TEXT
+            )
+            """)
+            cur.execute("INSERT INTO countries SELECT * FROM _countries_old")
+            cur.execute("DROP TABLE _countries_old")
+    except Exception:
         pass
 
     # جدول سران و کادر فرماندهی نظامی کشورها
@@ -1630,18 +1699,62 @@ def delete_country_by_player(player_id: int) -> bool:
     return delete_country_by_id(country["id"])
 
 
-def get_country_by_player(player_id: int):
+def get_player_all_entities(player_id: int) -> list[dict]:
+    """دریافت کلیه نهادهای تحت فرماندهی بازیکن (دولت رسمی و بازوی مقاومت/شبه‌نظامی)."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM countries WHERE player_id = ?", (player_id,))
-    row = cur.fetchone()
+    cur.execute("SELECT * FROM countries WHERE player_id = ? ORDER BY id ASC", (player_id,))
+    rows = cur.fetchall()
     conn.close()
-    if row:
-        c = dict(row)
+    return [dict(r) for r in rows]
+
+
+def get_country_by_player(player_id: int):
+    """دریافت نهاد فعال جاری بازیکن (با پشتیبانی از سوییچ هوشمند بین کشور رسمی و بازوی نیابتی)."""
+    entities = get_player_all_entities(player_id)
+    if not entities:
+        return None
+    if len(entities) == 1:
+        c = entities[0]
         if c.get("country_key"):
             seed_country_assets(c["id"], c["country_key"])
         return c
-    return None
+
+    active_cid_str = get_setting(f"active_entity_{player_id}")
+    if active_cid_str and active_cid_str.isdigit():
+        active_cid = int(active_cid_str)
+        match = next((e for e in entities if e["id"] == active_cid), None)
+        if match:
+            if match.get("country_key"):
+                seed_country_assets(match["id"], match["country_key"])
+            return match
+
+    # پیش‌فرض: نهاد دولتی رسمی (اگر هست) یا اولین نهاد
+    state_c = next((e for e in entities if not (e.get("country_key") or "").startswith("faction_")), entities[0])
+    if state_c.get("country_key"):
+        seed_country_assets(state_c["id"], state_c["country_key"])
+    return state_c
+
+
+def switch_player_active_entity(player_id: int, target_country_id: int = None) -> tuple[bool, str, dict]:
+    """سوییچ فوری بین دولت رسمی و بازوی نیابتی/شبه‌نظامی بازیکن."""
+    entities = get_player_all_entities(player_id)
+    if len(entities) < 2:
+        return False, "شما در حال حاضر تنها یک کشور/نهاد تحت فرماندهی دارید.", None
+
+    curr = get_country_by_player(player_id)
+    if target_country_id:
+        target = next((e for e in entities if e["id"] == target_country_id), None)
+    else:
+        target = next((e for e in entities if e["id"] != curr["id"]), entities[0])
+
+    if not target:
+        return False, "نهاد مقصد یافت نشد.", None
+
+    set_setting(f"active_entity_{player_id}", str(target["id"]))
+    if target.get("country_key"):
+        seed_country_assets(target["id"], target["country_key"])
+    return True, f"فرماندهی به {target['flag']} {target['name']} سوییچ شد.", target
 
 
 def get_all_countries():
@@ -5223,11 +5336,16 @@ def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = 
 
 
 def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", faction_key: str = None, username: str = None) -> int:
-    """ایجاد گروه / سازمان شبه‌نظامی غیردولتی اختصاصی برای بازیکن."""
+    """ایجاد گروه / سازمان شبه‌نظامی غیردولتی اختصاصی برای بازیکن (به صورت مستقل یا بازوی نیابتی کشورش)."""
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
+            cur.execute("SELECT id FROM countries WHERE player_id = ? AND country_key LIKE 'faction_%'", (player_id,))
+            old_militia = cur.fetchone()
+            if old_militia:
+                delete_country_by_id(old_militia["id"])
+
             country_id = _create_custom_militia_with_cur(cur, player_id, name, flag, hq_desc, doctrine, faction_key, username)
         return country_id
     finally:
@@ -5302,12 +5420,14 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
                 f_doc = payload.get("doctrine") or ""
                 f_key = payload.get("faction_key")
                 
-                # بررسی وجود کشور قبلی
-                cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
-                exist_c = cur.fetchone()
-                if not exist_c:
-                    c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc, f_key)
-                    p["created_country_id"] = c_id
+                # اگر قبلاً گروه شبه‌نظامی داشت، گروه قبلی را پاک کن تا کشور اصلی حفظ شود
+                cur.execute("SELECT id FROM countries WHERE player_id = ? AND country_key LIKE 'faction_%'", (player_id,))
+                old_m = cur.fetchone()
+                if old_m:
+                    delete_country_by_id(old_m["id"])
+
+                c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc, f_key)
+                p["created_country_id"] = c_id
                 p["final_faction_name"] = f_name
 
             cur.execute("""
@@ -5349,55 +5469,6 @@ def reject_payment_request(req_id: int, admin_id: int, reason: str = "") -> tupl
             return True, "درخواست پرداخت رد شد.", p
     except Exception as e:
         return False, f"خطا در رد پرداخت: {e}", {}
-
-
-def create_custom_militia_faction(player_id: int, name: str, flag: str = "🏴", username: str = None) -> int:
-    """ایجاد گروه/شبه‌نظامی غیردولتی اختصاصی برای بازیکن دارای مجوز."""
-    conn = get_connection()
-    cur = conn.cursor()
-    c_key = f"militia_{player_id}"
-    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-    # حذف کشور قبلی کاربر در صورت وجود
-    cur.execute("SELECT id FROM countries WHERE player_id = ?", (player_id,))
-    old = cur.fetchone()
-    if old:
-        delete_country_by_id(old["id"])
-
-    cur.execute("""
-        INSERT INTO countries
-        (player_id, name, flag, population, treasury, tax_income, daily_income, gold, gold_daily,
-         oil_reserves, oil_production, grain, electricity, active_personnel, reserve_personnel,
-         last_income_date, created_at, country_key, approval_rating, grain_daily, username, tech_level,
-         microchips, microchips_daily, uranium_ore, uranium_ore_daily, nuclear_fuel, nuclear_fuel_daily, warheads, is_vip)
-        VALUES (?, ?, ?, 5000000, 30000000, 600000, 3500000, 150, 20,
-                300000, 0, 5000, 80, 50000, 100000,
-                ?, ?, ?, 85, 800, ?, 1,
-                150, 5, 0, 0, 0, 0, 0, 1)
-    """, (player_id, name, flag, now_str, now_str, c_key, username))
-    cid = cur.lastrowid
-
-    # دارایی‌های آغازین جنگ نامتقارن چریکی (تویوتا مسلح، موشک‌های دوش‌پرتاب، پهپادهای انتحاری و تیم‌های کورنت)
-    militia_starter_assets = [
-        ("UAV", "پهپاد انتحاری نقطه‌زن", f"kamikaze_drone_{player_id}", 200, 150_000, 500),
-        ("UAV", "پهپاد شناسایی هدهد", f"recon_drone_{player_id}", 50, 300_000, 1_000),
-        ("Ground Forces", "تویوتا تکنیکال مسلح به دوشکا و زو-۲۳", f"technical_truck_{player_id}", 500, 100_000, 300),
-        ("Ground Forces", "تیم‌های ضدزره مجهز به کورنت و دهلاویه", f"atgm_team_{player_id}", 300, 80_000, 200),
-        ("Air Defense", "دوش‌پرتاب پدافندی میثاق / ایگلا", f"manpads_{player_id}", 200, 120_000, 400),
-        ("Missiles", "راکت‌های توپخانه‌ای فجر-۵ و گراد", f"mlrs_rocket_{player_id}", 250, 200_000, 600),
-        ("Missiles", "موشک بالستیک تاکتیکی فاتح-۱۱۰", f"fateh110_{player_id}", 30, 1_500_000, 2_000),
-        ("Navy", "قایق‌های تندرو راکت‌انداز عاشورا", f"speedboat_{player_id}", 40, 500_000, 1_500),
-    ]
-    for cat, aname, akey, init_amt, price, maint in militia_starter_assets:
-        cur.execute("""
-            INSERT INTO country_assets
-            (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-        """, (cid, c_key, cat, aname, akey, init_amt, price, maint))
-
-    conn.commit()
-    conn.close()
-    return cid
 
 
 # ==================== توابع پرونده جامع و دسترسی همه‌جانبه ادمین به کشورها ====================

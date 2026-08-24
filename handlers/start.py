@@ -46,7 +46,7 @@ def build_continent_keyboard():
         buttons.append(row)
 
     buttons.append([InlineKeyboardButton("🔎 جستجوی سریع نام کشور (تایپی)", callback_data="start_search_country")])
-    buttons.append([InlineKeyboardButton("🏴‍☠️ تاسیس و رهبری گروه غیردولتی (۵۰ هزار ت)", callback_data="vip:militia_wizard_start")])
+    buttons.append([InlineKeyboardButton("🏴‍☠️ تاسیس و رهبری بازوی نیابتی / گروه غیردولتی (۱۰۰ هزار ت)", callback_data="vip:militia_wizard_start")])
     return buttons
 
 

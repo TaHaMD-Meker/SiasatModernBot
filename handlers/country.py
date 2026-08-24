@@ -102,6 +102,14 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
+    entities = db.get_player_all_entities(c["player_id"])
+    if len(entities) >= 2:
+        other_e = next((e for e in entities if e["id"] != c["id"]), None)
+        if other_e:
+            inline_keyboard.insert(0, [InlineKeyboardButton(f"🔄 سوییچ فرماندهی به {other_e['flag']} {other_e['name']}", callback_data="country:switch_active_entity")])
+    elif not (c.get("country_key") or "").startswith("faction_"):
+        inline_keyboard.insert(0, [InlineKeyboardButton("🏴‍☠️ تاسیس بازوی نیابتی / ارتش خصوصی (۱۰۰k ت)", callback_data="vip:militia_wizard_start")])
+
     if update.message:
         await update.message.reply_text(
             text,
@@ -135,6 +143,15 @@ async def country_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
     elif data == "country:back_profile":
         await country_profile(update, context)
+
+    elif data == "country:switch_active_entity":
+        user_id = update.effective_user.id
+        ok, msg, target = db.switch_player_active_entity(user_id)
+        if ok:
+            await query.answer(f"✅ {msg}", show_alert=True)
+            await country_profile(update, context)
+        else:
+            await query.answer(msg, show_alert=True)
 
 
 async def approval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
