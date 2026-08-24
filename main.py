@@ -5,6 +5,8 @@
 اجرا: python main.py
 """
 
+import os
+import asyncio
 import datetime
 import logging
 from zoneinfo import ZoneInfo
@@ -421,6 +423,53 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
         logger.info(f"Daily inactivity audit completed: {revoked_count} countries revoked.")
 
 
+async def _handle_health_check(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """پاسخ به هلث‌چک‌های HTTP پلتفرم‌های ابری (Railway / PaaS)."""
+    try:
+        await reader.read(1024)
+        response = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n\r\n"
+            "OK"
+        )
+        writer.write(response.encode("utf-8"))
+        await writer.drain()
+    except Exception:
+        pass
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+async def on_post_init(application: Application):
+    """راه‌اندازی سرور سبک بررسی سلامت برای Railway در صورت وجود متغیر PORT."""
+    port_str = os.environ.get("PORT")
+    if port_str:
+        try:
+            port = int(port_str)
+            server = await asyncio.start_server(_handle_health_check, "0.0.0.0", port)
+            application.bot_data["health_server"] = server
+            logger.info(f"Health check server listening on 0.0.0.0:{port} for Railway/PaaS")
+        except Exception as e:
+            logger.warning(f"Could not start health check server on port {port_str}: {e}")
+
+
+async def on_post_shutdown(application: Application):
+    """بستن سرور بررسی سلامت هنگام خاموش شدن بات."""
+    server = application.bot_data.get("health_server")
+    if server:
+        server.close()
+        try:
+            await server.wait_closed()
+        except Exception:
+            pass
+
+
 def main():
     db.init_db()
 
@@ -430,6 +479,8 @@ def main():
         Application.builder()
         .token(config.BOT_TOKEN)
         .concurrent_updates(True)
+        .post_init(on_post_init)
+        .post_shutdown(on_post_shutdown)
         .build()
     )
 
