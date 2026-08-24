@@ -18,6 +18,7 @@ import approval_system
 import config
 import asyncio
 from utils import format_money, format_number, format_oil, get_main_keyboard
+from handlers.losses import handle_losses_input
 from handlers.admin_dossier import (
     show_country_dashboard,
     show_country_trades_menu,
@@ -464,8 +465,7 @@ async def menu_country_stats(query, country_id: int):
         f"⚙️ *اقتصاد و وضعیت داخلی — {c['flag']} {c['name']}*\n\n"
         "مورد مورد نظر را برای ویرایش انتخاب کنید:"
     )
-    from telegram import InlineKeyboardMarkup as _IKM
-    await query.edit_message_text(text, reply_markup=_IKM(rows), parse_mode="Markdown")
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
 
 
 async def menu_cstat_adjust(query, country_id: int, field: str):
@@ -478,7 +478,6 @@ async def menu_cstat_adjust(query, country_id: int, field: str):
     note = ""
     if field in ("daily_income", "tax_income"):
         note = "\n\n⚠️ _این دو مورد با هر ری‌استارت بر اساس کانفیگ و ساختمان‌ها بازسازی می‌شوند._"
-    from telegram import InlineKeyboardMarkup as _IKM
     rows = [
         [InlineKeyboardButton(f"➖ {step*10:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-10"),
          InlineKeyboardButton(f"➖ {step*5:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-5"),
@@ -491,7 +490,7 @@ async def menu_cstat_adjust(query, country_id: int, field: str):
     ]
     await query.edit_message_text(
         f"{label} — {c['flag']} {c['name']}\n\nمقدار فعلی: *{_fmt_stat(current, kind)}*{note}",
-        reply_markup=_IKM(rows), parse_mode="Markdown")
+        reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
 
 
 def apply_cstat_delta(country_id: int, field: str, mult: int):
@@ -2380,7 +2379,6 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     if input_type and str(input_type).startswith("ls_"):
-        from handlers.losses import handle_losses_input
         await handle_losses_input(update, context, user_id, input_state)
         return
 

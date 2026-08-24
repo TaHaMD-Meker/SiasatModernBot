@@ -12,6 +12,7 @@ import database as db
 import config
 import news_engine
 from utils import format_money, format_number, format_oil
+from handlers.nuclear import nuclear_main_menu
 
 CIVILIAN_CATEGORIES = {
     "buildings":   ("🏠 ساختمان‌ها", config.BUILDINGS),
@@ -153,7 +154,6 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if cat_key == "warheads":
-        from handlers.nuclear import nuclear_main_menu
         await nuclear_main_menu(update, context)
         return
 
@@ -667,7 +667,6 @@ async def execute_warhead_assembly(update: Update, context: ContextTypes.DEFAULT
 
     # Broadcast intelligence alert if appropriate
     try:
-        import news_engine
         await news_engine.trigger_general_broadcast(
             context.bot,
             f"🚨 **گزارش محرمانه اطلاعاتی و هشدار آژانس بین‌المللی انرژی اتمی**\n\n"

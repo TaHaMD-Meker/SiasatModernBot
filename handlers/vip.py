@@ -12,6 +12,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 import database as db
 import config
 from utils import format_money, format_number, get_main_keyboard
+from handlers.battlepass import battlepass_menu
 
 
 # ==================== منوی اصلی اشتراک‌های VIP ====================
@@ -483,7 +484,6 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_predefined_factions_menu(query, context, user_id)
 
     elif data == "vip:cat:battle_pass":
-        from handlers.battlepass import battlepass_menu
         await battlepass_menu(update, context)
 
     elif data.startswith("vip:fpick:"):

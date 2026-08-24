@@ -10,11 +10,14 @@
 
 import math
 import re
+import json
+from collections import OrderedDict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 
 import database as db
 import config
+import news_engine
 from utils import format_number
 
 # ---------- زیردسته‌های نمایشی (روی دسته‌های اصلی دیتابیس سوار می‌شوند) ----------
@@ -429,7 +432,6 @@ COST_SPECIALS = ("money", "oil")
 
 
 def build_loss_report_text(c_flag, c_name, op_name, items, status_line="🟠 وضعیت: تلفات ثبت شد.", note=None):
-    from collections import OrderedDict
     special_items = [it for it in items if it.get("special")]
     items = [it for it in items if not it.get("special")]
     strategic_items = [it for it in special_items if it.get("special") in STRATEGIC_SPECIALS]
@@ -697,7 +699,6 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
         # بررسی و بازگشایی خودکار تنگه‌ها در صورت انهدام ناوگان کنترل‌کننده
         try:
-            import news_engine
             reopened = db.auto_check_and_reopen_straits_if_navy_destroyed()
             for r in reopened:
                 owner = r["owner"]
@@ -783,9 +784,7 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         if not r or r["status"] == "deleted":
             await query.edit_message_text("❌ گزارش یافت نشد.", reply_markup=_kb([[InlineKeyboardButton("🔙", callback_data="ls:menu")]]))
             return
-        items = db.get_loss_reports  # noqa (پرهیز از import اضافی)
-        import json as _json
-        its = _json.loads(r["items_json"])
+        its = json.loads(r["items_json"])
         status_line = {"applied": "🟠 وضعیت: اعمال‌شده", "reverted": "↩️ وضعیت: بازگردانی‌شده"}.get(r["status"], r["status"])
         body = build_loss_report_text(r.get("country_flag", ""), r.get("country_name", ""), r.get("operation_name", ""), its, status_line=status_line)
         meta = f"\n\n👤 ادمین ثبت: `{r.get('admin_id')}` | 🕐 {(r.get('created_at') or '')[:16].replace('T', ' ')}"
@@ -814,8 +813,7 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             await query.answer("❌ شناسه عددی بازیکن یافت نشد.", show_alert=True)
             return
 
-        import json as _json
-        its = _json.loads(r["items_json"])
+        its = json.loads(r["items_json"])
         status_line = {"applied": "🟠 وضعیت: اعمال‌شده", "reverted": "↩️ وضعیت: بازگردانی‌شده"}.get(r["status"], r["status"])
         body = build_loss_report_text(r.get("country_flag", ""), r.get("country_name", ""), r.get("operation_name", ""), its, status_line=status_line)
         

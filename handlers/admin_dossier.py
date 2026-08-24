@@ -17,6 +17,7 @@ Provides complete 360-degree inspection and god-mode control over countries:
 
 import html
 import math
+import time
 import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -1291,7 +1292,6 @@ async def handle_dossier_inputs(update: Update, context: ContextTypes.DEFAULT_TY
         c_id = input_state["country_id"]
         try:
             cmd_title = text.strip()
-            import time
             cmd_key = f"cmd_{int(time.time())}"
             ok, msg = db.admin_add_commander(c_id, cmd_key, cmd_title)
             await update.message.reply_text(f"✅ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎖️ بازگشت به تسلیحات و فرماندهان", callback_data=f"admin:c_military:{c_id}")]]))

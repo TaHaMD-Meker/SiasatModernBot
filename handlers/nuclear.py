@@ -12,6 +12,7 @@ import config
 import news_engine
 from utils import format_money
 from premium_emojis import pe
+from handlers.bases import military_movements_menu
 
 
 def _kb(rows):
@@ -161,7 +162,6 @@ async def nuclear_callback_handler(update: Update, context: ContextTypes.DEFAULT
         await nuclear_main_menu(update, context)
 
     elif data in ("op:movements", "nuc:close", "mv:menu"):
-        from handlers.bases import military_movements_menu
         await military_movements_menu(update, context)
 
     # ---------------- 1. احداث مجتمع غنی‌سازی ----------------

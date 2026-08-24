@@ -186,6 +186,7 @@ async def oil(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 from handlers.assets import show_assets_menu
+from handlers.guide import guide_main_menu
 
 async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هدایت دستور وضعیت ارتش به کاتالوگ دارایی‌های نظامی (/assets)."""
@@ -193,5 +194,4 @@ async def army(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from handlers.guide import guide_main_menu
     await guide_main_menu(update, context)

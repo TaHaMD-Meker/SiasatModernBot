@@ -6,6 +6,7 @@
 استقرار نیروهای صلح‌بان کلاه‌آبی، تحریم‌های جامع، و صندوق امداد بشردوستانه.
 """
 
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
@@ -340,13 +341,12 @@ async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif step == "iaea_cap":
         t_id = draft.get("target_id")
-        import re as _re
         clean_val = (
             str(text)
             .translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
             .replace("٬", "").replace(",", "").replace("_", "").strip()
         )
-        if not _re.fullmatch(r"-?\d+", clean_val):
+        if not re.fullmatch(r"-?\d+", clean_val):
             await update.message.reply_text(
                 "⛔ لطفاً فقط یک عدد صحیح ارسال کنید (مثلاً `10` یا `۱۰` یا `-1`).",
                 parse_mode="Markdown"
