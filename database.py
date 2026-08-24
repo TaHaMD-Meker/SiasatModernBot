@@ -6153,10 +6153,11 @@ def recalculate_all_countries_income_from_equipment() -> int:
     return count
 
 
-def grant_infrastructure_package_to_all() -> int:
-    """اعطای بسته حمایتی زیرساخت (۲ کارخانه متوسط + ۲ مزرعه گندم + ۱ نیروگاه) به تمامی بازیکنان فعال."""
+def grant_infrastructure_package_to_all(is_add: bool = True) -> int:
+    """اعطا یا کسر همگانی بسته زیرساخت (۲ کارخانه متوسط + ۲ مزرعه گندم + ۱ نیروگاه) از تمامی بازیکنان فعال."""
     conn = get_connection()
     count = 0
+    mult = 1 if is_add else -1
     try:
         with conn:
             cur = conn.cursor()
@@ -6165,24 +6166,29 @@ def grant_infrastructure_package_to_all() -> int:
 
             for r in c_rows:
                 cid = r["id"]
-                # 2x medium factory (+800k income)
-                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'medium_factory', 2) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 2", (cid,))
-                # 2x wheat farm (+350k income, +4k grain)
-                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'wheat_farm', 2) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 2", (cid,))
-                # 1x fossil plant (+50 MW)
-                cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'fossil_plant', 1) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 1", (cid,))
+                if is_add:
+                    # 2x medium factory (+800k income)
+                    cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'medium_factory', 2) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 2", (cid,))
+                    # 2x wheat farm (+350k income, +4k grain)
+                    cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'wheat_farm', 2) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 2", (cid,))
+                    # 1x fossil plant (+50 MW)
+                    cur.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'fossil_plant', 1) ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + 1", (cid,))
+                else:
+                    cur.execute("UPDATE equipment SET quantity = MAX(0, quantity - 2) WHERE country_id = ? AND item_key = 'medium_factory'", (cid,))
+                    cur.execute("UPDATE equipment SET quantity = MAX(0, quantity - 2) WHERE country_id = ? AND item_key = 'wheat_farm'", (cid,))
+                    cur.execute("UPDATE equipment SET quantity = MAX(0, quantity - 1) WHERE country_id = ? AND item_key = 'fossil_plant'", (cid,))
 
-                # اعمال افزایش روی کشور
+                # اعمال افزایش/کاهش روی شاخص‌های کشور
                 cur.execute("""
                     UPDATE countries SET
-                    daily_income = daily_income + 1150000,
-                    grain_daily = grain_daily + 4000,
-                    electricity = electricity + 50
+                    daily_income = MAX(100000, daily_income + ?),
+                    grain_daily = MAX(0, grain_daily + ?),
+                    electricity = MAX(0, electricity + ?)
                     WHERE id = ?
-                """, (cid,))
+                """, (1150000 * mult, 4000 * mult, 50 * mult, cid))
                 count += 1
     except Exception as e:
-        logger.warning(f"Error granting infra package: {e}")
+        logger.warning(f"Error updating infra package: {e}")
     finally:
         conn.close()
     return count
