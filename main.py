@@ -754,4 +754,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import time
+    while True:
+        try:
+            main()
+            break
+        except KeyboardInterrupt:
+            logger.info("بات توسط کاربر متوقف شد.")
+            break
+        except Exception as e:
+            logger.critical(f"خطای بحرانی در اجرای بات: {e}. راه‌اندازی مجدد در ۵ ثانیه...", exc_info=e)
+            time.sleep(5)
