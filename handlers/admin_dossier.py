@@ -416,7 +416,10 @@ async def show_country_bases_menu(query, context, country_id: int):
             lines.append(f"  💵 اجاره روزانه: {format_money(b.get('daily_rent', 0))} | روزهای پرداخت‌نشده: {b.get('unpaid_days', 0)}")
             lines.append(f"  🪖 نیروهای مستقر: {deployed_str}")
             lines.append("")
-            keyboard.append([InlineKeyboardButton(f"💥 انحلال پایگاه «{b['name']}» و بازگشت نیروها", callback_data=f"admin:c_base_dissolve:{country_id}:{b['id']}")])
+            keyboard.append([
+                InlineKeyboardButton(f"🔄 رفع خطر انحلال (Unpaid=0)", callback_data=f"admin:c_base_reset_unpaid:{country_id}:{b['id']}"),
+                InlineKeyboardButton(f"💥 انحلال پایگاه «{b['name']}»", callback_data=f"admin:c_base_dissolve:{country_id}:{b['id']}")
+            ])
     else:
         lines.append("<i>این کشور هیچ پایگاه نظامی در خارج از مرزهای خود ندارد.</i>")
         lines.append("")
@@ -1023,6 +1026,20 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
 
     elif data.startswith("admin:c_bases:"):
         cid = int(data.split(":")[2])
+        await show_country_bases_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_base_reset_unpaid:"):
+        parts = data.split(":")
+        cid = int(parts[2])
+        base_id = int(parts[3])
+        conn = db.get_connection()
+        try:
+            with conn:
+                conn.execute("UPDATE foreign_bases SET unpaid_days = 0 WHERE id = ?", (base_id,))
+        finally:
+            conn.close()
+        await query.answer("روزهای پرداخت‌نشده صفر شد و خطر انحلال پایگاه برطرف گردید!", show_alert=True)
         await show_country_bases_menu(query, context, cid)
         return True
 

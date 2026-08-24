@@ -1662,6 +1662,7 @@ def process_base_daily_costs():
     events = []
     for b in get_bases():
         owner = get_country_by_id(b["owner_id"])
+        host = get_country_by_id(b["host_id"])
         if not owner:
             continue
         cost = get_base_daily_cost(b["id"])
@@ -1678,20 +1679,46 @@ def process_base_daily_costs():
                 cur = conn.cursor()
                 cur.execute("UPDATE countries SET treasury = treasury - ?, grain = grain - ?, oil_reserves = oil_reserves - ? WHERE id = ?",
                             (total_money, cost.get("grain", 0), cost.get("oil", 0), owner["id"]))
-                if rent > 0:
+                if rent > 0 and host:
                     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (rent, b["host_id"]))
                 cur.execute("UPDATE foreign_bases SET unpaid_days = 0 WHERE id = ?", (b["id"],))
             conn.close()
-            events.append({"base": b["name"], "event": "paid", "rent": rent, "host_pid": None})
+            events.append({
+                "base_id": b["id"],
+                "base_name": b["name"],
+                "owner_id": owner["id"],
+                "owner_name": owner["name"],
+                "owner_pid": owner.get("player_id"),
+                "host_id": b["host_id"],
+                "host_name": host["name"] if host else "",
+                "host_pid": host.get("player_id") if host else None,
+                "rent": rent,
+                "total_money": total_money,
+                "event": "paid"
+            })
         else:
             with conn:
                 conn.execute("UPDATE foreign_bases SET unpaid_days = unpaid_days + 1 WHERE id = ?", (b["id"],))
             row = conn.execute("SELECT unpaid_days FROM foreign_bases WHERE id = ?", (b["id"],)).fetchone()
             conn.close()
-            events.append({"base": b["name"], "event": "unpaid", "days": row["unpaid_days"] if row else "?"})
-            if row and row["unpaid_days"] >= 3:
+            unpaid_days_now = row["unpaid_days"] if row else 1
+            ev_type = "collapsed" if unpaid_days_now >= 3 else "unpaid"
+            if unpaid_days_now >= 3:
                 dissolve_base(b["id"], loss_pct=25)
-                events.append({"base": b["name"], "event": "collapsed"})
+            events.append({
+                "base_id": b["id"],
+                "base_name": b["name"],
+                "owner_id": owner["id"],
+                "owner_name": owner["name"],
+                "owner_pid": owner.get("player_id"),
+                "host_id": b["host_id"],
+                "host_name": host["name"] if host else "",
+                "host_pid": host.get("player_id") if host else None,
+                "rent": rent,
+                "total_money": total_money,
+                "days": unpaid_days_now,
+                "event": ev_type
+            })
     return events
 
 

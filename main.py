@@ -157,10 +157,6 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         app_res = None
         if first_of_day:
             app_res = approval_system.process_daily_approval_and_emigration(c)
-            try:
-                db.process_base_daily_costs()
-            except Exception:
-                pass
             # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
             try:
                 fuel_need = db.calculate_military_fuel_consumption(c["id"])
@@ -224,6 +220,61 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 logger.warning(f"Could not send daily report to player {p_id}: {e}")
 
         updated_count += 1
+
+    # 3.5. هزینه و اجاره روزانه پایگاه‌های برون‌مرزی — فقط یک بار در هر روز تقویمی (خارج از حلقه کشورها)
+    if db.get_setting("base_cost_cycle_date") != today or force:
+        db.set_setting("base_cost_cycle_date", today)
+        try:
+            base_events = db.process_base_daily_costs()
+            for ev in base_events:
+                o_pid = ev.get("owner_pid")
+                h_pid = ev.get("host_pid")
+                b_name = ev.get("base_name", "پایگاه")
+                h_name = ev.get("host_name", "میزبان")
+                o_name = ev.get("owner_name", "مالک")
+                rent_val = ev.get("rent", 0)
+
+                if ev.get("event") == "paid":
+                    if o_pid and rent_val > 0:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=o_pid,
+                                text=f"🏰 **پرداخت اجاره روزانه پایگاه نظامی:**\nمبلغ **{format_money(rent_val)}** بابت اجاره روزانه پایگاه «{b_name}» به کشور میزبان ({h_name}) پرداخت شد.",
+                                parse_mode="Markdown"
+                            )
+                        except Exception:
+                            pass
+                    if h_pid and rent_val > 0:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=h_pid,
+                                text=f"💰 **دریافت اجاره پایگاه نظامی:**\nمبلغ **{format_money(rent_val)}** بابت میزبانی از پایگاه «{b_name}» متعلق به {o_name} به خزانه کشور شما واریز گردید.",
+                                parse_mode="Markdown"
+                            )
+                        except Exception:
+                            pass
+                elif ev.get("event") == "unpaid":
+                    if o_pid:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=o_pid,
+                                text=f"⚠️ **اخطار بحران پایگاه نظامی:**\nبه دلیل کسری موجودی خزانه، نفت یا غلات، هزینه روزانه پایگاه «{b_name}» پرداخت نشد! (روز {ev.get('days', 1)} از ۳ — در صورت عدم پرداخت تا ۳ روز، پایگاه منحل خواهد شد)",
+                                parse_mode="Markdown"
+                            )
+                        except Exception:
+                            pass
+                elif ev.get("event") == "collapsed":
+                    if o_pid:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=o_pid,
+                                text=f"💥 **انحلال خودکار پایگاه نظامی برون‌مرزی:**\nپایگاه «{b_name}» به دلیل ۳ روز عدم تأمین هزینه‌ها منحل گردید و ادوات مستقر با ۲۵٪ خسارت به کشور بازگشتند.",
+                                parse_mode="Markdown"
+                            )
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning(f"Error processing base daily costs: {e}")
 
     # 4. هزینه روزانه محاصره‌های دریایی — فقط یک بار در هر روز تقویمی
     if db.get_setting("blockade_cycle_date") == today:
