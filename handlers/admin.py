@@ -7,6 +7,8 @@
 import math
 import json
 import html
+import os
+import re
 import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
@@ -35,6 +37,62 @@ from handlers.admin_dossier import (
 )
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
+
+
+# ==================== هاب مدیریت پیام‌ها و سوییچ امن بین عکس و متن ====================
+
+async def safe_edit_or_reply(query, text: str, reply_markup=None, parse_mode="HTML", photo_id: str = None):
+    """
+    ویرایش یا ارسال کاملاً امن پیام ادمین با پشتیبانی خودکار از سوییچ بین عکس و متن.
+    از بروز خطاهای BadRequest تلگرام (عدم وجود متن در عکس) جلوگیری می‌کند.
+    """
+    msg = query.message if query else None
+    has_photo = bool(msg and msg.photo)
+
+    if photo_id:
+        if has_photo:
+            try:
+                await query.edit_message_caption(caption=text, reply_markup=reply_markup, parse_mode=parse_mode)
+                return
+            except Exception:
+                pass
+        try:
+            await msg.reply_photo(photo=photo_id, caption=text, reply_markup=reply_markup, parse_mode=parse_mode)
+            try:
+                await query.delete_message()
+            except Exception:
+                pass
+            return
+        except Exception:
+            text = f"📷 <i>[تصویر فیش ضمیمه]</i>\n\n{text}"
+
+    if has_photo:
+        try:
+            await msg.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+            try:
+                await query.delete_message()
+            except Exception:
+                pass
+            return
+        except Exception:
+            try:
+                await query.edit_message_caption(caption=text, reply_markup=reply_markup, parse_mode=parse_mode)
+                return
+            except Exception:
+                pass
+    else:
+        try:
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+            return
+        except Exception:
+            try:
+                await query.edit_message_text(text, reply_markup=reply_markup)
+                return
+            except Exception:
+                try:
+                    await msg.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+                except Exception:
+                    pass
 
 
 # ==================== منوی اصلی ادمین ====================
@@ -79,7 +137,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await safe_edit_or_reply(update.callback_query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def admin_locks_menu(query, context):
@@ -122,7 +180,7 @@ async def admin_locks_menu(query, context):
         [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
     ]
 
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 # ==================== لیست کشورها با صفحه‌بندی و فیلتر قاره‌ها ====================
@@ -529,14 +587,15 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:toman_requests":
         pending = db.get_pending_payment_requests()
         if not pending:
-            await query.edit_message_text(
-                "💳 **هیچ فیش پرداخت تومانی در انتظار بررسی وجود ندارد.**",
+            await safe_edit_or_reply(
+                query,
+                "💳 <b>هیچ فیش پرداخت تومانی در انتظار بررسی وجود ندارد.</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             return
 
-        text = f"💳 **لیست فیش‌های واریزی در انتظار بررسی ({len(pending)} مورد):**\n\nبرای مشاهده پرونده و فیش، روی مورد نظر کلیک کنید:"
+        text = f"💳 <b>لیست فیش‌های واریزی در انتظار بررسی ({len(pending)} مورد):</b>\n\nبرای مشاهده پرونده و فیش، روی مورد نظر کلیک کنید:"
         keyboard = []
         for p in pending:
             p_id = p["id"]
@@ -544,57 +603,73 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             btn_text = f"💰 #{p_id} | {p['amount_toman']:,} ت | {p['plan_title'][:20]} | {user_lbl}"
             keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"admin:view_pay:{p_id}")])
         keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     elif data.startswith("admin:view_pay:"):
         req_id = int(data.split(":")[2])
         p = db.get_payment_request_by_id(req_id)
         if not p:
-            await query.edit_message_text("❌ فیش پرداخت یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            await safe_edit_or_reply(query, "❌ فیش پرداخت یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
             return
 
         user_handle = f"@{p['country_username']}" if p.get("country_username") else "ندارد"
         c_label = f"{p['country_flag']} {p['country_name']}" if p.get("country_name") else "فاقد کشور فعال"
+
+        militia_extra = ""
+        if p.get("item_type") == "militia" and p.get("custom_payload"):
+            try:
+                wiz = json.loads(p["custom_payload"])
+                militia_extra = (
+                    f"\n🏴‍☠️ <b>مشخصات گروه درخواستی:</b>\n"
+                    f"• <b>نام گروه:</b> {html.escape(wiz.get('name', ''))}\n"
+                    f"• <b>نماد:</b> {html.escape(wiz.get('flag', ''))}\n"
+                    f"• <b>مقر:</b> {html.escape(wiz.get('hq', ''))}\n"
+                    f"• <b>دکترین:</b> {html.escape(wiz.get('doctrine', ''))}\n"
+                )
+            except Exception:
+                pass
+
         dossier = (
             f"💳 <b>پرونده پرداخت تومانی — شماره #{p['id']}</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>کاربر:</b> {user_handle} (<code>{p['player_id']}</code>)\n"
             f"🌐 <b>کشور:</b> {c_label}\n"
+            f"{militia_extra}"
             f"📌 <b>پلن درخواستی:</b> {p['plan_title']}\n"
             f"💵 <b>مبلغ فاکتور:</b> <b>{p['amount_toman']:,} تومان</b>\n"
             f"📝 <b>کد پیگیری / توضیحات:</b> <code>{html.escape(p.get('tracking_code') or 'ثبت شده با عکس')}</code>\n"
-            f"📅 <b>تاریخ ثبت:</b> <code>{p['created_at'][:19]}</code>\n"
+            f"📅 <b>تاریخ ثبت:</b> <code>{str(p.get('created_at',''))[:19].replace('T',' ')}</code>\n"
             f"📊 <b>وضعیت فعلی:</b> <code>{p['status']}</code>\n"
         )
-        kb = [
-            [
-                InlineKeyboardButton("✅ تایید و فعال‌سازی فوری", callback_data=f"admin:pay_app:{p['id']}"),
-                InlineKeyboardButton("❌ رد فیش", callback_data=f"admin:pay_rej:{p['id']}"),
-            ],
-            [InlineKeyboardButton("🔙 بازگشت به لیست فیش‌ها", callback_data="admin:toman_requests")]
-        ]
-        if p.get("receipt_photo_id"):
-            try:
-                await query.message.reply_photo(photo=p["receipt_photo_id"], caption=dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
-                await query.delete_message()
-            except Exception:
-                await query.edit_message_text(dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+        if p.get("item_type") == "militia":
+            kb = [
+                [
+                    InlineKeyboardButton("✅ تایید و ساخت فوری", callback_data=f"admin:pay_app:{p['id']}"),
+                    InlineKeyboardButton("✏️ ویرایش نام و تایید", callback_data=f"admin:pay_rename:{p['id']}"),
+                ],
+                [
+                    InlineKeyboardButton("❌ رد فیش", callback_data=f"admin:pay_rej:{p['id']}"),
+                    InlineKeyboardButton("🔙 لیست فیش‌ها", callback_data="admin:toman_requests")
+                ]
+            ]
         else:
-            await query.edit_message_text(dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+            kb = [
+                [
+                    InlineKeyboardButton("✅ تایید و فعال‌سازی فوری", callback_data=f"admin:pay_app:{p['id']}"),
+                    InlineKeyboardButton("❌ رد فیش", callback_data=f"admin:pay_rej:{p['id']}"),
+                ],
+                [InlineKeyboardButton("🔙 بازگشت به لیست فیش‌ها", callback_data="admin:toman_requests")]
+            ]
+
+        await safe_edit_or_reply(query, dossier, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML", photo_id=p.get("receipt_photo_id"))
 
     elif data.startswith("admin:pay_app:"):
         req_id = int(data.split(":")[2])
         ok, msg, p = db.approve_payment_request(req_id, user_id)
         if not ok:
-            err_text = f"❌ {msg}"
+            err_text = f"❌ <b>خطا:</b> {html.escape(msg)}"
             err_kb = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]
-            if query.message and query.message.photo:
-                try:
-                    await query.edit_message_caption(caption=err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
-                except Exception:
-                    await query.message.reply_text(err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
-            else:
-                await query.edit_message_text(err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="Markdown")
+            await safe_edit_or_reply(query, err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="HTML")
             return
 
         # ارسال پیام تبریک و فعال‌سازی به کاربر
@@ -633,27 +708,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             except Exception as e:
                 print(f"Failed to notify user of payment approval: {e}")
 
-        succ_admin_text = f"✅ **فیش #{req_id} با موفقیت تایید و خدمات ({p['plan_title']}) برای کاربر فعال شد.**"
+        succ_admin_text = f"✅ <b>فیش #{req_id} با موفقیت تایید و خدمات ({html.escape(p['plan_title'])}) برای کاربر فعال شد.</b>"
         admin_kb = [
             [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
             [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
         ]
-        if query.message and query.message.photo:
-            try:
-                await query.edit_message_caption(caption=succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
-        else:
-            try:
-                await query.edit_message_text(succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="Markdown")
+        await safe_edit_or_reply(query, succ_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="HTML")
 
     elif data.startswith("admin:pay_rename:"):
         req_id = int(data.split(":")[2])
         p = db.get_payment_request_by_id(req_id)
         if not p:
-            await query.edit_message_text("❌ فیش پرداخت یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
+            await safe_edit_or_reply(query, "❌ فیش پرداخت یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]))
             return
 
         context.user_data["admin_awaiting_input"] = {
@@ -661,17 +727,43 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             "req_id": req_id
         }
         prompt_txt = (
-            f"✏️ **ویرایش نام گروه و تایید فیش #{req_id}**\n"
+            f"✏️ <b>ویرایش نام گروه و تایید فیش #{req_id}</b>\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "لطفاً **نام جدید و رسمی مصوب** برای این سازمان را ارسال فرمایید:\n\n"
-            "*(به محض ارسال، گروه با این نام ایجاد و تاییدیه به بازیکن فرستاده می‌شود)*"
+            "لطفاً <b>نام جدید و رسمی مصوب</b> برای این سازمان را ارسال فرمایید:\n\n"
+            "<i>(به محض ارسال، گروه با این نام ایجاد و تاییدیه به بازیکن فرستاده می‌شود)</i>"
         )
-        if query.message and query.message.photo:
-            await query.message.reply_text(prompt_txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:toman_requests")]]), parse_mode="Markdown")
-        else:
-            await query.edit_message_text(prompt_txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:toman_requests")]]), parse_mode="Markdown")
+        await safe_edit_or_reply(query, prompt_txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:toman_requests")]]), parse_mode="HTML")
 
     elif data.startswith("admin:pay_rej:"):
+        req_id = int(data.split(":")[2])
+        ok, msg, p = db.reject_payment_request(req_id, user_id, "عدم واریز وجه یا فیش نامعتبر")
+        if not ok:
+            err_text = f"❌ <b>خطا:</b> {html.escape(msg)}"
+            err_kb = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:toman_requests")]]
+            await safe_edit_or_reply(query, err_text, reply_markup=InlineKeyboardMarkup(err_kb), parse_mode="HTML")
+            return
+
+        # اطلاع به کاربر
+        player_id = p["player_id"]
+        rej_msg = (
+            f"❌ **فیش پرداخت شما تایید نشد**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 **سفارش:** {p['plan_title']}\n"
+            f"💵 **مبلغ:** {p['amount_toman']:,} تومان\n\n"
+            "⚠️ **علت:** عدم انطباق با گردش حساب یا فیش نامعتبر.\n"
+            "در صورت بروز اشتباه، لطفاً با پشتیبانی یا ارسال مجدد فیش معتبر پیگیری فرمایید."
+        )
+        try:
+            await context.bot.send_message(chat_id=player_id, text=rej_msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to notify user of payment rejection: {e}")
+
+        rej_admin_text = f"❌ <b>فیش #{req_id} رد شد و به کاربر اطلاع داده شد.</b>"
+        admin_kb = [
+            [InlineKeyboardButton("💳 لیست فیش‌های باقیمانده", callback_data="admin:toman_requests")],
+            [InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")]
+        ]
+        await safe_edit_or_reply(query, rej_admin_text, reply_markup=InlineKeyboardMarkup(admin_kb), parse_mode="HTML")
         req_id = int(data.split(":")[2])
         ok, msg, p = db.reject_payment_request(req_id, user_id, "عدم واریز وجه یا فیش نامعتبر")
         if not ok:
@@ -828,7 +920,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:backup_db":
         ok, res = db.backup_database()
         if ok:
-            import os
             file_size = os.path.getsize(res) / (1024 * 1024) if os.path.exists(res) else 0
             text = (
                 "💾 <b>پشتیبان‌گیری از دیتابیس با موفقیت انجام شد!</b>\n"
@@ -1503,7 +1594,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         prev_country = db.get_country_by_player(p_id)
 
-        import html
         esc_c_name = html.escape(str(c_name))
         esc_full_name = html.escape(str(full_name))
         esc_u_name = html.escape(str(u_name))
@@ -2263,8 +2353,7 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     if input_type == "cstat_set":
-        import re as _re
-        raw = _re.sub(r"[^0-9]", "", str(text).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")))
+        raw = re.sub(r"[^0-9]", "", str(text).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")))
         if not raw:
             await update.message.reply_text("❌ لطفاً فقط یک عدد صحیح بفرست.", parse_mode="Markdown")
             return

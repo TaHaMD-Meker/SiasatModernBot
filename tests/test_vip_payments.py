@@ -214,3 +214,103 @@ def test_user_receipt_submission_flow_and_admin_notification(db_temp, monkeypatc
         assert any(cb.startswith("admin:pay_rej:") for cb in callbacks)
 
     asyncio.run(_test())
+
+
+def test_admin_receipt_viewing_and_callback_navigation(db_temp):
+    """تست باز کردن و مشاهده فیش در پنل ادمین و سوییچ بین لیست و پرونده فیش."""
+    import asyncio
+    from handlers.admin import admin_callback_handler
+
+    async def _test():
+        cid = db_temp.create_country(999888, "روسیه", "🇷🇺", country_key="russia")
+        req_id = db_temp.create_payment_request(
+            player_id=999888,
+            country_id=cid,
+            item_type="vip_gold",
+            plan_title="🥇 اشتراک طلایی رهبری",
+            amount_toman=349_000,
+            receipt_photo_id="test_receipt_file_999",
+            tracking_code="TRX-VIEW-TEST-77"
+        )
+
+        class MockUser:
+            id = 8052987465
+
+        class MockMessage:
+            def __init__(self, photo=None):
+                self.photo = photo
+                self.last_text = ""
+                self.last_caption = ""
+                self.last_reply_markup = None
+                self.deleted = False
+
+            async def reply_photo(self, photo, caption=None, reply_markup=None, parse_mode=None):
+                self.photo = photo
+                self.last_caption = caption
+                self.last_reply_markup = reply_markup
+
+            async def reply_text(self, text, reply_markup=None, parse_mode=None):
+                self.last_text = text
+                self.last_reply_markup = reply_markup
+
+        class MockCallbackQuery:
+            def __init__(self, data, msg=None):
+                self.data = data
+                self.from_user = MockUser()
+                self.message = msg or MockMessage()
+                self.answered = False
+
+            async def answer(self, text=None, show_alert=False):
+                self.answered = True
+
+            async def edit_message_text(self, text, reply_markup=None, parse_mode=None):
+                self.message.last_text = text
+                self.message.last_reply_markup = reply_markup
+
+            async def edit_message_caption(self, caption, reply_markup=None, parse_mode=None):
+                self.message.last_caption = caption
+                self.message.last_reply_markup = reply_markup
+
+            async def delete_message(self):
+                self.message.deleted = True
+
+        class MockBot:
+            async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+                pass
+
+        class MockContext:
+            user_data = {}
+            bot = MockBot()
+
+        class MockUpdate:
+            def __init__(self, query):
+                self.callback_query = query
+                self.effective_user = query.from_user
+
+        # ۱. باز کردن لیست فیش‌های تومانی در پنل ادمین
+        q_list = MockCallbackQuery("admin:toman_requests")
+        upd_list = MockUpdate(q_list)
+        ctx = MockContext()
+        await admin_callback_handler(upd_list, ctx)
+        assert "لیست فیش‌های واریزی" in q_list.message.last_text
+        assert f"admin:view_pay:{req_id}" in [btn.callback_data for row in q_list.message.last_reply_markup.inline_keyboard for btn in row]
+
+        # ۲. کلیک روی فیش برای مشاهده پرونده و عکس آن
+        q_view = MockCallbackQuery(f"admin:view_pay:{req_id}", msg=q_list.message)
+        upd_view = MockUpdate(q_view)
+        await admin_callback_handler(upd_view, ctx)
+        assert "پرونده پرداخت تومانی" in (q_view.message.last_caption or q_view.message.last_text)
+        assert "TRX-VIEW-TEST-77" in (q_view.message.last_caption or q_view.message.last_text)
+
+        # ۳. کلیک تایید فیش
+        q_app = MockCallbackQuery(f"admin:pay_app:{req_id}", msg=q_view.message)
+        upd_app = MockUpdate(q_app)
+        await admin_callback_handler(upd_app, ctx)
+        assert ("تایید" in q_app.message.last_text) or ("تایید" in q_app.message.last_caption)
+
+        # بررسی اعمال اشتراک روی کشور
+        c = db_temp.get_country_by_id(cid)
+        assert c["is_vip"] == 1
+        assert c["vip_tier"] == "gold"
+
+    asyncio.run(_test())
