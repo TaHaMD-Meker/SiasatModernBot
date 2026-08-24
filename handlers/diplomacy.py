@@ -1122,11 +1122,41 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        my_ckey = country.get("country_key")
+        orig_key = config.detect_weapon_origin(eq_key, asset["equipment_name"], my_ckey)
+        is_light = config.is_light_weapon(asset["category"], eq_key, asset["equipment_name"])
+        is_self_produced = (orig_key == my_ckey)
+
         context.user_data["mil_draft"]["equipment_key"] = eq_key
         context.user_data["mil_draft"]["equipment_name"] = asset["equipment_name"]
         context.user_data["mil_draft"]["max_amount"] = asset["amount"]
-        context.user_data["diplomacy_input"] = {"type": "mil_asset_qty"}
+        context.user_data["mil_draft"]["origin_key"] = orig_key
+        context.user_data["mil_draft"]["is_light"] = is_light
+        context.user_data["mil_draft"]["is_self_produced"] = is_self_produced
+        context.user_data["mil_draft"]["is_smuggled"] = 0
 
+        orig_info = config.COUNTRIES.get(orig_key, {})
+        orig_flag = orig_info.get("flag", "🌐")
+        orig_name = orig_info.get("name", orig_key)
+
+        if not is_self_produced and is_light:
+            text = (
+                f"🎖️ **انتقال {asset['equipment_name']}**\n"
+                f"🏷️ **کشور سازنده اصلی:** {orig_flag} {orig_name}\n"
+                f"📦 موجودی انبار شما: {asset['amount']:,} واحد\n\n"
+                "💡 این جنگ‌افزار یک **سلاح سبک/دوش‌پرتاب** است. نحوه انتقال را انتخاب فرمایید:\n\n"
+                f"• 📜 **معاهده رسمی بین‌المللی:** انتقال قانونی با استعلام مجوز صادرات (End-User License) از کشور سازنده ({orig_name})\n"
+                "• 🕵️ **قاچاق از بازار سیاه:** ارسال مخفیانه بدون نیاز به مجوز سازنده (۱.۵ برابر هزینه ترانزیت + ۲۵٪ ریسک رهگیری امنیتی)"
+            )
+            kb = [
+                [InlineKeyboardButton("📜 معاهده رسمی (با استعلام مجوز سازنده)", callback_data="dip:mil_set_mode:official")],
+                [InlineKeyboardButton("🕵️ قاچاق مخفیانه بازار سیاه (بدون مجوز)", callback_data="dip:mil_set_mode:smuggle")],
+                [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+            ]
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            return
+
+        context.user_data["diplomacy_input"] = {"type": "mil_asset_qty"}
         max_amt = asset["amount"]
         possible_qtys = [1, 5, 10, 25, 50, 100]
         qty_buttons = []
@@ -1144,9 +1174,43 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         qty_buttons.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
 
+        heavy_note = ""
+        if not is_self_produced and not is_light:
+            heavy_note = f"\n🔒 **سلاح سنگین:** ساخت {orig_flag} {orig_name} (منوط به صدور مجوز صادرات)"
+
         await query.edit_message_text(
-            f"🎖️ **انتقال {asset['equipment_name']}**\n📦 موجودی فعلی کشور شما: {asset['amount']:,} واحد\n\n"
+            f"🎖️ **انتقال {asset['equipment_name']}**{heavy_note}\n📦 موجودی فعلی کشور شما: {asset['amount']:,} واحد\n\n"
             "لطفاً **تعداد ارسالی** را از دکمه‌های زیر انتخاب کرده یا عدد مد نظر خود را تایپ فرمایید:",
+            reply_markup=InlineKeyboardMarkup(qty_buttons),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("dip:mil_set_mode:"):
+        mode_type = data.split(":")[2]
+        draft = context.user_data.get("mil_draft", {})
+        draft["is_smuggled"] = 1 if mode_type == "smuggle" else 0
+        context.user_data["diplomacy_input"] = {"type": "mil_asset_qty"}
+
+        eq_name = draft.get("equipment_name", "سلاح")
+        max_amt = draft.get("max_amount", 1)
+        possible_qtys = [1, 5, 10, 25, 50, 100]
+        qty_buttons = []
+        row = []
+        for q in possible_qtys:
+            if q < max_amt:
+                row.append(InlineKeyboardButton(f"📦 {q:,} واحد", callback_data=f"dip:mil_qty:{q}"))
+                if len(row) == 3:
+                    qty_buttons.append(row)
+                    row = []
+        if max_amt > 0:
+            row.append(InlineKeyboardButton(f"📦 کل موجودی ({max_amt:,})", callback_data=f"dip:mil_qty:{max_amt}"))
+            qty_buttons.append(row)
+        qty_buttons.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
+
+        mode_badge = "🕵️ **کانال ارسال: قاچاق مخفیانه بازار سیاه**" if draft["is_smuggled"] else "📜 **کانال ارسال: معاهده رسمی بین‌المللی**"
+        await query.edit_message_text(
+            f"🎖️ **انتقال {eq_name}**\n{mode_badge}\n📦 موجودی فعلی: {max_amt:,} واحد\n\n"
+            "لطفاً **تعداد ارسالی** را انتخاب کرده یا عدد مورد نظر را تایپ فرمایید:",
             reply_markup=InlineKeyboardMarkup(qty_buttons),
             parse_mode="Markdown"
         )
@@ -1296,9 +1360,48 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        is_smuggled = draft.get("is_smuggled", 0)
+        orig_key = draft.get("origin_key", country.get("country_key"))
+        orig_c = db.get_country_by_key(orig_key)
+        is_self = (orig_key == country.get("country_key"))
+
         cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
         mode_labels = {"air": "✈️ ترابری هوایی", "land": "🚛 ترابری زمینی", "sea": "🚢 ترابری دریایی"}
         t_cost = cost_map.get(mode, 300_000)
+        if is_smuggled:
+            t_cost = int(t_cost * 1.5)
+
+        # بررسی مجوز صادرات و بلوک‌های ژئوپلیتیک
+        lic_cid = None
+        lic_status = "approved"
+
+        if not is_self and not is_smuggled:
+            if orig_c and orig_c.get("player_id") and orig_c["id"] != country["id"]:
+                lic_cid = orig_c["id"]
+                lic_status = "pending"
+            else:
+                # NPC manufacturer: بررسی بلوک‌های ژئوپلیتیک
+                t_ckey = target_c.get("country_key", "")
+                orig_info = config.COUNTRIES.get(orig_key, {})
+                if orig_key in config.WESTERN_NATO_BLOC and t_ckey in config.RESISTANCE_EASTERN_BLOC:
+                    await query.edit_message_text(
+                        f"⛔ **وتوی خودکار کشور سازنده (تحریم تسلیحاتی بین‌المللی):**\n\n"
+                        f"کشور سازنده این جنگ‌افزار ({orig_info.get('flag', '🌐')} **{orig_info.get('name', orig_key)}**) "
+                        f"به دلیل قوانین عدم اشاعه و تحریم‌های امنیتی بلوک غرب، اجازه فروش و انتقال این سلاح به کشورهای محور مقاومت را نمی‌دهد.\n\n"
+                        "💡 *راهکار:* فقط سلاح‌های سبک از طریق بازار سیاه قابل قاچاق هستند.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                        parse_mode="Markdown"
+                    )
+                    return
+                elif orig_key in config.RESISTANCE_EASTERN_BLOC and t_ckey in config.WESTERN_NATO_BLOC:
+                    await query.edit_message_text(
+                        f"⛔ **وتوی خودکار کشور سازنده (تحریم تسلیحاتی بین‌المللی):**\n\n"
+                        f"کشور سازنده این جنگ‌افزار ({orig_info.get('flag', '🌐')} **{orig_info.get('name', orig_key)}**) "
+                        f"اجازه فروش و انتقال تسلیحات خود به کشورهای عضو ناتو و هم‌پیمانان غربی را نمی‌دهد.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                        parse_mode="Markdown"
+                    )
+                    return
 
         contract_id = db.create_trade_contract(
             proposer_id=country["id"],
@@ -1310,18 +1413,67 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             transport_payer=payer,
             transport_cost=t_cost,
             offered_key=draft["equipment_key"],
-            transport_mode=mode
+            transport_mode=mode,
+            is_smuggled=is_smuggled,
+            origin_country_key=orig_key,
+            license_country_id=lic_cid,
+            license_status=lic_status
         )
 
-        recip_msg = (
-            f"🎖️ **پیشنهاد معاهده تحویل/فروش تسلیحات نظامی از طرف {country['flag']} {country['name']}**\n\n"
-            f"• **سلاح ارسالی:** {draft['equipment_name']}\n"
-            f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
-            f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
-            f"• **روش ترابری:** {mode_labels.get(mode, mode)}\n"
-            f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
-            "آیا با دریافت و امضای این معاهده تسلیحاتی موافقید؟"
-        )
+        if lic_status == "pending":
+            orig_msg = (
+                f"📜 **درخواست صدور مجوز صادرات تسلیحات (End-User Export License)**\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"کشور {country['flag']} **{country['name']}** قصد دارد جنگ‌افزار ساخت کشور شما ({orig_c['flag']} **{orig_c['name']}**) را به {target_c['flag']} **{target_c['name']}** واگذار/فروش کند:\n\n"
+                f"• 🎖️ **سلاح:** {draft['equipment_name']}\n"
+                f"• 📦 **تعداد:** {draft['offered_amount']:,} واحد\n"
+                f"• 💰 **مبلغ معامله:** {format_money(draft['requested_amount'])}\n"
+                f"• ✈️ **روش ترابری:** {mode_labels.get(mode, mode)}\n\n"
+                f"⚠️ *طبق حقوق بین‌الملل و قوانین ITAR، انتقال این سلاح مشروط به تأیید شما به عنوان کشور سازنده اصلی است.*\n\n"
+                f"آیا با صدور مجوز صادرات و انتقال این سلاح به مقصد موافقت می‌فرمایید؟"
+            )
+            orig_kb = [
+                [InlineKeyboardButton("✅ صدور مجوز صادرات (Approve License)", callback_data=f"dip:lic_app:{contract_id}")],
+                [InlineKeyboardButton("🚫 وتو و لغو معاهده (Veto Export)", callback_data=f"dip:lic_veto:{contract_id}")],
+            ]
+            if orig_c.get("player_id"):
+                try:
+                    await context.bot.send_message(chat_id=orig_c["player_id"], text=orig_msg, reply_markup=InlineKeyboardMarkup(orig_kb), parse_mode="Markdown")
+                except Exception:
+                    pass
+
+            await query.edit_message_text(
+                f"⏳ **معاهده تسلیحاتی در انتظار مجوز کشور سازنده:**\n\n"
+                f"سلاح انتخابی شما ساخت کشور {orig_c['flag']} **{orig_c['name']}** است.\n"
+                f"درخواست صدور مجوز صادرات (End-User License) برای رهبر این کشور ارسال شد. به محض موافقت ایشان، معاهده جهت امضا برای کشور خریدار ({target_c['name']}) فرستاده خواهد شد.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        # Direct proposal to Recipient
+        if is_smuggled:
+            recip_msg = (
+                f"🕵️ **پیشنهاد محموله قاچاق تسلیحاتی از بازار سیاه از طرف {country['flag']} {country['name']}**\n\n"
+                f"• **جنگ‌افزار:** {draft['equipment_name']} (قاچاق مخفیانه)\n"
+                f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
+                f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
+                f"• **روش ترابری:** {mode_labels.get(mode, mode)} (کاروان مخفی)\n"
+                f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+                f"⚠️ *هشدار اطلاعاتی:* این محموله بدون مجوز سازنده ارسال می‌شود و ۲۵٪ ریسک رهگیری و توقیف مرزی دارد.\n\n"
+                "آیا با دریافت و پذیرش این محموله قاچاق موافقید؟"
+            )
+        else:
+            recip_msg = (
+                f"🎖️ **پیشنهاد معاهده تحویل/فروش تسلیحات نظامی از طرف {country['flag']} {country['name']}**\n\n"
+                f"• **سلاح ارسالی:** {draft['equipment_name']}\n"
+                f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
+                f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
+                f"• **روش ترابری:** {mode_labels.get(mode, mode)}\n"
+                f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+                "آیا با دریافت و امضای این معاهده تسلیحاتی موافقید؟"
+            )
+
         recip_kb = [
             [InlineKeyboardButton("✅ قبول و تحویل تسلیحات", callback_data=f"dip:trade_accept:{contract_id}")],
             [InlineKeyboardButton("❌ رد معاهده نظامی", callback_data=f"dip:trade_reject:{contract_id}")],
@@ -1550,6 +1702,46 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         except Exception:
             pass
 
+        if str(msg).startswith("INTERCEPTED:"):
+            _, lost_str, deliv_str, eq_name, orig_k = msg.split(":")
+            lost_num = int(lost_str)
+            deliv_num = int(deliv_str)
+            orig_c = db.get_country_by_key(orig_k)
+
+            inter_text = (
+                f"🚨 **هشدار امنیتی: ردگیری و توقیف کاروان قاچاق سلاح!**\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"سرویس‌های ضدجاسوسی و گارد مرزی محموله قاچاق اسلحه را ردگیری کردند!\n"
+                f"• 📦 تعداد ارسالی: {c_data['offered_amount']:,} واحد {eq_name}\n"
+                f"• 💥 تعداد توقیف و منهدم‌شده: **{lost_num:,} واحد**\n"
+                f"• 📥 تعداد تحویل‌شده به خریدار: **{deliv_num:,} واحد**\n"
+                f"• ⚠️ رضایت عمومی فروشنده ({p_c['name']}) ۳٪ کاهش یافت.\n\n"
+                "📢 خبر فوری این حادثه امنیتی در کانال رسمی منتشر گردید."
+            )
+            await query.edit_message_text(inter_text, parse_mode="Markdown")
+            if p_c and p_c.get("player_id"):
+                try:
+                    await context.bot.send_message(chat_id=p_c["player_id"], text=inter_text, parse_mode="Markdown")
+                except Exception:
+                    pass
+            await news_engine.trigger_smuggling_intercepted_news(context.bot, p_c, r_c, orig_c, eq_name, lost_num)
+            return
+
+        elif str(msg).startswith("SMUGGLED_SAFE:"):
+            _, deliv_str, eq_name = msg.split(":")
+            safe_text = (
+                f"🕵️ **انتقال موفقیت‌آمیز محموله قاچاق از بازار سیاه!**\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"تعداد **{int(deliv_str):,} واحد {eq_name}** به صورت کاملاً مخفیانه و بدون اطلاع کشور سازنده وارد زرادخانه کشور شد."
+            )
+            await query.edit_message_text(safe_text, parse_mode="Markdown")
+            if p_c and p_c.get("player_id"):
+                try:
+                    await context.bot.send_message(chat_id=p_c["player_id"], text=safe_text, parse_mode="Markdown")
+                except Exception:
+                    pass
+            return
+
         type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
 
         if c_data["offered_type"] == "military_asset":
@@ -1589,6 +1781,80 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         if p_c and p_c.get("player_id"):
             try:
                 await context.bot.send_message(chat_id=p_c["player_id"], text=receipt_text, parse_mode="Markdown")
+            except Exception:
+                pass
+
+    elif data.startswith("dip:lic_app:"):
+        contract_id = int(data.split(":")[2])
+        ok, msg, c_data = db.approve_export_license(contract_id, country["id"])
+        if not ok:
+            await query.edit_message_text(f"❌ {msg}", parse_mode="Markdown")
+            return
+
+        p_c = db.get_country_by_id(c_data["proposer_id"])
+        r_c = db.get_country_by_id(c_data["recipient_id"])
+        asset_dict = db.get_asset_by_key(p_c["id"], c_data["offered_key"]) or {"equipment_name": c_data.get("offered_key", "سلاح")}
+
+        await query.edit_message_text(
+            f"✅ **مجوز صادرات صادر شد.**\nمعاهده انتقال {asset_dict['equipment_name']} بین {p_c['name']} و {r_c['name']} با تأیید کشور شما معتبر گردید.",
+            parse_mode="Markdown"
+        )
+
+        # اطلاع به فروشنده
+        if p_c and p_c.get("player_id"):
+            try:
+                await context.bot.send_message(
+                    chat_id=p_c["player_id"],
+                    text=f"✅ **مجوز صادرات صادر شد!**\nکشور سازنده ({country['flag']} {country['name']}) با انتقال {asset_dict['equipment_name']} موافقت کرد. معاهده اکنون جهت امضا برای کشور خریدار ({r_c['name']}) ارسال شد.",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+        # ارسال معاهده به خریدار
+        mode_labels = {"air": "✈️ ترابری هوایی", "land": "🚛 ترابری زمینی", "sea": "🚢 ترابری دریایی"}
+        recip_msg = (
+            f"🎖️ **پیشنهاد معاهده تحویل/فروش تسلیحات نظامی از طرف {p_c['flag']} {p_c['name']}**\n\n"
+            f"• **سلاح ارسالی:** {asset_dict['equipment_name']} (✅ دارای مجوز رسمی صادرات از {country['name']})\n"
+            f"• **تعداد تحویلی:** {c_data['offered_amount']:,} واحد\n"
+            f"• **مبلغ پرداختی درخواستی از شما:** {format_money(c_data['requested_amount'])}\n"
+            f"• **روش ترابری:** {mode_labels.get(c_data.get('transport_mode', 'sea'), 'ترابری')}\n"
+            f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(c_data.get('transport_cost', 0))}):** {'فروشنده' if c_data.get('transport_payer') == 'seller' else 'خریدار (شما)'}\n\n"
+            "آیا با دریافت و امضای این معاهده تسلیحاتی موافقید؟"
+        )
+        recip_kb = [
+            [InlineKeyboardButton("✅ قبول و تحویل تسلیحات", callback_data=f"dip:trade_accept:{contract_id}")],
+            [InlineKeyboardButton("❌ رد معاهده نظامی", callback_data=f"dip:trade_reject:{contract_id}")],
+        ]
+        if r_c and r_c.get("player_id"):
+            try:
+                await context.bot.send_message(chat_id=r_c["player_id"], text=recip_msg, reply_markup=InlineKeyboardMarkup(recip_kb), parse_mode="Markdown")
+            except Exception:
+                pass
+
+    elif data.startswith("dip:lic_veto:"):
+        contract_id = int(data.split(":")[2])
+        ok, msg, c_data = db.veto_export_license(contract_id, country["id"])
+        if not ok:
+            await query.edit_message_text(f"❌ {msg}", parse_mode="Markdown")
+            return
+
+        p_c = db.get_country_by_id(c_data["proposer_id"])
+        r_c = db.get_country_by_id(c_data["recipient_id"])
+        asset_dict = db.get_asset_by_key(p_c["id"], c_data["offered_key"]) or {"equipment_name": c_data.get("offered_key", "سلاح")}
+
+        await query.edit_message_text(
+            f"🚫 **معاهده تسلیحاتی وتو شد.**\nشما به عنوان کشور سازنده اصلی از انتقال {asset_dict['equipment_name']} به {r_c['name']} ممانعت فرمودید.",
+            parse_mode="Markdown"
+        )
+
+        if p_c and p_c.get("player_id"):
+            try:
+                await context.bot.send_message(
+                    chat_id=p_c["player_id"],
+                    text=f"🚫 **معاهده تسلیحاتی وتو شد!**\nکشور سازنده ({country['flag']} {country['name']}) با صدور مجوز صادرات مخالفت کرد و معاهده انتقال {asset_dict['equipment_name']} به {r_c['name']} لغو گردید.",
+                    parse_mode="Markdown"
+                )
             except Exception:
                 pass
 

@@ -526,6 +526,26 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cur.execute("ALTER TABLE trade_contracts ADD COLUMN is_smuggled INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE trade_contracts ADD COLUMN origin_country_key TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE trade_contracts ADD COLUMN license_country_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE trade_contracts ADD COLUMN license_status TEXT DEFAULT 'approved'")
+    except sqlite3.OperationalError:
+        pass
+
     # بازار بورس بین‌المللی کالاها (Global Commodities Exchange)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS market_orders (
@@ -3282,19 +3302,95 @@ def are_sanctioned(c1_id: int, c2_id: int) -> bool:
     return rel.get("status") == "sanctioned"
 
 
-def create_trade_contract(proposer_id: int, recipient_id: int, offered_type: str, offered_amount: int, requested_type: str, requested_amount: int, transport_payer: str = "seller", transport_cost: int = 0, offered_key: str = None, transport_mode: str = "sea") -> int:
+def create_trade_contract(
+    proposer_id: int,
+    recipient_id: int,
+    offered_type: str,
+    offered_amount: int,
+    requested_type: str,
+    requested_amount: int,
+    transport_payer: str = "seller",
+    transport_cost: int = 0,
+    offered_key: str = None,
+    transport_mode: str = "sea",
+    is_smuggled: int = 0,
+    origin_country_key: str = None,
+    license_country_id: int = None,
+    license_status: str = "approved"
+) -> int:
     conn = get_connection()
     cur = conn.cursor()
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    status = "pending_license" if license_status == "pending" else "pending"
     cur.execute("""
         INSERT INTO trade_contracts
-        (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, now_str))
+        (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, is_smuggled, origin_country_key, license_country_id, license_status, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, is_smuggled, origin_country_key, license_country_id, license_status, status, now_str))
     contract_id = cur.lastrowid
     conn.commit()
     conn.close()
     return contract_id
+
+
+def approve_export_license(contract_id: int, licenser_country_id: int) -> tuple[bool, str, dict]:
+    """تایید و صدور مجوز صادرات تسلیحات توسط کشور سازنده."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM trade_contracts WHERE id = ?", (contract_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "معاهده یافت نشد.", None
+            c = dict(row)
+            if c.get("license_country_id") != licenser_country_id:
+                return False, "شما صلاحیت صدور مجوز این معاهده را ندارید.", None
+            if c.get("status") != "pending_license":
+                return False, "این معاهده قبلاً تعیین تکلیف شده است.", None
+
+            cur.execute("""
+                UPDATE trade_contracts
+                SET license_status = 'approved', status = 'pending'
+                WHERE id = ?
+            """, (contract_id,))
+            c["license_status"] = "approved"
+            c["status"] = "pending"
+            return True, "مجوز صادرات با موفقیت صادر گردید و معاهده جهت امضا به کشور خریدار ارسال شد.", c
+    except Exception as e:
+        return False, f"خطا در دیتابیس: {e}", None
+    finally:
+        conn.close()
+
+
+def veto_export_license(contract_id: int, licenser_country_id: int) -> tuple[bool, str, dict]:
+    """وتوی معاهده تسلیحاتی و ممانعت از انتقال سلاح توسط کشور سازنده."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM trade_contracts WHERE id = ?", (contract_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "معاهده یافت نشد.", None
+            c = dict(row)
+            if c.get("license_country_id") != licenser_country_id:
+                return False, "شما صلاحیت وتوی این معاهده را ندارید.", None
+            if c.get("status") != "pending_license":
+                return False, "این معاهده قبلاً تعیین تکلیف شده است.", None
+
+            cur.execute("""
+                UPDATE trade_contracts
+                SET license_status = 'vetoed', status = 'vetoed'
+                WHERE id = ?
+            """, (contract_id,))
+            c["license_status"] = "vetoed"
+            c["status"] = "vetoed"
+            return True, "معاهده تسلیحاتی وتو شد و از انتقال جنگ‌افزار ممانعت به عمل آمد.", c
+    except Exception as e:
+        return False, f"خطا در دیتابیس: {e}", None
+    finally:
+        conn.close()
 
 
 def get_trade_contract(contract_id: int):
@@ -3378,7 +3474,11 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 return False, "قرارداد یافت نشد."
 
             c = dict(contract)
-            if c["status"] != "pending":
+            if c.get("status") == "pending_license":
+                return False, "این معاهده هنوز در انتظار صدور مجوز صادرات از سوی کشور سازنده است."
+            if c.get("status") == "vetoed":
+                return False, "این معاهده توسط کشور سازنده وتو شده و فاقد اعتبار قانونی است."
+            if c.get("status") != "pending":
                 return False, "این قرارداد قبلاً تعیین تکلیف شده است."
 
             p_id = c["proposer_id"]
@@ -3475,16 +3575,30 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 if p_extra_cost > 0 and p_c["treasury"] < p_extra_cost:
                     return False, f"کشور فروشنده ({p_c['name']}) موجودی کافی برای پرداخت ترانزیت ندارد."
 
+                is_smuggled = bool(c.get("is_smuggled"))
+                delivered_amt = off_amt
+                lost_amt = 0
+                is_intercepted = False
+
+                if is_smuggled:
+                    import random
+                    # ۲۵٪ ریسک ردگیری اطلاعاتی و توقیف نیمی از محموله در مرز
+                    if random.random() < 0.25:
+                        is_intercepted = True
+                        delivered_amt = max(1, off_amt // 2)
+                        lost_amt = off_amt - delivered_amt
+                        cur.execute("UPDATE countries SET approval_rating = MAX(0, approval_rating - 3) WHERE id = ?", (p_id,))
+
                 # 1. Deduct asset from proposer
                 cur.execute("UPDATE country_assets SET amount = amount - ? WHERE id = ?", (off_amt, asset_dict["id"]))
 
-                # 2. Add asset to recipient (producible=0)
+                # 2. Add delivered asset to recipient (producible=0)
                 cur.execute("""
                     INSERT INTO country_assets
                     (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
                     ON CONFLICT(country_id, equipment_key) DO UPDATE SET amount = amount + ?
-                """, (r_id, r_c["country_key"], asset_dict["category"], asset_dict["equipment_name"], off_key, off_amt, asset_dict["buy_price"], asset_dict["maintenance_cost"], off_amt))
+                """, (r_id, r_c["country_key"], asset_dict["category"], asset_dict["equipment_name"], off_key, delivered_amt, asset_dict["buy_price"], asset_dict["maintenance_cost"], delivered_amt))
 
                 # 3. Transfer price from recipient to proposer
                 if req_amt > 0:
@@ -3503,13 +3617,18 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 cur.execute("""
                     INSERT INTO transactions (country_id, type, description, amount, created_at)
                     VALUES (?, 'asset_transfer_out', ?, ?, ?)
-                """, (p_id, f"انتقال نظامی {asset_dict['equipment_name']} x{off_amt} به {r_c['name']}", req_amt, now_str))
+                """, (p_id, f"انتقال نظامی {asset_dict['equipment_name']} x{off_amt} به {r_c['name']}{' (قاچاق مخفیانه)' if is_smuggled else ''}", req_amt, now_str))
                 cur.execute("""
                     INSERT INTO transactions (country_id, type, description, amount, created_at)
                     VALUES (?, 'asset_transfer_in', ?, ?, ?)
-                """, (r_id, f"دریافت تسلیحات نظامی {asset_dict['equipment_name']} x{off_amt} از {p_c['name']}", -req_amt, now_str))
+                """, (r_id, f"دریافت تسلیحات نظامی {asset_dict['equipment_name']} x{delivered_amt} از {p_c['name']}", -req_amt, now_str))
 
-                return True, "معاهده انتقال تسلیحات نظامی با موفقیت اجرا شد."
+                if is_intercepted:
+                    return True, f"INTERCEPTED:{lost_amt}:{delivered_amt}:{asset_dict['equipment_name']}:{c.get('origin_country_key') or ''}"
+                elif is_smuggled:
+                    return True, f"SMUGGLED_SAFE:{delivered_amt}:{asset_dict['equipment_name']}"
+                else:
+                    return True, "معاهده انتقال تسلیحات نظامی با موفقیت اجرا شد."
 
             p_off_col = col_map.get(off_type, "treasury")
             r_req_col = col_map.get(req_type, "treasury")

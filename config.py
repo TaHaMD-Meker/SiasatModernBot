@@ -20856,3 +20856,98 @@ MILITIA_EQUIPMENT_CATALOG = {
               'producible': True}]}
 
 COUNTRY_EQUIPMENT_CATALOG.update(MILITIA_EQUIPMENT_CATALOG)
+
+
+# ==================== بلوک‌های ژئوپلیتیک و کنترل صادرات اسلحه (ITAR & Export Control) ====================
+
+WESTERN_NATO_BLOC = {
+    "usa", "france", "uk", "germany", "israel", "italy", "canada", "australia",
+    "japan", "south_korea", "sweden", "norway", "finland", "spain", "netherlands",
+    "poland", "belgium", "denmark", "taiwan", "greece", "turkey", "portugal", "czech",
+    "faction_blackwater", "faction_task_force", "faction_french_legion", "faction_gurkha"
+}
+
+RESISTANCE_EASTERN_BLOC = {
+    "iran", "russia", "china", "syria", "yemen", "north_korea", "hezbollah",
+    "hashd", "ansarullah", "qassam", "cuba", "venezuela", "belarus",
+    "faction_sepah", "faction_nohead_65", "faction_wagner", "faction_ansarullah", "faction_hashd", "faction_qassam"
+}
+
+
+def detect_weapon_origin(item_key: str, item_name: str = "", current_country_key: str = None) -> str:
+    """تشخیص دقیق کشور سازنده و طراح اصلی هر سلاح بر اساس کاتالوگ و استاندارد بین‌المللی."""
+    # ۱. اگر سلاح در کاتالوگ کشور فعلی با producible=True باشد (سازنده مستقیم)
+    if current_country_key:
+        items = COUNTRY_EQUIPMENT_CATALOG.get(current_country_key, [])
+        for it in items:
+            if it["key"] == item_key and it.get("producible"):
+                return current_country_key
+
+    # ۲. بررسی اینکه کدام کشور در کاتالوگ خود این سلاح را تولید می‌کند
+    for c_key, items in COUNTRY_EQUIPMENT_CATALOG.items():
+        for it in items:
+            if it["key"] == item_key and it.get("producible"):
+                return c_key
+
+    # ۳. تطبیق هوشمند نام و کلید با کشورهای ابرقدرت نظامی
+    txt = f"{item_key} {item_name}".lower()
+    if any(w in txt for w in ["f-35", "f35", "f-16", "f16", "f-15", "f15", "f/a-18", "f18", "f-22", "f22", "abrams", "m1a", "m113", "bradley", "patriot", "himars", "thaad", "ah-64", "apache", "black hawk", "blackhawk", "chinook", "javelin", "stinger", "harpoon", "tomahawk", "burke", "ford", "nimitz", "b-1", "b-2", "b-52", "c-17", "c-130", "mq-9", "reaper", "nasams", "m109", "paladin", "avenger", "lav-25", "stryker", "osprey"]):
+        return "usa"
+    if any(w in txt for w in ["rafale", "رافال", "mirage", "میراژ", "leclerc", "لوکلرک", "caesar", "سزار", "scorpene", "mistral", "aster", "meteor", "scalp", "exocet", "mica", "fremm", "vbci", "caracal", "panther"]):
+        return "france"
+    if any(w in txt for w in ["su-35", "su35", "su-57", "su57", "su-30", "su30", "su-34", "su34", "su-27", "su27", "su-25", "su25", "su-24", "su24", "mig-29", "mig29", "mig-31", "mig31", "mig-35", "mig35", "t-90", "t90", "t-80", "t80", "t-72", "t72", "t-14", "armata", "bmp", "btr", "pantsir", "پانتسیر", "s-300", "s300", "s-400", "s400", "s-500", "s500", "buk", "بوک", "tor-m", "تور", "iskander", "اسکندر", "kalibr", "کالیبر", "kinzhal", "کینژال", "ka-52", "mi-28", "mi-35", "mi-17", "mi-24", "kilo", "yasen", "borei", "kornet", "کورنت", "r-77", "r-73", "kh-101", "bastion", "yakhont"]):
+        return "russia"
+    if any(w in txt for w in ["j-20", "j20", "j-10", "j10", "j-11", "j11", "j-16", "j16", "j-15", "j15", "fc-31", "type 99", "type 96", "vt-4", "vt4", "vt-5", "vt5", "wing loong", "وینگ لونگ", "ch-4", "ch4", "ch-5", "ch5", "hq-9", "hq9", "hq-16", "hq-22", "pl-15", "y-20", "type 055", "type 052", "type 054", "type 075", "wnl", "z-10", "z-19", "z-20"]):
+        return "china"
+    if any(w in txt for w in ["typhoon", "تایفون", "eurofighter", "یوروفایتر", "challenger", "چلنجر", "storm shadow", "استورم شدو", "type 45", "type 23", "type 26", "astute", "queen elizabeth", "starstreak", "brimstone", "hawk"]):
+        return "uk"
+    if any(w in txt for w in ["leopard", "لئوپارد", "puma", "boxer", "بوکسر", "marder", "ماردر", "panzerhaubitze", "pzh 2000", "iris-t", "ایریس", "gepard", "گپارد", "type 212", "taurus"]):
+        return "germany"
+    if any(w in txt for w in ["shahed", "شاهد", "mohajer", "مهاجر", "kaman", "کمان", "fateh", "فاتح", "khorramshahr", "خرمشهر", "emad", "عماد", "qadr", "قدر", "qiam", "قیام", "sejjil", "سجیل", "bavar", "باور", "khordad", "خرداد", "karrar", "کرار", "zulfiqar", "ذوالفقار", "sayyad", "صیاد", "toophan", "طوفان", "dehlaviyeh", "دهلاویه", "misagh", "میثاق"]):
+        return "iran"
+    if any(w in txt for w in ["merkava", "مرکاوا", "namera", "نمیر", "iron dome", "گنبد آهنین", "tamir", "تامیر", "david sling", "فلاخن داوود", "arrow", "پیکان", "حیتس", "spike", "اسپایک", "hermes", "هرمس", "heron", "هاروپ", "harop", "python", "popeye"]):
+        return "israel"
+    if any(w in txt for w in ["bayraktar", "بیرقدار", "tb2", "tb3", "akinci", "آکینجی", "anka", "آنکا", "aksungur", "kaan", "altay", "آلتای", "siper", "hisar", "cirit", "som"]):
+        return "turkey"
+    if any(w in txt for w in ["gripen", "گریپن", "saab", "erieye", "carl gustaf", "at4", "rbs"]):
+        return "sweden"
+    if any(w in txt for w in ["k2 ", "black panther", "k9 ", "thunder", "kf-21", "fa-50", "chunmoo", "k21 "]):
+        return "south_korea"
+
+    return current_country_key or "usa"
+
+
+def is_light_weapon(category: str, item_key: str, item_name: str) -> bool:
+    """تشخیص سلاح سبک و دوش‌پرتاب (مجاز به قاچاق در بازار سیاه) در برابر پلتفرم‌های سنگین."""
+    cat = (category or "").strip()
+    key = (item_key or "").lower()
+    name = (item_name or "").lower()
+    txt = f"{key} {name}"
+
+    # پلتفرم‌های سنگین، جنگنده‌ها، ناوها و موشک‌های بالستیک هرگز قابل قاچاق نیستند
+    if cat in ("Aircraft", "Navy", "Missiles"):
+        return False
+
+    if cat == "Air Defense":
+        # فقط سامانه‌های موشکی دوش‌پرتاب انفرادی (MANPADS)
+        return any(w in txt for w in ["manpads", "دوش‌پرتاب", "دوش پرتاب", "misagh", "میثاق", "igla", "ایگلا", "stinger", "استینگر", "strela", "fn-6", "qasid", "starstreak"])
+
+    if cat == "Ground Forces":
+        # تانک‌های اصلی میدان نبرد سنگین هستند و غیرقابل قاچاق
+        if any(w in txt for w in ["tank", "تانک", "abrams", "armata", "leopard", "challenger", "leclerc", "merkava", "karrar", "zulfiqar", "altay", "t-90", "t-80", "t-72", "type 99", "type 10", "type 90", "vt-4", "k2 "]):
+            return False
+        # نفربرها، خودروهای ضدکمین، سلاح‌های ضدزره (کورنت، طوفان، جاولین)، سلاح‌های سبک مجاز به قاچاق هستند
+        return True
+
+    if cat == "UAV":
+        # پهپادهای انتحاری، شناسایی و تاکتیکی سبک مجازند؛ پهپادهای گلوبال هاوک و استراتژیک غول‌پیکر خیر
+        if any(w in txt for w in ["global hawk", "mq-4", "s-70", "okhotnik", "wz-7"]):
+            return False
+        return True
+
+    if cat == "Artillery":
+        # فقط خمپاره‌اندازها و راکت‌اندازهای سبک مینی‌کاتیوشا
+        return any(w in txt for w in ["mortar", "خمپاره", "107mm", "۱۰۷", "fajr-1", "فجر-۱", "مینی کاتیوشا"])
+
+    return False
+

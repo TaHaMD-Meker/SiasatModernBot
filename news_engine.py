@@ -221,3 +221,18 @@ async def trigger_inactivity_removal_news(bot, country: dict):
     )
     await post_breaking_news(bot, headline, body)
 
+
+async def trigger_smuggling_intercepted_news(bot, prop_c: dict, recip_c: dict, orig_c: dict, weapon_name: str, lost_amt: int):
+    """انتشار خبر فوری افشا و توقیف محموله قاچاق سلاح در خطوط ترانزیتی بین‌المللی."""
+    orig_flag = orig_c.get("flag", "🌐") if orig_c else "🌐"
+    orig_name = orig_c.get("name", "کشور سازنده") if orig_c else "کشور سازنده"
+    headline = f"کشف و توقیف محموله قاچاق اسلحه در خطوط ترانزیتی بین {prop_c['name']} و {recip_c['name']}"
+    body = (
+        f"🚨 سرویس‌های اطلاعاتی و گارد مرزی از ردگیری و توقیف یک شبکه قاچاق سلاح در مبادی ترانزیتی خبر دادند.\n\n"
+        f"• مبدأ ارسال: {prop_c['flag']} **{prop_c['name']}**\n"
+        f"• مقصد نهایی: {recip_c['flag']} **{recip_c['name']}**\n"
+        f"• جنگ‌افزار کشف‌شده: **{lost_amt:,} قبضه/واحد {weapon_name}** ({orig_flag} ساخت {orig_name})\n\n"
+        f"نیمی از این محموله قاچاق توقیف و منهدم گردید و پیگیری‌های حقوقی و امنیتی آغاز شده است."
+    )
+    await post_breaking_news(bot, headline, body)
+
