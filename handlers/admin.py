@@ -130,6 +130,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
         [InlineKeyboardButton("🎁 سامانه جبران و بازیابی درآمد بازیکنان", callback_data="admin:income_recovery_hub")],
+        [InlineKeyboardButton("🧹 سلب مالکیت تمام کشورها و شروع رسمی فصل جدید", callback_data="admin:season_reset_prompt")],
         [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
         [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
@@ -2072,6 +2073,39 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 except Exception:
                     pass
         await query.answer(f"کیبورد {count} کشور/بازیکن با موفقیت همگام‌سازی شد!", show_alert=True)
+
+    elif data == "admin:season_reset_prompt":
+        countries = db.get_all_countries()
+        player_count = len([c for c in countries if c.get("player_id") and c["player_id"] > 0 and c.get("country_key") != "un"])
+        text = (
+            "🧹 **سلب مالکیت همگانی و شروع رسمی فصل جدید (Season Reset)**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"• تعداد کشورهای دارای بازیکن: `{player_count} کشور`\n\n"
+            "با تأیید این عملیات:\n"
+            "۱. مالکیت تمامی کشورها سلب شده و برای ثبت‌نام و انتخاب مجدد در `/start` آزاد می‌شوند.\n"
+            "۲. پایگاه‌ها، بازار بورس، قراردادهای تجاری، رول‌ها و بیانیه‌ها برای شروعی پاک ریست می‌شوند.\n"
+            "۳. تمام کشورها با بالانس دقیق، بدون باگ و با مقادیر استاندارد از نو بارگذاری می‌شوند.\n\n"
+            "⚠️ **این عملیات غیرقابل بازگشت است.** آیا از ریست کامل و استارت فصل جدید اطمینان دارید؟"
+        )
+        keyboard = [
+            [InlineKeyboardButton("🔥 بله، تمام کشورها را آزاد و بازی را ریست کن", callback_data="admin:season_reset_confirm")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="admin:menu")],
+        ]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:season_reset_confirm":
+        ok, count, msg = db.reset_all_countries_for_new_season()
+        if ok:
+            text = (
+                "🎉 **سلب مالکیت همگانی و ریست فصل جدید با موفقیت انجام شد!**\n\n"
+                f"• تعداد `{count}` کشور آزاد شدند.\n"
+                "• تمامی بازیکنان اکنون می‌توانند با ارسال دستور /start کشور جدید خود را انتخاب فرمایند.\n\n"
+                "🚀 فصل رسمی بازی «سیاست مدرن» با بالاترین سطح ثبات و بالانس آغاز گردید."
+            )
+        else:
+            text = f"❌ خطا در ریست: {msg}"
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
+        await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:market_reset_prompt":
         orders = db.get_market_orders()

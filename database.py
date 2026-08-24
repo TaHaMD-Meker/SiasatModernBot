@@ -6221,5 +6221,49 @@ def grant_infrastructure_package_to_all(is_add: bool = True) -> int:
     return count
 
 
+def reset_all_countries_for_new_season() -> tuple[bool, int, str]:
+    """سلب مالکیت کامل تمام کشورها و پاکسازی داده‌های فصلی جهت شروع رسمی و عادلانه فصل جدید."""
+    conn = get_connection()
+    count = 0
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM countries WHERE player_id > 0 AND country_key != 'un'")
+            count = cur.fetchone()[0]
+
+            # پاکسازی تمامی جداول فصلی
+            cur.execute("DELETE FROM country_assets")
+            cur.execute("DELETE FROM equipment")
+            cur.execute("DELETE FROM base_assets")
+            cur.execute("DELETE FROM foreign_bases")
+            cur.execute("DELETE FROM naval_blockades")
+            cur.execute("DELETE FROM trade_contracts")
+            cur.execute("DELETE FROM market_orders")
+            cur.execute("DELETE FROM diplomatic_relations")
+            cur.execute("DELETE FROM loss_reports")
+            cur.execute("DELETE FROM pending_roleplays")
+            cur.execute("DELETE FROM daily_statements")
+            cur.execute("DELETE FROM pending_country_requests")
+            cur.execute("DELETE FROM un_votes")
+            cur.execute("DELETE FROM war_results")
+            cur.execute("DELETE FROM country_commanders")
+            cur.execute("DELETE FROM intel_operations_history")
+            cur.execute("DELETE FROM battle_pass")
+
+            # حذف کشورها (به جز نقش سازمان ملل در صورت وجود)
+            cur.execute("DELETE FROM countries WHERE country_key != 'un'")
+
+            # بازنشانی سوییچرها و تاریخ‌های پرداخت
+            cur.execute("DELETE FROM settings WHERE key LIKE 'active_entity_%'")
+            cur.execute("DELETE FROM settings WHERE key IN ('base_cost_cycle_date', 'blockade_cycle_date', 'strait_blockade_cost_date')")
+
+        return True, count, f"مالکیت تمام {count} کشور با موفقیت سلب شد و بازی ریست گردید."
+    except Exception as e:
+        logger.warning(f"Error in reset_all_countries_for_new_season: {e}")
+        return False, 0, f"خطا در ریست همگانی: {e}"
+    finally:
+        conn.close()
+
+
 
 
