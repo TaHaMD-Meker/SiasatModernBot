@@ -439,6 +439,11 @@ async def execute_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
     await query.answer("✅ پروژه با موفقیت احداث و خریداری گردید!", show_alert=True)
 
     db.add_log(actor=str(update.effective_user.id), action="civilian_purchase", details=f"{item_key} x{quantity}")
+    try:
+        db.add_battle_pass_xp(country["id"], 250)
+        db.progress_battle_pass_challenge(country["id"], "shop", 1)
+    except Exception:
+        pass
     updated_country = db.get_country_by_player(update.effective_user.id)
 
     oil_req = item.get("oil_req", 0) * quantity

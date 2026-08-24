@@ -43,6 +43,8 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
     naval_power = db.calculate_naval_power(country_id)
     commanders = db.get_country_commanders(country_id)
     alive_cmd = len([cm for cm in commanders if cm.get("status") == "active"])
+    bp = db.get_or_create_battle_pass(country_id)
+    bp_status_str = f"Tier {bp['current_tier']} ({bp['current_xp']} XP) [{'👑 پرمیوم' if bp['is_premium'] else '👤 رایگان'}]"
     
     mil_fuel = db.calculate_military_fuel_consumption(country_id)
     ind_oil = db.get_industrial_oil_consumption(country_id)
@@ -114,6 +116,7 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
         f"👤 <b>رهبر:</b> {u_display} (ID: <code>{c['player_id']}</code>)",
         f"🔑 <b>شناسه سیستمی:</b> <code>{c.get('country_key') or 'custom_faction'}</code> | 🌍 <b>قاره:</b> {cont_title}",
         f"👑 <b>سطح VIP:</b> {vip_str}",
+        f"⭐️ <b>وضعیت بتل‌پس:</b> <code>{bp_status_str}</code>",
         f"📝 <b>فعالیت امروز:</b> {stmt_badge}",
         f"🛡️ <b>وضعیت‌های خاص:</b> {special_flags_str}",
         "",
@@ -898,6 +901,10 @@ async def show_country_godmode_menu(query, context, country_id: int):
             InlineKeyboardButton("💰 تزریق ۱۰۰M$ + ۱M نفت", callback_data=f"admin:c_boost_econ:{country_id}"),
             InlineKeyboardButton("🪖 تزریق ۵۰k نیرو + ۲۰٪ آمادگی", callback_data=f"admin:c_boost_mil:{country_id}")
         ],
+        [
+            InlineKeyboardButton("⭐️ ارتقای لول بتل‌پس (+1)", callback_data=f"admin:c_bp_plus:{country_id}"),
+            InlineKeyboardButton("👑 فعال‌سازی پرمیوم بتل‌پس", callback_data=f"admin:c_bp_unlock:{country_id}")
+        ],
         [InlineKeyboardButton("🔬 تنظیم سطح فناوری (Tech Level)", callback_data=f"admin:cstat:{country_id}:tech_level")],
         [InlineKeyboardButton("🗑️ حذف کامل کشور", callback_data=f"admin:delconfirm:{country_id}")],
         [InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{country_id}")]
@@ -1227,6 +1234,22 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         db.update_country_field(cid, "active_personnel", (c.get("active_personnel") or 0) + 50_000)
         db.update_country_field(cid, "combat_readiness", min(100, (c.get("combat_readiness") or 70) + 20))
         await query.answer("بسته نظامی ۵۰,۰۰۰ رزمنده + ۲۰٪ آمادگی رزمی تزریق شد!", show_alert=True)
+        await show_country_godmode_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_bp_plus:"):
+        cid = int(data.split(":")[2])
+        bp = db.get_or_create_battle_pass(cid)
+        new_t = min(20, bp["current_tier"] + 1)
+        db.admin_set_battle_pass_tier(cid, new_t)
+        await query.answer(f"لول بتل‌پس به Tier {new_t} افزایش یافت.", show_alert=True)
+        await show_country_godmode_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_bp_unlock:"):
+        cid = int(data.split(":")[2])
+        succ, msg = db.unlock_premium_battle_pass(cid)
+        await query.answer(msg, show_alert=True)
         await show_country_godmode_menu(query, context, cid)
         return True
 

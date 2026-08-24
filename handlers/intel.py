@@ -563,6 +563,12 @@ async def intel_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         ok, msg, meta = db.execute_intel_operation(cid, target_id, op_type, chips_boost=chips_boost)
+        if ok:
+            try:
+                db.add_battle_pass_xp(cid, 200)
+                db.progress_battle_pass_challenge(cid, "intel", 1)
+            except Exception:
+                pass
         res_code = meta.get("result")
 
         if ok and res_code == "clean_success":

@@ -211,6 +211,9 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             _mok, _mrw = db.complete_daily_mission(country["id"], "drill")
             if _mok:
                 await context.bot.send_message(chat_id=user_id, text=f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+            db.add_battle_pass_xp(country["id"], 150)
+            if new_readiness >= 85:
+                db.progress_battle_pass_challenge(country["id"], "drill", 1)
         except Exception:
             pass
 

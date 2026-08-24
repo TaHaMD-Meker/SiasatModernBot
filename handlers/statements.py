@@ -216,6 +216,8 @@ async def process_official_statement_input(update: Update, context: ContextTypes
         _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
         if _mok:
             await update.message.reply_text(f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+        db.add_battle_pass_xp(country["id"], 150)
+        db.progress_battle_pass_challenge(country["id"], "statement", 1)
     except Exception:
         pass
 
@@ -424,6 +426,8 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
         _mok, _mrw = db.complete_daily_mission(country["id"], "statement")
         if _mok:
             await update.message.reply_text(f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+        db.add_battle_pass_xp(country["id"], 150)
+        db.progress_battle_pass_challenge(country["id"], "statement", 1)
     except Exception:
         pass
 

@@ -83,6 +83,7 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🥈 اشتراک نقره — ۱۷۹,۰۰۰ تومان", callback_data="vip:plan:vip_silver")],
         [InlineKeyboardButton("🥇 اشتراک طلا — ۳۴۹,۰۰۰ تومان", callback_data="vip:plan:vip_gold")],
         [InlineKeyboardButton("💎 اشتراک الماس — ۶۵۰,۰۰۰ تومان", callback_data="vip:plan:vip_diamond")],
+        [InlineKeyboardButton("⭐️ بتل‌پس فصلی — ۳۰۰,۰۰۰ تومان (۲۰ لول جوایز)", callback_data="bp:menu")],
     ]
 
     if update.message:
@@ -331,6 +332,16 @@ PLANS_METADATA = {
         "title": "🏴‍☠️ مجوز رسمی تاسیس گروه شبه‌نظامی غیردولتی",
         "price": 50_000,
         "desc": "صدور مجوز ایجاد گروه نظامی اختصاصی، نماد سفارشی و کاتالوگ تسلیحاتی اختصاصی."
+    },
+    "battle_pass": {
+        "title": "⭐️ بتل‌پس فصلی استراتژیک (Season 1 Pass)",
+        "price": 300_000,
+        "desc": "دسترسی به ۲۰ لول جوایز کلان (بیش از ۶۰۰ میلیون دلار، ۱ میلیون نفت، تسلیحات نسل ۵، موشک‌های بالستیک و تندیس لرد اعظم جنگ) + ۲۵٪ بوست XP."
+    },
+    "pass": {
+        "title": "⭐️ بتل‌پس فصلی استراتژیک (Season 1 Pass)",
+        "price": 300_000,
+        "desc": "دسترسی به ۲۰ لول جوایز کلان + ۲۵٪ بوست XP."
     },
     # نام‌های مستعار جهت سازگاری کامل
     "bronze": {"title": "🥉 اشتراک برنز رهبری", "tier": "bronze", "price": 79_000, "desc": ""},

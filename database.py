@@ -607,6 +607,25 @@ def init_db():
     )
     """)
 
+    # جدول سیستم بتل‌پس فصلی و کمپین ماموریت‌های ویژه
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS battle_pass (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL UNIQUE,
+        season INTEGER DEFAULT 1,
+        is_premium INTEGER DEFAULT 0,
+        current_xp INTEGER DEFAULT 0,
+        current_tier INTEGER DEFAULT 1,
+        claimed_free_tiers TEXT DEFAULT '[]',
+        claimed_premium_tiers TEXT DEFAULT '[]',
+        completed_challenges TEXT DEFAULT '[]',
+        challenge_progress TEXT DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -5262,6 +5281,15 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
                         "UPDATE countries SET is_vip = 1, vip_tier = ?, vip_expires_at = ? WHERE id = ?",
                         (tier, exp_dt.isoformat(), c_id)
                     )
+            elif item_type in ("battle_pass", "vip_battlepass", "pass"):
+                if c_id:
+                    cur.execute("""
+                        INSERT INTO battle_pass (country_id, season, is_premium, current_xp, current_tier, created_at, updated_at)
+                        VALUES (?, 1, 1, 500, 1, ?, ?)
+                        ON CONFLICT(country_id) DO UPDATE SET
+                        is_premium = 1,
+                        updated_at = excluded.updated_at
+                    """, (c_id, now_str, now_str))
             elif item_type == "militia":
                 payload_str = p.get("custom_payload") or "{}"
                 try:
@@ -5615,6 +5643,259 @@ def admin_delete_commander(country_id: int, commander_key: str) -> tuple[bool, s
             cur = conn.cursor()
             cur.execute("DELETE FROM country_commanders WHERE country_id = ? AND key = ?", (country_id, commander_key))
         return True, f"فرمانده با شناسه {commander_key} حذف گردید."
+    except Exception as e:
+        return False, f"خطا: {e}"
+
+
+# ==================== سیستم بتل‌پس فصلی و کمپین‌های استراتژیک (Battle Pass) ====================
+
+def get_or_create_battle_pass(country_id: int) -> dict:
+    """دریافت یا ساخت وضعیت بتل‌پس فصلی برای یک کشور."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM battle_pass WHERE country_id = ?", (country_id,))
+    row = cur.fetchone()
+    if row:
+        d = dict(row)
+        conn.close()
+        d["claimed_free_tiers"] = json.loads(d.get("claimed_free_tiers") or "[]")
+        d["claimed_premium_tiers"] = json.loads(d.get("claimed_premium_tiers") or "[]")
+        d["completed_challenges"] = json.loads(d.get("completed_challenges") or "[]")
+        d["challenge_progress"] = json.loads(d.get("challenge_progress") or "{}")
+        return d
+
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cur.execute("""
+        INSERT INTO battle_pass
+        (country_id, season, is_premium, current_xp, current_tier, claimed_free_tiers, claimed_premium_tiers, completed_challenges, challenge_progress, created_at, updated_at)
+        VALUES (?, ?, 0, 0, 1, '[]', '[]', '[]', '{}', ?, ?)
+    """, (country_id, getattr(config, "BATTLE_PASS_SEASON", 1), now_str, now_str))
+    conn.commit()
+    conn.close()
+    return {
+        "country_id": country_id,
+        "season": getattr(config, "BATTLE_PASS_SEASON", 1),
+        "is_premium": 0,
+        "current_xp": 0,
+        "current_tier": 1,
+        "claimed_free_tiers": [],
+        "claimed_premium_tiers": [],
+        "completed_challenges": [],
+        "challenge_progress": {},
+        "created_at": now_str,
+        "updated_at": now_str
+    }
+
+
+def add_battle_pass_xp(country_id: int, xp_amount: int) -> tuple[int, int, bool]:
+    """افزودن XP به بتل‌پس کشور، محاسبه لول‌آپ و ارتقای پله‌ها."""
+    bp = get_or_create_battle_pass(country_id)
+    multiplier = 1.25 if bp.get("is_premium") else 1.0
+    effective_xp = int(xp_amount * multiplier)
+
+    new_xp = bp["current_xp"] + effective_xp
+    xp_per_tier = getattr(config, "BATTLE_PASS_XP_PER_TIER", 1000)
+    new_tier = min(20, 1 + (new_xp // xp_per_tier))
+    old_tier = bp["current_tier"]
+    tier_up = new_tier > old_tier
+
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_connection()
+    with conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE battle_pass
+            SET current_xp = ?, current_tier = ?, updated_at = ?
+            WHERE country_id = ?
+        """, (new_xp, new_tier, now_str, country_id))
+
+    return new_xp, new_tier, tier_up
+
+
+def unlock_premium_battle_pass(country_id: int) -> tuple[bool, str]:
+    """فعال‌سازی ردیف پرمیوم بتل‌پس برای یک کشور."""
+    bp = get_or_create_battle_pass(country_id)
+    if bp.get("is_premium"):
+        return True, "بتل‌پس پرمیوم قبلاً برای این کشور فعال بوده است."
+
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_connection()
+    with conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE battle_pass
+            SET is_premium = 1, current_xp = current_xp + 500, updated_at = ?
+            WHERE country_id = ?
+        """, (now_str, country_id))
+    add_transaction(country_id, "battle_pass", "فعال‌سازی بتل‌پس پرمیوم فصل ۱ (Season 1 Pass)", 0)
+    return True, "⭐️ بتل‌پس پرمیوم با موفقیت فعال شد! دسترسی به تمام ۲۰ ردیف جوایز پرمیوم باز گردید."
+
+
+def _grant_bp_reward_dict(cur, country_id: int, r_dict: dict):
+    """اعطای منابع و تجهیزات یک پله بتل‌پس."""
+    if not r_dict:
+        return
+    if "treasury" in r_dict:
+        cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (r_dict["treasury"], country_id))
+    if "oil" in r_dict:
+        cur.execute("UPDATE countries SET oil_reserves = oil_reserves + ? WHERE id = ?", (r_dict["oil"], country_id))
+    if "gold" in r_dict:
+        cur.execute("UPDATE countries SET gold = gold + ? WHERE id = ?", (r_dict["gold"], country_id))
+    if "grain" in r_dict:
+        cur.execute("UPDATE countries SET grain = grain + ? WHERE id = ?", (r_dict["grain"], country_id))
+    if "microchips" in r_dict:
+        cur.execute("UPDATE countries SET microchips = microchips + ? WHERE id = ?", (r_dict["microchips"], country_id))
+    if "uranium_ore" in r_dict:
+        cur.execute("UPDATE countries SET uranium_ore = uranium_ore + ? WHERE id = ?", (r_dict["uranium_ore"], country_id))
+    if "nuclear_fuel" in r_dict:
+        cur.execute("UPDATE countries SET nuclear_fuel = nuclear_fuel + ? WHERE id = ?", (r_dict["nuclear_fuel"], country_id))
+    if "personnel" in r_dict:
+        cur.execute("UPDATE countries SET active_personnel = active_personnel + ? WHERE id = ?", (r_dict["personnel"], country_id))
+
+    c_key = "general"
+    cur.execute("SELECT country_key FROM countries WHERE id = ?", (country_id,))
+    c_row = cur.fetchone()
+    if c_row and c_row["country_key"]:
+        c_key = c_row["country_key"]
+
+    mil_keys = {
+        "drones": ("UAV", "پهپاد شناسایی پیشرفته هدهد", "recon_drone_bp"),
+        "kamikaze_drones": ("UAV", "پهپاد انتحاری نقطه‌زن شاهد/لنست", "kamikaze_drone_bp"),
+        "air_defense": ("Air Defense", "آتشبار پدافند موشکی پیشرفته", "ad_battery_bp"),
+        "tanks": ("Ground Forces", "تانک سنگین زرهی پیشرفته T-90M", "tank_mbt_bp"),
+        "cruise_missiles": ("Missiles", "موشک کروز تاکتیکی کالیبر/تاماهاوک", "cruise_missile_bp"),
+        "fighters": ("Aircraft", "جنگنده برتری هوایی نسل ۴.۵", "fighter_jet_bp"),
+        "corvettes": ("Navy", "ناوچه موشک‌انداز رادارگریز", "corvette_bp"),
+        "ballistic_missiles": ("Missiles", "موشک بالستیک نقطه‌زن فاتح", "ballistic_missile_bp"),
+        "submarines": ("Navy", "زیردریایی تهاجمی اقیانوس‌پیما", "submarine_bp"),
+        "stealth_fighters": ("Aircraft", "جنگنده رادارگریز نسل ۵ (شبح)", "stealth_fighter_bp"),
+    }
+    for m_key, (cat, m_name, eq_key) in mil_keys.items():
+        if m_key in r_dict:
+            qty = r_dict[m_key]
+            cur.execute("""
+                INSERT INTO country_assets (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+                VALUES (?, ?, ?, ?, ?, ?, 1000000, 2000, 1)
+                ON CONFLICT(country_id, equipment_key) DO UPDATE SET
+                amount = amount + excluded.amount
+            """, (country_id, c_key, cat, m_name, eq_key, qty))
+
+
+def claim_all_unlocked_battle_pass_rewards(country_id: int) -> tuple[bool, str, dict]:
+    """دریافت یکجای تمامی پاداش‌های باز شده (رایگان + پرمیوم) تا پله فعلی."""
+    bp = get_or_create_battle_pass(country_id)
+    curr_tier = bp["current_tier"]
+    is_premium = bp["is_premium"]
+
+    claimed_free = set(bp["claimed_free_tiers"])
+    claimed_prem = set(bp["claimed_premium_tiers"])
+
+    tiers_config = getattr(config, "BATTLE_PASS_TIERS", {})
+    new_free_claimed = []
+    new_prem_claimed = []
+    claimed_items_summary = []
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            for t_num in range(1, curr_tier + 1):
+                t_info = tiers_config.get(t_num)
+                if not t_info:
+                    continue
+
+                # ردیف رایگان
+                if t_num not in claimed_free:
+                    free_r = t_info.get("free", {})
+                    _grant_bp_reward_dict(cur, country_id, free_r)
+                    claimed_free.add(t_num)
+                    new_free_claimed.append(t_num)
+                    claimed_items_summary.append(f"• پله {t_num} (رایگان): {free_r.get('desc','')}")
+
+                # ردیف پرمیوم
+                if is_premium and (t_num not in claimed_prem):
+                    prem_r = t_info.get("premium", {})
+                    _grant_bp_reward_dict(cur, country_id, prem_r)
+                    claimed_prem.add(t_num)
+                    new_prem_claimed.append(t_num)
+                    claimed_items_summary.append(f"• پله {t_num} (👑 پرمیوم): {prem_r.get('desc','')}")
+
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                UPDATE battle_pass
+                SET claimed_free_tiers = ?, claimed_premium_tiers = ?, updated_at = ?
+                WHERE country_id = ?
+            """, (json.dumps(sorted(list(claimed_free))), json.dumps(sorted(list(claimed_prem))), now_str, country_id))
+
+        if not new_free_claimed and not new_prem_claimed:
+            return False, "شما قبلاً تمام پاداش‌های در دسترس پله‌های فعلی را دریافت نموده‌اید. برای باز کردن پله‌های بعدی، با فعالیت در بازی XP کسب کنید!", {}
+
+        total_claimed = len(new_free_claimed) + len(new_prem_claimed)
+        summary_text = (
+            f"🎉 <b>دریافت موفق جوایز بتل‌پس ({total_claimed} پاداش):</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            + "\n".join(claimed_items_summary[:8]) +
+            (f"\n... و {len(claimed_items_summary)-8} جایزه دیگر" if len(claimed_items_summary) > 8 else "") +
+            "\n\n✅ تمام وجوه، نفت، طلا و ادوات تسلیحاتی به انبار و خزانه کشورتان اضافه شد."
+        )
+        return True, summary_text, {"free_count": len(new_free_claimed), "premium_count": len(new_prem_claimed)}
+    except Exception as e:
+        return False, f"خطا در دریافت جوایز بتل‌پس: {e}", {}
+
+
+def progress_battle_pass_challenge(country_id: int, action_type: str, qty: int = 1) -> tuple[bool, int, str]:
+    """بررسی و ارتقای پیشرفت چالش‌های هفتگی کسب XP بتل‌پس."""
+    bp = get_or_create_battle_pass(country_id)
+    completed = set(bp.get("completed_challenges", []))
+    prog_map = bp.get("challenge_progress", {})
+
+    challenges = getattr(config, "BATTLE_PASS_CHALLENGES", {})
+    xp_gained = 0
+    completed_titles = []
+
+    for c_key, c_info in challenges.items():
+        if c_info.get("action") == action_type and c_key not in completed:
+            current_val = prog_map.get(c_key, 0) + qty
+            prog_map[c_key] = current_val
+            target = c_info.get("target", 1)
+            if current_val >= target:
+                completed.add(c_key)
+                xp_val = c_info.get("xp", 400)
+                xp_gained += xp_val
+                completed_titles.append(c_info.get("title", c_key))
+
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_connection()
+    with conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE battle_pass
+            SET completed_challenges = ?, challenge_progress = ?, updated_at = ?
+            WHERE country_id = ?
+        """, (json.dumps(sorted(list(completed))), json.dumps(prog_map), now_str, country_id))
+
+    if xp_gained > 0:
+        add_battle_pass_xp(country_id, xp_gained)
+        return True, xp_gained, ", ".join(completed_titles)
+
+    return False, 0, ""
+
+
+def admin_set_battle_pass_tier(country_id: int, tier: int) -> tuple[bool, str]:
+    """تنظیم مستقیم پله بتل‌پس کشور توسط ادمین."""
+    tier = max(1, min(20, tier))
+    xp_val = (tier - 1) * getattr(config, "BATTLE_PASS_XP_PER_TIER", 1000)
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE battle_pass
+                SET current_tier = ?, current_xp = ?, updated_at = ?
+                WHERE country_id = ?
+            """, (tier, xp_val, now_str, country_id))
+        return True, f"پله بتل‌پس کشور به Tier {tier} تنظیم شد."
     except Exception as e:
         return False, f"خطا: {e}"
 

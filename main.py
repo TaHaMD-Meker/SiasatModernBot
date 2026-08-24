@@ -45,6 +45,7 @@ from handlers.losses import get_losses_handlers
 from handlers.bases import get_bases_handlers, mv_text_input_handler
 from handlers.guide import get_guide_handlers
 from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
+from handlers.battlepass import get_battlepass_handlers, battlepass_menu
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -456,6 +457,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🛢️ وضعیت نفت$"), oil))
     app.add_handler(MessageHandler(filters.Regex("^🪖 وضعیت ارتش$"), army))
     app.add_handler(MessageHandler(filters.Regex("^🏪 فروشگاه$"), shop))
+    app.add_handler(MessageHandler(filters.Regex(r"^(?:⭐️\s*بتل‌پس|⭐️\s*بتل پس|⭐️\s*بتل‌پس فصلی|⭐️\s*Battle Pass|/pass|/bp)$"), battlepass_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:💎\s*خدمات ویژه VIP|👑\s*خدمات VIP|💎\s*اشتراک VIP)$"), vip_main_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:🏛️ دانشکده|📜 راهنما)$"), help_command))
     app.add_handler(MessageHandler(filters.Regex("^👑 پنل مدیریت$"), admin_panel))
@@ -545,6 +547,10 @@ def main():
 
     # سیستم خدمات ویژه و پرداخت‌های تومانی (/vip, /premium)
     for handler in get_vip_handlers():
+        app.add_handler(handler)
+
+    # سیستم بتل‌پس فصلی و کمپین‌های استراتژیک (/pass, /battlepass, /bp)
+    for handler in get_battlepass_handlers():
         app.add_handler(handler)
 
     # دستورات متنی قدیمی ادمین

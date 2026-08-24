@@ -1527,6 +1527,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_text("❌ اطلاعات طرفین قرارداد یافت نشد.", parse_mode="Markdown")
             return
 
+        try:
+            db.add_battle_pass_xp(p_c["id"], 200)
+            db.add_battle_pass_xp(r_c["id"], 200)
+            db.progress_battle_pass_challenge(p_c["id"], "trade", 1)
+            db.progress_battle_pass_challenge(r_c["id"], "trade", 1)
+        except Exception:
+            pass
+
         type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
 
         if c_data["offered_type"] == "military_asset":

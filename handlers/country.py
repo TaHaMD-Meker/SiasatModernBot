@@ -86,7 +86,10 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += missions_str
 
     inline_keyboard = [
-        [InlineKeyboardButton("👑 خدمات و اشتراک طلایی VIP", callback_data="vip:menu")],
+        [
+            InlineKeyboardButton("⭐️ بتل‌پس فصلی (/pass)", callback_data="bp:menu"),
+            InlineKeyboardButton("👑 خدمات VIP", callback_data="vip:menu")
+        ],
         [InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")],
         [
             InlineKeyboardButton("🔬 مرکز تحقیق و توسعه (R&D)", callback_data="research:menu"),
