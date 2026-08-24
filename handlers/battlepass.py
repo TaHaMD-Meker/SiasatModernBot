@@ -63,6 +63,9 @@ async def battlepass_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     c_id = c["id"]
+    # همگام‌سازی و بررسی خودکار تسک‌ها (مانند آمادگی بالای ۸۵٪، بیانیه‌ها و زیرساخت‌ها)
+    db.sync_and_check_all_challenges(c_id)
+
     bp = db.get_or_create_battle_pass(c_id)
     curr_tier = bp["current_tier"]
     curr_xp = bp["current_xp"]
@@ -217,6 +220,9 @@ async def battlepass_view_tiers(query, context, country_id: int, page: int = 1):
 # ==================== چالش‌های هفتگی کسب سریع XP ====================
 
 async def battlepass_challenges_menu(query, context, country_id: int):
+    # همگام‌سازی و بررسی خودکار تسک‌ها
+    db.sync_and_check_all_challenges(country_id)
+
     bp = db.get_or_create_battle_pass(country_id)
     completed = set(bp.get("completed_challenges", []))
     prog_map = bp.get("challenge_progress", {})

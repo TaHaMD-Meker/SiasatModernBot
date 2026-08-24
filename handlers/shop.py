@@ -330,6 +330,11 @@ async def execute_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer("✅ ساخت و تولید بومی با موفقیت انجام شد!", show_alert=True)
 
     db.add_log(actor=str(user_id), action="asset_purchase", details=f"{equipment_key} x{quantity}")
+    try:
+        db.add_battle_pass_xp(country["id"], 250)
+        db.progress_battle_pass_challenge(country["id"], "shop", 1)
+    except Exception:
+        pass
 
     updated_country = db.get_country_by_player(user_id)
     unit = config.ASSET_CATEGORIES.get(updated_asset["category"], ("", "عدد"))[1]

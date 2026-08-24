@@ -229,6 +229,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             db.add_battle_pass_xp(country["id"], 150)
             if new_readiness >= 85:
                 db.progress_battle_pass_challenge(country["id"], "drill", 1)
+            db.sync_and_check_all_challenges(country["id"])
         except Exception:
             pass
 

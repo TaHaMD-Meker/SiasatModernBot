@@ -6208,6 +6208,64 @@ def progress_battle_pass_challenge(country_id: int, action_type: str, qty: int =
     return False, 0, ""
 
 
+def sync_and_check_all_challenges(country_id: int) -> tuple[int, list[str]]:
+    """همگام‌سازی و بررسی هوشمند وضعیت واقعی کشور با تمام تسک‌های بتل‌پس."""
+    c = get_country_by_id(country_id)
+    if not c:
+        return 0, []
+
+    bp = get_or_create_battle_pass(country_id)
+    completed = set(bp.get("completed_challenges", []))
+    prog_map = bp.get("challenge_progress", {})
+
+    total_xp_gained = 0
+    newly_completed = []
+    challenges = getattr(config, "BATTLE_PASS_CHALLENGES", {})
+
+    # ۱. بررسی آمادگی رزمی ( بالای ۸۵٪ )
+    readiness = c.get("combat_readiness", 70) or 0
+    if "c_drill_90" not in completed:
+        prog_map["c_drill_90"] = 1 if readiness >= 85 else 0
+        if readiness >= 85:
+            completed.add("c_drill_90")
+            xp_val = challenges.get("c_drill_90", {}).get("xp", 400)
+            total_xp_gained += xp_val
+            newly_completed.append(challenges.get("c_drill_90", {}).get("title", "⚔️ رژه اقتدار"))
+
+    # ۲. بررسی بیانیه‌های ثبت‌شده امروز (حداقل ۳ بیانیه)
+    stmt_cnt = get_country_statement_count_today(country_id)
+    if "c_stmt_3" not in completed:
+        prog_map["c_stmt_3"] = max(prog_map.get("c_stmt_3", 0), stmt_cnt)
+        if stmt_cnt >= 3:
+            completed.add("c_stmt_3")
+            xp_val = challenges.get("c_stmt_3", {}).get("xp", 400)
+            total_xp_gained += xp_val
+            newly_completed.append(challenges.get("c_stmt_3", {}).get("title", "📢 صدای حاکمیت"))
+
+    # ۳. بررسی احداث زیرساخت‌ها و کارخانجات در فروشگاه
+    eq = get_equipment(country_id)
+    if "c_shop_1" not in completed and len(eq) > 0:
+        completed.add("c_shop_1")
+        prog_map["c_shop_1"] = 1
+        xp_val = challenges.get("c_shop_1", {}).get("xp", 500)
+        total_xp_gained += xp_val
+        newly_completed.append(challenges.get("c_shop_1", {}).get("title", "🏗️ توسعه صنعتی"))
+
+    if total_xp_gained > 0:
+        now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        conn = get_connection()
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE battle_pass
+                SET completed_challenges = ?, challenge_progress = ?, updated_at = ?
+                WHERE country_id = ?
+            """, (json.dumps(sorted(list(completed))), json.dumps(prog_map), now_str, country_id))
+        add_battle_pass_xp(country_id, total_xp_gained)
+
+    return total_xp_gained, newly_completed
+
+
 def admin_set_battle_pass_tier(country_id: int, tier: int) -> tuple[bool, str]:
     """تنظیم مستقیم پله بتل‌پس کشور توسط ادمین."""
     tier = max(1, min(20, tier))

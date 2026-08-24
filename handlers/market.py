@@ -293,6 +293,13 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             _mok, _mrw = db.complete_daily_mission(country["id"], "trade")
             if _mok:
                 await context.bot.send_message(chat_id=user_id, text=f"🎯 *مأموریت روزانه کامل شد!* +{format_money(_mrw)} به خزانه.", parse_mode="Markdown")
+            db.add_battle_pass_xp(country["id"], 200)
+            db.progress_battle_pass_challenge(country["id"], "trade", 1)
+            if seller and seller.get("id"):
+                db.add_battle_pass_xp(seller["id"], 200)
+                db.progress_battle_pass_challenge(seller["id"], "trade", 1)
+                if res_type in ("oil", "grain") and qty >= 50_000:
+                    db.progress_battle_pass_challenge(seller["id"], "export", 1)
         except Exception:
             pass
         await query.answer("✅ معامله بورس با موفقیت انجام گردید!", show_alert=True)
@@ -584,6 +591,13 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
         if not success:
             await update.message.reply_text(f"❌ **خطا در ثبت عرضه بورس:**\n\n{msg}", parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
             return
+
+        try:
+            db.add_battle_pass_xp(country["id"], 150)
+            if res_type in ("oil", "grain") and amount >= 50_000:
+                db.progress_battle_pass_challenge(country["id"], "export", 1)
+        except Exception:
+            pass
 
         total_value = amount * unit_price
 

@@ -163,6 +163,38 @@ def test_battle_pass_challenges_progression(db_temp):
     assert bp_after["current_xp"] == 400
 
 
+def test_battle_pass_readiness_and_export_challenge_sync(db_temp):
+    """تست اعطای اتوماتیک XP برای آمادگی رزمی بالای ۸۵٪ و صادرات نفت در بورس."""
+    db_mod, c_id = db_temp
+
+    # ۱. افزایش آمادگی رزمی به ۹۶٪
+    db_mod.update_country_field(c_id, "combat_readiness", 96)
+
+    # همگام‌سازی چالش‌ها -> باید چالش آمادگی (c_drill_90) فوراً تکمیل و ۴۰۰ XP اهدا شود
+    xp_gained, titles = db_mod.sync_and_check_all_challenges(c_id)
+    assert xp_gained == 400
+    assert "رژه اقتدار" in titles[0]
+
+    bp = db_mod.get_or_create_battle_pass(c_id)
+    assert bp["current_xp"] == 400
+    assert "c_drill_90" in bp["completed_challenges"]
+
+    # ۲. ثبت عرضه و صادرات ۵۰ هزار بشکه نفت
+    db_mod.adjust_oil(c_id, 100_000)
+    ok_sell, msg_sell = db_mod.create_market_order(c_id, "oil", 50_000, 10)
+    assert ok_sell is True
+
+    # پیشرفت چالش صادرات نفت
+    ok_exp, xp_exp, exp_title = db_mod.progress_battle_pass_challenge(c_id, "export", 1)
+    assert ok_exp is True
+    assert xp_exp == 600
+    assert "صادرات انرژی" in exp_title
+
+    bp2 = db_mod.get_or_create_battle_pass(c_id)
+    assert bp2["current_xp"] == 1000  # 400 + 600 = 1000 -> Level Up to Tier 2!
+    assert bp2["current_tier"] == 2
+
+
 def test_battle_pass_300k_payment_approval_workflow(db_temp):
     db_mod, c_id = db_temp
     player_id = 888999
