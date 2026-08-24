@@ -47,8 +47,16 @@ def calculate_country_requirements(c: dict):
             pass
     elec_need = 100 + ind_elec_need
 
-    # 2. مصرف سوخت و نفت روزانه (بالانس دقیق و رقابتی)
-    pop_oil_need = max(1_000, int((pop_millions ** 0.65) * 5_000))
+    # 2. مصرف سوخت و نفت روزانه (با اعمال ضریب شدت مصرف انرژی برای کشورهای صنعتی و واردکننده اروپا و آسیا)
+    c_key = c.get("country_key", "")
+    is_industrial_importer = c_key in (
+        "germany", "france", "uk", "italy", "spain", "netherlands",
+        "switzerland", "japan", "south_korea", "taiwan", "poland", "belgium",
+        "austria", "sweden", "finland"
+    )
+    energy_intensity = 1.6 if is_industrial_importer else 1.0
+
+    pop_oil_need = max(1_500, int((pop_millions ** 0.70) * 8_000 * energy_intensity))
     ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
     total_oil_need_daily = pop_oil_need + ind_oil_need
 
@@ -108,7 +116,7 @@ def process_daily_approval_and_emigration(c: dict):
             oil_ok = True
         else:
             oil_deficit_pct = (deficit - current_oil_res) / max(1, oil_need)
-            oil_penalty = -max(1, int(oil_deficit_pct * 6))
+            oil_penalty = -max(2, int(oil_deficit_pct * 8))
             db.update_country_field(cid, "oil_reserves", 0)
             oil_ok = False
 

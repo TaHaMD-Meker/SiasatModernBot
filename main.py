@@ -165,10 +165,12 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                     if oil_now >= fuel_need:
                         db.adjust_oil(c["id"], -fuel_need)
                     else:
-                        # کسری سوخت → تنزل رضایت عمومی
+                        # کسری سوخت → تنزل رضایت عمومی و افت آمادگی رزمی نیروهای مسلح
                         db.adjust_oil(c["id"], -oil_now)
-                        new_app = max(0, (c.get("approval_rating") or 80) - 3)
+                        new_app = max(0, (c.get("approval_rating") or 80) - 4)
+                        new_readiness = max(10, (c.get("combat_readiness") or 80) - 5)
                         db.update_country_field(c["id"], "approval_rating", new_app)
+                        db.update_country_field(c["id"], "combat_readiness", new_readiness)
             except Exception:
                 pass
 
