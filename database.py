@@ -5732,7 +5732,7 @@ def unlock_premium_battle_pass(country_id: int) -> tuple[bool, str]:
 
 
 def _grant_bp_reward_dict(cur, country_id: int, r_dict: dict):
-    """اعطای منابع و تجهیزات یک پله بتل‌پس."""
+    """اعطای منابع اقتصادی یک پله بتل‌پس (خزانه، نفت، طلا، غلات، میکروچیپ، اورانیوم)."""
     if not r_dict:
         return
     if "treasury" in r_dict:
@@ -5749,36 +5749,6 @@ def _grant_bp_reward_dict(cur, country_id: int, r_dict: dict):
         cur.execute("UPDATE countries SET uranium_ore = uranium_ore + ? WHERE id = ?", (r_dict["uranium_ore"], country_id))
     if "nuclear_fuel" in r_dict:
         cur.execute("UPDATE countries SET nuclear_fuel = nuclear_fuel + ? WHERE id = ?", (r_dict["nuclear_fuel"], country_id))
-    if "personnel" in r_dict:
-        cur.execute("UPDATE countries SET active_personnel = active_personnel + ? WHERE id = ?", (r_dict["personnel"], country_id))
-
-    c_key = "general"
-    cur.execute("SELECT country_key FROM countries WHERE id = ?", (country_id,))
-    c_row = cur.fetchone()
-    if c_row and c_row["country_key"]:
-        c_key = c_row["country_key"]
-
-    mil_keys = {
-        "drones": ("UAV", "پهپاد شناسایی پیشرفته هدهد", "recon_drone_bp"),
-        "kamikaze_drones": ("UAV", "پهپاد انتحاری نقطه‌زن شاهد/لنست", "kamikaze_drone_bp"),
-        "air_defense": ("Air Defense", "آتشبار پدافند موشکی پیشرفته", "ad_battery_bp"),
-        "tanks": ("Ground Forces", "تانک سنگین زرهی پیشرفته T-90M", "tank_mbt_bp"),
-        "cruise_missiles": ("Missiles", "موشک کروز تاکتیکی کالیبر/تاماهاوک", "cruise_missile_bp"),
-        "fighters": ("Aircraft", "جنگنده برتری هوایی نسل ۴.۵", "fighter_jet_bp"),
-        "corvettes": ("Navy", "ناوچه موشک‌انداز رادارگریز", "corvette_bp"),
-        "ballistic_missiles": ("Missiles", "موشک بالستیک نقطه‌زن فاتح", "ballistic_missile_bp"),
-        "submarines": ("Navy", "زیردریایی تهاجمی اقیانوس‌پیما", "submarine_bp"),
-        "stealth_fighters": ("Aircraft", "جنگنده رادارگریز نسل ۵ (شبح)", "stealth_fighter_bp"),
-    }
-    for m_key, (cat, m_name, eq_key) in mil_keys.items():
-        if m_key in r_dict:
-            qty = r_dict[m_key]
-            cur.execute("""
-                INSERT INTO country_assets (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
-                VALUES (?, ?, ?, ?, ?, ?, 1000000, 2000, 1)
-                ON CONFLICT(country_id, equipment_key) DO UPDATE SET
-                amount = amount + excluded.amount
-            """, (country_id, c_key, cat, m_name, eq_key, qty))
 
 
 def claim_all_unlocked_battle_pass_rewards(country_id: int) -> tuple[bool, str, dict]:

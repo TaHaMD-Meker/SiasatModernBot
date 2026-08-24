@@ -119,8 +119,8 @@ def test_battle_pass_claiming_free_and_premium_rewards(db_temp):
     assert totals["premium_count"] == 0
 
     c_after = db_mod.get_country_by_id(c_id)
-    # Tier 1 free: 2M, Tier 3 free: 3M -> +5M treasury total
-    assert c_after["treasury"] == tr_before + 5_000_000
+    # Tier 1 free: 500k, Tier 3 free: 500k -> +1M treasury total
+    assert c_after["treasury"] == tr_before + 1_000_000
 
     # تلاش مجدد برای دریافت وقتی همه دریافت شده‌اند
     ok_again, msg_again, _ = db_mod.claim_all_unlocked_battle_pass_rewards(c_id)
@@ -137,8 +137,10 @@ def test_battle_pass_claiming_free_and_premium_rewards(db_temp):
     assert totals_prem["premium_count"] == 3
 
     c_final = db_mod.get_country_by_id(c_id)
-    # Tier 1 premium: 15M, Tier 3 premium: 20M -> +35M more
-    assert c_final["treasury"] == c_after["treasury"] + 35_000_000
+    # Tier 1 premium: 2M, Tier 3 premium: 2.5M -> +4.5M more
+    assert c_final["treasury"] == c_after["treasury"] + 4_500_000
+    # Oil gained: Tier 1 premium (500k) + Tier 3 premium (500k) -> +1M bbl oil
+    assert c_final["oil_reserves"] >= 1_000_000
 
 
 def test_battle_pass_challenges_progression(db_temp):
