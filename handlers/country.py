@@ -89,10 +89,11 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>آمادگی رزمی نیروها:</b> {pe('shield', '⚔️')} {readiness_val}٪\n"
         f"</blockquote>\n"
         f"<b>اقتصاد و خزانه ملی</b>\n"
-        f"• {pe('bank', '🏦')} <b>خزانه کشور:</b> {format_money(c['treasury'])}\n"
-        f"• {pe('money', '📈')} <b>درآمد ناخالص روزانه:</b> {format_money(gross_val)} (پایه: {format_money(daily_val)} | مالیات: {format_money(tax_val)})\n"
+        f"• {pe('bank', '🏦')} <b>موجودی خزانه:</b> {format_money(c['treasury'])}\n"
+        f"• {pe('factory', '🏭')} <b>درآمد صنایع و کارخانجات:</b> +{format_money(daily_val)}/روز\n"
+        f"• {pe('money', '💰')} <b>درآمد مالیاتی از مردم:</b> +{format_money(tax_val)}/روز\n"
         f"• {pe('shield', '🪖')} <b>هزینه نگهداری ارتش:</b> -{format_money(total_maint)}/روز\n"
-        f"• {net_color} <b>درآمد خالص روزانه:</b> {net_sign}{format_money(net_val)}/روز (واریز هر ۶ ساعت: {net_sign}{format_money(net_quarter)})\n"
+        f"• {net_color} <b>درآمد خالص کل روزانه:</b> {net_sign}{format_money(net_val)}/روز (واریز هر ۶ ساعت: {net_sign}{format_money(net_quarter)})\n"
         f"• {pe('gold', '🪙')} <b>پشتوانه طلا:</b> {format_number(c['gold'])} شمش\n\n"
         f"<b>انرژی، غلات و صنایع استراتژیک</b>\n"
         f"• {pe('oil', '🛢️')} <b>ذخایر نفت:</b> {format_oil(c['oil_reserves'])} (تولید: {format_oil(c['oil_production'])}/روز)\n"
@@ -194,10 +195,32 @@ async def treasury(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c = await require_country(update)
     if not c:
         return
+    maint_info = db.calculate_country_maintenance_cost(c["id"])
+    tax_val = c.get("tax_income", 0) or 0
+    daily_val = c.get("daily_income", 0) or 0
+    gross_val = daily_val + tax_val
+    total_maint = maint_info.get("total_maint", 0) or 0
+    net_val = gross_val - total_maint
+    net_quarter = int(net_val / 4)
+    net_sign = "+" if net_val >= 0 else ""
+
+    text = (
+        f"🏦 **خزانه و وضعیت مالی کشور {c['flag']} {c['name']}**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"• 💵 **موجودی نقد خزانه:** {format_money(c['treasury'])}\n"
+        f"• 🪙 **پشتوانه طلا:** {format_number(c['gold'])} شمش\n\n"
+        f"📊 **جریان تفکیکی درآمد و هزینه‌های روزانه:**\n"
+        f"• 🏭 **درآمد صنایع و کارخانجات:** +{format_money(daily_val)}/روز\n"
+        f"• 💰 **درآمد مالیات بر جمعیت:** +{format_money(tax_val)}/روز\n"
+        f"• 🪖 **هزینه نگهداری نیروهای مسلح:** -{format_money(total_maint)}/روز\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"• 📥 **درآمد خالص روزانه (واریزی کل):** {net_sign}{format_money(net_val)}/روز\n"
+        f"• ⏳ **مبلغ واریزی در هر نوبت ۶ ساعته:** {net_sign}{format_money(net_quarter)}"
+    )
     await update.message.reply_text(
-        f"🏦 خزانه {c['name']}: {format_money(c['treasury'])}\n"
-        f"🪙 طلا: {format_number(c['gold'])}",
-        reply_markup=get_main_keyboard(update.effective_user.id)
+        text,
+        reply_markup=get_main_keyboard(update.effective_user.id),
+        parse_mode="Markdown"
     )
 
 

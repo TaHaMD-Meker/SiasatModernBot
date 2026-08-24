@@ -117,7 +117,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
 
         maint_info = db.calculate_country_maintenance_cost(c["id"])
         tax_income = c.get("tax_income", 0) or 0
-        gross_income = c["daily_income"] + tax_income
+        daily_income = c.get("daily_income", 0) or 0
+        gross_income = daily_income + tax_income
         sanction_note = ""
         # 🚫 تحریم جامع سازمان ملل: درآمد روزانه کشور تحریمی کاهش می‌یابد
         if c.get("un_sanctioned") or 0:
@@ -179,7 +180,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 pass
 
         tax_part = tax_income if force else int(tax_income / INCOME_PARTS)
-        daily_part = c["daily_income"] if force else int(c["daily_income"] / INCOME_PARTS)
+        daily_part = daily_income if force else int(daily_income / INCOME_PARTS)
         maint_part = maint_info["total_maint"] if force else int(maint_info["total_maint"] / INCOME_PARTS)
 
         db.update_country_field(c["id"], "last_income_date", now.isoformat())
