@@ -21,7 +21,7 @@ import config
 import database as db
 import approval_system
 import news_engine
-from utils import format_money, format_number, format_oil
+from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
 from handlers.intel import intel_main_menu, intel_callback_handler
 from handlers.bases import military_movements_menu

@@ -251,7 +251,25 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # خوددرمانی و ترمیم خودکار کلیدهای خارجی آسیب‌دیده از میگریشن‌های قبلی
     try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        cur.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%_countries_old%'")
+        broken_tables = cur.fetchall()
+        for b_row in broken_tables:
+            tbl_name = b_row[0]
+            old_sql = b_row[1]
+            new_sql = old_sql.replace('"_countries_old"', 'countries').replace('_countries_old', 'countries')
+            cur.execute(f"ALTER TABLE {tbl_name} RENAME TO _temp_fix_{tbl_name}")
+            cur.execute(new_sql)
+            cur.execute(f"INSERT INTO {tbl_name} SELECT * FROM _temp_fix_{tbl_name}")
+            cur.execute(f"DROP TABLE _temp_fix_{tbl_name}")
+        conn.commit()
+    except Exception:
+        pass
+
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
         cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='countries'")
         row = cur.fetchone()
         if row and "player_id INTEGER UNIQUE" in row[0]:
@@ -317,8 +335,14 @@ def init_db():
             """)
             cur.execute("INSERT INTO countries SELECT * FROM _countries_old")
             cur.execute("DROP TABLE _countries_old")
+            conn.commit()
     except Exception:
         pass
+    finally:
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
 
     # جدول سران و کادر فرماندهی نظامی کشورها
     cur.execute("""
