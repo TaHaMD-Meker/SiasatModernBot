@@ -69,6 +69,7 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     if update.message:
+        await update.message.reply_text("👑 **فروشگاه خدمات ویژه «سیاست مدرن»**", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
         try:
@@ -119,6 +120,7 @@ async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     if update.message:
+        await update.message.reply_text("👑 **فروشگاه خدمات ویژه «سیاست مدرن»**", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
         try:

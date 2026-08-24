@@ -128,6 +128,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
+        [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
         [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
         [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
         [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
@@ -1947,6 +1948,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         text = "⚡ *همگام‌سازی کامل انجام شد!*\nتمام کشورهای دیتابیس با آمار و تجهیزات کاتالوگ جدید به‌روزرسانی شدند."
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "admin:sync_all_keyboards":
+        countries = db.get_all_countries()
+        count = 0
+        for c in countries:
+            p_id = c.get("player_id")
+            if p_id and p_id > 0:
+                try:
+                    await context.bot.send_message(
+                        chat_id=p_id,
+                        text="🔄 **دکمه‌ها و منوی اصلی بازی شما با آخرین امکانات سرور به‌روزرسانی شد.**",
+                        reply_markup=get_main_keyboard(p_id),
+                        parse_mode="Markdown"
+                    )
+                    count += 1
+                except Exception:
+                    pass
+        await query.answer(f"کیبورد {count} کشور/بازیکن با موفقیت همگام‌سازی شد!", show_alert=True)
 
     elif data == "admin:market_reset_prompt":
         orders = db.get_market_orders()

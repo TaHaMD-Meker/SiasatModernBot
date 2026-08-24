@@ -216,7 +216,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
                         f"{stmt_status_section}"
                     )
-                await context.bot.send_message(chat_id=p_id, text=report_msg, parse_mode="Markdown")
+                await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=get_main_keyboard(p_id), parse_mode="Markdown")
             except Exception as e:
                 logger.warning(f"Could not send daily report to player {p_id}: {e}")
 

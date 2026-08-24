@@ -121,6 +121,7 @@ async def battlepass_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.message:
+        await update.message.reply_text("⭐️ **بتل‌پس استراتژیک فصلی**", reply_markup=get_main_keyboard(update.effective_user.id), parse_mode="HTML")
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
     elif update.callback_query:
         try:
