@@ -621,6 +621,7 @@ def _iaea_report_body():
 
 async def iaea_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
     data = query.data
     parts = data.split(":")  # un:iaea:action[:arg]
 

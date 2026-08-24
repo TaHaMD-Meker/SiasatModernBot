@@ -121,7 +121,7 @@ async def mv_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # ---------- منو ----------
-    if data == "mv:menu":
+    if data in ("mv:menu", "bases:menu"):
         await military_movements_menu(update, context)
         return
 
@@ -640,6 +640,6 @@ async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 def get_bases_handlers():
     return [
-        CallbackQueryHandler(mv_callback_handler, pattern=r"^mv:"),
+        CallbackQueryHandler(mv_callback_handler, pattern=r"^(?:mv:|bases:menu$)"),
         MessageHandler(filters.Regex(r"^(?:🎯 ستاد توسعه و اقدامات راهبردی|🎖️ تحرکات نظامی)$"), military_movements_menu),
     ]

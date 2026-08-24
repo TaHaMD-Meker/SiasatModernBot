@@ -28,7 +28,19 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
     if not country:
-        await update.message.reply_text("هنوز کشوری نساختی! برای شروع /start رو بزن.", parse_mode="Markdown")
+        pending = db.get_pending_request_by_player(user_id)
+        if pending:
+            p_key = pending.get("country_key", "")
+            p_info = config.COUNTRIES.get(p_key, {})
+            flag = p_info.get("flag", "🏳️")
+            name = p_info.get("name", p_key)
+            msg = f"⏳ **درخواست رهبری کشور {flag} {name} در صف بررسی ادمین است.**\n\nپس از تایید ادمین، فروشگاه و کلیه بخش‌ها فعال می‌شوند."
+        else:
+            msg = "❌ شما هنوز کشوری در بازی ندارید! برای شروع /start را بزنید."
+        if update.message:
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        elif update.callback_query:
+            await update.callback_query.answer("هنوز کشوری نساختی!", show_alert=True)
         return
 
     # تضمین وجود دارایی‌های نظامی اختصاصی کشور

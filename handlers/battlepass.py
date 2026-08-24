@@ -35,10 +35,22 @@ async def require_country(update: Update):
     user_id = update.effective_user.id
     country = db.get_country_by_player(user_id)
     if not country:
+        pending = db.get_pending_request_by_player(user_id)
+        if pending:
+            p_key = pending.get("country_key", "")
+            p_info = config.COUNTRIES.get(p_key, {})
+            flag = p_info.get("flag", "🏳️")
+            name = p_info.get("name", p_key)
+            msg = f"⏳ **درخواست رهبری کشور {flag} {name} در صف بررسی ادمین است.**\n\nپس از تایید ادمین، بتل‌پس فعال می‌شود."
+            alert_text = f"درخواست کشور {name} در انتظار تأیید ادمین است!"
+        else:
+            msg = "❌ شما هنوز کشوری در بازی ثبت نکرده‌اید. برای شروع /start را بزنید."
+            alert_text = "هنوز کشوری نساختی! برای شروع /start بزن."
+
         if update.message:
-            await update.message.reply_text("❌ شما هنوز کشوری در بازی ثبت نکرده‌اید. برای شروع /start را بزنید.")
+            await update.message.reply_text(msg, parse_mode="Markdown")
         elif update.callback_query:
-            await update.callback_query.answer("هنوز کشوری نساختی!", show_alert=True)
+            await update.callback_query.answer(alert_text, show_alert=True)
         return None
     return country
 
