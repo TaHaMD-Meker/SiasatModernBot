@@ -63,12 +63,15 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     oil_low = f"{stats['oil'].get('lowest_active'):,} $" if stats.get('oil',{}).get('lowest_active') else f"{config.OIL_GLOBAL_PRICE:,} $ (قیمت پایه جهانی)"
     gold_low = f"{stats['gold'].get('lowest_active'):,} $" if stats.get('gold',{}).get('lowest_active') else "بدون عرضه"
     grain_low = f"{stats['grain'].get('lowest_active'):,} $" if stats.get('grain',{}).get('lowest_active') else "بدون عرضه"
+    iron_low = f"{stats.get('iron_ore',{}).get('lowest_active'):,} $" if stats.get('iron_ore',{}).get('lowest_active') else "بدون عرضه"
     chips_low = f"{stats.get('microchips',{}).get('lowest_active'):,} $" if stats.get('microchips',{}).get('lowest_active') else "بدون عرضه"
     u_low = f"{stats.get('uranium_ore',{}).get('lowest_active'):,} $" if stats.get('uranium_ore',{}).get('lowest_active') else "بدون عرضه"
     fuel_low = f"{stats.get('nuclear_fuel',{}).get('lowest_active'):,} $" if stats.get('nuclear_fuel',{}).get('lowest_active') else "بدون عرضه"
 
     chips_res = c.get('microchips', 0) or 0
     chips_prod = c.get('microchips_daily', 0) or 0
+    iron_res = c.get('iron_ore', 0) or 0
+    iron_prod = c.get('iron_ore_daily', 0) or 0
     u_res = c.get('uranium_ore', 0) or 0
     u_prod = c.get('uranium_ore_daily', 0) or 0
     fuel_res = c.get('nuclear_fuel', 0) or 0
@@ -80,11 +83,13 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏦 *کشور:* {c['flag']} {c['name']}\n"
         f"💰 *موجودی خزانه:* {format_money(c['treasury'])}\n"
         f"🛢️ *نفت:* {format_oil(c['oil_reserves'])} | 🪙 *طلا:* {format_number(c['gold'])} | 🌾 *غلات:* {format_number(c['grain'])} تن\n"
-        f"💻 *ذخیره چیپ:* {format_number(chips_res)} عدد | ☢️ *کیک زرد:* {format_number(u_res)} تن | 🧪 *سوخت هسته‌ای:* {format_number(fuel_res)} کیلوگرم\n\n"
+        f"⛏️ *سنگ آهن و فولاد:* {format_number(iron_res)} تن (+{format_number(iron_prod)}/روز) | 💻 *ذخیره چیپ:* {format_number(chips_res)} عدد\n"
+        f"☢️ *کیک زرد:* {format_number(u_res)} تن | 🧪 *سوخت هسته‌ای:* {format_number(fuel_res)} کیلوگرم\n\n"
         f"📊 **قیمت‌های کف فعلی بازار:**\n"
         f"• 🛢️ **نفت خام:** هر بشکه {oil_low}\n"
         f"• 🪙 **شمش طلا:** هر شمش {gold_low}\n"
-        f"• 🌾 **غلات:** هر تن {grain_low}\n"
+        f"• 🌾 **غلات و گندم:** هر تن {grain_low}\n"
+        f"• ⛏️ **سنگ آهن و فولاد:** هر تن {iron_low}\n"
         f"• 💻 **میکروچیپ:** هر عدد {chips_low}\n"
         f"• ☢️ **کیک زرد اورانیوم:** هر تن {u_low}\n"
         f"• 🧪 **سوخت غنی‌شده:** هر کیلوگرم {fuel_low}\n\n"
@@ -98,17 +103,18 @@ async def market_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("🌾 بورس غلات", callback_data="market:cat:grain"),
+            InlineKeyboardButton("⛏️ بورس آهن و فولاد", callback_data="market:cat:iron_ore"),
+        ],
+        [
             InlineKeyboardButton("💻 بورس میکروچیپ", callback_data="market:cat:microchips"),
+            InlineKeyboardButton("☢️ بورس کیک زرد", callback_data="market:cat:uranium_ore"),
         ],
         [
-            InlineKeyboardButton("☢️ بورس اورانیوم خام (کیک زرد)", callback_data="market:cat:uranium_ore"),
             InlineKeyboardButton("🧪 بورس سوخت هسته‌ای", callback_data="market:cat:nuclear_fuel"),
-        ],
-        [
             InlineKeyboardButton("➕ ثبت عرضه و فروش جدید", callback_data="market:create_order"),
-            InlineKeyboardButton("📦 عرضه‌ها و سفارش‌های من", callback_data="market:my_orders"),
         ],
         [
+            InlineKeyboardButton("📦 عرضه‌ها و سفارش‌های من", callback_data="market:my_orders"),
             InlineKeyboardButton("📊 شاخص‌ها و آمار جهانی", callback_data="market:stats"),
         ],
     ]
@@ -138,8 +144,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     elif data.startswith("market:cat:"):
         res_type = data.split(":")[2]
-        res_names = {"oil": "🛢️ نفت خام", "gold": "🪙 شمش طلا", "grain": "🌾 غلات و گندم", "microchips": "💻 میکروچیپ و تراشه", "uranium_ore": "☢️ کیک زرد اورانیوم", "nuclear_fuel": "🧪 سوخت هسته‌ای غنی‌شده"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "🛢️ نفت خام", "gold": "🪙 شمش طلا", "grain": "🌾 غلات و گندم", "iron_ore": "⛏️ سنگ آهن و فولاد", "microchips": "💻 میکروچیپ و تراشه", "uranium_ore": "☢️ کیک زرد اورانیوم", "nuclear_fuel": "🧪 سوخت هسته‌ای غنی‌شده"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
 
         orders = db.get_market_orders(res_type)
 
@@ -162,7 +168,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
                 s_name = ord_item["seller_name"]
 
                 lines.append(f"• **سفارش #{o_id}** | {s_flag} **{s_name}**")
-                lines.append(f"  قیمت واحد: **{u_price:,} $** | موجودی عرضه: **{amt:,} {unit_names[res_type]}**\n")
+                lines.append(f"  قیمت واحد: **{u_price:,} $** | موجودی عرضه: **{amt:,} {unit_names.get(res_type, 'واحد')}**\n")
 
                 btn_text = f"🛒 خرید فوری #{o_id} ({s_name} — {u_price:,} $)"
                 keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"market:view:{o_id}")])
@@ -184,8 +190,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             )
             return
 
-        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
         r_type = order["resource_type"]
 
         text = (
@@ -373,13 +379,16 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             ],
             [
                 InlineKeyboardButton("🌾 فروش غلات و گندم", callback_data="market:sell_type:grain"),
-                InlineKeyboardButton("💻 فروش میکروچیپ", callback_data="market:sell_type:microchips"),
+                InlineKeyboardButton("⛏️ فروش سنگ آهن و فولاد", callback_data="market:sell_type:iron_ore"),
             ],
             [
-                InlineKeyboardButton("☢️ فروش کیک زرد اورانیوم", callback_data="market:sell_type:uranium_ore"),
-                InlineKeyboardButton("🧪 فروش سوخت هسته‌ای", callback_data="market:sell_type:nuclear_fuel"),
+                InlineKeyboardButton("💻 فروش میکروچیپ", callback_data="market:sell_type:microchips"),
+                InlineKeyboardButton("☢️ فروش کیک زرد", callback_data="market:sell_type:uranium_ore"),
             ],
-            [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="market:menu")],
+            [
+                InlineKeyboardButton("🧪 فروش سوخت هسته‌ای", callback_data="market:sell_type:nuclear_fuel"),
+                InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="market:menu"),
+            ],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
@@ -388,15 +397,17 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         clear_text_input_flags(context.user_data)
         context.user_data["market_sell_draft"] = {"step": "amount", "res_type": res_type}
 
-        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
-        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
+        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
         curr_qty = country.get(res_cols[res_type], 0)
 
         floor_hint = ""
         if res_type == "oil":
             floor_hint = f"\n💡 **قیمت کف نفت در بورس:** {config.OIL_GLOBAL_PRICE:,} $/بشکه (عرضه زیر این قیمت مجاز نیست)\n"
+        elif res_type == "iron_ore":
+            floor_hint = f"\n💡 **قیمت پایه سنگ آهن در بورس:** {config.IRON_ORE_GLOBAL_PRICE:,} $/تن\n"
 
         text = (
             f"➕ **عرضه و فروش {res_names.get(res_type, res_type)}**\n"
@@ -416,8 +427,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         if not my_orders:
             lines.append("شما در حال حاضر هیچ عرضه فعالی در بورس کالا ندارید.")
         else:
-            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
-            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
+            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
 
             for ord_item in my_orders:
                 o_id = ord_item["id"]
@@ -502,11 +513,11 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
 
     step = draft.get("step")
     res_type = draft.get("res_type")
-    res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
-    unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+    res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
+    unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
 
     if step == "amount":
-        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
+        res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
         curr_qty = country.get(res_cols[res_type], 0)
 
         if num_val > curr_qty:

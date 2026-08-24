@@ -97,6 +97,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>انرژی، غلات و صنایع استراتژیک</b>\n"
         f"• {pe('oil', '🛢️')} <b>ذخایر نفت:</b> {format_oil(c['oil_reserves'])} (تولید: {format_oil(c['oil_production'])}/روز)\n"
         f"• {pe('grain', '🌾')} <b>ذخایر غلات:</b> {format_number(c['grain'])} تن (+{format_number(c.get('grain_daily') or 0)} تن/روز)\n"
+        f"• ⛏️ <b>سنگ آهن و فولاد:</b> {format_number(c.get('iron_ore') or 0)} تن (+{format_number(c.get('iron_ore_daily') or 0)} تن/روز)\n"
         f"• {pe('chip', '💻')} <b>میکروچیپ و نیمه‌هادی:</b> {format_number(c.get('microchips') or 0)} عدد (+{format_number(c.get('microchips_daily') or 0)}/روز)\n"
         f"• {pe('nuclear', '☢️')} <b>کیک زرد اورانیوم:</b> {format_number(c.get('uranium_ore') or 0)} تن\n"
         f"• {pe('atom', '🟢')} <b>سوخت هسته‌ای (۳.۵٪):</b> {format_number(c.get('nuclear_fuel') or 0)} کیلوگرم\n"

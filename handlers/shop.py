@@ -271,11 +271,18 @@ async def confirm_asset_purchase(update: Update, context: ContextTypes.DEFAULT_T
     if chips_req > 0:
         curr_chips = country.get("microchips", 0) or 0
         status_c = "✅" if curr_chips >= chips_req else "⚠️ کسری"
-        chips_line = f"\n💻 *تراشه پردازشی مورد نیاز:* {chips_req} عدد/واحد ({status_c} موجودی شما: {format_number(curr_chips)})"
+        chips_line = f"\n💻 *تراشه پردازشی مورد نیاز:* {chips_req} عدد/واحد ({status_c} موجودی: {format_number(curr_chips)})"
+
+    iron_req = config.get_equipment_iron_req(asset)
+    iron_line = ""
+    if iron_req > 0:
+        curr_iron = country.get("iron_ore", 0) or 0
+        status_i = "✅" if curr_iron >= iron_req else "⚠️ کسری"
+        iron_line = f"\n⛏️ *آهن و فولاد ساخت:* {iron_req} تن/واحد ({status_i} موجودی: {format_number(curr_iron)} تن)"
 
     text = (
         f"🛒 *سفارش ساخت تجهیز نظامی بومی:* {asset['equipment_name']}\n"
-        f"💰 *هزینه تولید هر واحد:* {format_money(asset['buy_price'])}{chips_line}\n"
+        f"💰 *هزینه تولید هر واحد:* {format_money(asset['buy_price'])}{chips_line}{iron_line}\n"
         f"📦 *موجودی فعلی کشور شما:* {format_number(asset['amount'])} {unit}\n"
         f"🏦 *موجودی خزانه:* {format_money(country['treasury'])}\n\n"
         "تعداد مورد نظر برای تولید را انتخاب کنید:"

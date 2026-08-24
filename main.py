@@ -130,6 +130,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
         chips_daily = c.get("microchips_daily", 0) or 0
         chips_payment = chips_daily if force else int(chips_daily / INCOME_PARTS)
+        iron_daily = c.get("iron_ore_daily", 0) or 0
+        iron_payment = iron_daily if force else int(iron_daily / INCOME_PARTS)
         u_daily = c.get("uranium_ore_daily", 0) or 0
         u_payment = u_daily if force else int(u_daily / INCOME_PARTS)
         fuel_daily = c.get("nuclear_fuel_daily", 0) or 0
@@ -147,6 +149,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         db.adjust_gold(c["id"], gold_payment)
         if chips_payment > 0:
             db.adjust_microchips(c["id"], chips_payment)
+        if iron_payment > 0:
+            db.adjust_iron_ore(c["id"], iron_payment)
         if u_payment > 0:
             db.adjust_uranium_ore(c["id"], u_payment)
         if fuel_payment > 0:
@@ -207,12 +211,13 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 else:
                     c2 = db.get_country_by_id(c["id"])
                     chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""
+                    iron_line = f"\n• ⛏️ آهن و فولاد: +{iron_payment:,} تن" if iron_payment > 0 else ""
                     u_line = f"\n• ☢️ کیک زرد: +{u_payment:,} تن" if u_payment > 0 else ""
                     fuel_line = f"\n• 🧪 سوخت غنی‌شده: +{fuel_payment:,} ک‌گ" if fuel_payment > 0 else ""
                     report_msg = (
                         f"💵 *واریز دوره‌ای درآمد — {c2['flag']} {c2['name']}*\n\n"
                         f"• مبلغ واریزی: *{format_money(net_payment)}*\n"
-                        f"• طلا: +{gold_payment}{chips_line}{u_line}{fuel_line}\n"
+                        f"• طلا: +{gold_payment}{chips_line}{iron_line}{u_line}{fuel_line}\n"
                         f"• خزانه جدید: {format_money(c2['treasury'])}\n\n"
                         f"_درآمد روزانه در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شود._"
                         f"{stmt_status_section}"

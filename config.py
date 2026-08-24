@@ -28,6 +28,8 @@ STARTING_VALUES = {
     "oil_production":    1_000_000,
     "grain":                35_000,
     "grain_daily":           2_500,
+    "iron_ore":             10_000,
+    "iron_ore_daily":          500,
     "microchips":            1_000,
     "microchips_daily":         25,
     "uranium_ore":                 0,
@@ -2354,7 +2356,7 @@ TRANSPORTATION = {
 
 # ===== فروشگاه: منابع و معادن =====
 MINES_AND_RESOURCES = {
-    "iron_mine":     {"name": "⛏️ معدن آهن", "price": 5_000_000, "oil_req": 200_000, "income_add": 350000, "max_limit": 12, "desc": "⛏️ *معدن استخراج آهن*\n\n💰 *هزینه تجهیز:* ۵ میلیون دلار\n🛢️ *سوخت اولیه:* ۲۰۰,۰۰۰ بشکه\n💵 *درآمد روزانه:* +۳۵۰,۰۰۰ دلار/روز\n⛓️ *تولید آهن:* +۵,۰۰۰ تن/روز\n👷 *اشتغال‌زایی:* +۳,۰۰۰ نفر\n📌 *سقف مجاز احداث:* ۱۲ واحد"},
+    "iron_mine":     {"name": "⛏️ مجتمع استخراج سنگ آهن و فولاد", "price": 10_000_000, "oil_req": 200_000, "income_add": 450000, "iron_ore_daily_add": 1_000, "max_limit": 10, "desc": "⛏️ *مجتمع استخراج سنگ آهن و نورد فولاد*\n\n💰 *هزینه تجهیز:* ۱۰ میلیون دلار\n🛢️ *سوخت اولیه:* ۲۰۰,۰۰۰ بشکه\n💵 *درآمد روزانه:* +۴۵۰,۰۰۰ دلار/روز\n⛏️ *تولید روزانه آهن و فولاد:* +۱,۰۰۰ تن/روز\n👷 *اشتغال‌زایی:* +۳,۰۰۰ نفر\n📌 *سقف مجاز احداث:* ۱۰ واحد"},
     "copper_mine":   {"name": "🥉 معدن برنز و مس", "price": 6_000_000, "oil_req": 250_000, "income_add": 435000, "max_limit": 10, "desc": "🥉 *معدن مس و برنز*\n\n💰 *هزینه تجهیز:* ۶ میلیون دلار\n🛢️ *سوخت اولیه:* ۲۵۰,۰۰۰ بشکه\n💵 *درآمد روزانه:* +۴۳۵,۰۰۰ دلار/روز\n⛓️ *تولید برنز/مس:* +۳,۵۰۰ تن/روز\n👷 *اشتغال‌زایی:* +۲,۵۰۰ نفر\n📌 *سقف مجاز احداث:* ۱۰ واحد"},
     "gold_mine":     {"name": "🥇 معدن طلا", "price": 30_000_000, "oil_req": 500_000, "income_add": 1740000, "gold_daily_add": 5, "max_limit": 3, "desc": "🥇 *معدن بزرگ طلا*\n\n💰 *هزینه تجهیز:* ۳۰ میلیون دلار\n🛢️ *سوخت اولیه:* ۵۰۰,۰۰۰ بشکه\n💵 *درآمد روزانه:* +۱,۷۴۰,۰۰۰ دلار/روز\n🪙 *تولید روزانه طلا:* +۵ شمش/روز\n⭐ *اعتبار اقتصادی:* +۱۰ امتیاز\n📌 *سقف مجاز احداث:* ۳ واحد"},
     "oil_refinery":  {"name": "🛢️ پالایشگاه نفت", "price": 25_000_000, "oil_req": 1_000_000, "income_add": 1595000, "oil_prod_add": 100_000, "max_limit": 5, "desc": "🛢️ *پالایشگاه تصفیه و تولید نفت*\n\n💰 *هزینه احداث:* ۲۵ میلیون دلار\n🛢️ *خوراک اولیه:* ۱,۰۰۰,۰۰۰ بشکه\n💵 *درآمد روزانه:* +۱,۵۹۵,۰۰۰ دلار/روز\n⛽ *افزایش تولید نفت:* +۱۰۰,۰۰۰ بشکه/روز\n👷 *اشتغال‌زایی:* +۶,۰۰۰ نفر\n📌 *سقف مجاز احداث:* ۵ واحد"},
@@ -2475,6 +2477,11 @@ COMMODITY_MARKET_BOUNDS = {
 }
 
 # ===== 🚚 حداکثر ظرفیت بارگیری و انتقال کالا در هر محموله ترانزیت =====
+# ===== قیمت پایه و جهانی کامودیتی‌ها در بورس =====
+OIL_GLOBAL_PRICE = 5
+IRON_ORE_GLOBAL_PRICE = 1_000
+
+# ===== سقف ظرفیت بارگیری ناوگان‌های ترابری بین‌المللی =====
 TRANSPORT_CAPACITY_LIMITS = {
     "sea": {
         "name": "🚢 ترابری دریایی (کشتی‌های باری و نفتکش‌ها)",
@@ -2483,6 +2490,7 @@ TRANSPORT_CAPACITY_LIMITS = {
         "limits": {
             "oil": 2_000_000,         # ۲ میلیون بشکه نفت (سوپرتانکرها و نفتکش‌های غول‌پیکر VLCC)
             "grain": 100_000,         # ۱۰۰ هزار تن غلات
+            "iron_ore": 50_000,       # ۵۰ هزار تن سنگ آهن و فولاد
             "gold": 100,              # ۱۰۰ شمش طلا
             "microchips": 10_000,     # ۱۰ هزار چیپ
             "uranium_ore": 500,       # ۵۰۰ تن اورانیوم
@@ -2496,6 +2504,7 @@ TRANSPORT_CAPACITY_LIMITS = {
         "limits": {
             "oil": 50_000,            # ۵۰ هزار بشکه نفت
             "grain": 15_000,          # ۱۵ هزار تن غلات
+            "iron_ore": 15_000,       # ۱۵ هزار تن سنگ آهن و فولاد
             "gold": 40,               # ۴۰ شمش طلا
             "microchips": 3_000,      # ۳ هزار چیپ
             "uranium_ore": 100,       # ۱۰۰ تن اورانیوم
@@ -2509,6 +2518,7 @@ TRANSPORT_CAPACITY_LIMITS = {
         "limits": {
             "oil": 10_000,            # ۱۰ هزار بشکه نفت
             "grain": 2_500,           # ۲,۵۰۰ تن غلات
+            "iron_ore": 2_000,        # ۲ هزار تن سنگ آهن و فولاد
             "gold": 50,               # ۵۰ شمش طلا
             "microchips": 5_000,      # ۵ هزار چیپ های‌تک
             "uranium_ore": 150,       # ۱۵۰ تن اورانیوم
@@ -5527,6 +5537,45 @@ def get_equipment_chips_req(item: dict) -> int:
         if any(k in key or k in name for k in ["heron", "hermes", "reaper", "predator", "mq-9", "wing_loong", "yabhon", "mohajer", "مهاجر", "karrar", "کرار", "shahed136", "شاهد-۱۳۶", "shahed131", "harpy", "harop", "hero", "shadow"]):
             return 1
         return 0
+
+    return 0
+
+
+def get_equipment_iron_req(item: dict) -> int:
+    """محاسبه تناژ آهن و فولاد مورد نیاز برای ساخت هر واحد تجهیزات نظامی و شناورها."""
+    if not item:
+        return 0
+    if "iron_req" in item:
+        return int(item["iron_req"])
+
+    cat = item.get("category", "")
+    key = str(item.get("key") or item.get("equipment_key") or "").lower()
+    name = str(item.get("name") or item.get("equipment_name") or "").lower()
+
+    if cat == "Navy":
+        if any(k in key or k in name for k in ["carrier", "ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "anadolu", "هواپیمابر", "بالگردبر"]):
+            return 500
+        if any(k in key or k in name for k in ["destroyer", "burke", "zumwalt", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "maya", "ناوشکن"]):
+            return 200
+        if any(k in key or k in name for k in ["sub", "ssn", "ssbn", "virginia", "ohio", "yasen", "borei", "type 094", "astute", "kilo", "fateh", "زیردریایی"]):
+            return 150
+        return 80  # ناوچه‌ها و شناورهای سبک
+
+    if cat == "Ground Forces":
+        if any(k in key or k in name for k in ["tank", "تانک", "abrams", "armata", "leopard", "challenger", "leclerc", "merkava", "karrar", "zulfiqar", "altay", "t-90", "t-80", "t-72", "type 99", "type 10", "type 90", "vt-4"]):
+            return 25
+        if any(k in key or k in name for k in ["ifv", "apc", "نفربر", "bradley", "bmp", "btr", "stryker", "puma", "marder", "boxer", "boragh"]):
+            return 12
+        if any(k in key or k in name for k in ["mrap", "خودرو", "armor", "car"]):
+            return 5
+        return 2
+
+    if cat == "Artillery":
+        if any(k in key or k in name for k in ["howitzer", "هویتزر", "panzerhaubitze", "m109", "caesar", "k9", "2s19", "2s35"]):
+            return 15
+        if any(k in key or k in name for k in ["himars", "mlrs", "bm-30", "smersh", "uragan", "tos-1", "fajr"]):
+            return 10
+        return 5
 
     return 0
 
