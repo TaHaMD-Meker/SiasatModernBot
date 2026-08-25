@@ -279,6 +279,59 @@ def match_strategic_resource(name: str):
     return None
 
 
+# واژه‌های عمومیِ عناوین فرماندهی که به‌تنهایی هیچ تمایزی ایجاد نمی‌کنند.
+# («فرمانده» در لیست کلیدواژه‌ها باعث می‌شد هر عنوانی به اولین فرمانده بچسبد.)
+_CMD_STOPWORDS = {
+    "فرمانده", "فرماندهی", "رئیس", "ریاست", "مدیر", "مدیریت", "سازمان", "ستاد",
+    "کل", "نیروی", "نیروهای", "نیرو", "ارتش", "سپاه", "وزیر", "وزارت", "معاون",
+    "امیر", "سرلشکر", "سرتیپ", "ژنرال", "و", "کشور", "ملی", "مسلح", "پاسداران",
+}
+
+
+def _cmd_tokens(text: str):
+    """توکن‌های معنادار یک عنوان فرماندهی (بدون واژه‌های عمومی)."""
+    return {w for w in _clean_str(text).split() if len(w) >= 3 and w not in _CMD_STOPWORDS}
+
+
+def match_commander(name: str, commanders: list):
+    """بهترین فرماندهٔ فعالِ منطبق با نام را برمی‌گرداند (یا None).
+
+    به‌جای «اولین تطبیق»، امتیازدهی می‌کند تا دو عنوان متفاوت
+    (مثلاً «فرمانده کل سپاه» و «فرمانده نیروی هوافضا») یکی نشوند.
+    """
+    q = _clean_str(name)
+    if len(q) < 4:
+        return None
+    q_tokens = _cmd_tokens(name)
+    best, best_score = None, 0
+    for cm in commanders or []:
+        if cm["status"] != "active":
+            continue
+        t = _clean_str(cm["title"])
+        c_tokens = _cmd_tokens(cm["title"])
+        if q == t:
+            return cm
+        score = 0
+        if q in t or t in q:
+            score = 100 + len(q)
+        else:
+            # تطبیق پیشوندی تا «هوافضا» و «هوافضای» یکی حساب شوند
+            shared = set()
+            for qt in q_tokens:
+                for ct in c_tokens:
+                    if qt == ct or (len(qt) >= 4 and len(ct) >= 4 and (qt.startswith(ct) or ct.startswith(qt))):
+                        shared.add(qt)
+                        break
+            if shared:
+                # نسبت اشتراک به کوچک‌ترین مجموعه، تا عنوان‌های پرکلمه امتیاز الکی نگیرند
+                score = int(100 * len(shared) / max(1, min(len(q_tokens), len(c_tokens))))
+                if score < 50:
+                    score = 0
+        if score > best_score:
+            best, best_score = cm, score
+    return best
+
+
 def match_building(name: str, country_id: int):
     """تطبیق نام با ساختمان‌های «مالکیت‌دار» کشور از فروشگاه (جدول equipment)."""
     q = _clean_str(name)
@@ -1066,14 +1119,9 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             # تطبیق با سران و فرماندهان نظامی کشور
             cmd_list = db.get_country_commanders(country["id"])
-            clean_n = _clean_str(name)
-            cmd_match = None
-            for cm in cmd_list:
-                c_t = _clean_str(cm["title"])
-                if clean_n in c_t or c_t in clean_n or (len(clean_n) >= 4 and any(w in clean_n and w in c_t for w in ("هوافضا", "موساد", "ستاد", "اطلاعات", "هوایی", "فرمانده"))):
-                    if cm["status"] == "active":
-                        cmd_match = cm
-                        break
+            # فرماندهانی که در همین گزارش قبلاً ترور شده‌اند دوباره انتخاب نشوند
+            _taken = {m.get("cmd_key") for m in matched if m.get("special") == "commander"}
+            cmd_match = match_commander(name, [c for c in cmd_list if c["key"] not in _taken])
             if cmd_match:
                 matched.append({
                     "key": f"__cmd_{cmd_match['key']}__",

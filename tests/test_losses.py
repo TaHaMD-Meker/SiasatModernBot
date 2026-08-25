@@ -311,6 +311,30 @@ class TestParser:
 📌 توضیح: خسارت 800 میلیون دلاری به بازار جهانی وارد شد."""
         assert parse_loss_report_text(text)["costs"] == {"money": 2_500_000, "oil": 12_000}
 
+    def test_distinct_commanders_do_not_collapse(self):
+        """رگرسیون: واژه عمومی «فرمانده» باعث می‌شد دو عنوان متفاوت به یک نفر تطبیق بخورند."""
+        from handlers.losses import match_commander
+        cmds = [
+            {"key": "commander_aerospace", "title": "فرمانده نیروی هوافضای سپاه", "status": "active"},
+            {"key": "commander_irgc", "title": "فرمانده کل سپاه پاسداران", "status": "active"},
+            {"key": "chief_general_staff", "title": "رئیس ستاد کل نیروهای مسلح", "status": "active"},
+            {"key": "minister_intel", "title": "رئیس اطلاعات سپاه / وزیر اطلاعات", "status": "active"},
+        ]
+        for title, expected in [
+            ("فرمانده نیروی هوافضای سپاه", "commander_aerospace"),
+            ("فرمانده کل سپاه پاسداران", "commander_irgc"),
+            ("رئیس ستاد کل نیروهای مسلح", "chief_general_staff"),
+            ("فرمانده هوافضا", "commander_aerospace"),
+        ]:
+            assert (match_commander(title, cmds) or {}).get("key") == expected, title
+        assert match_commander("قایق تندرو رزمی", cmds) is None
+
+    def test_inactive_commander_not_matched(self):
+        """فرمانده‌ای که قبلاً ترور شده دوباره انتخاب نمی‌شود."""
+        from handlers.losses import match_commander
+        cmds = [{"key": "k1", "title": "فرمانده نیروی هوافضای سپاه", "status": "dead"}]
+        assert match_commander("فرمانده نیروی هوافضای سپاه", cmds) is None
+
     def test_commander_title_is_not_a_strategic_resource(self):
         """رگرسیون: «مدیر سازمان اطلاعات» نباید با «طلا» داخل «اطلاعات» تطبیق بخورد."""
         from handlers.losses import match_strategic_resource

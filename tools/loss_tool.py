@@ -140,7 +140,7 @@ def cmd_check(args):
     from handlers.losses import (parse_loss_report_text, match_country_by_name,
                                  match_asset_by_name, match_strategic_resource,
                                  match_building, classify_subcat, build_loss_report_text,
-                                 _UNIT_BY_CATEGORY, _split_emoji, _clean_str)
+                                 _UNIT_BY_CATEGORY, _split_emoji, _clean_str, match_commander)
 
     text = open(args.report, encoding="utf-8").read()
     p = parse_loss_report_text(text)
@@ -187,14 +187,8 @@ def cmd_check(args):
 
         # تطبیق با سران و فرماندهان نظامی
         cmd_list = db.get_country_commanders(cid)
-        clean_n = _clean_str(name)
-        cmd_match = None
-        for cm in cmd_list:
-            c_t = _clean_str(cm["title"])
-            if clean_n in c_t or c_t in clean_n or (len(clean_n) >= 4 and any(w in clean_n and w in c_t for w in ("هوافضا", "موساد", "ستاد", "اطلاعات", "هوایی", "فرمانده"))):
-                if cm["status"] == "active":
-                    cmd_match = cm
-                    break
+        _taken = {m.get("cmd_key") for m in matched if m.get("special") == "commander"}
+        cmd_match = match_commander(name, [c for c in cmd_list if c["key"] not in _taken])
         if cmd_match:
             print(f"🎖️  {name[:44]:<46} → {cmd_match['title']} (ترور / شهید)")
             matched.append({"key": f"__cmd_{cmd_match['key']}__", "name": f"{cmd_match['title']} (ترور / شهید)",
