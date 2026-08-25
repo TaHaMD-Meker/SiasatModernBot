@@ -416,3 +416,54 @@ class TestCivEffectsRecalc:
         c = db_temp.get_country_by_id(cid)
         assert c["grain"] == 123_456
         assert c["oil_reserves"] == 7_654_321
+
+
+# ==================== پاداش یک‌بارهٔ انبار (سیلوی غلات) ====================
+
+class TestOneTimeStockBonus:
+    """باگ: سیلوی غلات دو اثر دارد — درآمد روزانه و ۵۰٬۰۰۰ تن ذخیرهٔ فوری.
+    پاداش ذخیره فقط در buy_item_transaction اعمال می‌شد، پس وقتی ادمین از پنل
+    سیلو می‌داد بازیکن هیچ غله‌ای نمی‌گرفت. جدا از آن، مایگریشن سقف‌گذاری
+    غلات پاداش را با اولین ری‌استارت پاک می‌کرد."""
+
+    def test_admin_grant_gives_grain_bonus(self, db_temp):
+        cid = _new_country(db_temp)
+        before = db_temp.get_country_by_id(cid)["grain"]
+        bonus = config.ALL_SHOP_ITEMS["grain_silo"]["grain_bonus"]
+
+        db_temp.add_equipment(cid, "grain_silo", 1)
+        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", 1)
+        assert db_temp.get_country_by_id(cid)["grain"] == before + bonus
+
+    def test_removing_silo_takes_bonus_back(self, db_temp):
+        cid = _new_country(db_temp)
+        before = db_temp.get_country_by_id(cid)["grain"]
+        db_temp.add_equipment(cid, "grain_silo", 3)
+        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", 3)
+        db_temp.add_equipment(cid, "grain_silo", -3)
+        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", -3)
+        assert db_temp.get_country_by_id(cid)["grain"] == before
+
+    def test_grain_never_goes_negative(self, db_temp):
+        cid = _new_country(db_temp)
+        db_temp.update_country_field(cid, "grain", 1_000)
+        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", -5)
+        assert db_temp.get_country_by_id(cid)["grain"] == 0
+
+    def test_migration_does_not_wipe_silo_grain(self, db_temp):
+        """سقف‌گذاری هفتگی نباید غلهٔ سیلوهای خریداری‌شده را پاک کند."""
+        cid = _new_country(db_temp)
+        db_temp.update_country_field(cid, "treasury", 300_000_000)
+        db_temp.update_country_field(cid, "oil_reserves", 80_000_000)
+        db_temp.buy_item_transaction(cid, "grain_silo", 1, 15_000_000, "سیلو")
+        after_buy = db_temp.get_country_by_id(cid)["grain"]
+
+        db_temp.set_setting("grain_scale_fixed_v2", "")
+        db_temp.fix_grain_scale_v2()
+        assert db_temp.get_country_by_id(cid)["grain"] == after_buy
+
+    def test_non_bonus_item_is_noop(self, db_temp):
+        cid = _new_country(db_temp)
+        before = db_temp.get_country_by_id(cid)["grain"]
+        assert db_temp.apply_one_time_stock_bonus(cid, "agro_complex", 2) == {}
+        assert db_temp.get_country_by_id(cid)["grain"] == before

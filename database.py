@@ -945,6 +945,7 @@ def fix_grain_scale_v2():
     cur.execute("SELECT id, country_key, population, grain FROM countries")
     rows = cur.fetchall()
     changed = 0
+    silo_bonus = config.ALL_SHOP_ITEMS.get("grain_silo", {}).get("grain_bonus", 0)
     for row in rows:
         cid = row[0]
         ckey = row[1]
@@ -953,6 +954,17 @@ def fix_grain_scale_v2():
         need_daily = max(10, int((pop / 1_000_000) * 100))
         preset = config.COUNTRY_STARTING_OVERRIDES.get(ckey, {}) if ckey else {}
         cap = preset.get("grain") or (need_daily * 7)
+        # 🏢 سیلوهای خریداری‌شده ظرفیت ذخیره‌سازی اضافه می‌کنند؛ سقف‌گذاری نباید
+        # پاداش ۵۰٬۰۰۰ تنی هر سیلو را پاک کند (باگ: بازیکن ۱۵M می‌داد و با اولین
+        # ری‌استارتِ بعد از مایگریشن، غلاتش به مقدار پایه برمی‌گشت).
+        if silo_bonus:
+            cur.execute(
+                "SELECT quantity FROM equipment WHERE country_id = ? AND item_key = 'grain_silo'",
+                (cid,),
+            )
+            silo_row = cur.fetchone()
+            if silo_row and silo_row[0] > 0:
+                cap += silo_bonus * silo_row[0]
         if grain > cap:
             cur.execute("UPDATE countries SET grain = ? WHERE id = ?", (cap, cid))
             changed += 1
@@ -2580,6 +2592,46 @@ def rebalance_existing_countries_income():
                 """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_iron, new_iron_daily, new_chips, new_chips_daily, new_uranium_ore, new_uranium_ore_daily, new_nuclear_fuel, new_nuclear_fuel_daily, new_warheads, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
+
+
+ONE_TIME_STOCK_BONUSES = {
+    # item_key -> (ستون ذخیره، کلید کانفیگ مقدار پاداش)
+    "grain_silo": ("grain", "grain_bonus"),
+}
+
+
+def apply_one_time_stock_bonus(country_id: int, item_key: str, delta_qty: int) -> dict:
+    """اعمال پاداش «ذخیره فوری» هنگام تغییر تعداد ساخت‌وساز از پنل ادمین.
+
+    باگ: برخی زیرساخت‌ها (مثل سیلوی غلات) علاوه بر درآمد روزانه، یک پاداش
+    یک‌باره‌ی انبار دارند (grain_bonus = ۵۰٬۰۰۰ تن). این پاداش فقط داخل
+    buy_item_transaction اعمال می‌شد؛ یعنی وقتی ادمین از پنل سیلو می‌داد،
+    بازیکن هیچ غله‌ای نمی‌گرفت. برعکس، حذف سیلو هم غله را پس نمی‌گرفت.
+
+    delta_qty مثبت → افزودن پاداش، منفی → پس گرفتن آن (با کف صفر).
+    """
+    spec = ONE_TIME_STOCK_BONUSES.get(item_key)
+    if not spec or not delta_qty:
+        return {}
+    column, cfg_key = spec
+    per_unit = config.ALL_SHOP_ITEMS.get(item_key, {}).get(cfg_key, 0)
+    if not per_unit:
+        return {}
+    amount = per_unit * delta_qty
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                f"UPDATE countries SET {column} = MAX(0, {column} + ?) WHERE id = ?",
+                (amount, country_id),
+            )
+        return {"column": column, "amount": amount}
+    except Exception as e:
+        print(f"[one-time-bonus] error for country {country_id}/{item_key}: {e}")
+        return {}
+    finally:
+        conn.close()
 
 
 def recalc_country_civ_effects(country_id: int) -> dict:

@@ -1391,6 +1391,9 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         # ساخت‌وساز فقط در جدول equipment ثبت می‌شود؛ عواید روزانه (درآمد، غلات،
         # برق، ...) باید صریحاً بازمحاسبه شود وگرنه تغییر ادمین هیچ اثر بازی ندارد.
         db.recalc_country_civ_effects(cid)
+        # پاداش یک‌بارهٔ انبار (مثل ۵۰٬۰۰۰ تن غلهٔ هر سیلو) که تا امروز فقط در
+        # مسیر خرید فروشگاه اعمال می‌شد و از پنل ادمین به بازیکن نمی‌رسید.
+        db.apply_one_time_stock_bonus(cid, item_key, delta)
         item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
         await query.answer(f"تعداد {item_data.get('name', item_key)} به {new_qty} تغییر یافت.", show_alert=True)
         await show_country_constructions_menu(query, context, cid)
@@ -1404,6 +1407,7 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         if curr_qty > 0:
             db.add_equipment(cid, item_key, -curr_qty)
             db.recalc_country_civ_effects(cid)
+            db.apply_one_time_stock_bonus(cid, item_key, -curr_qty)
         item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
         await query.answer(
             f"🗑️ {item_data.get('name', item_key)} صفر شد (قبلاً {curr_qty:,} واحد).",
@@ -1710,6 +1714,7 @@ async def handle_dossier_inputs(update: Update, context: ContextTypes.DEFAULT_TY
             curr_qty = db.get_equipment(c_id).get(item_key, 0)
             db.add_equipment(c_id, item_key, new_qty - curr_qty)
             eff = db.recalc_country_civ_effects(c_id)
+            db.apply_one_time_stock_bonus(c_id, item_key, new_qty - curr_qty)
             extra = ""
             if eff:
                 extra = (
