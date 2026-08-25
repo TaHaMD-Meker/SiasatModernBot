@@ -2582,6 +2582,92 @@ def rebalance_existing_countries_income():
         print(f"Error rebalancing country incomes: {e}")
 
 
+def recalc_country_civ_effects(country_id: int) -> dict:
+    """بازمحاسبهٔ عواید روزانهٔ یک کشور از روی ساخت‌وسازهای فعلی‌اش.
+
+    باگ: دکمه‌های ±/صفر/تعیین عدد در پنل ادمین فقط جدول equipment را عوض
+    می‌کردند و daily_income / grain_daily / electricity / ... دست‌نخورده
+    می‌ماند. یعنی ادمین ۱۰ سیلو می‌داد و درآمد کشور تکان نمی‌خورد، یا ۳۰۵
+    سیلوی اشتباهی را صفر می‌کرد ولی درآمد باد‌کردهٔ ناشی از آن‌ها برای همیشه
+    در خزانه می‌ماند. rebalance سراسری هم فقط یک بار (فلگ rebalance_done_v3)
+    اجرا می‌شود و قابل اتکا نیست.
+
+    این تابع مقدار پایهٔ کانفیگ کشور + مجموع اثر تجهیزات را دقیقاً set می‌کند
+    (نه MAX، نه جمع تجمعی) تا هر بار قابل اجرای مکرر و idempotent باشد.
+    ذخایر انبار (grain, oil_reserves, ...) دارایی بازیکن‌اند و دست نمی‌خورند.
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key, enrichment_suspended FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return {}
+            c_key = c["country_key"]
+            suspended = (c["enrichment_suspended"] or 0) if "enrichment_suspended" in c.keys() else 0
+
+            ov = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
+            sv = config.STARTING_VALUES
+            base = {
+                "daily_income": ov.get("daily_income", sv["daily_income"]),
+                "grain_daily": ov.get("grain_daily", sv.get("grain_daily", 2500)),
+                "electricity": ov.get("electricity", sv["electricity"]),
+                "gold_daily": ov.get("gold_daily", sv["gold_daily"]),
+                "oil_production": ov.get("oil_production", sv.get("oil_production", 1_000_000)),
+                "iron_ore_daily": ov.get("iron_ore_daily", sv.get("iron_ore_daily", 500)),
+                "microchips_daily": ov.get("microchips_daily", sv.get("microchips_daily", 25)),
+                "uranium_ore_daily": ov.get("uranium_ore_daily", sv.get("uranium_ore_daily", 0)),
+                "nuclear_fuel_daily": ov.get("nuclear_fuel_daily", sv.get("nuclear_fuel_daily", 0)),
+            }
+
+            cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ? AND quantity > 0", (country_id,))
+            civ = {k: 0 for k in base}
+            for eq in cur.fetchall():
+                i_key, qty = eq["item_key"], eq["quantity"]
+                item = config.ALL_SHOP_ITEMS.get(i_key, {})
+                inc = item.get("income_add", 0)
+                oil_p = item.get("oil_prod_add", 0)
+                if i_key == "oil_refinery":
+                    eff = config.get_refinery_effect(c_key)
+                    inc = eff.get("income", inc)
+                    oil_p = eff.get("oil_prod", oil_p)
+                elif i_key == "chip_fab":
+                    eff = config.get_chip_fab_effect(c_key)
+                    civ["microchips_daily"] += eff.get("chips_daily", 25) * qty
+                elif i_key == "iron_mine":
+                    civ["iron_ore_daily"] += item.get("iron_ore_daily_add", 1_000) * qty
+                elif i_key == "uranium_mine":
+                    civ["uranium_ore_daily"] += item.get("uranium_ore_daily_add", 50) * qty
+                elif i_key == "enrichment_facility":
+                    civ["nuclear_fuel_daily"] += item.get("nuclear_fuel_daily_add", 20) * qty
+
+                civ["daily_income"] += inc * qty
+                civ["oil_production"] += oil_p * qty
+                civ["electricity"] += item.get("elec_add", 0) * qty
+                civ["grain_daily"] += item.get("grain_daily_add", 0) * qty
+                civ["gold_daily"] += item.get("gold_daily_add", 0) * qty
+
+            new = {k: max(0, base[k] + civ[k]) for k in base}
+            # ⛔ تعلیق آژانسی غنی‌سازی: تولید سوخت روزانه صفر می‌ماند
+            if suspended:
+                new["nuclear_fuel_daily"] = 0
+
+            cur.execute("""
+                UPDATE countries SET
+                daily_income = ?, grain_daily = ?, electricity = ?, gold_daily = ?,
+                oil_production = ?, iron_ore_daily = ?, microchips_daily = ?,
+                uranium_ore_daily = ?, nuclear_fuel_daily = ?
+                WHERE id = ?
+            """, (new["daily_income"], new["grain_daily"], new["electricity"], new["gold_daily"],
+                  new["oil_production"], new["iron_ore_daily"], new["microchips_daily"],
+                  new["uranium_ore_daily"], new["nuclear_fuel_daily"], country_id))
+            return new
+    except Exception as e:
+        print(f"[recalc-civ-effects] error for country {country_id}: {e}")
+        return {}
+
+
 def fix_nuclear_free_grant_v1():
     """مایگریشن اصلاح باگ اهدای مجانی ذخایر هسته‌ای.
 

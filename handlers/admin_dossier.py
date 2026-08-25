@@ -1388,6 +1388,9 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         delta = max(delta, -curr_qty)  # کف صفر
         db.add_equipment(cid, item_key, delta)
         new_qty = curr_qty + delta
+        # ساخت‌وساز فقط در جدول equipment ثبت می‌شود؛ عواید روزانه (درآمد، غلات،
+        # برق، ...) باید صریحاً بازمحاسبه شود وگرنه تغییر ادمین هیچ اثر بازی ندارد.
+        db.recalc_country_civ_effects(cid)
         item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
         await query.answer(f"تعداد {item_data.get('name', item_key)} به {new_qty} تغییر یافت.", show_alert=True)
         await show_country_constructions_menu(query, context, cid)
@@ -1400,6 +1403,7 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         curr_qty = db.get_equipment(cid).get(item_key, 0)
         if curr_qty > 0:
             db.add_equipment(cid, item_key, -curr_qty)
+            db.recalc_country_civ_effects(cid)
         item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
         await query.answer(
             f"🗑️ {item_data.get('name', item_key)} صفر شد (قبلاً {curr_qty:,} واحد).",
@@ -1705,9 +1709,18 @@ async def handle_dossier_inputs(update: Update, context: ContextTypes.DEFAULT_TY
                 return True
             curr_qty = db.get_equipment(c_id).get(item_key, 0)
             db.add_equipment(c_id, item_key, new_qty - curr_qty)
+            eff = db.recalc_country_civ_effects(c_id)
+            extra = ""
+            if eff:
+                extra = (
+                    f"\n\n📊 <b>عواید روزانهٔ بازمحاسبه‌شده:</b>\n"
+                    f"• 💵 درآمد: <code>{eff.get('daily_income', 0):,}</code> دلار/روز\n"
+                    f"• 🌾 غلات: <code>{eff.get('grain_daily', 0):,}</code> تن/روز"
+                )
             await update.message.reply_text(
-                f"✅ تعداد «{label}» از {curr_qty:,} به {new_qty:,} واحد تغییر یافت.",
+                f"✅ تعداد «{html.escape(label)}» از {curr_qty:,} به {new_qty:,} واحد تغییر یافت.{extra}",
                 reply_markup=kb,
+                parse_mode="HTML",
             )
         except ValueError:
             await update.message.reply_text("❌ لطفاً فقط عدد ارسال کنید.", reply_markup=kb)

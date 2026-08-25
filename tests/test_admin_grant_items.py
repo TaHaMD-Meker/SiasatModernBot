@@ -357,3 +357,62 @@ class TestCivilZeroAndSetButtons:
         asyncio.run(ad.handle_dossier_inputs(upd, ctx, "civ_set_qty", "سلام", state))
         asyncio.run(ad.handle_dossier_inputs(upd, ctx, "civ_set_qty", "-5", state))
         assert db.get_equipment(cid)["oil_refinery"] == 1
+
+
+# ==================== بازمحاسبهٔ عواید پس از تغییر ساخت‌وساز ====================
+
+class TestCivEffectsRecalc:
+    """باگ: دکمه‌های ± / صفر / تعیین عدد فقط جدول equipment را عوض می‌کردند و
+    daily_income و grain_daily دست‌نخورده می‌ماند؛ یعنی ساخت‌وسازی که ادمین
+    می‌داد یا می‌گرفت هیچ اثر واقعی روی اقتصاد کشور نداشت."""
+
+    def test_grant_and_remove_silo_updates_income(self, db_temp):
+        cid = _new_country(db_temp)
+        base = db_temp.get_country_by_id(cid)["daily_income"]
+        silo_inc = config.ALL_SHOP_ITEMS["grain_silo"]["income_add"]
+
+        db_temp.add_equipment(cid, "grain_silo", 10)
+        db_temp.recalc_country_civ_effects(cid)
+        assert db_temp.get_country_by_id(cid)["daily_income"] == base + silo_inc * 10
+
+        # صفر کردن باید درآمد را دقیقاً به پایه برگرداند (نه چسبیدن به مقدار باد‌کرده)
+        db_temp.add_equipment(cid, "grain_silo", -10)
+        db_temp.recalc_country_civ_effects(cid)
+        assert db_temp.get_country_by_id(cid)["daily_income"] == base
+
+    def test_recalc_is_idempotent(self, db_temp):
+        """اجرای مکرر نباید عواید را تجمعی بالا ببرد (باگ کلاسیک MAX/جمع)."""
+        cid = _new_country(db_temp)
+        db_temp.add_equipment(cid, "agro_complex", 2)
+        first = db_temp.recalc_country_civ_effects(cid)
+        for _ in range(5):
+            again = db_temp.recalc_country_civ_effects(cid)
+        assert again == first
+
+    def test_agro_complex_updates_grain_daily(self, db_temp):
+        cid = _new_country(db_temp)
+        base = db_temp.get_country_by_id(cid)["grain_daily"]
+        add = config.ALL_SHOP_ITEMS["agro_complex"]["grain_daily_add"]
+
+        db_temp.add_equipment(cid, "agro_complex", 3)
+        db_temp.recalc_country_civ_effects(cid)
+        assert db_temp.get_country_by_id(cid)["grain_daily"] == base + add * 3
+
+    def test_silo_does_not_change_grain_daily(self, db_temp):
+        """سیلو انبار است نه مزرعه: نباید تولید روزانه غلات را زیاد کند."""
+        cid = _new_country(db_temp)
+        base = db_temp.get_country_by_id(cid)["grain_daily"]
+        db_temp.add_equipment(cid, "grain_silo", 5)
+        db_temp.recalc_country_civ_effects(cid)
+        assert db_temp.get_country_by_id(cid)["grain_daily"] == base
+
+    def test_reserves_are_never_touched(self, db_temp):
+        """ذخایر انبار دارایی بازیکن‌اند و بازمحاسبه نباید ریست‌شان کند."""
+        cid = _new_country(db_temp)
+        db_temp.update_country_field(cid, "grain", 123_456)
+        db_temp.update_country_field(cid, "oil_reserves", 7_654_321)
+        db_temp.add_equipment(cid, "grain_silo", 2)
+        db_temp.recalc_country_civ_effects(cid)
+        c = db_temp.get_country_by_id(cid)
+        assert c["grain"] == 123_456
+        assert c["oil_reserves"] == 7_654_321
