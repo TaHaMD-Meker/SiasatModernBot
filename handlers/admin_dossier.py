@@ -1369,8 +1369,13 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         item_key = parts[3]
         delta = int(parts[4])
         curr_eq = db.get_equipment(cid)
-        new_qty = max(0, curr_eq.get(item_key, 0) + delta)
-        db.add_equipment(cid, item_key, new_qty)
+        # add_equipment خودش دلتا را به مقدار فعلی اضافه می‌کند؛ نباید مقدار
+        # نهایی به آن پاس داده شود وگرنه تعداد هر بار تقریباً دو برابر می‌شد
+        # (۳۰۵ با فشردن ➖۱ می‌شد ۶۰۹).
+        curr_qty = curr_eq.get(item_key, 0)
+        delta = max(delta, -curr_qty)  # کف صفر
+        db.add_equipment(cid, item_key, delta)
+        new_qty = curr_qty + delta
         item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
         await query.answer(f"تعداد {item_data.get('name', item_key)} به {new_qty} تغییر یافت.", show_alert=True)
         await show_country_constructions_menu(query, context, cid)

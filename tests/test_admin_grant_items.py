@@ -267,3 +267,37 @@ def test_every_catalog_item_actually_grants(db_temp):
                 failures.append(f"{item_key}: {msg}")
 
     assert not failures, "آیتم‌های ناموفق: " + " | ".join(failures)
+
+
+class TestCivilConstructionAdjust:
+    """رگرسیون: دکمه‌های ➕/➖ منوی ساخت‌وسازهای غیرنظامی."""
+
+    def test_add_equipment_takes_delta_not_absolute(self, tmp_path, monkeypatch):
+        """add_equipment دلتا می‌گیرد؛ پاس‌دادن مقدار نهایی تعداد را دوبرابر می‌کرد."""
+        import importlib, config
+        monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "civ.db"))
+        import database as db
+        importlib.reload(db)
+        db.init_db()
+        cid = db.create_country(777002, "سوئد", "🇸🇪", country_key="sweden")
+
+        db.add_equipment(cid, "grain_silo", 305)
+        assert db.get_equipment(cid)["grain_silo"] == 305
+
+        # ➖۱ باید ۳۰۴ بدهد، نه ۶۰۹
+        db.add_equipment(cid, "grain_silo", -1)
+        assert db.get_equipment(cid)["grain_silo"] == 304
+
+        db.add_equipment(cid, "grain_silo", 5)
+        assert db.get_equipment(cid)["grain_silo"] == 309
+
+    def test_equipment_never_negative(self, tmp_path, monkeypatch):
+        import importlib, config
+        monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "civ2.db"))
+        import database as db
+        importlib.reload(db)
+        db.init_db()
+        cid = db.create_country(777003, "سوئد", "🇸🇪", country_key="sweden")
+        db.add_equipment(cid, "oil_refinery", 1)
+        db.add_equipment(cid, "oil_refinery", -5)
+        assert db.get_equipment(cid).get("oil_refinery", 0) == 0
