@@ -823,6 +823,11 @@ def init_db():
         pass
 
     try:
+        purge_state_equipment_from_militias()
+    except Exception as e:
+        print(f"[militia-purge] error: {e}")
+
+    try:
         fix_refinery_oil_production()
     except Exception:
         pass
@@ -2411,6 +2416,33 @@ def adjust_grain(country_id: int, delta: int):
     conn.close()
 
 
+# ---------- انتخاب کاتالوگ تجهیزات ----------
+
+def is_militia_country_key(country_key: str) -> bool:
+    """آیا این کلید متعلق به یک گروه شبه‌نظامی است؟ (گروه آماده یا سفارشی)"""
+    return bool(country_key) and str(country_key).startswith("faction_")
+
+
+def get_equipment_catalog_for(country_key: str):
+    """کاتالوگ تجهیزات درست را برای یک کشور یا گروه شبه‌نظامی برمی‌گرداند.
+
+    گروه‌های شبه‌نظامی (کلید `faction_*`) هرگز نباید تجهیزات کشوری
+    (جنگنده نسل ۴.۵، بمب‌افکن استراتژیک، ناوگان و...) دریافت کنند.
+    """
+    if not country_key:
+        return config.DEFAULT_COUNTRY_EQUIPMENT
+
+    if is_militia_country_key(country_key):
+        faction_key = str(country_key)[len("faction_"):]
+        militia_cats = getattr(config, "MILITIA_EQUIPMENT_CATALOG", {})
+        if faction_key in militia_cats:
+            return militia_cats[faction_key]
+        # گروه سفارشی: کاتالوگ عمومی شبه‌نظامی
+        return getattr(config, "DEFAULT_MILITIA_EQUIPMENT", config.DEFAULT_COUNTRY_EQUIPMENT)
+
+    return config.COUNTRY_EQUIPMENT_CATALOG.get(country_key, config.DEFAULT_COUNTRY_EQUIPMENT)
+
+
 # ---------- همگام‌سازی و به‌روزرسانی کلی کشورها ----------
 
 def sync_all_country_assets_to_catalog():
@@ -2428,7 +2460,7 @@ def sync_all_country_assets_to_catalog():
         if not c_key:
             continue
 
-        catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(c_key, config.DEFAULT_COUNTRY_EQUIPMENT)
+        catalog = get_equipment_catalog_for(c_key)
         for item in catalog:
             producible_val = 1 if item.get("producible", True) else 0
             cur.execute("""
@@ -2966,11 +2998,53 @@ def nuclear_compensation_v3():
     print(f"[nuclear-compensation-v3] {returns_count} non-zeroed comp returned, {adjust_count} zeroed adjusted to formula.")
 
 
+def purge_state_equipment_from_militias():
+    """مایگریشن: حذف تجهیزات کشوری که اشتباهاً به گروه‌های شبه‌نظامی تزریق شده بود.
+
+    باگ: `seed_country_assets` و `sync_all_country_assets_to_catalog` برای کلیدهای
+    `faction_*` (که در COUNTRY_EQUIPMENT_CATALOG نیستند) به DEFAULT_COUNTRY_EQUIPMENT
+    fallback می‌کردند و اقلام `gen_*` مثل «جنگنده پیشرفته نسل ۴.۵» را به گروه‌های
+    شبه‌نظامی می‌دادند. این تابع یک‌بار آن اقلام را پاک می‌کند.
+    """
+    if get_setting("militia_state_equipment_purged_v1"):
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, name, country_key FROM countries WHERE country_key LIKE 'faction_%'")
+    militias = [dict(r) for r in cur.fetchall()]
+
+    purged_rows = 0
+    affected = 0
+    for m in militias:
+        allowed = {i["key"] for i in get_equipment_catalog_for(m["country_key"])}
+        cur.execute("SELECT equipment_key, amount FROM country_assets WHERE country_id = ?", (m["id"],))
+        rows = [dict(r) for r in cur.fetchall()]
+        bad = [r["equipment_key"] for r in rows if r["equipment_key"] not in allowed]
+        if not bad:
+            continue
+        cur.executemany(
+            "DELETE FROM country_assets WHERE country_id = ? AND equipment_key = ?",
+            [(m["id"], k) for k in bad],
+        )
+        purged_rows += len(bad)
+        affected += 1
+        print(f"[militia-purge] {m['name']} ({m['country_key']}): removed {len(bad)} state-grade items")
+
+    conn.commit()
+    conn.close()
+
+    set_setting("militia_state_equipment_purged_v1", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    if purged_rows:
+        print(f"[militia-purge] done: {purged_rows} rows removed from {affected} militia group(s).")
+
+
 def seed_country_assets(country_id: int, country_key: str):
     conn = get_connection()
     cur = conn.cursor()
 
-    catalog = config.COUNTRY_EQUIPMENT_CATALOG.get(country_key, config.DEFAULT_COUNTRY_EQUIPMENT)
+    catalog = get_equipment_catalog_for(country_key)
 
     for item in catalog:
         producible_val = 1 if item.get("producible", True) else 0
@@ -5706,11 +5780,7 @@ def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = 
     country_id = cur.lastrowid
 
     # ثبت تسلیحات و ادوات اختصاصی شبه‌نظامی (از کاتالوگ گروه آماده یا کاتالوگ پیش‌فرض)
-    militia_cats = getattr(config, "MILITIA_EQUIPMENT_CATALOG", {})
-    if faction_key and faction_key in militia_cats:
-        catalog = militia_cats[faction_key]
-    else:
-        catalog = getattr(config, "DEFAULT_MILITIA_EQUIPMENT", config.DEFAULT_COUNTRY_EQUIPMENT)
+    catalog = get_equipment_catalog_for(c_key)
 
     for item in catalog:
         producible_val = 1 if item.get("producible", True) else 0

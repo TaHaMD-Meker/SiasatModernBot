@@ -2290,19 +2290,48 @@ DEFAULT_COUNTRY_EQUIPMENT = [
 ]
 
 DEFAULT_MILITIA_EQUIPMENT = [
-    {"key": "militia_technical", "name": "تویوتا تکنیکال مجهز به دوشکا و زو-۲۳", "category": "Ground Forces", "price": 150_000, "initial": 600, "maint": 200, "producible": True},
-    {"key": "militia_apc", "name": "نفربر زرهی چرخ‌دار BTR/کبرا", "category": "Ground Forces", "price": 400_000, "initial": 180, "maint": 800, "producible": True},
-    {"key": "militia_tank", "name": "تانک رزمی تی-۶۲ / تی-۷۲ بهینه‌شده", "category": "Ground Forces", "price": 800_000, "initial": 60, "maint": 1_500, "producible": True},
-    {"key": "militia_atgm", "name": "تیم موشک ضدزره کورنت / توفان", "category": "Ground Forces", "price": 80_000, "initial": 350, "maint": 100, "producible": True},
-    {"key": "militia_grad", "name": "راکت‌انداز چندگانه گراد ۱۲۲ میلی‌متری", "category": "Artillery", "price": 450_000, "initial": 80, "maint": 1_000, "producible": True},
-    {"key": "militia_mortar", "name": "خمپاره‌انداز سنگین ۱۲۰ میلی‌متری", "category": "Artillery", "price": 60_000, "initial": 250, "maint": 80, "producible": True},
-    {"key": "militia_howitzer", "name": "توپخانه صحرایی D-30", "category": "Artillery", "price": 300_000, "initial": 50, "maint": 600, "producible": True},
-    {"key": "militia_suicide_uav", "name": "پهپاد انتحاری نقطه‌زن ابابیل/شاهد", "category": "UAV", "price": 120_000, "initial": 200, "maint": 300, "producible": True},
-    {"key": "militia_recon_uav", "name": "پهپاد شناسایی تاکتیکی مهاجر/یاسر", "category": "UAV", "price": 80_000, "initial": 100, "maint": 200, "producible": True},
-    {"key": "militia_manpads", "name": "سامانه دوش‌پرتاب میثاق / ایگلا", "category": "Air Defense", "price": 100_000, "initial": 200, "maint": 150, "producible": True},
-    {"key": "militia_zu23", "name": "آتشبار پدافند هوایی زو-۲۳ دولول", "category": "Air Defense", "price": 150_000, "initial": 120, "maint": 250, "producible": True},
-    {"key": "militia_fast_boat", "name": "قایق تندرو موشک‌انداز و راکت‌انداز", "category": "Navy", "price": 350_000, "initial": 40, "maint": 600, "producible": True},
-    {"key": "militia_ballistic", "name": "موشک بالستیک تاکتیکی کوتاه‌برد فاتح/بدر", "category": "Missiles", "price": 600_000, "initial": 35, "maint": 1_000, "producible": True},
+    # ==== سلاح سبک و پیاده‌نظام (ستون فقرات هر گروه شبه‌نظامی) ====
+    {"key": "militia_rifle", "name": "تفنگ تهاجمی کلاشنیکف AK-47/AKM", "category": "Ground Forces", "price": 800, "initial": 12000, "maint": 2, "producible": True},
+    {"key": "militia_pkm", "name": "تیربار سبک PKM / RPK", "category": "Ground Forces", "price": 4_000, "initial": 1500, "maint": 10, "producible": True},
+    {"key": "militia_dshk", "name": "تیربار سنگین دوشکا DShK 12.7", "category": "Ground Forces", "price": 12_000, "initial": 600, "maint": 25, "producible": True},
+    {"key": "militia_rpg7", "name": "راکت‌انداز دوش‌پرتاب RPG-7", "category": "Ground Forces", "price": 1_500, "initial": 2500, "maint": 5, "producible": True},
+    {"key": "militia_sniper", "name": "تفنگ تک‌تیرانداز SVD دراگانوف", "category": "Ground Forces", "price": 6_000, "initial": 300, "maint": 15, "producible": True},
+    {"key": "militia_recoilless", "name": "توپ بدون‌عقب‌نشینی SPG-9 / B-10", "category": "Ground Forces", "price": 20_000, "initial": 150, "maint": 50, "producible": True},
+
+    # ==== خودرو و زره ====
+    {"key": "militia_technical", "name": "خودرو تکنیکال پیکاپ مسلح به تیربار سنگین", "category": "Ground Forces", "price": 60_000, "initial": 500, "maint": 150, "producible": True},
+    {"key": "militia_mrap", "name": "خودرو زرهی سبک ضدکمین (غنیمتی)", "category": "Ground Forces", "price": 250_000, "initial": 60, "maint": 600, "producible": True},
+    {"key": "militia_apc", "name": "نفربر زرهی چرخ‌دار BTR-60/70 فرسوده", "category": "Ground Forces", "price": 300_000, "initial": 80, "maint": 800, "producible": False},
+    {"key": "militia_tank", "name": "تانک قدیمی T-55 / T-62 غنیمتی", "category": "Ground Forces", "price": 500_000, "initial": 25, "maint": 2_000, "producible": False},
+
+    # ==== توپخانه و راکت ====
+    {"key": "militia_mortar_light", "name": "خمپاره‌انداز سبک ۶۰ و ۸۲ میلی‌متری", "category": "Artillery", "price": 15_000, "initial": 400, "maint": 40, "producible": True},
+    {"key": "militia_mortar", "name": "خمپاره‌انداز سنگین ۱۲۰ میلی‌متری", "category": "Artillery", "price": 60_000, "initial": 120, "maint": 100, "producible": True},
+    {"key": "militia_rocket_107", "name": "راکت‌انداز ۱۰۷ میلی‌متری تک‌لوله و کاتیوشا", "category": "Artillery", "price": 35_000, "initial": 300, "maint": 80, "producible": True},
+    {"key": "militia_grad", "name": "راکت‌انداز چندلوله گراد ۱۲۲ میلی‌متری", "category": "Artillery", "price": 400_000, "initial": 40, "maint": 1_000, "producible": False},
+    {"key": "militia_howitzer", "name": "توپ صحرایی کششی D-30 ۱۲۲ میلی‌متری", "category": "Artillery", "price": 250_000, "initial": 30, "maint": 600, "producible": False},
+
+    # ==== ضدزره ====
+    {"key": "militia_atgm", "name": "موشک ضدزره سیمی 9M14 مالیوتکا / کنکورس", "category": "Ground Forces", "price": 25_000, "initial": 200, "maint": 60, "producible": False},
+    {"key": "militia_atgm_modern", "name": "موشک ضدزره مدرن کورنت (قاچاق)", "category": "Ground Forces", "price": 90_000, "initial": 60, "maint": 200, "producible": False},
+
+    # ==== پهپاد (سلاح جدید گروه‌های غیردولتی) ====
+    {"key": "militia_quadcopter", "name": "کوادکوپتر تجاری با نارنجک‌انداز دست‌ساز", "category": "UAV", "price": 3_000, "initial": 500, "maint": 10, "producible": True},
+    {"key": "militia_fpv", "name": "پهپاد انتحاری FPV دست‌ساز", "category": "UAV", "price": 2_000, "initial": 800, "maint": 5, "producible": True},
+    {"key": "militia_recon_uav", "name": "پهپاد شناسایی بال‌ثابت سبک", "category": "UAV", "price": 40_000, "initial": 60, "maint": 150, "producible": True},
+
+    # ==== پدافند هوایی ====
+    {"key": "militia_zu23", "name": "توپ پدافندی زو-۲۳ دولول (زمینی و سوارشده)", "category": "Air Defense", "price": 80_000, "initial": 100, "maint": 200, "producible": True},
+    {"key": "militia_manpads", "name": "موشک دوش‌پرتاب پدافندی SA-7 / ایگلا (بازار سیاه)", "category": "Air Defense", "price": 120_000, "initial": 80, "maint": 300, "producible": False},
+
+    # ==== دریایی و نامتقارن ====
+    {"key": "militia_fast_boat", "name": "قایق تندرو مسلح به راکت و تیربار", "category": "Navy", "price": 120_000, "initial": 40, "maint": 400, "producible": True},
+    {"key": "militia_naval_mine", "name": "مین دریایی شناور و کارگذاری ساحلی", "category": "Navy", "price": 30_000, "initial": 60, "maint": 80, "producible": True},
+
+    # ==== جنگ نامنظم ====
+    {"key": "militia_ied", "name": "بمب کنارجاده‌ای و ماده منفجره دست‌ساز (IED)", "category": "Ground Forces", "price": 1_000, "initial": 1500, "maint": 3, "producible": True},
+    {"key": "militia_landmine", "name": "مین ضدنفر و ضدتانک", "category": "Ground Forces", "price": 500, "initial": 3000, "maint": 1, "producible": True},
+    {"key": "militia_tunnel", "name": "شبکه تونل و پناهگاه زیرزمینی", "category": "Ground Forces", "price": 200_000, "initial": 20, "maint": 500, "producible": True},
 ]
 
 # ===== فروشگاه: ساختمان‌ها =====
