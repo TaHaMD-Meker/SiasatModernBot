@@ -311,6 +311,19 @@ class TestParser:
 📌 توضیح: خسارت 800 میلیون دلاری به بازار جهانی وارد شد."""
         assert parse_loss_report_text(text)["costs"] == {"money": 2_500_000, "oil": 12_000}
 
+    def test_commander_title_is_not_a_strategic_resource(self):
+        """رگرسیون: «مدیر سازمان اطلاعات» نباید با «طلا» داخل «اطلاعات» تطبیق بخورد."""
+        from handlers.losses import match_strategic_resource
+        for title in ("مدیر سازمان اطلاعات و امنیت ملی", "رئیس سرویس اطلاعات",
+                      "فرمانده نیروی هوایی و پدافند", "رئیس ستاد کل نیروهای مسلح"):
+            assert match_strategic_resource(title) is None, title
+
+    def test_gold_still_matches(self):
+        """طلا باید همچنان درست تطبیق بخورد."""
+        from handlers.losses import match_strategic_resource
+        for name in ("شمش طلا", "ذخایر طلا", "طلا"):
+            assert (match_strategic_resource(name) or {}).get("special") == "gold", name
+
     def test_reversed_human_casualty_order(self):
         """رگرسیون: «۳۲۰ نفر کشته نظامی» باید درست خوانده شود."""
         from handlers.losses import parse_loss_report_text

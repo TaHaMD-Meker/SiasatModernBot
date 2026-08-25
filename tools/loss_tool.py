@@ -122,10 +122,25 @@ def cmd_check(args):
     db, c = _boot(args.country_key)
     cid = c["id"]
 
+    # شبیه‌سازی مالکیت ساختمان‌ها (--own oil_refinery:3)
+    for spec in getattr(args, "own", []) or []:
+        key, _, qty = spec.partition(":")
+        key, qty = key.strip(), int(qty or 1)
+        if key not in config.ALL_SHOP_ITEMS:
+            sys.exit(f"❌ کلید ساختمان «{key}» در فروشگاه نیست.")
+        _conn = db.get_connection()
+        _conn.execute(
+            "INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
+            " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = excluded.quantity",
+            (cid, key, qty))
+        _conn.commit()
+        _conn.close()
+        print(f"🏗️  شبیه‌سازی مالکیت: {config.ALL_SHOP_ITEMS[key].get('name', key)} × {qty}")
+
     from handlers.losses import (parse_loss_report_text, match_country_by_name,
                                  match_asset_by_name, match_strategic_resource,
                                  match_building, classify_subcat, build_loss_report_text,
-                                 _UNIT_BY_CATEGORY, _split_emoji)
+                                 _UNIT_BY_CATEGORY, _split_emoji, _clean_str)
 
     text = open(args.report, encoding="utf-8").read()
     p = parse_loss_report_text(text)
@@ -172,10 +187,10 @@ def cmd_check(args):
 
         # تطبیق با سران و فرماندهان نظامی
         cmd_list = db.get_country_commanders(cid)
-        clean_n = clean_str(name)
+        clean_n = _clean_str(name)
         cmd_match = None
         for cm in cmd_list:
-            c_t = clean_str(cm["title"])
+            c_t = _clean_str(cm["title"])
             if clean_n in c_t or c_t in clean_n or (len(clean_n) >= 4 and any(w in clean_n and w in c_t for w in ("هوافضا", "موساد", "ستاد", "اطلاعات", "هوایی", "فرمانده"))):
                 if cm["status"] == "active":
                     cmd_match = cm
@@ -310,6 +325,9 @@ def main():
     pc.add_argument("country_key")
     pc.add_argument("report")
     pc.add_argument("--render", action="store_true", help="نمایش فاکتور نهایی")
+    pc.add_argument("--own", metavar="KEY:QTY", action="append", default=[],
+                    help="شبیه‌سازی مالکیت ساختمان، مثلاً --own oil_refinery:3 "
+                         "(چون کشورهای تازه هیچ ساختمانی ندارند و زیرساخت تطبیق نمی‌خورد)")
 
     pe = sub.add_parser("export", help="انبار به‌صورت آماده‌ی پیست در پرامپت هوش مصنوعی")
     pe.add_argument("country_key")

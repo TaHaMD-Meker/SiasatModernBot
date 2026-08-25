@@ -266,8 +266,13 @@ def match_strategic_resource(name: str):
         return {"key": "__microchips__", "name": "تراشه و میکروچیپ", "special": "microchips",
                 "category": "Strategic", "subcat": "فناوری و قطعات", "emoji": "💻", "unit": "عدد"}
 
-    # طلا
-    if any(w in q for w in ("شمش طلا", "طلا")):
+    # عناوین انسانی (فرمانده/سران) هرگز منبع راهبردی نیستند.
+    # مثلاً «مدیر سازمان اطلاعات» نباید با «طلا» داخل «اطلاعات» تطبیق بخورد.
+    if re.search(r"فرمانده|رئیس|ریاست|مدیر|سرتیپ|سرلشکر|امیر|ژنرال|وزیر|سخنگو|معاون", q):
+        return None
+
+    # طلا — با مرز واژه، تا زیررشته‌ی کلماتی مثل «اطلاعات» گرفته نشود
+    if re.search(r"(?:^|\s)(?:شمش\s+)?طلا(?:\s|$)", q) or "شمش طلا" in q:
         return {"key": "__gold__", "name": "شمش طلا", "special": "gold",
                 "category": "Strategic", "subcat": "ذخایر مالی", "emoji": "🪙", "unit": "شمش"}
 
