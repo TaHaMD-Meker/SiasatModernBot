@@ -166,14 +166,48 @@ async def process_official_statement_input(update: Update, context: ContextTypes
             await update.message.reply_text("❌ اعتبار بیانیه طلایی نداری!", reply_markup=get_main_keyboard(update.effective_user.id))
             return
     
-    # Check photo attachment
-    if not update.message.photo:
+    # Check attachment - photo required, video allowed only with media_center
+    has_photo = bool(update.message.photo)
+    has_video = bool(update.message.video or update.message.animation or update.message.video_note)
+
+    if not has_photo and not has_video:
         await update.message.reply_text(
-            "⚠️ *ثبت بیانیه انجام نشد:*\n\nارسال *پوستر / تصویر رسمی* الزامی است! لطفاً بیانیه خود را به‌صورت عکس همراه با متن زیرنویس (Caption) ارسال فرمایید.",
+            "⚠️ *ثبت بیانیه انجام نشد:*\n\nارسال *پوستر / تصویر رسمی* الزامی است! لطفاً بیانیه خود را به‌صورت عکس همراه با متن زیرنویس (Caption) ارسال فرمایید.\n"
+            "🎬 برای ارسال فیلم، باید **مرکز رسانه و پخش ملی** رو از فروشگاه (/shop) بخری.",
             parse_mode="Markdown",
             reply_markup=get_main_keyboard(update.effective_user.id)
         )
         return
+
+    if has_video and not has_photo:
+        # بررسی داشتن مرکز رسانه
+        try:
+            eq = db.get_equipment(country["id"])
+            has_media = eq.get("media_center", 0) > 0
+        except Exception:
+            has_media = False
+        if not has_media:
+            await update.message.reply_text(
+                "🎬 **برای بیانیه ویدیویی نیاز به مرکز رسانه داری!**\n\n"
+                "بدون مرکز رسانه فقط عکس مجازه. از بخش فروشگاه → ساختمان‌ها → **🎬 مرکز رسانه و پخش ملی** (۲۵M دلار + ۵k آهن + ۱۰۰ چیپ) بخر تا بتونی فیلم هم بفرستی.\n"
+                "بعد از خرید، همین فیلم رو دوباره بفرست.",
+                parse_mode="Markdown",
+                reply_markup=get_main_keyboard(update.effective_user.id)
+            )
+            return
+        # بررسی کش هاست - اگه فایل خیلی بزرگ باشه
+        try:
+            video_obj = update.message.video or update.message.animation
+            file_size = video_obj.file_size if video_obj else 0
+            # سقف ۵۰ مگ برای جلوگیری از پر شدن کش هاست
+            if file_size and file_size > 50_000_000:
+                await update.message.reply_text(
+                    "⛔ فیلم خیلی حجیمه! سقف مجاز ۵۰ مگابایته تا کش هاست پر نشه. لطفا نسخه کم‌حجم‌تر بفرست.",
+                    parse_mode="Markdown"
+                )
+                return
+        except Exception:
+            pass
 
     caption = update.message.caption.strip() if update.message.caption else ""
     lines = [l.strip() for l in caption.splitlines() if l.strip()]
@@ -186,7 +220,11 @@ async def process_official_statement_input(update: Update, context: ContextTypes
         )
         return
 
-    photo_file_id = update.message.photo[-1].file_id
+    photo_file_id = update.message.photo[-1].file_id if has_photo else None
+    video_file_id = None
+    if has_video:
+        v = update.message.video or update.message.animation or update.message.video_note
+        video_file_id = v.file_id if v else None
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
     # ارسال مستقیم متن بیانیه بازیکن بدون قالب اضافی + حفظ فرمت‌بندی خود بازیکن
@@ -209,31 +247,46 @@ async def process_official_statement_input(update: Update, context: ContextTypes
         channel_card_md = base_html
         channel_card_plain = base_plain
 
-    # Multi-tier resilient post to Channel
+    # Multi-tier resilient post to Channel - با پشتیبانی فیلم
     posted_to_channel = False
     channel_err_str = ""
     channel_id = config.get_channel_id()
 
     if channel_id:
         try:
-            await context.bot.send_photo(
-                chat_id=channel_id,
-                photo=photo_file_id,
-                caption=channel_card_md,
-                parse_mode="HTML"
-            )
-            posted_to_channel = True
-        except Exception as e1:
-            print(f"Channel statement send_photo Markdown error: {e1}")
-            try:
+            if video_file_id:
+                await context.bot.send_video(
+                    chat_id=channel_id,
+                    video=video_file_id,
+                    caption=channel_card_md,
+                    parse_mode="HTML"
+                )
+            else:
                 await context.bot.send_photo(
                     chat_id=channel_id,
                     photo=photo_file_id,
-                    caption=channel_card_plain
+                    caption=channel_card_md,
+                    parse_mode="HTML"
                 )
+            posted_to_channel = True
+        except Exception as e1:
+            print(f"Channel statement send {'video' if video_file_id else 'photo'} Markdown error: {e1}")
+            try:
+                if video_file_id:
+                    await context.bot.send_video(
+                        chat_id=channel_id,
+                        video=video_file_id,
+                        caption=channel_card_plain
+                    )
+                else:
+                    await context.bot.send_photo(
+                        chat_id=channel_id,
+                        photo=photo_file_id,
+                        caption=channel_card_plain
+                    )
                 posted_to_channel = True
             except Exception as e2:
-                print(f"Channel statement send_photo Plain error: {e2}")
+                print(f"Channel statement send {'video' if video_file_id else 'photo'} Plain error: {e2}")
                 channel_err_str = str(e2)
 
     # Confirm to player

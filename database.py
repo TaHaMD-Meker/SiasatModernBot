@@ -5827,26 +5827,7 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
                     if "_3" in item_type:
                         qty = 3
                     cur.execute("UPDATE countries SET pin_credits = COALESCE(pin_credits,0) + ? WHERE id = ?", (qty, c_id))
-                elif item_type == "rename_country":
-                    # نام جدید در custom_payload
-                    try:
-                        payload = json.loads(p.get("custom_payload") or "{}")
-                        new_name = payload.get("new_name") or override_name or "کشور"
-                        new_flag = payload.get("new_flag")
-                    except Exception:
-                        new_name = override_name or "کشور"
-                        new_flag = None
-                    if new_flag:
-                        cur.execute("UPDATE countries SET name = ?, flag = ? WHERE id = ?", (new_name[:40], new_flag[:8], c_id))
-                    else:
-                        cur.execute("UPDATE countries SET name = ? WHERE id = ?", (new_name[:40], c_id))
-                elif item_type == "flag_change":
-                    try:
-                        payload = json.loads(p.get("custom_payload") or "{}")
-                        new_flag = payload.get("new_flag") or payload.get("flag") or "🏳️"
-                    except Exception:
-                        new_flag = "🏳️"
-                    cur.execute("UPDATE countries SET flag = ? WHERE id = ?", (new_flag[:8], c_id))
+                # تغییر نام و پرچم حذف شد - غیر واقعی (درخواست‌های قدیمی نادیده گرفته میشن)
                 cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'cosmetic', ?, 0, ?)",
                     (c_id, f"🎨 {item_type} - خدمات دیده شدن", now_str))
             elif item_type == "militia":
