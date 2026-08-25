@@ -299,44 +299,69 @@ async def dip_blockade_start(query, context, country):
 # ==================== 4. مدیریت روابط و تحریم‌ها ====================
 
 async def dip_relations_menu(query, context, country):
-    countries = db.get_all_countries()
-    other_countries = [c for c in countries if c["id"] != country["id"]]
+    # نمایش انتخاب قاره برای مدیریت اتحاد و تحریم (جلوگیری از لیست ۱۰۰+ کشوری یکجا)
+    text, kb = build_dip_continent_selector("rel", f"🤝 **مدیریت روابط دیپلماتیک و تحریم‌ها — {country['flag']} {country['name']}**")
+    await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
-    lines = [f"🤝 **مدیریت روابط دیپلماتیک و تحریم‌های کشور {country['flag']} {country['name']}**\n"]
+
+def build_dip_rel_continent_keyboard(cont_key: str, current_cid: int):
+    continents = getattr(config, "CONTINENTS", {})
+    cont_info = continents.get(cont_key, {})
+    keys = cont_info.get("keys", [])
+
+    all_countries = db.get_all_countries()
+    c_map = {c["country_key"]: c for c in all_countries if c.get("country_key")}
+
+    lines = [f"{cont_info.get('name', 'قاره')} — **وضعیت روابط**\n━━━━━━━━━━━━━━━━━━\n"]
     keyboard = []
 
-    for c in other_countries:
-        rel = db.get_diplomatic_relation(country["id"], c["id"])
+    for k in keys:
+        if k not in c_map:
+            continue
+        c = c_map[k]
+        if c["id"] == current_cid:
+            continue
+
+        rel = db.get_diplomatic_relation(current_cid, c["id"])
         st = rel.get("status", "normal")
         s_by = rel.get("sanctioned_by", 0)
 
         if st == "allied":
-            status_text = "🟢 **متحد رسمی**"
-            act_btn = InlineKeyboardButton("💔 لغو اتحاد", callback_data=f"dip:rel_act:break:{c['id']}")
+            status_emoji = "🟢"
+            status_text = "متحد"
+            act_btn = InlineKeyboardButton(f"💔 لغو اتحاد {c['name']}", callback_data=f"dip:rel_act:break:{c['id']}")
         elif st == "sanctioned":
-            if s_by == country["id"]:
-                status_text = "🔴 **تحریم‌شده توسط شما**"
-                act_btn = InlineKeyboardButton("🔓 لغو تحریم", callback_data=f"dip:rel_act:unsanction:{c['id']}")
+            status_emoji = "🔴"
+            if s_by == current_cid:
+                status_text = "تحریم توسط شما"
+                act_btn = InlineKeyboardButton(f"🔓 لغو تحریم {c['name']}", callback_data=f"dip:rel_act:unsanction:{c['id']}")
             else:
-                status_text = "🔴 **شما را تحریم کرده**"
-                act_btn = InlineKeyboardButton("🚫 تحریم متقابل", callback_data=f"dip:rel_act:sanction:{c['id']}")
+                status_text = "شما را تحریم کرده"
+                act_btn = InlineKeyboardButton(f"🚫 تحریم متقابل {c['name']}", callback_data=f"dip:rel_act:sanction:{c['id']}")
         else:
-            status_text = "⚪ **روابط عادی**"
-            act_btn = InlineKeyboardButton("🤝 پیشنهاد اتحاد", callback_data=f"dip:rel_act:propose_alliance:{c['id']}")
+            status_emoji = "⚪"
+            status_text = "عادی"
+            act_btn = InlineKeyboardButton(f"🤝 اتحاد با {c['name']}", callback_data=f"dip:rel_act:propose_alliance:{c['id']}")
 
-        sanc_btn = InlineKeyboardButton("🚫 تحریم", callback_data=f"dip:rel_act:sanction:{c['id']}") if st != "sanctioned" else None
+        lines.append(f"{status_emoji} {c['flag']} {c['name']} — {status_text}")
 
-        row = [InlineKeyboardButton(f"{c['flag']} {c['name']} ({status_text})", callback_data="ignore")]
+        # دکمه‌های اقدام
         btn_row = [act_btn]
-        if sanc_btn and st != "allied":
-            btn_row.append(sanc_btn)
-
-        keyboard.append(row)
+        if st != "sanctioned" and st != "allied":
+            btn_row.append(InlineKeyboardButton(f"🚫 تحریم {c['name']}", callback_data=f"dip:rel_act:sanction:{c['id']}"))
+        keyboard.append([InlineKeyboardButton(f"{c['flag']} {c['name']} ({status_text})", callback_data="ignore")])
         keyboard.append(btn_row)
 
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت به منوی دیپلماسی", callback_data="dip:menu")])
+    if len(keyboard) == 0:
+        lines.append("در این قاره کشور بازیکن‌دار دیگری نیست.")
 
-    await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    keyboard.append([
+        InlineKeyboardButton("🔎 جستجو", callback_data="dip:search_start:rel"),
+        InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="dip:back_continents:rel")
+    ])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")])
+
+    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
 
 
 # ==================== Callback Handler دیپلماسی ====================
@@ -358,7 +383,10 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data.startswith("dip:pickcont:"):
         _, _, cont_key, action_type = data.split(":")
-        text, kb = build_dip_continent_countries_keyboard(cont_key, action_type, country["id"])
+        if action_type == "rel":
+            text, kb = build_dip_rel_continent_keyboard(cont_key, country["id"])
+        else:
+            text, kb = build_dip_continent_countries_keyboard(cont_key, action_type, country["id"])
         await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
 
     elif data.startswith("dip:back_continents:"):
@@ -368,7 +396,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             "trade": "📜 **پیشنهاد قرارداد تجاری رسمی**",
             "mil": "🎖️ **انتقال / فروش تسلیحات نظامی**",
             "aid": "🕊️ **ارسال کمک‌های خارجی و انسان‌دوستانه**",
-            "blockade": "⚓ **عملیات محاصره دریایی بین‌المللی**"
+            "blockade": "⚓ **عملیات محاصره دریایی بین‌المللی**",
+            "rel": "🤝 **مدیریت روابط دیپلماتیک و تحریم‌ها**"
         }
         title = action_titles.get(action_type, "دیپلماسی بین‌المللی")
         text, kb = build_dip_continent_selector(action_type, title)
@@ -2079,6 +2108,43 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                 [InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"dip:back_continents:{action_type}")],
             ]
             await update.message.reply_text(text_res, reply_markup=InlineKeyboardMarkup(kb_res), parse_mode="Markdown")
+            return
+
+        if action_type == "rel":
+            # نمایش وضعیت روابط برای نتایج جستجو
+            lines = [f"🔎 نتایج جستجو «{user_query}» — **وضعیت روابط**\n━━━━━━━━━━━━━━━━━━\n"]
+            buttons = []
+            for c in matches:
+                rel = db.get_diplomatic_relation(country["id"], c["id"])
+                st = rel.get("status", "normal")
+                s_by = rel.get("sanctioned_by", 0)
+                if st == "allied":
+                    status_text = "🟢 متحد"
+                    act_btn = InlineKeyboardButton(f"💔 لغو اتحاد {c['name']}", callback_data=f"dip:rel_act:break:{c['id']}")
+                elif st == "sanctioned":
+                    status_text = "🔴 تحریم"
+                    if s_by == country["id"]:
+                        act_btn = InlineKeyboardButton(f"🔓 لغو تحریم {c['name']}", callback_data=f"dip:rel_act:unsanction:{c['id']}")
+                    else:
+                        act_btn = InlineKeyboardButton(f"🚫 تحریم متقابل {c['name']}", callback_data=f"dip:rel_act:sanction:{c['id']}")
+                else:
+                    status_text = "⚪ عادی"
+                    act_btn = InlineKeyboardButton(f"🤝 اتحاد {c['name']}", callback_data=f"dip:rel_act:propose_alliance:{c['id']}")
+                lines.append(f"{c['flag']} {c['name']} — {status_text}")
+                buttons.append([InlineKeyboardButton(f"{c['flag']} {c['name']} ({status_text})", callback_data="ignore")])
+                btn_row = [act_btn]
+                if st != "sanctioned" and st != "allied":
+                    btn_row.append(InlineKeyboardButton(f"🚫 تحریم {c['name']}", callback_data=f"dip:rel_act:sanction:{c['id']}"))
+                buttons.append(btn_row)
+            buttons.append([
+                InlineKeyboardButton("🔁 جستجوی مجدد", callback_data=f"dip:search_start:{action_type}"),
+                InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data=f"dip:back_continents:{action_type}")
+            ])
+            await update.message.reply_text(
+                "\n".join(lines),
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode="Markdown"
+            )
             return
 
         cb_prefix_map = {
