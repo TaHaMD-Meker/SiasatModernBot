@@ -301,3 +301,59 @@ class TestCivilConstructionAdjust:
         db.add_equipment(cid, "oil_refinery", 1)
         db.add_equipment(cid, "oil_refinery", -5)
         assert db.get_equipment(cid).get("oil_refinery", 0) == 0
+
+
+class TestCivilZeroAndSetButtons:
+    """دکمه‌های 🗑️ صفر کن و ✏️ تعیین عدد دقیق."""
+
+    def _setup(self, tmp_path, monkeypatch, name):
+        import importlib, config
+        monkeypatch.setattr(config, "DB_PATH", str(tmp_path / name))
+        import database as db
+        importlib.reload(db)
+        db.init_db()
+        return db, db.create_country(777004, "سوئد", "🇸🇪", country_key="sweden")
+
+    def test_zero_button_clears_stock(self, tmp_path, monkeypatch):
+        import asyncio
+        db, cid = self._setup(tmp_path, monkeypatch, "z1.db")
+        import handlers.admin_dossier as ad
+
+        db.add_equipment(cid, "grain_silo", 305)
+
+        class Q:
+            async def answer(self, *a, **k):
+                pass
+
+            async def edit_message_text(self, *a, **k):
+                pass
+
+        ctx = type("C", (), {"user_data": {}})()
+        asyncio.run(ad.handle_dossier_callbacks(Q(), ctx, f"admin:c_civ_zero:{cid}:grain_silo"))
+        assert db.get_equipment(cid).get("grain_silo", 0) == 0
+
+    def test_set_exact_quantity_up_and_down(self, tmp_path, monkeypatch):
+        import asyncio
+        db, cid = self._setup(tmp_path, monkeypatch, "z2.db")
+        import handlers.admin_dossier as ad
+
+        db.add_equipment(cid, "oil_refinery", 1)
+
+        class Msg:
+            async def reply_text(self, *a, **k):
+                pass
+
+        upd = type("U", (), {"message": Msg(), "effective_user": type("X", (), {"id": 1})()})()
+        ctx = type("C", (), {"user_data": {}})()
+        state = {"type": "civ_set_qty", "country_id": cid, "item_key": "oil_refinery"}
+
+        asyncio.run(ad.handle_dossier_inputs(upd, ctx, "civ_set_qty", "۴", state))
+        assert db.get_equipment(cid)["oil_refinery"] == 4
+
+        asyncio.run(ad.handle_dossier_inputs(upd, ctx, "civ_set_qty", "1", state))
+        assert db.get_equipment(cid)["oil_refinery"] == 1
+
+        # ورودی نامعتبر نباید چیزی را تغییر دهد
+        asyncio.run(ad.handle_dossier_inputs(upd, ctx, "civ_set_qty", "سلام", state))
+        asyncio.run(ad.handle_dossier_inputs(upd, ctx, "civ_set_qty", "-5", state))
+        assert db.get_equipment(cid)["oil_refinery"] == 1

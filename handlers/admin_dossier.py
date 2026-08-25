@@ -648,10 +648,22 @@ async def show_country_constructions_menu(query, context, country_id: int):
             item_data = config.ALL_SHOP_ITEMS[item_key]
             lines.append(f"• <b>{item_data['name']}:</b> <code>{qty:,}</code> واحد")
             keyboard.append([
+                InlineKeyboardButton(f"🏗️ {item_data['name']} ({qty:,})", callback_data="ignore"),
+            ])
+            row = [
                 InlineKeyboardButton("➖ ۱", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:-1"),
-                InlineKeyboardButton(f"{item_data['name']} ({qty:,})", callback_data="ignore"),
                 InlineKeyboardButton("➕ ۱", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:1"),
                 InlineKeyboardButton("➕ ۵", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:5"),
+            ]
+            # برای تعدادهای بزرگ، گام‌های درشت هم نشان بده
+            if qty >= 10:
+                row.insert(0, InlineKeyboardButton("➖ ۱۰", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:-10"))
+            if qty >= 100:
+                row.insert(0, InlineKeyboardButton("➖ ۱۰۰", callback_data=f"admin:c_civ_adj:{country_id}:{item_key}:-100"))
+            keyboard.append(row)
+            keyboard.append([
+                InlineKeyboardButton("🗑️ صفر کن", callback_data=f"admin:c_civ_zero:{country_id}:{item_key}"),
+                InlineKeyboardButton("✏️ تعیین عدد دقیق", callback_data=f"admin:c_civ_set:{country_id}:{item_key}"),
             ])
 
     if not has_any:
@@ -1381,6 +1393,39 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         await show_country_constructions_menu(query, context, cid)
         return True
 
+    elif data.startswith("admin:c_civ_zero:"):
+        parts = data.split(":")
+        cid = int(parts[2])
+        item_key = parts[3]
+        curr_qty = db.get_equipment(cid).get(item_key, 0)
+        if curr_qty > 0:
+            db.add_equipment(cid, item_key, -curr_qty)
+        item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
+        await query.answer(
+            f"🗑️ {item_data.get('name', item_key)} صفر شد (قبلاً {curr_qty:,} واحد).",
+            show_alert=True,
+        )
+        await show_country_constructions_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_civ_set:"):
+        parts = data.split(":")
+        cid = int(parts[2])
+        item_key = parts[3]
+        curr_qty = db.get_equipment(cid).get(item_key, 0)
+        item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
+        context.user_data["admin_awaiting_input"] = {
+            "type": "civ_set_qty", "country_id": cid, "item_key": item_key
+        }
+        await query.edit_message_text(
+            f"✏️ <b>تعیین عدد دقیق — {html.escape(item_data.get('name', item_key))}</b>\n\n"
+            f"تعداد فعلی: <code>{curr_qty:,}</code> واحد\n\n"
+            "لطفاً عدد جدید را ارسال کنید (اعداد فارسی هم قابل قبول است):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c_civ_constructions:{cid}")]]),
+            parse_mode="HTML",
+        )
+        return True
+
     elif data.startswith("admin:c_diplomacy:"):
         cid = int(data.split(":")[2])
         await show_country_diplomacy_menu(query, context, cid)
@@ -1644,6 +1689,30 @@ async def handle_dossier_inputs(update: Update, context: ContextTypes.DEFAULT_TY
             )
         except Exception as e:
             await update.message.reply_text(f"❌ خطا در اعطای عنوان تشریفاتی: {e}")
+        return True
+
+    elif input_type == "civ_set_qty":
+        c_id = input_state["country_id"]
+        item_key = input_state.get("item_key", "")
+        item_data = config.ALL_SHOP_ITEMS.get(item_key, {})
+        label = item_data.get("name", item_key)
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏗️ بازگشت به ساخت‌وسازها", callback_data=f"admin:c_civ_constructions:{c_id}")]])
+        try:
+            clean = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١۲٣٤٥٦٧٨٩", "01234567890123456789")).replace(",", "").replace("،", "").strip()
+            new_qty = int(clean)
+            if new_qty < 0:
+                await update.message.reply_text("❌ تعداد نمی‌تواند منفی باشد.", reply_markup=kb)
+                return True
+            curr_qty = db.get_equipment(c_id).get(item_key, 0)
+            db.add_equipment(c_id, item_key, new_qty - curr_qty)
+            await update.message.reply_text(
+                f"✅ تعداد «{label}» از {curr_qty:,} به {new_qty:,} واحد تغییر یافت.",
+                reply_markup=kb,
+            )
+        except ValueError:
+            await update.message.reply_text("❌ لطفاً فقط عدد ارسال کنید.", reply_markup=kb)
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا در تعیین تعداد: {e}", reply_markup=kb)
         return True
 
     elif input_type == "add_commander_title":
