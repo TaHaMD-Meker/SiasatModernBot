@@ -629,10 +629,17 @@ async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
         ok, msg = db.deploy_to_base(d["base_id"], d["key"], val)
         context.user_data["mv_input"] = None
         if not ok:
-            await update.message.reply_text(f"⛔ {msg}")
+            await update.message.reply_text(f"⛔ {msg}", reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به پایگاه", callback_data=f"mv:base:{d['base_id']}")]]))
             return True
         b = db.get_base(d["base_id"])
-        await update.message.reply_text(f"✅ تجهیزات به پایگاه «{b['name']}» منتقل شد.")
+        await update.message.reply_text(
+            f"✅ تجهیزات به پایگاه «{b['name']}» منتقل شد.\n\n" + _base_info_text(b),
+            reply_markup=_kb([
+                [InlineKeyboardButton("📍 پایگاه‌های من", callback_data="mv:mybases")],
+                [InlineKeyboardButton("🎯 بازگشت به ستاد توسعه", callback_data="mv:menu")],
+            ]),
+            parse_mode="Markdown"
+        )
         return True
 
     return False

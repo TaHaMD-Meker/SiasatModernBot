@@ -143,7 +143,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
 
         keyboard = [
             [InlineKeyboardButton("✅ آغاز و اجرای مانور رزمی", callback_data="op:do_military_drill")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]
+            [InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]
         ]
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -161,7 +161,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         if daily_drill_count >= max_drills:
             await query.edit_message_text(
                 "⛔ **سقف روزانه مانور رزمی پر شده است!**\n\nشما امروز حداکثر مانورهای نظامی مجاز خود را برگزار کرده‌اید. جهت استراحت یگان‌ها، مانور بعدی فردا امکان‌پذیر است.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]]),
                 parse_mode="Markdown"
             )
             return
@@ -169,7 +169,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         if country.get("treasury", 0) < DRILL_MONEY_COST:
             await query.edit_message_text(
                 f"❌ **عدم تکافوی منابع مالی:**\n\nبرای برگزاری مانور نیاز به {format_money(DRILL_MONEY_COST)} دارید. خزانه شما کافی نمی‌باشد.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]]),
                 parse_mode="Markdown"
             )
             return
@@ -177,7 +177,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         if country.get("oil_reserves", 0) < DRILL_OIL_COST:
             await query.edit_message_text(
                 f"❌ **عدم تکافوی سوخت:**\n\nبرای سوخت‌رسانی به یگان‌های زرهی و هوایی مانور نیاز به {format_oil(DRILL_OIL_COST)} نفت دارید.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]]),
                 parse_mode="Markdown"
             )
             return
@@ -219,7 +219,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             f"• **سوخت مصرفی:** {format_oil(DRILL_OIL_COST)}\n"
             f"• **مانورهای باقی‌مانده امروز:** `{rem_str}`\n\n"
             "📢 خبر موفقیت مانور نظامی در کانال رسمی بازی منتشر گردید.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به منوی عملیات", callback_data="op:menu")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]]),
             parse_mode="Markdown"
         )
         try:
