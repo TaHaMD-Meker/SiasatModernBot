@@ -398,13 +398,16 @@ class TestCivEffectsRecalc:
         db_temp.recalc_country_civ_effects(cid)
         assert db_temp.get_country_by_id(cid)["grain_daily"] == base + add * 3
 
-    def test_silo_does_not_change_grain_daily(self, db_temp):
-        """سیلو انبار است نه مزرعه: نباید تولید روزانه غلات را زیاد کند."""
+    def test_silo_updates_grain_daily(self, db_temp):
+        """سیلو با کاهش ضایعات پس از برداشت، عرضهٔ روزانه را بالا می‌برد
+        (جایگزین ذخیرهٔ فوری ۵۰٬۰۰۰ تنی که غله را یک‌باره اسپان می‌کرد)."""
         cid = _new_country(db_temp)
         base = db_temp.get_country_by_id(cid)["grain_daily"]
+        add = config.ALL_SHOP_ITEMS["grain_silo"]["grain_daily_add"]
+
         db_temp.add_equipment(cid, "grain_silo", 5)
         db_temp.recalc_country_civ_effects(cid)
-        assert db_temp.get_country_by_id(cid)["grain_daily"] == base
+        assert db_temp.get_country_by_id(cid)["grain_daily"] == base + add * 5
 
     def test_reserves_are_never_touched(self, db_temp):
         """ذخایر انبار دارایی بازیکن‌اند و بازمحاسبه نباید ریست‌شان کند."""
@@ -418,52 +421,61 @@ class TestCivEffectsRecalc:
         assert c["oil_reserves"] == 7_654_321
 
 
-# ==================== پاداش یک‌بارهٔ انبار (سیلوی غلات) ====================
+# ==================== سیلوی غلات: تولید روزانه به‌جای ذخیرهٔ فوری ====================
 
-class TestOneTimeStockBonus:
-    """باگ: سیلوی غلات دو اثر دارد — درآمد روزانه و ۵۰٬۰۰۰ تن ذخیرهٔ فوری.
-    پاداش ذخیره فقط در buy_item_transaction اعمال می‌شد، پس وقتی ادمین از پنل
-    سیلو می‌داد بازیکن هیچ غله‌ای نمی‌گرفت. جدا از آن، مایگریشن سقف‌گذاری
-    غلات پاداش را با اولین ری‌استارت پاک می‌کرد."""
+class TestSiloDailyGrain:
+    """سیلو انبار است، نه مزرعه: نباید هنگام ساخت غله «اسپان» کند.
+    به‌جای grain_bonus یک‌باره، حالا grain_daily_add دارد."""
 
-    def test_admin_grant_gives_grain_bonus(self, db_temp):
+    def test_silo_has_no_instant_bonus(self):
+        item = config.ALL_SHOP_ITEMS["grain_silo"]
+        assert not item.get("grain_bonus"), "سیلو نباید ذخیرهٔ فوری بدهد"
+        assert item.get("grain_daily_add", 0) > 0
+
+    def test_no_item_grants_instant_grain(self):
+        offenders = [k for k, v in config.ALL_SHOP_ITEMS.items() if v.get("grain_bonus")]
+        assert offenders == [], f"آیتم‌های دارای ذخیرهٔ فوری: {offenders}"
+
+    def test_buying_silo_does_not_spawn_grain(self, db_temp):
         cid = _new_country(db_temp)
-        before = db_temp.get_country_by_id(cid)["grain"]
-        bonus = config.ALL_SHOP_ITEMS["grain_silo"]["grain_bonus"]
+        db_temp.update_country_field(cid, "treasury", 300_000_000)
+        db_temp.update_country_field(cid, "oil_reserves", 80_000_000)
+        before = db_temp.get_country_by_id(cid)
+        db_temp.buy_item_transaction(cid, "grain_silo", 1, 15_000_000, "سیلو")
+        after = db_temp.get_country_by_id(cid)
 
-        db_temp.add_equipment(cid, "grain_silo", 1)
-        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", 1)
-        assert db_temp.get_country_by_id(cid)["grain"] == before + bonus
+        rate = config.ALL_SHOP_ITEMS["grain_silo"]["grain_daily_add"]
+        assert after["grain"] == before["grain"], "ذخیرهٔ انبار نباید یک‌باره بپرد"
+        assert after["grain_daily"] == before["grain_daily"] + rate
 
-    def test_removing_silo_takes_bonus_back(self, db_temp):
+    def test_admin_grant_gives_daily_grain(self, db_temp):
         cid = _new_country(db_temp)
-        before = db_temp.get_country_by_id(cid)["grain"]
+        before = db_temp.get_country_by_id(cid)
+        rate = config.ALL_SHOP_ITEMS["grain_silo"]["grain_daily_add"]
+
+        db_temp.add_equipment(cid, "grain_silo", 2)
+        db_temp.recalc_country_civ_effects(cid)
+        after = db_temp.get_country_by_id(cid)
+
+        assert after["grain"] == before["grain"]
+        assert after["grain_daily"] == before["grain_daily"] + rate * 2
+
+    def test_removing_silo_removes_daily_grain(self, db_temp):
+        cid = _new_country(db_temp)
+        base = db_temp.get_country_by_id(cid)["grain_daily"]
         db_temp.add_equipment(cid, "grain_silo", 3)
-        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", 3)
+        db_temp.recalc_country_civ_effects(cid)
         db_temp.add_equipment(cid, "grain_silo", -3)
-        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", -3)
-        assert db_temp.get_country_by_id(cid)["grain"] == before
+        db_temp.recalc_country_civ_effects(cid)
+        assert db_temp.get_country_by_id(cid)["grain_daily"] == base
 
-    def test_grain_never_goes_negative(self, db_temp):
-        cid = _new_country(db_temp)
-        db_temp.update_country_field(cid, "grain", 1_000)
-        db_temp.apply_one_time_stock_bonus(cid, "grain_silo", -5)
-        assert db_temp.get_country_by_id(cid)["grain"] == 0
-
-    def test_migration_does_not_wipe_silo_grain(self, db_temp):
-        """سقف‌گذاری هفتگی نباید غلهٔ سیلوهای خریداری‌شده را پاک کند."""
+    def test_migration_cap_unaffected_by_silos(self, db_temp):
+        """چون دیگر غله‌ای یک‌باره اضافه نمی‌شود، مایگریشن سقف چیزی را پاک نمی‌کند."""
         cid = _new_country(db_temp)
         db_temp.update_country_field(cid, "treasury", 300_000_000)
         db_temp.update_country_field(cid, "oil_reserves", 80_000_000)
         db_temp.buy_item_transaction(cid, "grain_silo", 1, 15_000_000, "سیلو")
-        after_buy = db_temp.get_country_by_id(cid)["grain"]
-
+        before = db_temp.get_country_by_id(cid)["grain"]
         db_temp.set_setting("grain_scale_fixed_v2", "")
         db_temp.fix_grain_scale_v2()
-        assert db_temp.get_country_by_id(cid)["grain"] == after_buy
-
-    def test_non_bonus_item_is_noop(self, db_temp):
-        cid = _new_country(db_temp)
-        before = db_temp.get_country_by_id(cid)["grain"]
-        assert db_temp.apply_one_time_stock_bonus(cid, "agro_complex", 2) == {}
         assert db_temp.get_country_by_id(cid)["grain"] == before
