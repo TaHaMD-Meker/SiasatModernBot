@@ -211,7 +211,17 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                     )
 
                 if first_of_day and app_res is not None:
-                    report_msg = approval_system.build_daily_country_report_message(db.get_country_by_id(c["id"]), app_res, today)
+                    report_msg = approval_system.build_daily_country_report_message(
+                        db.get_country_by_id(c["id"]),
+                        app_res,
+                        today,
+                        payout={
+                            "net_payment": net_payment,
+                            "tax_part": tax_part,
+                            "daily_part": daily_part,
+                            "maint_part": maint_part,
+                        },
+                    )
                     report_msg += stmt_status_section
                 else:
                     c2 = db.get_country_by_id(c["id"])

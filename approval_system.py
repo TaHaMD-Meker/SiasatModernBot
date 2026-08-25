@@ -282,7 +282,7 @@ def get_approval_status_message(c: dict):
     return "\n".join(lines)
 
 
-def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
+def build_daily_country_report_message(c: dict, app_res: dict, today_str: str, payout: dict | None = None):
     """تولید گزارش روزانه با فاصله‌گذاری مرتب، کسر واقعی هزینه نگهداری و خطوط مجزا."""
     
     flag = c.get("flag", "")
@@ -317,14 +317,26 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str):
     lines.append("━━━━━━━━━━━━━━━━━━\n")
     lines.append("*خلاصه مالی و تغییرات اقتصادی روزانه:*\n")
 
-    lines.append(f"• *درآمد ناخالص روزانه:* +{format_money(gross_income)}/روز (صنعتی: {format_money(daily_income)} | مالیات مردم: +{format_money(tax_income)})\n")
+    lines.append(f"• *ظرفیت درآمد ناخالص روزانه:* +{format_money(gross_income)}/روز (صنعتی: {format_money(daily_income)} | مالیات مردم: +{format_money(tax_income)})\n")
 
     if total_maint > 0:
         disc_str = f" (تخفیف فناوری: {disc_pct}٪)" if disc_pct > 0 else ""
         lines.append(f"• *هزینه نگهداری تجهیزات و ارتش:* -{format_money(total_maint)}/روز{disc_str}\n")
 
     net_sign = "+" if net_income >= 0 else ""
-    lines.append(f"• *خالص واریز روزانه به خزانه:* {net_sign}{format_money(net_income)}/روز (شامل مالیات و کسر ارتش)\n")
+    lines.append(f"• *ظرفیت خالص روزانه (۴ قسط):* {net_sign}{format_money(net_income)}/روز\n")
+
+    if payout:
+        this_pay = int(payout.get("net_payment") or 0)
+        pay_sign = "+" if this_pay >= 0 else ""
+        remaining = max(0, net_income - this_pay) if net_income >= 0 else 0
+        lines.append(
+            f"• *واریز همین نوبت به خزانه:* {pay_sign}{format_money(this_pay)} "
+            f"(۱ از ۴ قسط — صنعتی {format_money(payout.get('daily_part', 0))} + مالیات {format_money(payout.get('tax_part', 0))} − ارتش {format_money(payout.get('maint_part', 0))})\n"
+        )
+        if remaining:
+            lines.append(f"• *باقی‌مانده امروز در ۳ نوبت بعد:* +{format_money(remaining)}\n")
+        lines.append("_واریز در ۴ نوبت ۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰ و ۰۳:۰۰ به وقت ایران انجام می‌شود._\n")
 
     if gold_daily > 0:
         lines.append(f"• *تولید روزانه طلا:* +{gold_daily:,} شمش طلا\n")
