@@ -237,8 +237,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             return
 
         commodity_cost = qty * order["unit_price"]
-        res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
         r_type = order["resource_type"]
 
         sea_lim = config.TRANSPORT_CAPACITY_LIMITS["sea"]["limits"].get(r_type, 500_000)
@@ -289,6 +289,9 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             await query.edit_message_text(f"❌ **خطا در انجام معامله بورس:**\n\n{msg}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             return
 
+        seller = meta.get("seller", {})
+        res_label = meta.get("res_label", "کالا")
+        res_type = meta.get("res_type", order["resource_type"] if 'order' in locals() else "oil")
         try:
             _mok, _mrw = db.complete_daily_mission(country["id"], "trade")
             if _mok:
@@ -303,9 +306,6 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         except Exception:
             pass
         await query.answer("✅ معامله بورس با موفقیت انجام گردید!", show_alert=True)
-
-        seller = meta["seller"]
-        res_label = meta["res_label"]
 
         result_text = (
             f"🎉 **معامله بورس با موفقیت انجام گردید!**\n"
@@ -473,9 +473,9 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             "━━━━━━━━━━━━━━━━━━\n"
         ]
 
-        res_labels = {"oil": "🛢️ نفت خام (بشکه)", "gold": "🪙 طلا (شمش)", "grain": "🌾 غلات (تن)"}
+        res_labels = {"oil": "🛢️ نفت خام (بشکه)", "gold": "🪙 طلا (شمش)", "grain": "🌾 غلات (تن)", "iron_ore": "⛏️ آهن و فولاد (تن)", "microchips": "💻 میکروچیپ (عدد)", "uranium_ore": "☢️ کیک زرد (تن)", "nuclear_fuel": "🧪 سوخت هسته‌ای (ک‌گ)"}
 
-        for r_type in ("oil", "gold", "grain"):
+        for r_type in ("oil", "gold", "grain", "iron_ore", "microchips", "uranium_ore", "nuclear_fuel"):
             st = stats.get(r_type, {})
             label = res_labels[r_type]
             trades = st.get("trade_count", 0)

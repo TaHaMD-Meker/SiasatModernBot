@@ -2436,7 +2436,7 @@ def rebalance_existing_countries_income():
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips, uranium_ore, nuclear_fuel, warheads, enrichment_suspended FROM countries")
+            cur.execute("SELECT id, country_key, oil_reserves, grain, population, microchips, iron_ore, uranium_ore, nuclear_fuel, warheads, enrichment_suspended FROM countries")
             countries = cur.fetchall()
 
             for c in countries:
@@ -2452,6 +2452,8 @@ def rebalance_existing_countries_income():
                 base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 1_000_000))
                 base_oil_res = overrides.get("oil_reserves", config.STARTING_VALUES.get("oil_reserves", 50_000_000))
                 base_grain = overrides.get("grain", config.STARTING_VALUES.get("grain", 35_000))
+                base_iron = overrides.get("iron_ore", config.STARTING_VALUES.get("iron_ore", 10_000))
+                base_iron_daily = overrides.get("iron_ore_daily", config.STARTING_VALUES.get("iron_ore_daily", 500))
                 base_chips = overrides.get("microchips", config.STARTING_VALUES.get("microchips", 1000))
                 base_chips_daily = overrides.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25))
                 base_uranium_ore = overrides.get("uranium_ore", config.STARTING_VALUES.get("uranium_ore", 0))
@@ -2467,6 +2469,7 @@ def rebalance_existing_countries_income():
                 civ_grain_daily = 0
                 civ_gold_daily = 0
                 civ_oil_prod = 0
+                civ_iron_daily = 0
                 civ_chips_daily = 0
                 civ_uranium_ore_daily = 0
                 civ_nuclear_fuel_daily = 0
@@ -2484,6 +2487,8 @@ def rebalance_existing_countries_income():
                     elif i_key == "chip_fab":
                         eff = config.get_chip_fab_effect(c_key)
                         civ_chips_daily += eff.get("chips_daily", 25) * qty
+                    elif i_key == "iron_mine":
+                        civ_iron_daily += item.get("iron_ore_daily_add", 1_000) * qty
                     elif i_key == "uranium_mine":
                         civ_uranium_ore_daily += item.get("uranium_ore_daily_add", 50) * qty
                     elif i_key == "enrichment_facility":
@@ -2500,12 +2505,14 @@ def rebalance_existing_countries_income():
                 new_elec = base_elec + civ_elec
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
+                new_iron_daily = base_iron_daily + civ_iron_daily
                 new_chips_daily = base_chips_daily + civ_chips_daily
                 new_uranium_ore_daily = base_uranium_ore_daily + civ_uranium_ore_daily
                 new_nuclear_fuel_daily = base_nuclear_fuel_daily + civ_nuclear_fuel_daily
 
                 curr_oil_res = c["oil_reserves"] or 0
                 curr_grain = c["grain"] or 0
+                curr_iron = (c["iron_ore"] or 0) if "iron_ore" in c.keys() else 0
                 curr_chips = (c["microchips"] or 0) if "microchips" in c.keys() else 0
                 curr_uranium_ore = (c["uranium_ore"] or 0) if "uranium_ore" in c.keys() else 0
                 curr_nuclear_fuel = (c["nuclear_fuel"] or 0) if "nuclear_fuel" in c.keys() else 0
@@ -2515,6 +2522,7 @@ def rebalance_existing_countries_income():
                 # ذخایر و انبارها دارایی واقعی بازیکن هستند و در ری‌بالانس هرگز نباید ریست یا اوررایت شوند
                 new_oil_res = curr_oil_res
                 new_grain = curr_grain
+                new_iron = curr_iron
                 new_chips = curr_chips
                 # 🧪 چرخه هسته‌ای: ذخایر هرگز از کانفیگ اهداء نمی‌شوند (فقط مقدار فعلی حفظ می‌شود)
                 # و تولید روزانه فقط از تأسیسات خریداری‌شده (معدن اورانیوم / سایت غنی‌سازی) محاسبه می‌شود.
@@ -2538,6 +2546,8 @@ def rebalance_existing_countries_income():
                     oil_production = ?,
                     oil_reserves = ?,
                     grain = ?,
+                    iron_ore = ?,
+                    iron_ore_daily = ?,
                     microchips = ?,
                     microchips_daily = ?,
                     uranium_ore = ?,
@@ -2546,7 +2556,7 @@ def rebalance_existing_countries_income():
                     nuclear_fuel_daily = ?,
                     warheads = ?
                     WHERE id = ?
-                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_chips, new_chips_daily, new_uranium_ore, new_uranium_ore_daily, new_nuclear_fuel, new_nuclear_fuel_daily, new_warheads, c_id))
+                """, (base_tax, new_total_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_oil_res, new_grain, new_iron, new_iron_daily, new_chips, new_chips_daily, new_uranium_ore, new_uranium_ore_daily, new_nuclear_fuel, new_nuclear_fuel_daily, new_warheads, c_id))
     except Exception as e:
         print(f"Error rebalancing country incomes: {e}")
 
@@ -3606,7 +3616,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
 
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
             # Handle Military Asset Transfer
             if off_type == "military_asset":
@@ -3771,7 +3781,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                                 t_cost += st_toll
 
             # بررسی موجودی کالا و هزینه ترانزیت
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col_name = col_map.get(resource_type, "treasury")
 
             donor_money_avail = d_c["treasury"] - (amount if resource_type == "treasury" else 0)
@@ -4730,7 +4740,7 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
             if not orders:
                 return True, 0, {"oil": 0, "gold": 0, "grain": 0, "iron_ore": 0, "countries_affected": 0, "player_ids": []}
 
-            refunded = {"oil": 0, "gold": 0, "grain": 0, "iron_ore": 0, "microchips": 0, "affected_countries": set(), "player_ids": set()}
+            refunded = {"oil": 0, "gold": 0, "grain": 0, "iron_ore": 0, "microchips": 0, "uranium_ore": 0, "nuclear_fuel": 0, "affected_countries": set(), "player_ids": set()}
             resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
             for ord_row in orders:
@@ -4750,10 +4760,13 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
             cur.execute("DELETE FROM market_orders")
 
         summary = {
-            "oil": refunded["oil"],
-            "gold": refunded["gold"],
-            "grain": refunded["grain"],
-            "microchips": refunded["microchips"],
+            "oil": refunded.get("oil", 0),
+            "gold": refunded.get("gold", 0),
+            "grain": refunded.get("grain", 0),
+            "iron_ore": refunded.get("iron_ore", 0),
+            "microchips": refunded.get("microchips", 0),
+            "uranium_ore": refunded.get("uranium_ore", 0),
+            "nuclear_fuel": refunded.get("nuclear_fuel", 0),
             "countries_affected": len(refunded["affected_countries"]),
             "player_ids": list(refunded["player_ids"]),
             "total_orders": len(orders)
@@ -4892,7 +4905,7 @@ def get_market_stats() -> dict:
     cur = conn.cursor()
 
     stats = {}
-    for r_type in ("oil", "gold", "grain", "microchips"):
+    for r_type in ("oil", "gold", "grain", "iron_ore", "microchips", "uranium_ore", "nuclear_fuel"):
         cur.execute("""
             SELECT COUNT(*) as trade_count, SUM(amount) as total_volume, AVG(unit_price) as avg_price, MIN(unit_price) as min_price, MAX(unit_price) as max_price
             FROM market_history
@@ -6351,6 +6364,7 @@ def recalculate_all_countries_income_from_equipment() -> int:
                 base_elec = overrides.get("electricity", config.STARTING_VALUES["electricity"])
                 base_gold_daily = overrides.get("gold_daily", config.STARTING_VALUES["gold_daily"])
                 base_oil_prod = overrides.get("oil_production", config.STARTING_VALUES.get("oil_production", 1_000_000))
+                base_iron_daily = overrides.get("iron_ore_daily", config.STARTING_VALUES.get("iron_ore_daily", 500))
                 base_chips_daily = overrides.get("microchips_daily", config.STARTING_VALUES.get("microchips_daily", 25))
 
                 cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ? AND quantity > 0", (cid,))
@@ -6360,6 +6374,7 @@ def recalculate_all_countries_income_from_equipment() -> int:
                 civ_grain_daily = 0
                 civ_gold_daily = 0
                 civ_oil_prod = 0
+                civ_iron_daily = 0
                 civ_chips_daily = 0
 
                 for eq in eq_rows:
@@ -6375,6 +6390,8 @@ def recalculate_all_countries_income_from_equipment() -> int:
                     elif i_key == "chip_fab":
                         eff = config.get_chip_fab_effect(ckey)
                         civ_chips_daily += eff.get("chips_daily", 25) * qty
+                    elif i_key == "iron_mine":
+                        civ_iron_daily += item.get("iron_ore_daily_add", 1_000) * qty
 
                     civ_income += inc * qty
                     civ_oil_prod += oil_p * qty
@@ -6387,6 +6404,7 @@ def recalculate_all_countries_income_from_equipment() -> int:
                 new_elec = base_elec + civ_elec
                 new_gold_daily = base_gold_daily + civ_gold_daily
                 new_oil_prod = base_oil_prod + civ_oil_prod
+                new_iron_daily = base_iron_daily + civ_iron_daily
                 new_chips_daily = base_chips_daily + civ_chips_daily
 
                 cur.execute("""
@@ -6396,9 +6414,10 @@ def recalculate_all_countries_income_from_equipment() -> int:
                     electricity = MAX(electricity, ?),
                     gold_daily = MAX(gold_daily, ?),
                     oil_production = MAX(oil_production, ?),
+                    iron_ore_daily = MAX(iron_ore_daily, ?),
                     microchips_daily = MAX(microchips_daily, ?)
                     WHERE id = ?
-                """, (new_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_chips_daily, cid))
+                """, (new_daily, new_grain_daily, new_elec, new_gold_daily, new_oil_prod, new_iron_daily, new_chips_daily, cid))
                 count += 1
     except Exception as e:
         logger.warning(f"Error recalculating countries income: {e}")
