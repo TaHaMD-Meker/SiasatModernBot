@@ -874,6 +874,204 @@ async def show_country_statements_menu(query, context, country_id: int):
 
 # ==================== ۱۰. زیرمنوی پرونده مالی، VIP و تراکنش‌ها ====================
 
+# ---------- کاتالوگ آیتم‌های قابل اعطا توسط ادمین ----------
+# هر دسته: (عنوان دسته، [(کلید آیتم، برچسب دکمه), ...])
+# کلیدها دقیقاً همان item_type های PLANS_METADATA و approve_payment_request هستند.
+GRANT_CATEGORIES = {
+    "survival": (
+        "🎁 بسته‌های بقا و لجستیک",
+        [
+            ("survival_small", "🟤 بسته بقا کوچک"),
+            ("survival_medium", "🟠 بسته بقا متوسط"),
+            ("survival_large", "🔴 بسته بقا بزرگ"),
+            ("survival_ultra", "💎 بسته بقا فوق‌سنگین"),
+        ],
+    ),
+    "ticket": (
+        "🎫 بلیط‌های اقدام فوری",
+        [
+            ("ticket_drill", "🎫 ۱ مانور اضافه"),
+            ("ticket_drill_3", "🎫 پک ۳ تایی مانور"),
+            ("ticket_statement", "📝 ۱ بیانیه اضافه"),
+            ("ticket_statement_5", "📝 پک ۵ تایی بیانیه"),
+            ("ticket_contract_3d", "📜 اسلات قرارداد ۳ روزه"),
+            ("ticket_contract_7d", "📜 اسلات قرارداد ۷ روزه"),
+        ],
+    ),
+    "bp": (
+        "⭐️ بتل‌پس و بوسترها",
+        [
+            ("battle_pass", "⭐️ بتل‌پس پرمیوم فصلی"),
+            ("bp_booster_3d", "⚡ بوستر ۲x — ۳ روزه"),
+            ("bp_booster_7d", "⚡ بوستر ۲x — ۷ روزه"),
+            ("bp_booster_30d", "⚡ بوستر ۲x — ۳۰ روزه"),
+        ],
+    ),
+    "visibility": (
+        "📢 خدمات دیده شدن و پرستیژ",
+        [
+            ("golden_stmt_1", "📢 ۱ بیانیه طلایی"),
+            ("golden_stmt_3", "📢 پک ۳ تایی بیانیه طلایی"),
+            ("golden_stmt_10", "📢 پک ۱۰ تایی بیانیه طلایی"),
+            ("pin_1", "📌 ۱ پین گروه ۱۲ ساعته"),
+            ("pin_3", "📌 پک ۳ تایی پین گروه"),
+            ("frame_7d", "🖼️ قاب طلایی ۷ روزه"),
+            ("frame_30d", "🖼️ قاب طلایی ۳۰ روزه"),
+            ("title_7d", "🏷️ عنوان تشریفاتی ۷ روزه"),
+            ("title_30d", "🏷️ عنوان تشریفاتی ۳۰ روزه"),
+        ],
+    ),
+}
+
+# آیتم‌هایی که پیش از اعطا نیاز به دریافت متن دلخواه از ادمین دارند
+GRANT_NEEDS_TEXT = {"title_7d", "title_30d"}
+
+
+def _grant_item_label(item_key: str) -> str:
+    """برچسب فارسی آیتم را از کاتالوگ محلی یا PLANS_METADATA برمی‌گرداند."""
+    for _cat_title, items in GRANT_CATEGORIES.values():
+        for key, label in items:
+            if key == item_key:
+                return label
+    try:
+        from handlers.vip import PLANS_METADATA
+        return PLANS_METADATA.get(item_key, {}).get("title", item_key)
+    except Exception:
+        return item_key
+
+
+def _fmt_until(raw) -> str:
+    """نمایش خوانای تاریخ انقضا؛ اگر گذشته باشد «منقضی» برمی‌گرداند."""
+    if not raw:
+        return ""
+    try:
+        dt = datetime.datetime.fromisoformat(str(raw))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        if dt <= datetime.datetime.now(datetime.timezone.utc):
+            return "منقضی"
+        return str(raw)[:16].replace("T", " ")
+    except Exception:
+        return str(raw)[:16].replace("T", " ")
+
+
+def _format_entitlements_block(c: dict) -> str:
+    """بلوک HTML وضعیت فعلی آیتم‌های خریدنی (بلیط‌ها، بوسترها و خدمات ظاهری)."""
+    rows = []
+
+    drill = c.get("drill_tickets") or 0
+    stmt = c.get("statement_tickets") or 0
+    golden = c.get("golden_stmt_credits") or 0
+    pin = c.get("pin_credits") or 0
+    if drill or stmt or golden or pin:
+        rows.append(
+            f"• <b>بلیط‌ها:</b> مانور <code>{drill}</code> | بیانیه <code>{stmt}</code> | "
+            f"بیانیه طلایی <code>{golden}</code> | پین <code>{pin}</code>"
+        )
+
+    contract = _fmt_until(c.get("contract_boost_until"))
+    if contract:
+        rows.append(f"• <b>بوست اسلات قرارداد:</b> <code>{contract}</code>")
+
+    booster = _fmt_until(c.get("bp_booster_until"))
+    if booster:
+        mult = c.get("bp_booster_mult") or 1
+        rows.append(f"• <b>بوستر بتل‌پس:</b> <code>{mult}x</code> تا <code>{booster}</code>")
+
+    frame = _fmt_until(c.get("golden_frame_until"))
+    if frame:
+        rows.append(f"• <b>قاب طلایی:</b> <code>{frame}</code>")
+
+    title_txt = c.get("custom_title")
+    if title_txt:
+        rows.append(
+            f"• <b>عنوان تشریفاتی:</b> {html.escape(str(title_txt))} "
+            f"(تا <code>{_fmt_until(c.get('title_expires_at')) or 'نامحدود'}</code>)"
+        )
+
+    if not rows:
+        return "🛒 <b>آیتم‌های فعال فروشگاه:</b> <i>موردی فعال نیست.</i>\n"
+    return "🛒 <b>آیتم‌های فعال فروشگاه:</b>\n" + chr(10).join(rows) + "\n"
+
+
+async def _notify_player_of_grant(context, country_id: int, item_label: str):
+    """اطلاع‌رسانی به بازیکن پس از اعطای آیتم توسط ادمین (خطا نباید جریان ادمین را قطع کند)."""
+    try:
+        c = db.get_country_by_id(country_id)
+        if not c or not c.get("player_id"):
+            return
+        await context.bot.send_message(
+            chat_id=c["player_id"],
+            text=(
+                "🎁 <b>هدیه‌ای از سوی مدیریت بازی برای شما فعال شد!</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"📦 <b>آیتم:</b> {html.escape(item_label)}\n\n"
+                "✅ این مورد هم‌اکنون روی کشور شما اعمال شده است."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"Failed to notify player of admin grant: {e}")
+
+
+async def show_country_grant_menu(query, context, country_id: int):
+    """منوی انتخاب دستهٔ آیتم برای اعطای مستقیم توسط ادمین."""
+    c = db.get_country_by_id(country_id)
+    if not c:
+        return
+
+    lines = [
+        f"🛒 <b>اعطای آیتم فروشگاه — {c['flag']} {html.escape(c['name'])}</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "آیتم اعطا شده <b>بدون دریافت وجه</b> و بلافاصله برای کشور فعال می‌شود،",
+        "و با مبلغ صفر و برچسب <code>ADMIN_GRANT</code> در سوابق مالی ثبت می‌گردد.",
+        "",
+        _format_entitlements_block(c),
+        "👇 <b>دسته مورد نظر را انتخاب کنید:</b>",
+    ]
+
+    keyboard = [
+        [InlineKeyboardButton(title, callback_data=f"admin:c_grant_cat:{country_id}:{cat_key}")]
+        for cat_key, (title, _items) in GRANT_CATEGORIES.items()
+    ]
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به پرونده مالی", callback_data=f"admin:c_vip_finance:{country_id}")])
+
+    await query.edit_message_text(chr(10).join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+
+async def show_country_grant_category(query, context, country_id: int, cat_key: str):
+    """فهرست آیتم‌های یک دسته برای اعطا."""
+    c = db.get_country_by_id(country_id)
+    if not c or cat_key not in GRANT_CATEGORIES:
+        return
+
+    cat_title, items = GRANT_CATEGORIES[cat_key]
+    try:
+        from handlers.vip import PLANS_METADATA
+    except Exception:
+        PLANS_METADATA = {}
+
+    lines = [
+        f"{cat_title} — {c['flag']} {html.escape(c['name'])}",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "",
+    ]
+    for key, label in items:
+        price = PLANS_METADATA.get(key, {}).get("price")
+        price_str = f" — ارزش <code>{price:,}</code> ت" if price else ""
+        lines.append(f"• <b>{html.escape(label)}</b>{price_str}")
+    lines.append("")
+    lines.append("👇 برای اعطای فوری روی آیتم کلیک کنید:")
+
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"admin:c_grant:{country_id}:{key}")]
+        for key, label in items
+    ]
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data=f"admin:c_grant_menu:{country_id}")])
+
+    await query.edit_message_text(chr(10).join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+
 async def show_country_vip_finance_menu(query, context, country_id: int):
     c = db.get_country_by_id(country_id)
     if not c:
@@ -908,6 +1106,8 @@ async def show_country_vip_finance_menu(query, context, country_id: int):
             lines.append(f"• <b>#{p['id']}:</b> {p['plan_title']} ({p['amount_toman']:,} ت) — {st_fa} (<code>{dt_str}</code>)")
         lines.append("")
 
+    lines.append(_format_entitlements_block(c))
+
     if txs:
         lines.append("📜 <b>آخرین تراکنش‌های اقتصادی دیتابیس:</b>")
         for tx in txs:
@@ -925,6 +1125,7 @@ async def show_country_vip_finance_menu(query, context, country_id: int):
             InlineKeyboardButton("🥉 VIP برنز (۳۰ روز)", callback_data=f"admin:c_set_vip:{country_id}:vip_bronze:30"),
         ],
         [InlineKeyboardButton("🚫 لغو اشتراک VIP", callback_data=f"admin:c_revoke_vip:{country_id}")],
+        [InlineKeyboardButton("🛒 اعطای سایر آیتم‌های فروشگاه", callback_data=f"admin:c_grant_menu:{country_id}")],
         [InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{country_id}")]
     ]
 
@@ -1280,6 +1481,47 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         await show_country_vip_finance_menu(query, context, cid)
         return True
 
+    elif data.startswith("admin:c_grant_menu:"):
+        cid = int(data.split(":")[2])
+        await show_country_grant_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_grant_cat:"):
+        parts = data.split(":")
+        cid = int(parts[2])
+        await show_country_grant_category(query, context, cid, parts[3])
+        return True
+
+    elif data.startswith("admin:c_grant:"):
+        parts = data.split(":")
+        cid = int(parts[2])
+        item_key = parts[3]
+
+        # آیتم‌هایی مثل عنوان تشریفاتی نیازمند دریافت متن دلخواه از ادمین هستند
+        if item_key in GRANT_NEEDS_TEXT:
+            context.user_data["admin_awaiting_input"] = {
+                "type": "grant_custom_title", "country_id": cid, "item_key": item_key
+            }
+            c = db.get_country_by_id(cid)
+            days = "۳۰" if "30d" in item_key else "۷"
+            await query.edit_message_text(
+                f"🏷️ <b>عنوان تشریفاتی {days} روزه — {c['flag']} {html.escape(c['name'])}</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "لطفاً <b>متن عنوان دلخواه</b> را ارسال فرمایید (حداکثر ۵۰ کاراکتر):\n"
+                "(مثال: <code>سلطان نفت</code> یا <code>امپراتور شرق</code>)",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c_grant_menu:{cid}")]]),
+                parse_mode="HTML"
+            )
+            return True
+
+        ok, msg = db.admin_grant_item(cid, item_key, query.from_user.id)
+        label = _grant_item_label(item_key)
+        await query.answer(f"{'✅' if ok else '❌'} {label}\n{msg}", show_alert=True)
+        if ok:
+            await _notify_player_of_grant(context, cid, label)
+        await show_country_grant_menu(query, context, cid)
+        return True
+
     elif data.startswith("admin:c_godmode:"):
         cid = int(data.split(":")[2])
         await show_country_godmode_menu(query, context, cid)
@@ -1374,6 +1616,29 @@ async def handle_dossier_inputs(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text(f"✅ {msg}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌐 بازگشت به پرونده کشور", callback_data=f"admin:c:{c_id}")]]))
         except Exception as e:
             await update.message.reply_text(f"❌ خطا در تغییر نام: {e}")
+        return True
+
+    elif input_type == "grant_custom_title":
+        c_id = input_state["country_id"]
+        item_key = input_state.get("item_key", "title_7d")
+        try:
+            title_text = text.strip()[:50]
+            if not title_text:
+                await update.message.reply_text("❌ متن عنوان نمی‌تواند خالی باشد.")
+                return True
+            ok, msg = db.admin_grant_item(
+                c_id, item_key, update.effective_user.id,
+                custom_payload={"custom_title": title_text}
+            )
+            label = _grant_item_label(item_key)
+            if ok:
+                await _notify_player_of_grant(context, c_id, f"{label} — «{title_text}»")
+            await update.message.reply_text(
+                f"{'✅' if ok else '❌'} {msg}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛒 بازگشت به اعطای آیتم", callback_data=f"admin:c_grant_menu:{c_id}")]])
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا در اعطای عنوان تشریفاتی: {e}")
         return True
 
     elif input_type == "add_commander_title":
