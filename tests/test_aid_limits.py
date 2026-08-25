@@ -30,8 +30,8 @@ def test_foreign_aid_capacity_and_transport_costs(monkeypatch):
     conn.commit()
     conn.close()
 
-    # ۱. تلاش برای ارسال ۶۰ هزار بشکه با ترابری زمینی (سقف زمینی ۵۰ هزار است)
-    ok_land, msg_land = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 60_000, transport_mode="land")
+    # ۱. تلاش برای ارسال ۱۳۰ هزار بشکه با ترابری زمینی (سقف زمینی جدید ۱۲۰ هزار است)
+    ok_land, msg_land = db.execute_foreign_aid_transaction(cid1, cid2, "oil", 130_000, transport_mode="land")
     assert not ok_land
     assert "مازاد" in msg_land
 
