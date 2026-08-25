@@ -248,7 +248,10 @@ async def battlepass_challenges_menu(query, context, country_id: int):
             icon = "⏳"
             prog_pct = curr_val / float(target)
             bar = _build_progress_bar(int(prog_pct * 1000), 1000, 6)
-            status = f"{curr_val} از {target}"
+            # چالش‌های تجمعی (مثل صادرات) اعداد بزرگ دارند و باید خوانا نمایش داده شوند
+            unit = c_info.get("unit", "")
+            unit_sfx = f" {unit}" if unit else ""
+            status = f"{curr_val:,} از {target:,}{unit_sfx}"
 
         lines.append(f"{icon} <b>{c_info.get('title','')}</b> (+{c_info.get('xp',400)} XP)")
         lines.append(f"  📝 {c_info.get('desc','')}")

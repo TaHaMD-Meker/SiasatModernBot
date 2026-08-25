@@ -301,8 +301,9 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             if seller and seller.get("id"):
                 db.add_battle_pass_xp(seller["id"], 200)
                 db.progress_battle_pass_challenge(seller["id"], "trade", 1)
-                if res_type in ("oil", "grain") and qty >= 50_000:
-                    db.progress_battle_pass_challenge(seller["id"], "export", 1)
+                # صادرات تجمعی: کل تناژ فروخته‌شده شمرده می‌شود، نه فقط معاملات بالای ۵۰ هزار
+                if res_type in ("oil", "grain") and qty > 0:
+                    db.progress_battle_pass_challenge(seller["id"], "export", qty)
         except Exception:
             pass
         await query.answer("✅ معامله بورس با موفقیت انجام گردید!", show_alert=True)

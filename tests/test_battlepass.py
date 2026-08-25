@@ -184,8 +184,8 @@ def test_battle_pass_readiness_and_export_challenge_sync(db_temp):
     ok_sell, msg_sell = db_mod.create_market_order(c_id, "oil", 50_000, 10)
     assert ok_sell is True
 
-    # پیشرفت چالش صادرات نفت
-    ok_exp, xp_exp, exp_title = db_mod.progress_battle_pass_challenge(c_id, "export", 1)
+    # پیشرفت چالش صادرات نفت (تجمعی: تناژ واقعی ثبت می‌شود)
+    ok_exp, xp_exp, exp_title = db_mod.progress_battle_pass_challenge(c_id, "export", 50_000)
     assert ok_exp is True
     assert xp_exp == 600
     assert "صادرات انرژی" in exp_title
@@ -193,6 +193,42 @@ def test_battle_pass_readiness_and_export_challenge_sync(db_temp):
     bp2 = db_mod.get_or_create_battle_pass(c_id)
     assert bp2["current_xp"] == 1000  # 400 + 600 = 1000 -> Level Up to Tier 2!
     assert bp2["current_tier"] == 2
+
+
+def test_export_challenge_accumulates_across_small_sales(db_temp):
+    """چالش صادرات باید مجموع فروش‌های کوچک را بشمارد، نه فقط معاملات بزرگ.
+
+    باگ گزارش‌شده: بازیکنی سه محموله نفت (۲۴٬۳۰۰ + ۲۱٬۸۷۰ + ۱۹٬۶۸۳ = ۶۵٬۸۵۳ بشکه)
+    در بورس فروخت، اما چون هیچ‌کدام به‌تنهایی به ۵۰٬۰۰۰ نمی‌رسید، چالش روی «۰ از ۱» ماند.
+    """
+    db_mod, c_id = db_temp
+
+    shipments = [24_300, 21_870, 19_683]
+
+    # دو محموله‌ی اول نباید چالش را تکمیل کنند (مجموع ۴۶٬۱۷۰ < ۵۰٬۰۰۰)
+    for qty in shipments[:2]:
+        done, xp, _ = db_mod.progress_battle_pass_challenge(c_id, "export", qty)
+        assert done is False
+        assert xp == 0
+
+    bp_mid = db_mod.get_or_create_battle_pass(c_id)
+    assert bp_mid["challenge_progress"]["c_export_50k"] == 46_170
+    assert "c_export_50k" not in bp_mid["completed_challenges"]
+
+    # محموله‌ی سوم از آستانه عبور می‌کند -> چالش تکمیل و ۶۰۰ XP اهدا می‌شود
+    done, xp, title = db_mod.progress_battle_pass_challenge(c_id, "export", shipments[2])
+    assert done is True
+    assert xp == 600
+    assert "صادرات انرژی" in title
+
+    bp_end = db_mod.get_or_create_battle_pass(c_id)
+    assert bp_end["challenge_progress"]["c_export_50k"] == 65_853
+    assert "c_export_50k" in bp_end["completed_challenges"]
+
+    # صادرات بیشتر نباید XP تکراری بدهد
+    done_again, xp_again, _ = db_mod.progress_battle_pass_challenge(c_id, "export", 80_000)
+    assert done_again is False
+    assert xp_again == 0
 
 
 def test_battle_pass_300k_payment_approval_workflow(db_temp):

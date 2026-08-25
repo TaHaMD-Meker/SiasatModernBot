@@ -1710,6 +1710,13 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             db.add_battle_pass_xp(r_c["id"], 200)
             db.progress_battle_pass_challenge(p_c["id"], "trade", 1)
             db.progress_battle_pass_challenge(r_c["id"], "trade", 1)
+
+            # چالش «صادرات انرژی» طبق توضیحش شامل معاهده هم می‌شود، نه فقط بورس.
+            # پیشنهاددهنده کالا را تحویل می‌دهد، پس صادرکننده اوست.
+            if c_data["offered_type"] in ("oil", "grain"):
+                exported_qty = int(c_data["offered_amount"] or 0)
+                if exported_qty > 0:
+                    db.progress_battle_pass_challenge(p_c["id"], "export", exported_qty)
         except Exception:
             pass
 
