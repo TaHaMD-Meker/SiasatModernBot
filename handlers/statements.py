@@ -57,10 +57,16 @@ async def statements_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         status_text = f"⚠️ *وضعیت فعالیت امروز:* `{today_count} از {req_stmts}` بیانیه ثبت شده (نیاز به {req_stmts - today_count} بیانیه دیگر تا ۰۰:۰۰)"
 
+    golden_credits = c.get("golden_stmt_credits", 0) or 0
+    pin_credits = c.get("pin_credits", 0) or 0
+    extra_info = ""
+    if golden_credits > 0 or pin_credits > 0:
+        extra_info = f"\n🎨 *اعتبار دیده شدن:* بیانیه طلایی {golden_credits} | پین گروه {pin_credits}\n"
+
     text = (
         f"📢 *سامانه بیانیه‌ها و تریبون رسمی کشور {c['flag']} {c['name']}*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"{status_text}\n"
+        f"{status_text}{extra_info}\n"
         f"💡 *قانون حاکمیت:* ثبت روزانه حداقل ۲ بیانیه یا توییت رسمی برای حفظ مالکیت کشور الزامی است (بررسی در ساعت ۰۰:۰۰ بامداد).\n\n"
         "لطفاً یک بخش را انتخاب کنید:\n\n"
         "• *📢 ثبت بیانیه رسمی:* ثبت بیانیه رسمی با پوستر تصویری و ارسال به کانال\n"
@@ -73,6 +79,8 @@ async def statements_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✍️ رسمی‌سازی متن (دستیار AI)", callback_data="stmt:mode:rewrite")],
         [InlineKeyboardButton("🐦 ثبت توییت (آزاد / واکنش سریع)", callback_data="stmt:mode:tweet")],
     ]
+    if golden_credits > 0:
+        keyboard.append([InlineKeyboardButton(f"📢 بیانیه طلایی ({golden_credits} اعتبار) - استفاده", callback_data="stmt:mode:golden_statement")])
 
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -128,11 +136,35 @@ async def statements_callback_handler(update: Update, context: ContextTypes.DEFA
         )
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="stmt:menu")]]), parse_mode="Markdown")
 
+    elif data == "stmt:mode:golden_statement":
+        golden_credits = country.get("golden_stmt_credits", 0) or 0
+        if golden_credits <= 0:
+            await query.edit_message_text(
+                "❌ اعتبار بیانیه طلایی نداری! از /vip می‌تونی بخری.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💎 خرید بیانیه طلایی", callback_data="vip:cat:visibility")], [InlineKeyboardButton("🔙 بازگشت", callback_data="stmt:menu")]]),
+                parse_mode="Markdown"
+            )
+            return
+        context.user_data["statement_input"] = {"type": "golden_statement"}
+        text = (
+            f"📢 **بیانیه طلایی - {country['flag']} {country['name']}**\n"
+            f"اعتبار باقی‌مانده: {golden_credits}\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ این بیانیه با کادر طلایی و نشان ویژه در کانال @SiasatModern منتشر میشه و ۱ اعتبار ازت کم میشه.\n\n"
+            "لطفا عکس + متن بیانیه طلایی رو بفرست:"
+        )
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="stmt:menu")]]), parse_mode="Markdown")
+
 
 # ==================== هاندر دریافت ورودی‌های متنی و تصویری ====================
 
-async def process_official_statement_input(update: Update, context: ContextTypes.DEFAULT_TYPE, country: dict):
-    """پردازش بیانیه رسمی (عکس + متن حداقل ۳ سطر)."""
+async def process_official_statement_input(update: Update, context: ContextTypes.DEFAULT_TYPE, country: dict, is_golden: bool = False):
+    """پردازش بیانیه رسمی (عکس + متن حداقل ۳ سطر) - با پشتیبانی بیانیه طلایی."""
+    if is_golden:
+        golden_credits = country.get("golden_stmt_credits", 0) or 0
+        if golden_credits <= 0:
+            await update.message.reply_text("❌ اعتبار بیانیه طلایی نداری!", reply_markup=get_main_keyboard(update.effective_user.id))
+            return
     
     # Check photo attachment
     if not update.message.photo:
@@ -160,10 +192,22 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     # ارسال مستقیم متن بیانیه بازیکن بدون قالب اضافی + حفظ فرمت‌بندی خود بازیکن
     # (بولد، ایتالیک، نقل‌قول، اسپویلر، خط خوردن و... از entity های پیام اصلی بازیکن)
     try:
-        channel_card_md = update.message.caption_html or caption
+        base_html = update.message.caption_html or caption
     except Exception:
-        channel_card_md = caption
-    channel_card_plain = caption
+        base_html = caption
+    base_plain = caption
+
+    if is_golden:
+        # قالب طلایی ویژه
+        custom_title = country.get("custom_title") or ""
+        title_part = f"🏷️ {custom_title} | " if custom_title else ""
+        golden_header_html = f"👑 <b>بیانیه طلایی ویژه - {title_part}{country['flag']} {country['name']}</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        golden_header_plain = f"👑 بیانیه طلایی ویژه - {title_part}{country['flag']} {country['name']}\n━━━━━━━━━━━━━━━━━━\n\n"
+        channel_card_md = golden_header_html + base_html + "\n\n━━━━━━━━━━━━━━━━━━\n👑 @SiasatModern | بیانیه طلایی"
+        channel_card_plain = golden_header_plain + base_plain + "\n\n━━━━━━━━━━━━━━━━━━\n👑 @SiasatModern | بیانیه طلایی"
+    else:
+        channel_card_md = base_html
+        channel_card_plain = base_plain
 
     # Multi-tier resilient post to Channel
     posted_to_channel = False
@@ -219,6 +263,11 @@ async def process_official_statement_input(update: Update, context: ContextTypes
             print(f"Failed to notify admin of statement channel error: {adm_e}")
 
     db.record_country_statement(country["id"], update.effective_user.id, "statement", caption)
+    if is_golden:
+        try:
+            db.update_country_field(country["id"], "golden_stmt_credits", max(0, (country.get("golden_stmt_credits",0) or 0) - 1))
+        except Exception:
+            pass
     today_cnt = db.get_country_statement_count_today(country["id"])
     req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
     conf_msg += f"\n\n📊 *مجموع بیانیه‌ها و توییت‌های امروز شما:* `{today_cnt} از {req_stmts}`"
@@ -466,6 +515,8 @@ async def statements_text_input_handler(update: Update, context: ContextTypes.DE
 
     if input_type == "official_statement":
         await process_official_statement_input(update, context, country)
+    elif input_type == "golden_statement":
+        await process_official_statement_input(update, context, country, is_golden=True)
     elif input_type == "ai_rewrite":
         await process_ai_rewrite_input(update, context, country)
     elif input_type == "official_tweet":

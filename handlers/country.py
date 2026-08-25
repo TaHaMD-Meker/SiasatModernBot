@@ -70,6 +70,47 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     vip_badge = f"<b>سطح رهبری:</b> {tier_badges.get(vip_tier, '⭐ <b>اشتراک طلایی VIP</b>')}\n" if c.get("is_vip") else ""
 
+    # خدمات دیده شدن
+    custom_title = c.get("custom_title")
+    title_exp = c.get("title_expires_at")
+    frame_until = c.get("golden_frame_until")
+    extra_lines = ""
+    import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        IRAN_TZ = ZoneInfo("Asia/Tehran")
+    except Exception:
+        IRAN_TZ = None
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    if custom_title:
+        try:
+            exp_dt = datetime.datetime.fromisoformat(title_exp) if title_exp else None
+            if not exp_dt or exp_dt > now_dt:
+                extra_lines += f"🏷️ <b>عنوان تشریفاتی:</b> {custom_title} (تا {title_exp[:10] if title_exp else 'نامحدود'})\n"
+        except Exception:
+            extra_lines += f"🏷️ <b>عنوان:</b> {custom_title}\n"
+    if frame_until:
+        try:
+            f_dt = datetime.datetime.fromisoformat(frame_until)
+            if f_dt > now_dt:
+                extra_lines += f"🖼️ <b>قاب طلایی:</b> فعال تا {frame_until[:10]}\n"
+        except Exception:
+            pass
+    drill_tickets = c.get("drill_tickets", 0) or 0
+    stmt_tickets = c.get("statement_tickets", 0) or 0
+    golden_credits = c.get("golden_stmt_credits", 0) or 0
+    pin_credits = c.get("pin_credits", 0) or 0
+    bp_boost_until = c.get("bp_booster_until")
+    if drill_tickets or stmt_tickets or golden_credits or pin_credits:
+        extra_lines += f"🎫 بلیط‌ها: مانور {drill_tickets} | بیانیه {stmt_tickets} | طلایی {golden_credits} | پین {pin_credits}\n"
+    if bp_boost_until:
+        try:
+            b_dt = datetime.datetime.fromisoformat(bp_boost_until)
+            if b_dt > now_dt:
+                extra_lines += f"⭐️ بوستر بتل‌پس ۲x تا {bp_boost_until[:10]}\n"
+        except Exception:
+            pass
+
     maint_info = db.calculate_country_maintenance_cost(c["id"])
     tax_val = c.get("tax_income", 0) or 0
     daily_val = c.get("daily_income", 0) or 0
@@ -85,6 +126,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<blockquote>"
         f"<b>کشور:</b> {c['flag']} {c['name']}\n"
         f"{vip_badge}"
+        f"{extra_lines}"
         f"<b>رضایت عمومی:</b> {app_icon} {app_val}٪ (/approval)\n"
         f"<b>آمادگی رزمی نیروها:</b> {pe('shield', '⚔️')} {readiness_val}٪\n"
         f"</blockquote>\n"

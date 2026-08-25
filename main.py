@@ -453,6 +453,19 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
                 pass
 
         user_stmts = counts_map.get(c_id, 0)
+        # بلیط بیانیه اضافه: اگر کمبود بیانیه داری و بلیط داری، خودکار مصرف میشه
+        if user_stmts < req_stmts:
+            try:
+                c_full = db.get_country_by_id(c_id)
+                stmt_tickets = (c_full.get("statement_tickets", 0) or 0) if c_full else 0
+                if stmt_tickets > 0:
+                    need = req_stmts - user_stmts
+                    use = min(need, stmt_tickets)
+                    db.update_country_field(c_id, "statement_tickets", max(0, stmt_tickets - use))
+                    user_stmts += use
+                    db.add_transaction(c_id, "ticket_use", f"🎫 استفاده خودکار از {use} بلیط بیانیه برای جلوگیری از سلب مالکیت", 0)
+            except Exception:
+                pass
         if user_stmts < req_stmts:
             flag = c.get("flag", "🏳️")
             name = c.get("name", "کشور")

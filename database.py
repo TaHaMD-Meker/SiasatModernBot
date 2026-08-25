@@ -265,6 +265,24 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # ===== ستون‌های جدید فروشگاه مصرفی و خدمات دیده شدن =====
+    for _col_def in [
+        "ALTER TABLE countries ADD COLUMN custom_title TEXT",
+        "ALTER TABLE countries ADD COLUMN title_expires_at TEXT",
+        "ALTER TABLE countries ADD COLUMN golden_frame_until TEXT",
+        "ALTER TABLE countries ADD COLUMN drill_tickets INTEGER DEFAULT 0",
+        "ALTER TABLE countries ADD COLUMN statement_tickets INTEGER DEFAULT 0",
+        "ALTER TABLE countries ADD COLUMN golden_stmt_credits INTEGER DEFAULT 0",
+        "ALTER TABLE countries ADD COLUMN pin_credits INTEGER DEFAULT 0",
+        "ALTER TABLE countries ADD COLUMN contract_boost_until TEXT",
+        "ALTER TABLE countries ADD COLUMN bp_booster_until TEXT",
+        "ALTER TABLE countries ADD COLUMN bp_booster_mult REAL DEFAULT 1.0",
+    ]:
+        try:
+            cur.execute(_col_def)
+        except sqlite3.OperationalError:
+            pass
+
     # خوددرمانی و ترمیم خودکار کلیدهای خارجی آسیب‌دیده از میگریشن‌های قبلی
     try:
         conn.execute("PRAGMA foreign_keys = OFF")
@@ -1933,7 +1951,10 @@ def update_country_field(country_id: int, field: str, value):
         "firewall_level", "air_defense_disrupted_until", "blackout_until", "r_and_d_frozen_until", "command_disrupted_until",
         "intel_ops_today", "intel_ops_date", "last_intel_op_time",
         # فیلدهای اشتراک VIP
-        "is_vip", "vip_tier", "vip_expires_at"
+        "is_vip", "vip_tier", "vip_expires_at",
+        # فیلدهای فروشگاه مصرفی و دیده شدن
+        "custom_title", "title_expires_at", "golden_frame_until", "drill_tickets", "statement_tickets",
+        "golden_stmt_credits", "pin_credits", "contract_boost_until", "bp_booster_until", "bp_booster_mult"
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
@@ -5707,6 +5728,127 @@ def approve_payment_request(req_id: int, admin_id: int, override_name: str = Non
                         is_premium = 1,
                         updated_at = excluded.updated_at
                     """, (c_id, now_str, now_str))
+            # ===== بسته‌های بقا و لجستیک (مصرفی - چند بار خرید) =====
+            elif item_type.startswith("survival_"):
+                if not c_id:
+                    return False, "کشور یافت نشد.", {}
+                # سقف روزانه ۳ بسته برای جلوگیری از اسپم وال‌ها
+                try:
+                    today_str = now_dt.date().isoformat()
+                    cur.execute("SELECT COUNT(*) as cnt FROM transactions WHERE country_id = ? AND type = 'survival_pack' AND created_at LIKE ?", (c_id, f"{today_str}%"))
+                    cnt_row = cur.fetchone()
+                    if cnt_row and (cnt_row["cnt"] or 0) >= 3:
+                        return False, "⛔ سقف روزانه ۳ بسته بقا پر شده. فردا می‌تونی دوباره بخری.", p
+                except Exception:
+                    pass
+                # مقادیر بسته‌ها
+                packs = {
+                    "survival_small": {"treasury": 3_000_000, "oil": 400_000, "grain": 15_000, "iron": 0, "chips": 0, "desc": "بسته بقا کوچک"},
+                    "survival_medium": {"treasury": 6_000_000, "oil": 900_000, "grain": 30_000, "iron": 8_000, "chips": 300, "desc": "بسته بقا متوسط"},
+                    "survival_large": {"treasury": 10_000_000, "oil": 1_800_000, "grain": 60_000, "iron": 15_000, "chips": 800, "desc": "بسته بقا بزرگ"},
+                    "survival_ultra": {"treasury": 18_000_000, "oil": 3_000_000, "grain": 100_000, "iron": 30_000, "chips": 1_500, "gold": 50, "desc": "بسته بقا فوق‌سنگین"},
+                }
+                pack = packs.get(item_type)
+                if not pack:
+                    return False, "بسته نامعتبر.", {}
+                cur.execute("UPDATE countries SET treasury = treasury + ?, oil_reserves = oil_reserves + ?, grain = grain + ?, iron_ore = iron_ore + ?, microchips = microchips + ?, gold = gold + ? WHERE id = ?",
+                    (pack.get("treasury",0), pack.get("oil",0), pack.get("grain",0), pack.get("iron",0), pack.get("chips",0), pack.get("gold",0), c_id))
+                cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'survival_pack', ?, ?, ?)",
+                    (c_id, f"🎁 {pack['desc']} - {pack.get('oil',0):,} نفت + {pack.get('grain',0):,} غلات", pack.get("treasury",0), now_str))
+                p["granted_pack"] = pack
+            elif item_type.startswith("ticket_"):
+                if not c_id:
+                    return False, "کشور یافت نشد.", {}
+                tickets = {
+                    "ticket_drill": {"drill": 1, "desc": "بلیط مانور اضافه"},
+                    "ticket_drill_3": {"drill": 3, "desc": "پک ۳ تایی مانور"},
+                    "ticket_statement": {"statement": 1, "desc": "بلیط بیانیه اضافه"},
+                    "ticket_statement_5": {"statement": 5, "desc": "پک ۵ تایی بیانیه"},
+                    "ticket_contract_3d": {"contract_3d": 1, "desc": "بوست اسلات قرارداد ۳ روزه"},
+                    "ticket_contract_7d": {"contract_7d": 1, "desc": "بوست اسلات قرارداد ۷ روزه"},
+                }
+                t = tickets.get(item_type)
+                if not t:
+                    return False, "بلیط نامعتبر.", {}
+                if "drill" in t:
+                    cur.execute("UPDATE countries SET drill_tickets = COALESCE(drill_tickets,0) + ? WHERE id = ?", (t["drill"], c_id))
+                if "statement" in t:
+                    cur.execute("UPDATE countries SET statement_tickets = COALESCE(statement_tickets,0) + ? WHERE id = ?", (t["statement"], c_id))
+                if "contract_3d" in t or "contract_7d" in t:
+                    days = 3 if "3d" in item_type else 7
+                    until = now_dt + datetime.timedelta(days=days)
+                    cur.execute("UPDATE countries SET contract_boost_until = ? WHERE id = ?", (until.isoformat(), c_id))
+                cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'ticket', ?, 0, ?)",
+                    (c_id, f"🎫 {t['desc']}", now_str))
+            elif item_type.startswith("bp_booster_"):
+                if not c_id:
+                    return False, "کشور یافت نشد.", {}
+                boosters = {
+                    "bp_booster_3d": {"days": 3, "mult": 2.0, "desc": "بوستر بتل‌پس ۳ روزه ۲x"},
+                    "bp_booster_7d": {"days": 7, "mult": 2.0, "desc": "بوستر بتل‌پس ۷ روزه ۲x"},
+                    "bp_booster_30d": {"days": 30, "mult": 2.0, "desc": "بوستر بتل‌پس ماهانه ۲x"},
+                }
+                b = boosters.get(item_type)
+                if not b:
+                    return False, "بوستر نامعتبر.", {}
+                until = now_dt + datetime.timedelta(days=b["days"])
+                cur.execute("UPDATE countries SET bp_booster_until = ?, bp_booster_mult = ? WHERE id = ?", (until.isoformat(), b["mult"], c_id))
+                cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'bp_booster', ?, 0, ?)",
+                    (c_id, f"⭐️ {b['desc']}", now_str))
+            elif item_type.startswith("cosmetic_") or item_type.startswith("title_") or item_type.startswith("frame_") or item_type.startswith("golden_") or item_type.startswith("pin_") or item_type in ("rename_country", "flag_change"):
+                if not c_id:
+                    return False, "کشور یافت نشد.", {}
+                # خدمات دیده شدن
+                if item_type.startswith("title_"):
+                    # title_7d, title_30d
+                    days = 30 if "30d" in item_type else 7
+                    # custom_payload حاوی عنوان است
+                    try:
+                        payload = json.loads(p.get("custom_payload") or "{}")
+                        title_text = payload.get("custom_title") or payload.get("title") or "عنوان تشریفاتی"
+                    except Exception:
+                        title_text = "عنوان تشریفاتی"
+                    until = now_dt + datetime.timedelta(days=days)
+                    cur.execute("UPDATE countries SET custom_title = ?, title_expires_at = ? WHERE id = ?", (title_text[:50], until.isoformat(), c_id))
+                elif item_type.startswith("frame_"):
+                    days = 30 if "30d" in item_type else 7
+                    until = now_dt + datetime.timedelta(days=days)
+                    cur.execute("UPDATE countries SET golden_frame_until = ? WHERE id = ?", (until.isoformat(), c_id))
+                elif item_type.startswith("golden_stmt"):
+                    # golden_stmt_1, golden_stmt_3, golden_stmt_10
+                    qty = 1
+                    if "_3" in item_type:
+                        qty = 3
+                    elif "_10" in item_type:
+                        qty = 10
+                    cur.execute("UPDATE countries SET golden_stmt_credits = COALESCE(golden_stmt_credits,0) + ? WHERE id = ?", (qty, c_id))
+                elif item_type.startswith("pin_"):
+                    qty = 1
+                    if "_3" in item_type:
+                        qty = 3
+                    cur.execute("UPDATE countries SET pin_credits = COALESCE(pin_credits,0) + ? WHERE id = ?", (qty, c_id))
+                elif item_type == "rename_country":
+                    # نام جدید در custom_payload
+                    try:
+                        payload = json.loads(p.get("custom_payload") or "{}")
+                        new_name = payload.get("new_name") or override_name or "کشور"
+                        new_flag = payload.get("new_flag")
+                    except Exception:
+                        new_name = override_name or "کشور"
+                        new_flag = None
+                    if new_flag:
+                        cur.execute("UPDATE countries SET name = ?, flag = ? WHERE id = ?", (new_name[:40], new_flag[:8], c_id))
+                    else:
+                        cur.execute("UPDATE countries SET name = ? WHERE id = ?", (new_name[:40], c_id))
+                elif item_type == "flag_change":
+                    try:
+                        payload = json.loads(p.get("custom_payload") or "{}")
+                        new_flag = payload.get("new_flag") or payload.get("flag") or "🏳️"
+                    except Exception:
+                        new_flag = "🏳️"
+                    cur.execute("UPDATE countries SET flag = ? WHERE id = ?", (new_flag[:8], c_id))
+                cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'cosmetic', ?, 0, ?)",
+                    (c_id, f"🎨 {item_type} - خدمات دیده شدن", now_str))
             elif item_type == "militia":
                 payload_str = p.get("custom_payload") or "{}"
                 try:
@@ -6061,6 +6203,19 @@ def add_battle_pass_xp(country_id: int, xp_amount: int) -> tuple[int, int, bool]
     """افزودن XP به بتل‌پس کشور، محاسبه لول‌آپ و ارتقای پله‌ها."""
     bp = get_or_create_battle_pass(country_id)
     multiplier = 1.25 if bp.get("is_premium") else 1.0
+    # بوستر بتل‌پس مصرفی ۲x
+    try:
+        c = get_country_by_id(country_id)
+        if c:
+            booster_until = c.get("bp_booster_until")
+            booster_mult = c.get("bp_booster_mult", 1.0) or 1.0
+            if booster_until:
+                bu_dt = datetime.datetime.fromisoformat(booster_until)
+                now_dt = datetime.datetime.now(datetime.timezone.utc)
+                if bu_dt > now_dt and booster_mult > 1.0:
+                    multiplier *= float(booster_mult)
+    except Exception:
+        pass
     effective_xp = int(xp_amount * multiplier)
 
     new_xp = bp["current_xp"] + effective_xp

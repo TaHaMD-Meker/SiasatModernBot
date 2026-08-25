@@ -50,21 +50,27 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👑 **مرکز خدمات ویژه و فروشگاه حاکمیتی «سیاست مدرن»**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"{status_header}\n\n"
-        "تمامی خدمات و امکانات ویژه بازی در ۳ بخش تفکیک‌شده در دسترس هستند:\n\n"
+        "تمامی خدمات و امکانات ویژه بازی در ۵ بخش تفکیک‌شده در دسترس هستند:\n\n"
         "👑 **۱. اشتراک‌های ویژه رهبری (VIP Passes):**\n"
         "• تخفیف‌های ۵ تا ۲۵ درصدی در نگهداری ارتش، سهمیه رزمایش اضافه، اولویت صف رول‌ها و نشان‌های طلایی و الماس.\n\n"
         "⭐️ **۲. بتل‌پس استراتژیک فصلی (Battle Pass):**\n"
         "• ۲۰ لول جوایز کلان اقتصادی (تا ۷۰M$ پول، ۲۰M نفت، طلا و میکروچیپ) با انجام ماموریت‌ها و لول‌آپ.\n\n"
         "🏴‍☠️ **۳. تاسیس و مجوز گروه‌های غیردولتی (Militia Licenses):**\n"
         "• دریافت مجوز رسمی هدایت گروه‌های مقاومت و ارتش‌های خصوصی با کاتالوگ تسلیحات نامتقارن.\n\n"
+        "📦 **۴. بسته‌های بقا و لجستیک (مصرفی - چند بار خرید):**\n"
+        "• نفت، غلات، آهن، چیپ و دلار فوری برای بحران انرژی و تولید نظامی.\n\n"
+        "🎨 **۵. خدمات دیده شدن و تشریفاتی (غیر P2W + کمی P2W):**\n"
+        "• بیانیه طلایی، پین گروه، عنوان تشریفاتی، قاب طلایی، تغییر نام/پرچم.\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "👇 لطفاً بخش مورد نظر خود را انتخاب فرمایید:"
     )
 
     keyboard = [
-        [InlineKeyboardButton("👑 ۱. اشتراک‌های ویژه رهبری (VIP Leader Passes)", callback_data="vip:cat:vip_passes")],
-        [InlineKeyboardButton("⭐️ ۲. بتل‌پس استراتژیک فصلی (Season 1 Pass)", callback_data="bp:menu")],
-        [InlineKeyboardButton("🏴‍☠️ ۳. تاسیس و مجوز گروه‌های غیردولتی", callback_data="vip:cat:militia")],
+        [InlineKeyboardButton("👑 ۱. اشتراک‌های ویژه رهبری", callback_data="vip:cat:vip_passes")],
+        [InlineKeyboardButton("⭐️ ۲. بتل‌پس استراتژیک فصلی", callback_data="bp:menu")],
+        [InlineKeyboardButton("🏴‍☠️ ۳. گروه‌های غیردولتی", callback_data="vip:cat:militia")],
+        [InlineKeyboardButton("📦 ۴. بسته‌های بقا و لجستیک (مصرفی)", callback_data="vip:cat:survival")],
+        [InlineKeyboardButton("🎨 ۵. خدمات دیده شدن + بلیط‌ها", callback_data="vip:cat:visibility")],
         [InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")],
     ]
 
@@ -127,6 +133,80 @@ async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         except Exception:
             pass
+
+
+async def survival_packs_menu(query, context):
+    text = (
+        "📦 **بسته‌های بقا و لجستیک - مصرفی (چند بار خرید)**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "با بحران نفت اروپا (ذخایر ۱-۳ روزه) و نیاز آهن برای تولید تانک/ناو، این بسته‌ها همیشه نیاز میشن. هر بسته مصرفیه و روزی تا ۳ بار قابل خریده:\n\n"
+        "🟤 **بسته کوچک - ۱۴۹,۰۰۰ ت:**\n"
+        "• 🛢️ ۴۰۰,۰۰۰ بشکه نفت + 🌾 ۱۵,۰۰۰ تن غلات + 💵 ۳M دلار\n\n"
+        "🟠 **بسته متوسط - ۲۴۹,۰۰۰ ت (محبوب):**\n"
+        "• 🛢️ ۹۰۰,۰۰۰ بشکه نفت + 🌾 ۳۰,۰۰۰ تن غلات + ⛏️ ۸,۰۰۰ تن آهن + 💻 ۳۰۰ چیپ + 💵 ۶M دلار\n\n"
+        "🔴 **بسته بزرگ - ۳۸۹,۰۰۰ ت:**\n"
+        "• 🛢️ ۱.۸M بشکه نفت + 🌾 ۶۰,۰۰۰ تن غلات + ⛏️ ۱۵,۰۰۰ تن آهن + 💻 ۸۰۰ چیپ + 💵 ۱۰M دلار\n\n"
+        "💎 **بسته فوق‌سنگین - ۵۹۰,۰۰۰ ت:**\n"
+        "• 🛢️ ۳M بشکه نفت + 🌾 ۱۰۰,۰۰۰ تن غلات + ⛏️ ۳۰,۰۰۰ تن آهن + 💻 ۱,۵۰۰ چیپ + 🪙 ۵۰ طلا + 💵 ۱۸M دلار\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "بسته مورد نظر رو انتخاب کن:"
+    )
+    kb = [
+        [InlineKeyboardButton("🟤 بقا کوچک - ۱۴۹,۰۰۰ ت", callback_data="vip:plan:survival_small")],
+        [InlineKeyboardButton("🟠 بقا متوسط - ۲۴۹,۰۰۰ ت", callback_data="vip:plan:survival_medium")],
+        [InlineKeyboardButton("🔴 بقا بزرگ - ۳۸۹,۰۰۰ ت", callback_data="vip:plan:survival_large")],
+        [InlineKeyboardButton("💎 بقا فوق‌سنگین - ۵۹۰,۰۰۰ ت", callback_data="vip:plan:survival_ultra")],
+        [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="vip:menu")],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def visibility_services_menu(query, context):
+    text = (
+        "🎨 **خدمات دیده شدن، تشریفاتی و بلیط‌های مصرفی**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "این بخش P2W نیست یا فقط کمی P2W ـه، ولی پلیرهای فعال برای دیده شدن و فعالیت بیشتر میخرن (مصرفی/موقتی):\n\n"
+        "⭐️ **بوستر بتل‌پس:**\n"
+        "• ۳ روزه ۲x XP - ۱۲۹,۰۰۰ ت\n"
+        "• ۷ روزه ۲x XP - ۲۲۹,۰۰۰ ت\n"
+        "• ۳۰ روزه ۲x XP - ۵۹۰,۰۰۰ ت\n\n"
+        "🎫 **بلیط اقدام فوری:**\n"
+        "• ۱ مانور اضافه - ۷۹,۰۰۰ ت\n"
+        "• پک ۳ مانور - ۱۸۹,۰۰۰ ت\n"
+        "• ۱ بیانیه اضافه - ۴۹,۰۰۰ ت\n"
+        "• پک ۵ بیانیه - ۱۸۹,۰۰۰ ت\n"
+        "• بوست اسلات قرارداد ۳ روزه - ۹۹,۰۰۰ ت\n"
+        "• بوست اسلات قرارداد ۷ روزه - ۱۷۹,۰۰۰ ت\n\n"
+        "🎨 **دیده شدن و تشریفاتی:**\n"
+        "• بیانیه طلایی ۱ عدد - ۵۹,۰۰۰ ت\n"
+        "• بیانیه طلایی ۳ عدد - ۱۴۹,۰۰۰ ت\n"
+        "• بیانیه طلایی ۱۰ عدد - ۳۹۹,۰۰۰ ت\n"
+        "• پین گروه ۱ عدد (۱۲ ساعت) - ۷۹,۰۰۰ ت\n"
+        "• پین گروه ۳ عدد - ۱۸۹,۰۰۰ ت\n"
+        "• عنوان تشریفاتی ۷ روزه - ۹۹,۰۰۰ ت\n"
+        "• عنوان تشریفاتی ۳۰ روزه - ۲۸۹,۰۰۰ ت\n"
+        "• قاب طلایی ۷ روزه - ۷۹,۰۰۰ ت\n"
+        "• قاب طلایی ۳۰ روزه - ۲۴۹,۰۰۰ ت\n"
+        "• تغییر نام کشور - ۱۴۹,۰۰۰ ت\n"
+        "• تغییر پرچم - ۹۹,۰۰۰ ت\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "سرویس مورد نظر رو انتخاب کن:"
+    )
+    kb = [
+        [InlineKeyboardButton("⭐️ بوستر ۳ روزه - ۱۲۹k", callback_data="vip:plan:bp_booster_3d"), InlineKeyboardButton("⭐️ بوستر ۷ روزه - ۲۲۹k", callback_data="vip:plan:bp_booster_7d")],
+        [InlineKeyboardButton("⭐️ بوستر ماهانه - ۵۹۰k", callback_data="vip:plan:bp_booster_30d")],
+        [InlineKeyboardButton("🎫 ۱ مانور - ۷۹k", callback_data="vip:plan:ticket_drill"), InlineKeyboardButton("🎫 پک ۳ مانور - ۱۸۹k", callback_data="vip:plan:ticket_drill_3")],
+        [InlineKeyboardButton("📝 ۱ بیانیه - ۴۹k", callback_data="vip:plan:ticket_statement"), InlineKeyboardButton("📝 پک ۵ بیانیه - ۱۸۹k", callback_data="vip:plan:ticket_statement_5")],
+        [InlineKeyboardButton("📜 اسلات قرارداد ۳ روزه - ۹۹k", callback_data="vip:plan:ticket_contract_3d"), InlineKeyboardButton("📜 اسلات ۷ روزه - ۱۷۹k", callback_data="vip:plan:ticket_contract_7d")],
+        [InlineKeyboardButton("📢 بیانیه طلایی ۱ - ۵۹k", callback_data="vip:plan:golden_stmt_1"), InlineKeyboardButton("📢 طلایی ۳ - ۱۴۹k", callback_data="vip:plan:golden_stmt_3")],
+        [InlineKeyboardButton("📢 طلایی ۱۰ - ۳۹۹k", callback_data="vip:plan:golden_stmt_10")],
+        [InlineKeyboardButton("📌 پین ۱ - ۷۹k", callback_data="vip:plan:pin_1"), InlineKeyboardButton("📌 پین ۳ - ۱۸۹k", callback_data="vip:plan:pin_3")],
+        [InlineKeyboardButton("🏷️ عنوان ۷ روزه - ۹۹k", callback_data="vip:plan:title_7d"), InlineKeyboardButton("🏷️ عنوان ۳۰ روزه - ۲۸۹k", callback_data="vip:plan:title_30d")],
+        [InlineKeyboardButton("🖼️ قاب ۷ روزه - ۷۹k", callback_data="vip:plan:frame_7d"), InlineKeyboardButton("🖼️ قاب ۳۰ روزه - ۲۴۹k", callback_data="vip:plan:frame_30d")],
+        [InlineKeyboardButton("✏️ تغییر نام - ۱۴۹k", callback_data="vip:plan:rename_country"), InlineKeyboardButton("🚩 تغییر پرچم - ۹۹k", callback_data="vip:plan:flag_change")],
+        [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="vip:menu")],
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
 # ==================== فهرست سازمان‌ها و گروه‌های شبه‌نظامی غیردولتی ====================
@@ -374,7 +454,7 @@ PLANS_METADATA = {
         "title": "🥉 اشتراک برنز رهبری (Bronze Leader)",
         "tier": "bronze",
         "price": 79_000,
-        "desc": "تخفیف ۵٪ نگهداری ارتش، ۱ مانور اضافه روزانه، ۴ اسلات معاهده تجاری و نشان برنزی."
+        "desc": "تخفیف ۵٪ نگهداری ارتش، ۱ مانور اضافه روزانه، ۴ اسلات قرارداد تجاری و نشان برنزی."
     },
     "vip_silver": {
         "title": "🥈 اشتراک نقره‌ای رهبری (Silver Leader)",
@@ -402,13 +482,41 @@ PLANS_METADATA = {
     "battle_pass": {
         "title": "⭐️ بتل‌پس فصلی استراتژیک (Season 1 Pass)",
         "price": 300_000,
-        "desc": "دسترسی به ۲۰ لول جوایز کلان (بیش از ۶۰۰ میلیون دلار، ۱ میلیون نفت، تسلیحات نسل ۵، موشک‌های بالستیک و تندیس لرد اعظم جنگ) + ۲۵٪ بوست XP."
+        "desc": "دسترسی به ۲۰ لول جوایز کلان اقتصادی (۷۰M$ + ۲۰M نفت + طلا و چیپ) + ۲۵٪ بوست XP."
     },
     "pass": {
         "title": "⭐️ بتل‌پس فصلی استراتژیک (Season 1 Pass)",
         "price": 300_000,
         "desc": "دسترسی به ۲۰ لول جوایز کلان + ۲۵٪ بوست XP."
     },
+    # ===== بسته‌های بقا و لجستیک (مصرفی - چند بار خرید) =====
+    "survival_small": {"title": "🟤 بسته بقا کوچک", "price": 149_000, "desc": "۴۰۰k نفت + ۱۵k غلات + ۳M دلار - مصرفی"},
+    "survival_medium": {"title": "🟠 بسته بقا متوسط (محبوب)", "price": 249_000, "desc": "۹۰۰k نفت + ۳۰k غلات + ۸k آهن + ۳۰۰ چیپ + ۶M دلار"},
+    "survival_large": {"title": "🔴 بسته بقا بزرگ", "price": 389_000, "desc": "۱.۸M نفت + ۶۰k غلات + ۱۵k آهن + ۸۰۰ چیپ + ۱۰M دلار"},
+    "survival_ultra": {"title": "💎 بسته بقا فوق‌سنگین", "price": 590_000, "desc": "۳M نفت + ۱۰۰k غلات + ۳۰k آهن + ۱۵۰۰ چیپ + ۵۰ طلا + ۱۸M دلار"},
+    # ===== بلیط اقدام فوری =====
+    "ticket_drill": {"title": "🎫 بلیط ۱ مانور اضافه", "price": 79_000, "desc": "۱ مانور فوری +۴٪ آمادگی"},
+    "ticket_drill_3": {"title": "🎫 پک ۳ تایی مانور", "price": 189_000, "desc": "۳ مانور فوری"},
+    "ticket_statement": {"title": "📝 بلیط ۱ بیانیه اضافه", "price": 49_000, "desc": "۱ بیانیه برای جلوگیری از سلب مالکیت"},
+    "ticket_statement_5": {"title": "📝 پک ۵ تایی بیانیه", "price": 189_000, "desc": "۵ بیانیه اضافه"},
+    "ticket_contract_3d": {"title": "📜 بوست اسلات قرارداد ۳ روزه", "price": 99_000, "desc": "۳ روز اسلات قرارداد نامحدود"},
+    "ticket_contract_7d": {"title": "📜 بوست اسلات قرارداد ۷ روزه", "price": 179_000, "desc": "۷ روز اسلات نامحدود"},
+    # ===== بوستر بتل‌پس =====
+    "bp_booster_3d": {"title": "⭐️ بوستر بتل‌پس ۳ روزه ۲x", "price": 129_000, "desc": "۳ روز XP دو برابر"},
+    "bp_booster_7d": {"title": "⭐️ بوستر بتل‌پس ۷ روزه ۲x", "price": 229_000, "desc": "۷ روز XP دو برابر"},
+    "bp_booster_30d": {"title": "⭐️ بوستر بتل‌پس ماهانه ۲x", "price": 590_000, "desc": "۳۰ روز XP دو برابر"},
+    # ===== خدمات دیده شدن =====
+    "golden_stmt_1": {"title": "📢 بیانیه طلایی ۱ عدد", "price": 59_000, "desc": "۱ بیانیه با کادر طلایی در کانال @SiasatModern"},
+    "golden_stmt_3": {"title": "📢 پک ۳ تایی بیانیه طلایی", "price": 149_000, "desc": "۳ بیانیه طلایی"},
+    "golden_stmt_10": {"title": "📢 پک ۱۰ تایی بیانیه طلایی", "price": 399_000, "desc": "۱۰ بیانیه طلایی"},
+    "pin_1": {"title": "📌 پین گروه ۱۲ ساعته", "price": 79_000, "desc": "پین بیانیه در گروه برای ۱۲ ساعت"},
+    "pin_3": {"title": "📌 پک ۳ تایی پین گروه", "price": 189_000, "desc": "۳ پین ۱۲ ساعته"},
+    "title_7d": {"title": "🏷️ عنوان تشریفاتی ۷ روزه", "price": 99_000, "desc": "عنوان دلخواه کنار اسم کشور ۷ روز"},
+    "title_30d": {"title": "🏷️ عنوان تشریفاتی ۳۰ روزه", "price": 289_000, "desc": "عنوان دلخواه ۳۰ روز"},
+    "frame_7d": {"title": "🖼️ قاب طلایی ۷ روزه", "price": 79_000, "desc": "قاب طلایی پروفایل کشور ۷ روز"},
+    "frame_30d": {"title": "🖼️ قاب طلایی ۳۰ روزه", "price": 249_000, "desc": "قاب طلایی ۳۰ روز"},
+    "rename_country": {"title": "✏️ تغییر نام کشور", "price": 149_000, "desc": "تغییر نام رسمی کشور (هر بار)"},
+    "flag_change": {"title": "🚩 تغییر پرچم کشور", "price": 99_000, "desc": "تغییر پرچم/ایموجی کشور (هر بار)"},
     # نام‌های مستعار جهت سازگاری کامل
     "bronze": {"title": "🥉 اشتراک برنز رهبری", "tier": "bronze", "price": 79_000, "desc": ""},
     "silver": {"title": "🥈 اشتراک نقره‌ای رهبری", "tier": "silver", "price": 179_000, "desc": ""},
@@ -485,6 +593,12 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data in ("vip:cat:militia", "vip:militia_wizard_start", "vip:plan:militia"):
         await show_predefined_factions_menu(query, context, user_id)
 
+    elif data == "vip:cat:survival":
+        await survival_packs_menu(query, context)
+
+    elif data == "vip:cat:visibility":
+        await visibility_services_menu(query, context)
+
     elif data == "vip:cat:battle_pass":
         await battlepass_menu(update, context)
 
@@ -510,6 +624,34 @@ async def vip_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     elif data.startswith("vip:plan:"):
         plan_key = data.split(":", 2)[2]
+        # خدمات نیازمند ورودی متنی دلخواه قبل از فاکتور
+        if plan_key.startswith("title_"):
+            context.user_data["vip_pending_plan"] = plan_key
+            context.user_data["vip_input"] = {"step": "awaiting_custom_title", "plan_key": plan_key}
+            await query.edit_message_text(
+                "🏷️ **عنوان تشریفاتی دلخواه**\n━━━━━━━━━━━━━━━━━━\n\nلطفا عنوانی که میخوای کنار اسم کشورت نمایش داده بشه رو بفرست (حداکثر ۳۰ کاراکتر):\nمثلا: `امپراتور بزرگ`، `سلطان نفت`، `تایتان اقتصادی`",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="vip:cat:visibility")]]),
+                parse_mode="Markdown"
+            )
+            return
+        elif plan_key == "rename_country":
+            context.user_data["vip_pending_plan"] = plan_key
+            context.user_data["vip_input"] = {"step": "awaiting_new_name", "plan_key": plan_key}
+            await query.edit_message_text(
+                "✏️ **تغییر نام کشور**\n━━━━━━━━━━━━━━━━━━\n\nنام جدید کشورت رو بفرست (۲ تا ۴۰ کاراکتر):",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="vip:cat:visibility")]]),
+                parse_mode="Markdown"
+            )
+            return
+        elif plan_key == "flag_change":
+            context.user_data["vip_pending_plan"] = plan_key
+            context.user_data["vip_input"] = {"step": "awaiting_new_flag", "plan_key": plan_key}
+            await query.edit_message_text(
+                "🚩 **تغییر پرچم کشور**\n━━━━━━━━━━━━━━━━━━\n\nپرچم/ایموجی جدید رو بفرست (مثلا: 🇮🇷 یا 🦁):",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="vip:cat:visibility")]]),
+                parse_mode="Markdown"
+            )
+            return
         await vip_checkout_screen(query, context, plan_key, country)
 
     elif data.startswith("vip:upload:"):
@@ -562,10 +704,104 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await militia_wizard_step_doctrine(update.message, context)
             return True
 
+    # 1.5 بررسی ورودی‌های خدمات دیده شدن (عنوان، نام، پرچم)
+    vip_state = context.user_data.get("vip_input")
+    if vip_state and update.message.text:
+        step = vip_state.get("step")
+        plan_key = vip_state.get("plan_key")
+        txt_in = update.message.text.strip()
+        if step == "awaiting_custom_title":
+            if len(txt_in) < 2 or len(txt_in) > 30:
+                await update.message.reply_text("❌ عنوان باید ۲ تا ۳۰ کاراکتر باشه، دوباره بفرست:")
+                return True
+            # ذخیره عنوان و برو به صفحه پرداخت
+            context.user_data["vip_custom_payload"] = {"custom_title": txt_in, "title": txt_in}
+            # نگه داشتن plan_key برای فاکتور
+            context.user_data["vip_input"] = {"step": "awaiting_checkout", "plan_key": plan_key}
+            country = db.get_country_by_player(user_id)
+            # ساخت یک query ساختگی برای نمایش فاکتور - از vip_checkout_screen استفاده می‌کنیم via message
+            # برای سادگی، مستقیم فاکتور رو به صورت پیام می‌فرستیم
+            plan = PLANS_METADATA.get(plan_key)
+            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵", "card_holder": "زینب فیاضی", "bank_name": "بانک سپه"})
+            card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
+            card_holder = card_info.get("card_holder", "زینب فیاضی")
+            bank_name = card_info.get("bank_name", "بانک سپه")
+            text = (
+                f"💳 **فاکتور پرداخت - {plan['title']}**\n"
+                f"🏷️ عنوان انتخابی: **{txt_in}**\n"
+                f"💵 مبلغ: **{plan['price']:,} تومان**\n\n"
+                f"💳 کارت: `{card_num}` به نام {card_holder} ({bank_name})\n\n"
+                "بعد از واریز، فیش رو بفرست:"
+            )
+            kb = [
+                [InlineKeyboardButton("📸 ارسال فیش", callback_data=f"vip:upload:{plan_key}")],
+                [InlineKeyboardButton("✍️ کد پیگیری", callback_data=f"vip:code:{plan_key}")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="vip:cat:visibility")],
+            ]
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            return True
+        elif step == "awaiting_new_name":
+            if len(txt_in) < 2 or len(txt_in) > 40:
+                await update.message.reply_text("❌ نام باید ۲ تا ۴۰ کاراکتر باشه:")
+                return True
+            context.user_data["vip_custom_payload"] = {"new_name": txt_in}
+            context.user_data["vip_input"] = {"step": "awaiting_checkout", "plan_key": plan_key}
+            plan = PLANS_METADATA.get(plan_key)
+            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵", "card_holder": "زینب فیاضی", "bank_name": "بانک سپه"})
+            card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
+            card_holder = card_info.get("card_holder", "زینب فیاضی")
+            bank_name = card_info.get("bank_name", "بانک سپه")
+            text = (
+                f"💳 **فاکتور - {plan['title']}**\n"
+                f"نام جدید: **{txt_in}**\n"
+                f"💵 مبلغ: **{plan['price']:,} تومان**\n"
+                f"کارت: `{card_num}` {card_holder} {bank_name}\n"
+            )
+            kb = [
+                [InlineKeyboardButton("📸 ارسال فیش", callback_data=f"vip:upload:{plan_key}")],
+                [InlineKeyboardButton("✍️ کد پیگیری", callback_data=f"vip:code:{plan_key}")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="vip:cat:visibility")],
+            ]
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            return True
+        elif step == "awaiting_new_flag":
+            if len(txt_in) < 1 or len(txt_in) > 8:
+                await update.message.reply_text("❌ یه ایموجی پرچم بفرست:")
+                return True
+            context.user_data["vip_custom_payload"] = {"new_flag": txt_in, "flag": txt_in}
+            context.user_data["vip_input"] = {"step": "awaiting_checkout", "plan_key": plan_key}
+            plan = PLANS_METADATA.get(plan_key)
+            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵", "card_holder": "زینب فیاضی", "bank_name": "بانک سپه"})
+            card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
+            card_holder = card_info.get("card_holder", "زینب فیاضی")
+            bank_name = card_info.get("bank_name", "بانک سپه")
+            text = (
+                f"💳 **فاکتور - {plan['title']}**\n"
+                f"پرچم جدید: {txt_in}\n"
+                f"💵 مبلغ: **{plan['price']:,} تومان**\n"
+                f"کارت: `{card_num}` {card_holder} {bank_name}\n"
+            )
+            kb = [
+                [InlineKeyboardButton("📸 ارسال فیش", callback_data=f"vip:upload:{plan_key}")],
+                [InlineKeyboardButton("✍️ کد پیگیری", callback_data=f"vip:code:{plan_key}")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="vip:cat:visibility")],
+            ]
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            return True
+        elif step == "awaiting_checkout":
+            # کاربر فاکتور رو دیده و الان میخواد فیش بفرسته - اجازه بده ادامه پیدا کنه به مرحله بعد
+            # این پیام متنی نیست فیش، پس نگه دار
+            context.user_data["vip_input"] = {"step": "awaiting_photo", "plan_key": plan_key, "custom_payload": context.user_data.get("vip_custom_payload", {})}
+            # ادامه به بخش فیش
+            pass
+
     # 2. بررسی دریافت فیش یا کد واریز
     vip_state = context.user_data.get("vip_input")
     if not vip_state:
         return False
+
+    # اگر مرحله checkout بود و الان عکس/کپشن اومده، custom_payload رو بردار
+    custom_payload_from_state = vip_state.get("custom_payload") or context.user_data.get("vip_custom_payload") or {}
 
     del context.user_data["vip_input"]
     plan_key = vip_state.get("plan_key")
@@ -587,8 +823,13 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("❌ لطفاً یک پیام متنی یا تصویر فیش معتبر ارسال فرمایید.")
         return True
 
-    # پیلود سفارشی برای گروه شبه‌نظامی
+    # پیلود سفارشی برای گروه شبه‌نظامی و خدمات دیده شدن
     custom_payload = ""
+    if custom_payload_from_state:
+        try:
+            custom_payload = json.dumps(custom_payload_from_state, ensure_ascii=False)
+        except Exception:
+            custom_payload = str(custom_payload_from_state)
     if plan_key == "militia" and "militia_wiz" in context.user_data:
         custom_payload = json.dumps(context.user_data["militia_wiz"], ensure_ascii=False)
 
@@ -626,6 +867,17 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"• <b>دکترین:</b> {html.escape(wiz.get('doctrine', ''))}\n"
         )
         del context.user_data["militia_wiz"]
+    # پاکسازی پیلود خدمات دیده شدن
+    if "vip_custom_payload" in context.user_data:
+        try:
+            del context.user_data["vip_custom_payload"]
+        except Exception:
+            pass
+    if "vip_pending_plan" in context.user_data:
+        try:
+            del context.user_data["vip_pending_plan"]
+        except Exception:
+            pass
 
     admin_text = (
         f"💳 <b>«درخواست جدید پرداخت تومانی» — شماره #{req_id}</b>\n"

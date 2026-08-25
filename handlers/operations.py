@@ -154,17 +154,25 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
         daily_drill_count = country.get("daily_drill_count", 0) if last_drill_date == today_str else 0
 
         max_drills = get_country_max_drills(country)
+        drill_tickets = country.get("drill_tickets", 0) or 0
 
         DRILL_MONEY_COST = 1_000_000
         DRILL_OIL_COST = 100_000
 
         if daily_drill_count >= max_drills:
-            await query.edit_message_text(
-                "⛔ **سقف روزانه مانور رزمی پر شده است!**\n\nشما امروز حداکثر مانورهای نظامی مجاز خود را برگزار کرده‌اید. جهت استراحت یگان‌ها، مانور بعدی فردا امکان‌پذیر است.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]]),
-                parse_mode="Markdown"
-            )
-            return
+            if drill_tickets > 0:
+                # استفاده خودکار از بلیط مانور اضافه
+                db.update_country_field(country["id"], "drill_tickets", max(0, drill_tickets - 1))
+                # ادامه به اجرای مانور با بلیط
+                pass
+            else:
+                await query.edit_message_text(
+                    f"⛔ **سقف روزانه مانور رزمی پر شده است!**\n\nشما امروز حداکثر مانورهای نظامی مجاز خود را برگزار کرده‌اید ({daily_drill_count}/{max_drills}).\n"
+                    f"🎫 بلیط اضافه نداری. می‌تونی از فروشگاه VIP بسته مانور بخری:\n`/vip` → خدمات دیده شدن + بلیط‌ها",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ستاد توسعه", callback_data="mv:menu")]]),
+                    parse_mode="Markdown"
+                )
+                return
 
         if country.get("treasury", 0) < DRILL_MONEY_COST:
             await query.edit_message_text(
