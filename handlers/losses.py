@@ -399,11 +399,21 @@ def parse_loss_report_text(text: str):
     # هزینه آماده‌سازی: فقط از بخش «هزینه آماده‌سازی عملیات» خوانده می‌شود.
     # (قبلاً کل متن جارو می‌شد و هر عدد دلاری — مثلاً «خسارت ۸۰۰ میلیون دلاری به بازار»
     #  در توضیحات — به‌اشتباه از خزانه‌ی کشور کسر می‌شد.)
+    # بخش هزینه از ابتدای عنوانش تا شروع بخش بعدی (توضیح/وضعیت/تلفات انسانی/...) محدود می‌شود؛
+    # وگرنه اعداد دلاری بخش‌های بعدی هم به‌اشتباه به هزینه‌ی عملیات اضافه می‌شوند.
     cost_start = None
     for idx, ln in enumerate(lines):
         if re.search(r"هزینه\s*(?:آماده[\s‌]*سازی|عملیات)", ln):
             cost_start = idx
             break
+
+    cost_end = len(lines)
+    if cost_start is not None:
+        _section_break = re.compile(r"📌|👥|📄|توضیح|وضعیت|جمع\s*تلفات|یادداشت|ملاحظات")
+        for idx in range(cost_start + 1, len(lines)):
+            if _section_break.search(lines[idx]):
+                cost_end = idx
+                break
 
     def _amounts_with_unit(scope_text, unit_word):
         total = 0
@@ -416,7 +426,7 @@ def parse_loss_report_text(text: str):
     if cost_start is None:
         result["costs"] = {"money": 0, "oil": 0}
     else:
-        cost_text = "\n".join(lines[cost_start:])
+        cost_text = "\n".join(lines[cost_start:cost_end])
         result["costs"] = {
             "money": _amounts_with_unit(cost_text, "دلار"),
             "oil": _amounts_with_unit(cost_text, "بشکه"),

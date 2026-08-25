@@ -297,6 +297,20 @@ class TestParser:
 تلفات: 2 فروند"""
         assert parse_loss_report_text(text)["costs"] == {"money": 0, "oil": 0}
 
+    def test_stray_dollar_amount_after_cost_section(self):
+        """رگرسیون: بخش هزینه باید در بخش بعدی تمام شود؛ عدد دلاری بخش «📌 توضیح» جزو هزینه نیست."""
+        from handlers.losses import parse_loss_report_text
+        text = """📄 تلفات تجهیزات 🇮🇷 ایران — عملیات «ب»
+جنگنده F-14
+تلفات: 2 فروند
+
+💸 هزینه آماده‌سازی عملیات
+مبلغ: 2.5 میلیون دلار
+سوخت: 12000 بشکه
+
+📌 توضیح: خسارت 800 میلیون دلاری به بازار جهانی وارد شد."""
+        assert parse_loss_report_text(text)["costs"] == {"money": 2_500_000, "oil": 12_000}
+
     def test_reversed_human_casualty_order(self):
         """رگرسیون: «۳۲۰ نفر کشته نظامی» باید درست خوانده شود."""
         from handlers.losses import parse_loss_report_text
