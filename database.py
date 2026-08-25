@@ -1993,7 +1993,7 @@ def adjust_microchips(country_id: int, amount: int):
 def adjust_gold(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE countries SET gold = gold + ? WHERE id = ?", (delta, country_id))
+    cur.execute("UPDATE countries SET gold = MAX(0, gold + ?) WHERE id = ?", (delta, country_id))
     conn.commit()
     conn.close()
 
@@ -2001,7 +2001,7 @@ def adjust_gold(country_id: int, delta: int):
 def adjust_oil(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE countries SET oil_reserves = oil_reserves + ? WHERE id = ?", (delta, country_id))
+    cur.execute("UPDATE countries SET oil_reserves = MAX(0, oil_reserves + ?) WHERE id = ?", (delta, country_id))
     conn.commit()
     conn.close()
 
@@ -2009,7 +2009,7 @@ def adjust_oil(country_id: int, delta: int):
 def adjust_oil_production(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE countries SET oil_production = oil_production + ? WHERE id = ?", (delta, country_id))
+    cur.execute("UPDATE countries SET oil_production = MAX(0, oil_production + ?) WHERE id = ?", (delta, country_id))
     conn.commit()
     conn.close()
 

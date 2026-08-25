@@ -2386,15 +2386,27 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         c = db.get_country_by_id(c_id)
         field_names = {"treasury": "خزانه", "gold": "طلا", "oil_reserves": "ذخیره نفت"}
-        notice = f"✅ {field_names.get(field, field)} کشور {c['name']} تغییر یافت."
-        await show_country_dashboard(query, context, c_id, notice=notice)
+        # در همان منو بمان تا بتوان چند بار پشت‌سرهم دکمه زد
+        # (قبلاً به داشبورد کلی برمی‌گشت و کاربر هر بار «می‌رفت بالاتر»)
+        sign = "➕" if delta > 0 else "➖"
+        await query.answer(
+            f"{sign} {field_names.get(field, field)} {c['name']}: {format_number(c.get(field, 0) or 0)}",
+            show_alert=False,
+        )
+        if field == "treasury":
+            await menu_treasury(query, c_id)
+        elif field == "gold":
+            await menu_gold(query, c_id)
+        elif field == "oil_reserves":
+            await menu_oil(query, c_id)
 
     elif data.startswith("admin:adj_asset:"):
         _, _, c_id_str, equipment_key, delta_str = data.split(":")
         c_id, delta = int(c_id_str), int(delta_str)
         asset = db.get_asset_by_key(c_id, equipment_key)
         if asset:
-            db.set_asset_amount(c_id, equipment_key, asset["amount"] + delta)
+            # تعداد دارایی هرگز منفی نشود
+            db.set_asset_amount(c_id, equipment_key, max(0, asset["amount"] + delta))
         await menu_single_asset_item(query, c_id, equipment_key)
 
     elif data.startswith("admin:set_asset:"):

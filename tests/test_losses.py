@@ -508,3 +508,24 @@ class TestBaseLosses:
         assert parsed["op"] == "طوفان صحرا"
         assert parsed["items"][0][0] == "جنگنده F-35A"
         assert parsed["items"][0][1] == 2
+
+
+class TestAdminAdjustGuards:
+    """رگرسیون: دکمه‌های ➖ پنل ادمین نباید مقدار را منفی کنند."""
+
+    def test_gold_and_oil_never_go_negative(self, tmp_path, monkeypatch):
+        import importlib, config
+        monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+        import database as db
+        importlib.reload(db)
+        db.init_db()
+        cid = db.create_country(777001, "ایران", "🇮🇷", country_key="iran")
+        db.adjust_gold(cid, -10 ** 9)
+        db.adjust_oil(cid, -10 ** 12)
+        db.adjust_oil_production(cid, -10 ** 12)
+        c = db.get_country_by_id(cid)
+        assert c["gold"] == 0
+        assert c["oil_reserves"] == 0
+        assert c["oil_production"] == 0
+        db.adjust_gold(cid, 300)
+        assert db.get_country_by_id(cid)["gold"] == 300
