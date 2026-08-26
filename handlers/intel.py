@@ -5,7 +5,9 @@
 طراحی فوق‌العاده شیک، کتابی با کادربندی‌های رسمی (<blockquote>)، ارقام فارسی و ترمینال‌های هکری مبهم.
 """
 
+import html
 import random
+import re
 import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes

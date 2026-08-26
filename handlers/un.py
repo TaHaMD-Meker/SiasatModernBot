@@ -154,16 +154,27 @@ async def un_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer(f"❌ {msg}", show_alert=True)
 
     elif data.startswith("un:close_res:"):
+        # این callback فقط باید برای دبیرکل/ادمین صاحب نقش UN قابل اجرا باشد؛
+        # دکمه‌های inline ممکن است از یک پیام فورواردشده هم کلیک شوند.
+        _, un_country = await require_un_or_admin(update)
+        if not un_country:
+            return
+
         parts = data.split(":")
+        if len(parts) != 4 or parts[3] not in {"passed", "vetoed"}:
+            await query.answer("نتیجه نهایی قطعنامه نامعتبر است.", show_alert=True)
+            return
         res_id = int(parts[2])
-        final_status = parts[3] # 'passed' or 'vetoed'
+        final_status = parts[3]
 
         res = db.get_un_resolution_by_id(res_id)
         if not res:
             await query.answer("قطعنامه یافت نشد.", show_alert=True)
             return
 
-        db.close_un_resolution(res_id, final_status)
+        if not db.close_un_resolution(res_id, final_status):
+            await query.answer("این قطعنامه قبلاً تعیین تکلیف شده است.", show_alert=True)
+            return
         votes = db.get_un_resolution_votes(res_id)
 
         yes_str = ", ".join([f"{v['flag']} {v['name']}" for v in votes["yes"]]) or "هیچ"

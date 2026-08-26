@@ -3099,6 +3099,10 @@ def get_asset_by_key(country_id: int, equipment_key: str):
 
 
 def buy_country_asset_transaction(country_id: int, equipment_key: str, quantity: int) -> tuple[bool, str, dict]:
+    """تولید یک تجهیز بومی به‌صورت اتمیک و با اعتبارسنجی ورودی."""
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
+        return False, "تعداد تولید باید یک عدد صحیح بزرگ‌تر از صفر باشد.", {}
+
     conn = get_connection()
     try:
         with conn:
@@ -3186,11 +3190,25 @@ def set_asset_amount(country_id: int, equipment_key: str, new_amount: int):
 # ---------- سیستم خریدهای غیرنظامی ----------
 
 def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_price: int, item_name: str) -> tuple[bool, str]:
+    """خرید ساختمان/پروژه به‌صورت اتمیک.
+
+    قیمت و تعداد از callback تلگرام قابل جعل هستند؛ بنابراین قیمت واقعی از
+    کاتالوگ دوباره محاسبه می‌شود و هیچ مقدار ارسالیِ کاربر به‌تنهایی معتبر نیست.
+    """
+    item = config.ALL_SHOP_ITEMS.get(item_key)
+    if not item:
+        return False, "این پروژه در کاتالوگ فروشگاه وجود ندارد."
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
+        return False, "تعداد احداث باید یک عدد صحیح بزرگ‌تر از صفر باشد."
+
+    expected_total_price = int(item["price"]) * quantity
+    if total_price != expected_total_price:
+        return False, "قیمت سفارش با قیمت فعلی فروشگاه مطابقت ندارد؛ لطفاً دوباره تلاش کنید."
+
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            item = config.ALL_SHOP_ITEMS.get(item_key, {})
             oil_req = item.get("oil_req", 0) * quantity
             gold_req = item.get("gold_req", 0) * quantity
             chips_req = item.get("chips_req", 0) * quantity
@@ -3209,6 +3227,13 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             row = cur.fetchone()
             if not row:
                 return False, "کشور پیدا نشد."
+
+            cur.execute("SELECT quantity FROM equipment WHERE country_id = ? AND item_key = ?", (country_id, item_key))
+            equipment_row = cur.fetchone()
+            current_quantity = (equipment_row["quantity"] or 0) if equipment_row else 0
+            max_limit = int(item.get("max_limit", 10) or 10)
+            if current_quantity + quantity > max_limit:
+                return False, f"سقف مجاز احداث این پروژه پر شده است (حداکثر {max_limit} واحد)."
 
             c_key = row["country_key"]
             tech_lvl = row["tech_level"] or 1
@@ -3650,6 +3675,28 @@ def update_contract_status(contract_id: int, status: str):
     conn.close()
 
 
+def reject_trade_contract(contract_id: int, actor_country_id: int) -> tuple[bool, str]:
+    """رد امن قرارداد فقط توسط کشور دریافت‌کننده و فقط در وضعیت معلق."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT recipient_id, status FROM trade_contracts WHERE id = ?", (contract_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "قرارداد یافت نشد."
+            if row["recipient_id"] != actor_country_id:
+                return False, "فقط کشور دریافت‌کننده قرارداد می‌تواند آن را رد کند."
+            if row["status"] != "pending":
+                return False, "این قرارداد قبلاً تعیین تکلیف شده است."
+            cur.execute("UPDATE trade_contracts SET status = 'rejected' WHERE id = ? AND status = 'pending'", (contract_id,))
+            if cur.rowcount != 1:
+                return False, "این قرارداد قبلاً تعیین تکلیف شده است."
+        return True, "قرارداد با موفقیت رد شد."
+    except Exception as e:
+        return False, f"خطا در رد قرارداد: {e}"
+
+
 def get_country_pending_sent_contracts(country_id: int) -> list:
     """دریافت لیست قراردادهای معلق ارسالی که هنوز پاسخ داده نشده‌اند."""
     conn = get_connection()
@@ -3703,7 +3750,8 @@ def cancel_pending_contract_by_proposer(proposer_id: int, contract_id: int) -> t
         return False, f"خطا در لغو قرارداد: {e}"
 
 
-def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
+def execute_trade_contract_transaction(contract_id: int, actor_country_id: int | None = None) -> tuple[bool, str]:
+    """اجرای اتمیک قرارداد؛ در مسیر بازیکن فقط کشور دریافت‌کننده مجاز است."""
     conn = get_connection()
     try:
         with conn:
@@ -3724,6 +3772,46 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             p_id = c["proposer_id"]
             r_id = c["recipient_id"]
 
+            if actor_country_id is not None and actor_country_id != r_id:
+                return False, "فقط کشور دریافت‌کننده قرارداد می‌تواند آن را قبول کند."
+            if p_id == r_id:
+                return False, "قرارداد بین یک کشور با خودش معتبر نیست."
+
+            trade_resource_cols = {
+                "treasury": "treasury",
+                "gold": "gold",
+                "oil": "oil_reserves",
+                "grain": "grain",
+                "iron_ore": "iron_ore",
+                "microchips": "microchips",
+                "uranium_ore": "uranium_ore",
+                "nuclear_fuel": "nuclear_fuel",
+            }
+            off_type = c.get("offered_type")
+            req_type = c.get("requested_type")
+            off_key = c.get("offered_key")
+            t_payer = c.get("transport_payer") or "seller"
+            t_mode = c.get("transport_mode") or "sea"
+            try:
+                off_amt = int(c.get("offered_amount"))
+                req_amt = int(c.get("requested_amount"))
+                t_cost = int(c.get("transport_cost") or 0)
+            except (TypeError, ValueError):
+                return False, "اطلاعات عددی قرارداد نامعتبر است."
+
+            if off_type != "military_asset" and off_type not in trade_resource_cols:
+                return False, "نوع کالای پیشنهادی قرارداد نامعتبر است."
+            if req_type not in trade_resource_cols:
+                return False, "نوع کالای درخواستی قرارداد نامعتبر است."
+            if off_type == "military_asset" and not off_key:
+                return False, "تجهیز نظامی قرارداد مشخص نشده است."
+            if off_amt <= 0 or req_amt < 0 or t_cost < 0:
+                return False, "مقادیر قرارداد باید معتبر و غیرمنفی باشند."
+            if t_payer not in {"seller", "buyer"}:
+                return False, "پرداخت‌کننده هزینه ترانزیت نامعتبر است."
+            if t_mode not in {"sea", "land", "air"}:
+                return False, "روش ترابری قرارداد نامعتبر است."
+
             cur.execute("SELECT * FROM countries WHERE id = ?", (p_id,))
             prop_c = cur.fetchone()
             cur.execute("SELECT * FROM countries WHERE id = ?", (r_id,))
@@ -3741,7 +3829,9 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
             if rel_row and rel_row["status"] == "sanctioned":
                 return False, "امکان انعقاد قرارداد یا انتقال تجهیزات با کشور تحریم‌شده وجود ندارد."
 
-            t_mode = c.get("transport_mode", "sea") or "sea"
+            # عوارض تنگه‌ها فقط بعد از موفقیت همه اعتبارسنجی‌ها کسر می‌شود؛
+            # تا یک قرارداد نامعتبر باعث پرداخت یک‌طرفه عوارض نشود.
+            strait_tolls = []
             if t_mode == "sea":
                 p_c_key = p_c.get("country_key")
                 r_c_key = r_c.get("country_key")
@@ -3756,8 +3846,8 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 for owner_key, strait_info in STRAITS_MAPPING.items():
                     s_key = strait_info["strait_key"]
                     st_data = get_strait_status(s_key)
-                    st_status = st_data["status"]
-                    st_toll = st_data["toll"]
+                    st_status = st_data.get("status", "open")
+                    st_toll = int(st_data.get("toll", 0) or 0)
 
                     p_c_key = p_c.get("country_key")
                     r_c_key = r_c.get("country_key")
@@ -3770,23 +3860,8 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
 
                         elif st_status == "toll" and owner_key not in [p_c_key, r_c_key]:
                             owner_c = get_country_by_key(owner_key)
-                            if owner_c:
-                                if p_c["treasury"] >= st_toll:
-                                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (st_toll, p_id))
-                                    cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (st_toll, owner_c["id"]))
-                                    p_c["treasury"] -= st_toll
-                                    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                                    cur.execute("INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)", (owner_c["id"], f"دریافت عوارض ترانزیت {strait_info['name']} از معاهده {p_c['name']} و {r_c['name']}", st_toll, now_str))
-                                else:
-                                    return False, f"⛔ **امکان پرداخت عوارض وجود ندارد:** خزانه کشور {p_c['name']} برای پرداخت عوارض ترانزیت {strait_info['name']} ({format_money(st_toll)}) کافی نیست."
-
-            off_type = c["offered_type"]
-            off_key = c.get("offered_key")
-            off_amt = c["offered_amount"]
-            req_type = c["requested_type"]
-            req_amt = c["requested_amount"]
-            t_payer = c["transport_payer"]
-            t_cost = c["transport_cost"]
+                            if owner_c and st_toll > 0:
+                                strait_tolls.append((owner_c, st_toll, strait_info["name"]))
 
             # Check capacity limits for commodity transport
             t_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("limits", {})
@@ -3796,6 +3871,7 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
 
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
+            strait_toll_total = sum(toll[1] for toll in strait_tolls)
 
             col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
@@ -3809,11 +3885,21 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 asset_dict = dict(asset_row)
 
                 r_total_needed = req_amt + r_extra_cost
-                if r_c["treasury"] < r_total_needed:
+                if (r_c["treasury"] or 0) < r_total_needed:
                     return False, f"کشور خریدار ({r_c['name']}) موجودی کافی در خزانه برای پرداخت قیمت و ترانزیت ندارد."
 
-                if p_extra_cost > 0 and p_c["treasury"] < p_extra_cost:
-                    return False, f"کشور فروشنده ({p_c['name']}) موجودی کافی برای پرداخت ترانزیت ندارد."
+                seller_route_cost = p_extra_cost + strait_toll_total
+                if (p_c["treasury"] or 0) < seller_route_cost:
+                    return False, f"کشور فروشنده ({p_c['name']}) موجودی کافی برای پرداخت ترانزیت و عوارض تنگه‌ها ندارد."
+
+                for owner_c, toll_amount, strait_name in strait_tolls:
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, p_id))
+                    cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (toll_amount, owner_c["id"]))
+                    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    cur.execute(
+                        "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)",
+                        (owner_c["id"], f"دریافت عوارض ترانزیت {strait_name} از معاهده {p_c['name']} و {r_c['name']}", toll_amount, now_str),
+                    )
 
                 is_smuggled = bool(c.get("is_smuggled"))
                 delivered_amt = off_amt
@@ -3870,16 +3956,30 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
                 else:
                     return True, "معاهده انتقال تسلیحات نظامی با موفقیت اجرا شد."
 
-            p_off_col = col_map.get(off_type, "treasury")
-            r_req_col = col_map.get(req_type, "treasury")
+            p_off_col = col_map[off_type]
+            r_req_col = col_map[req_type]
+            seller_route_cost = p_extra_cost + strait_toll_total
 
-            p_avail = p_c[p_off_col] - (p_extra_cost if p_off_col == "treasury" else 0)
+            p_avail = (p_c[p_off_col] or 0) - (seller_route_cost if p_off_col == "treasury" else 0)
             if p_avail < off_amt:
                 return False, f"طرف پیشنهاددهنده ({p_c['name']}) موجودی کافی برای اجرای قرارداد ندارد."
+            if p_off_col != "treasury" and (p_c["treasury"] or 0) < seller_route_cost:
+                return False, f"طرف پیشنهاددهنده ({p_c['name']}) موجودی کافی برای پرداخت هزینه ترانزیت و عوارض تنگه‌ها ندارد."
 
-            r_avail = r_c[r_req_col] - (r_extra_cost if r_req_col == "treasury" else 0)
+            r_avail = (r_c[r_req_col] or 0) - (r_extra_cost if r_req_col == "treasury" else 0)
             if r_avail < req_amt:
                 return False, f"طرف قبول‌کننده ({r_c['name']}) موجودی کافی برای اجرای قرارداد ندارد."
+            if r_req_col != "treasury" and (r_c["treasury"] or 0) < r_extra_cost:
+                return False, f"طرف قبول‌کننده ({r_c['name']}) موجودی کافی برای پرداخت هزینه ترانزیت ندارد."
+
+            for owner_c, toll_amount, strait_name in strait_tolls:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, p_id))
+                cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (toll_amount, owner_c["id"]))
+                now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cur.execute(
+                    "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)",
+                    (owner_c["id"], f"دریافت عوارض ترانزیت {strait_name} از معاهده {p_c['name']} و {r_c['name']}", toll_amount, now_str),
+                )
 
             cur.execute(f"UPDATE countries SET {p_off_col} = {p_off_col} - ? WHERE id = ?", (off_amt, p_id))
             cur.execute(f"UPDATE countries SET {r_req_col} = {r_req_col} + ? WHERE id = ?", (req_amt, p_id))
@@ -3909,6 +4009,28 @@ def execute_trade_contract_transaction(contract_id: int) -> tuple[bool, str]:
 
 
 def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int, transport_mode: str = "sea") -> tuple[bool, str]:
+    """انتقال اتمیک کمک خارجی با اعتبارسنجی کامل ورودی‌ها."""
+    resource_cols = {
+        "treasury": "treasury",
+        "gold": "gold",
+        "oil": "oil_reserves",
+        "grain": "grain",
+        "iron_ore": "iron_ore",
+        "microchips": "microchips",
+        "uranium_ore": "uranium_ore",
+        "nuclear_fuel": "nuclear_fuel",
+    }
+    valid_transport_modes = {"sea", "land", "air"}
+
+    if donor_id == recipient_id:
+        return False, "ارسال کمک به همان کشور امکان‌پذیر نیست."
+    if resource_type not in resource_cols:
+        return False, "نوع منبع کمک نامعتبر است."
+    if transport_mode not in valid_transport_modes:
+        return False, "روش ترابری نامعتبر است."
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+        return False, "مقدار کمک باید یک عدد صحیح بزرگ‌تر از صفر باشد."
+
     conn = get_connection()
     try:
         with conn:
@@ -3962,14 +4084,13 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                                 t_cost += st_toll
 
             # بررسی موجودی کالا و هزینه ترانزیت
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
-            col_name = col_map.get(resource_type, "treasury")
+            col_name = resource_cols[resource_type]
 
-            donor_money_avail = d_c["treasury"] - (amount if resource_type == "treasury" else 0)
+            donor_money_avail = (d_c["treasury"] or 0) - (amount if resource_type == "treasury" else 0)
             if donor_money_avail < t_cost:
                 return False, f"💵 **کسری بودجه برای پرداخت هزینه ترانزیت:** هزینه حمل‌ونقل و ترانزیت این محموله برابر با **{format_money(t_cost)}** است و موجودی خزانه شما کافی نیست."
 
-            if d_c[col_name] < amount:
+            if (d_c[col_name] or 0) < amount:
                 return False, f"موجودی {resource_type} کشور شما برای ارسال این کمک کافی نیست."
 
             # کسر هزینه ترانزیت از اهداکننده
@@ -4959,6 +5080,11 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
 
 def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int, transport_mode: str = "sea") -> tuple[bool, str, dict]:
     """خرید فوری و مستقیم کالا از بورس جهانی توسط کشور خریدار."""
+    if transport_mode not in {"sea", "land", "air"}:
+        return False, "روش ترابری نامعتبر است.", {}
+    if isinstance(buy_amount, bool) or not isinstance(buy_amount, int) or buy_amount <= 0:
+        return False, "مقدار خرید باید یک عدد صحیح بزرگ‌تر از صفر باشد.", {}
+
     conn = get_connection()
     try:
         with conn:
@@ -5189,6 +5315,9 @@ def get_un_resolution_by_id(res_id: int) -> dict:
 
 def cast_un_vote(resolution_id: int, voter_country_id: int, vote_option: str) -> tuple[bool, str]:
     """ثبت رای کشور در رای‌گیری قطعنامه سازمان ملل."""
+    if vote_option not in {"yes", "no", "abstain"}:
+        return False, "گزینه رای‌گیری نامعتبر است."
+
     conn = get_connection()
     try:
         with conn:
@@ -5236,13 +5365,20 @@ def get_un_resolution_votes(resolution_id: int) -> dict:
 
 
 def close_un_resolution(resolution_id: int, final_status: str) -> bool:
-    """بستن یا اعلام نتیجه قطعنامه (passed, vetoed, failed)."""
+    """بستن قطعنامه فعال با وضعیت نهایی معتبر."""
+    if final_status not in {"passed", "vetoed", "failed"}:
+        return False
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE un_resolutions SET status = ? WHERE id = ?", (final_status, resolution_id))
-    conn.commit()
-    conn.close()
-    return True
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE un_resolutions SET status = ? WHERE id = ? AND status = 'active'",
+                (final_status, resolution_id),
+            )
+            return cur.rowcount == 1
+    finally:
+        conn.close()
 
 
 # ---------- ثبت و بازیابی سناریوهای نبرد ----------
@@ -5436,6 +5572,10 @@ def execute_intel_operation(attacker_id: int, target_id: int, op_type: str, chip
     op_cfg = config.INTEL_OPERATIONS_CONFIG.get(op_type)
     if not op_cfg:
         return False, "نوع عملیات نامعتبر است.", {}
+    if attacker_id == target_id:
+        return False, "کشور مهاجم و هدف نمی‌توانند یکسان باشند.", {}
+    if isinstance(chips_boost, bool) or not isinstance(chips_boost, int) or chips_boost not in {0, 5}:
+        return False, "تقویت عملیاتی نامعتبر است.", {}
 
     conn = get_connection()
     try:

@@ -548,6 +548,11 @@ async def show_warheads_menu(query, country):
     equipment = db.get_equipment(country["id"])
     has_enrichment = (equipment.get("enrichment_facility", 0) or 0) > 0
     is_p5 = country.get("country_key") in ("usa", "russia", "china", "france", "uk", "pakistan", "india", "israel", "north_korea")
+    npt_out = bool(country.get("npt_withdrawn") or 0)
+    eff_cap = db.get_effective_warhead_cap(country)
+    cap_display = "نامحدود" if eff_cap is None else format_number(eff_cap)
+    override = country.get("warhead_cap_override")
+    override_note = " (⚖️ مصوب ویژه آژانس)" if (override is not None and override >= 0) else ""
 
     text = (
         f"🚀 **مرکز تسلیحات راهبردی و بازدارندگی هسته‌ای — {country['flag']} {country['name']}**\n"
@@ -567,11 +572,6 @@ async def show_warheads_menu(query, country):
         f"۳. سقف نگهداری کلاهک کشور شما: **{cap_display}**{override_note}"
     )
 
-    npt_out = bool(country.get("npt_withdrawn") or 0)
-    eff_cap = db.get_effective_warhead_cap(country)
-    cap_display = "نامحدود" if eff_cap is None else format_number(eff_cap)
-    override = country.get("warhead_cap_override")
-    override_note = " (⚖️ مصوب ویژه آژانس)" if (override is not None and override >= 0) else ""
     if not is_p5:
         if npt_out:
             text += (

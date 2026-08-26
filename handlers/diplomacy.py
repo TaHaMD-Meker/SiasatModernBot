@@ -1687,7 +1687,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         )
     elif data.startswith("dip:trade_accept:"):
         contract_id = int(data.split(":")[2])
-        succ, msg = db.execute_trade_contract_transaction(contract_id)
+        succ, msg = db.execute_trade_contract_transaction(contract_id, actor_country_id=country["id"])
 
         if not succ:
             await query.edit_message_text(f"❌ **اجرای قرارداد ناموفق بود:**\n\n{msg}", parse_mode="Markdown")
@@ -1879,10 +1879,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
     elif data.startswith("dip:pub_news:"):
         parts = data.split(":")
         contract_id = int(parts[2])
-        choice = parts[3] # 'yes' or 'no'
+        choice = parts[3] if len(parts) > 3 else "no"
 
         c_data = db.get_trade_contract(contract_id)
-        if choice == "yes" and c_data:
+        if not c_data:
+            await query.answer("قرارداد یافت نشد.", show_alert=True)
+            return
+        if country["id"] not in (c_data["proposer_id"], c_data["recipient_id"]):
+            await query.answer("فقط طرفین این قرارداد می‌توانند درباره انتشار خبر تصمیم بگیرند.", show_alert=True)
+            return
+        if choice not in {"yes", "no"}:
+            await query.answer("انتخاب انتشار خبر نامعتبر است.", show_alert=True)
+            return
+
+        if choice == "yes":
             p_c = db.get_country_by_id(c_data["proposer_id"])
             r_c = db.get_country_by_id(c_data["recipient_id"])
             t_mode = c_data.get("transport_mode", "sea") or "sea"
@@ -1902,7 +1912,11 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data.startswith("dip:trade_reject:"):
         contract_id = int(data.split(":")[2])
-        db.update_contract_status(contract_id, "rejected")
+        rejected, reject_msg = db.reject_trade_contract(contract_id, country["id"])
+        if not rejected:
+            await query.answer(f"❌ {reject_msg}", show_alert=True)
+            return
+
         c_data = db.get_trade_contract(contract_id)
         if c_data:
             p_c = db.get_country_by_id(c_data["proposer_id"])

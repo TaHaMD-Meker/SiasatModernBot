@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 import database as db
 import config
+import news_engine
 from utils import format_money, format_number, format_oil, get_main_keyboard, clear_text_input_flags
 
 
@@ -336,10 +337,12 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             except Exception:
                 pass
 
+        seller_id = seller.get("id")
+        buyer_id = country.get("id")
         keyboard = [
             [
-                InlineKeyboardButton("📢 بله، انتشار در کانال اخبار", callback_data=f"market:pub_news:{order_id}:{t_mode}:yes"),
-                InlineKeyboardButton("🔕 خیر، معامله محرمانه بماند", callback_data=f"market:pub_news:{order_id}:{t_mode}:no"),
+                InlineKeyboardButton("📢 بله، انتشار در کانال اخبار", callback_data=f"market:pub_news:{order_id}:{t_mode}:{seller_id}:{buyer_id}:yes"),
+                InlineKeyboardButton("🔕 خیر، معامله محرمانه بماند", callback_data=f"market:pub_news:{order_id}:{t_mode}:{seller_id}:{buyer_id}:no"),
             ],
             [InlineKeyboardButton("🏪 بازگشت به بورس کالا", callback_data="market:menu")],
             [InlineKeyboardButton("🌐 مشاهده وضعیت کشور", callback_data="country:back_profile")]
@@ -349,14 +352,34 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     elif data.startswith("market:pub_news:"):
         parts = data.split(":")
-        order_id = int(parts[2])
-        t_mode = parts[3]
-        choice = parts[4]
+        try:
+            order_id = int(parts[2])
+            t_mode = parts[3]
+            if len(parts) >= 7:
+                seller_id = int(parts[4])
+                buyer_id = int(parts[5])
+                choice = parts[6]
+            else:
+                # سازگاری با پیام‌های قدیمی که شناسه طرفین را نداشتند.
+                seller_id = None
+                buyer_id = None
+                choice = parts[4]
+        except (IndexError, TypeError, ValueError):
+            await query.answer("اطلاعات انتشار خبر نامعتبر است.", show_alert=True)
+            return
+
+        if buyer_id is not None and country["id"] != buyer_id:
+            await query.answer("فقط خریدار این معامله می‌تواند درباره انتشار خبر تصمیم بگیرد.", show_alert=True)
+            return
+        if choice not in {"yes", "no"}:
+            await query.answer("انتخاب انتشار خبر نامعتبر است.", show_alert=True)
+            return
 
         if choice == "yes":
             order = db.get_market_order_by_id(order_id)
-            buyer_c = country
-            seller_c = db.get_country_by_id(order["seller_id"]) if order else None
+            buyer_c = country if buyer_id is None else db.get_country_by_id(buyer_id)
+            resolved_seller_id = seller_id or (order["seller_id"] if order else None)
+            seller_c = db.get_country_by_id(resolved_seller_id) if resolved_seller_id else None
             if buyer_c and seller_c:
                 try:
                     await news_engine.trigger_trade_news(context.bot, buyer_c, seller_c, transport_mode=t_mode)

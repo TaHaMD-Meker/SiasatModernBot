@@ -86,6 +86,7 @@ async def vip_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """نمایش تعرفه‌ها و سطوح ۴ گانه اشتراک رهبری VIP."""
+    user_id = update.effective_user.id
     text = (
         "👑 **اشتراک‌های ۴ سطحی رهبری ویژه (VIP Leader Passes)**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"

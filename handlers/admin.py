@@ -40,6 +40,21 @@ def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
 
+def _clean_persian_str(value: str) -> str:
+    """استانداردسازی متن فارسی/انگلیسی برای جستجوی کشورها در پنل ادمین."""
+    if not value:
+        return ""
+    text = str(value).strip().lower().replace("_", " ")
+    for source, target in {
+        "ي": "ی", "ى": "ی", "ك": "ک", "ؤ": "و",
+        "إ": "ا", "أ": "ا", "آ": "ا", "ة": "ه",
+        "ئ": "ی", "ـ": "",
+    }.items():
+        text = text.replace(source, target)
+    text = re.sub(r"[^\w\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 # ==================== هاب مدیریت پیام‌ها و سوییچ امن بین عکس و متن ====================
 
 async def safe_edit_or_reply(query, text: str, reply_markup=None, parse_mode="HTML", photo_id: str = None):

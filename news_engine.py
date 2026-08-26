@@ -8,21 +8,32 @@ import datetime
 import config
 
 
-async def post_breaking_news(bot, headline: str, body_text: str):
-    """ارسال خبر فوری به کانال رسمی تلگرام بازی به سبک کانال‌های خبری."""
+async def post_breaking_news(
+    bot,
+    news_title: str | None = None,
+    news_body: str | None = None,
+    event_category: str = "خبر فوری",
+):
+    """ارسال خبر فوری به کانال رسمی تلگرام بازی.
+
+    ``event_category`` و نام پارامترهای ``news_title``/``news_body`` برای
+    سازگاری با فراخوانی‌های قدیمی نگه داشته شده‌اند. نسخه‌های جدید موتور
+    می‌توانند عنوان و متن را به‌صورت positional ارسال کنند.
+    """
     channel_id = config.get_channel_id()
-    if not channel_id:
+    if not channel_id or not news_title or news_body is None:
         return False
 
+    category_prefix = f"{event_category} / " if event_category else ""
     card_text_md = (
-        f"🚨 **فوری / {headline}**\n\n"
-        f"{body_text}\n\n"
+        f"🚨 **{category_prefix}{news_title}**\n\n"
+        f"{news_body}\n\n"
         f"🆔 @SiasatModern"
     )
 
     card_text_plain = (
-        f"🚨 فوری / {headline}\n\n"
-        f"{body_text}\n\n"
+        f"🚨 {category_prefix}{news_title}\n\n"
+        f"{news_body}\n\n"
         f"🆔 @SiasatModern"
     )
 
