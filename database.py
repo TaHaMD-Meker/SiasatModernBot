@@ -1167,6 +1167,52 @@ def _apply_building_effects(cur, country_id: int, effects: dict, sign: int):
             )
 
 
+def _kill_commander_with_cur(cur, country_id: int, commander_key: str, reason: str = "ترور اطلاعاتی") -> tuple[bool, str]:
+    """تغییر وضعیت فرمانده با cursor تراکنش جاری؛ اتصال دوم باز نمی‌کند."""
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    now_str = now_dt.isoformat()
+    until_str = (now_dt + datetime.timedelta(hours=24)).isoformat()
+    cur.execute(
+        """
+        UPDATE country_commanders SET status = 'assassinated', killed_at = ?
+        WHERE country_id = ? AND (key = ? OR title LIKE ?) AND status = 'active'
+        """,
+        (now_str, country_id, commander_key, f"%{commander_key}%"),
+    )
+    if cur.rowcount <= 0:
+        return False, "فرمانده یافت نشد یا قبلاً ترور شده است."
+
+    cur.execute(
+        """
+        UPDATE countries SET
+        combat_readiness = MAX(0, combat_readiness - 15),
+        command_disrupted_until = ?
+        WHERE id = ?
+        """,
+        (until_str, country_id),
+    )
+    cur.execute(
+        """
+        INSERT INTO transactions (country_id, type, description, amount, created_at)
+        VALUES (?, 'commander_killed', ?, 0, ?)
+        """,
+        (country_id, f"🎖️ شهادت / ترور {commander_key} ({reason})", now_str),
+    )
+    return True, f"فرمانده {commander_key} مورد اصابت قرار گرفت و وضعیت وی به ترور/شهید تغییر یافت."
+
+
+def _revive_commander_with_cur(cur, country_id: int, commander_key: str) -> bool:
+    """بازگردانی فرمانده با cursor تراکنش جاری؛ اتصال دوم باز نمی‌کند."""
+    cur.execute(
+        """
+        UPDATE country_commanders SET status = 'active', killed_at = NULL
+        WHERE country_id = ? AND (key = ? OR title LIKE ?)
+        """,
+        (country_id, commander_key, f"%{commander_key}%"),
+    )
+    return cur.rowcount > 0
+
+
 def _restore_loss_items(cur, country_id: int, items: list):
     """بازگردانی کاملِ اقلام یک گزارش به موجودی کشور یا پایگاه (مشترک بین revert و delete)."""
     for it in items:
@@ -1186,7 +1232,7 @@ def _restore_loss_items(cur, country_id: int, items: list):
             continue
         if special == "commander":
             cmd_k = it.get("cmd_key", it["key"].replace("__cmd_", "").replace("__", ""))
-            revive_commander(country_id, cmd_k)
+            _revive_commander_with_cur(cur, country_id, cmd_k)
             continue
         column = LOSS_SPECIAL_COLUMNS.get(special)
         if column:
@@ -1285,7 +1331,7 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                     continue
                 if it.get("special") == "commander":
                     cmd_k = it.get("cmd_key", it["key"].replace("__cmd_", "").replace("__", ""))
-                    kill_commander(country_id, cmd_k, f"اصابت در عملیات {operation_name}")
+                    _kill_commander_with_cur(cur, country_id, cmd_k, f"اصابت در عملیات {operation_name}")
                     continue
                 special = it.get("special")
                 if special in LOSS_SPECIAL_COLUMNS:
@@ -5462,33 +5508,11 @@ def kill_commander(country_id: int, commander_key: str, reason: str = "ترور 
     conn = get_connection()
     try:
         with conn:
-            cur = conn.cursor()
-            now_dt = datetime.datetime.now(datetime.timezone.utc)
-            now_str = now_dt.isoformat()
-            until_dt = now_dt + datetime.timedelta(hours=24)
-            until_str = until_dt.isoformat()
-
-            cur.execute("""
-                UPDATE country_commanders SET status = 'assassinated', killed_at = ?
-                WHERE country_id = ? AND (key = ? OR title LIKE ?) AND status = 'active'
-            """, (now_str, country_id, commander_key, f"%{commander_key}%"))
-
-            affected = cur.rowcount
-            if affected > 0:
-                cur.execute("""
-                    UPDATE countries SET
-                    combat_readiness = MAX(0, combat_readiness - 15),
-                    command_disrupted_until = ?
-                    WHERE id = ?
-                """, (until_str, country_id))
-                cur.execute("""
-                    INSERT INTO transactions (country_id, type, description, amount, created_at)
-                    VALUES (?, 'commander_killed', ?, 0, ?)
-                """, (country_id, f"🎖️ شهادت / ترور {commander_key} ({reason})", now_str))
-                return True, f"فرمانده {commander_key} مورد اصابت قرار گرفت و وضعیت وی به ترور/شهید تغییر یافت."
-            return False, "فرمانده یافت نشد یا قبلاً ترور شده است."
+            return _kill_commander_with_cur(conn.cursor(), country_id, commander_key, reason)
     except Exception as e:
         return False, str(e)
+    finally:
+        conn.close()
 
 
 def revive_commander(country_id: int, commander_key: str) -> bool:
@@ -5496,14 +5520,11 @@ def revive_commander(country_id: int, commander_key: str) -> bool:
     conn = get_connection()
     try:
         with conn:
-            cur = conn.cursor()
-            cur.execute("""
-                UPDATE country_commanders SET status = 'active', killed_at = NULL
-                WHERE country_id = ? AND (key = ? OR title LIKE ?)
-            """, (country_id, commander_key, f"%{commander_key}%"))
-        return True
+            return _revive_commander_with_cur(conn.cursor(), country_id, commander_key)
     except Exception:
         return False
+    finally:
+        conn.close()
 
 
 def get_country_intel_attack_defense(country_id: int) -> tuple[int, int]:

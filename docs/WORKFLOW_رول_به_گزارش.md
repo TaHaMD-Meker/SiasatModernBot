@@ -85,16 +85,24 @@
 # فهرست کشورها
 python tools/loss_tool.py countries
 
-# انبار کامل یک کشور با نام دقیق تجهیزات
+# انبار پایه‌ی یک کشور از config
 python tools/loss_tool.py list yemen
-python tools/loss_tool.py list iran --cat Navy
 
-# پیدا کردن نام دقیق یک تجهیز
-python tools/loss_tool.py find yemen "قایق نذیر"
+# انبار فعلی از snapshot خواندنی دیتابیس بازی (مسیر پیش‌فرض config.DB_PATH)
+python tools/loss_tool.py list yemen --live
+python tools/loss_tool.py list iran --live --cat Navy
 
-# شبیه‌سازی کامل یک گزارش
-python tools/loss_tool.py check yemen report.txt --render
+# اگر دیتابیس در مسیر دیگری است؛ منبع اصلی فقط read-only خوانده می‌شود
+python tools/loss_tool.py export yemen --live --db /data/game.db
+
+# پیدا کردن نام دقیق یک تجهیز در موجودی فعلی
+python tools/loss_tool.py find yemen "قایق نذیر" --live --db /data/game.db
+
+# شبیه‌سازی کامل روی snapshot؛ حتی در حالت live دیتابیس اصلی تغییر نمی‌کند
+python tools/loss_tool.py check yemen report.txt --live --db /data/game.db --render
 ```
+
+حالت پیش‌فرض (`بدون --live`) برای بررسی کاتالوگ و مقادیر پایه‌ی config است. برای گزارش واقعی که باید با موجودی فعلی بازیکن تطبیق داشته باشد، از `--live` استفاده کن. در این حالت ابزار دیتابیس اصلی را با SQLite در حالت read-only می‌خواند و یک snapshot موقت می‌سازد؛ بنابراین `check` روی snapshot اجرا می‌شود و دیتابیس اصلی را تغییر نمی‌دهد.
 
 خروجی `check` نشان می‌دهد:
 - هر قلم به چه تجهیزی تطبیق می‌خورد و **چند درصد** موجودی است

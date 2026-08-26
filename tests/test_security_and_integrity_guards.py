@@ -1,6 +1,7 @@
 """Regression tests for transaction validation and callback-safe invariants."""
 
 import asyncio
+import sqlite3
 
 import config
 import database as db
@@ -139,6 +140,61 @@ def test_trade_accept_and_reject_are_recipient_only_and_one_shot(monkeypatch, tm
     ok_reject_after_accept, _ = database.reject_trade_contract(accepted_id, recipient_id)
     assert not ok_reject_after_accept
     assert database.get_trade_contract(accepted_id)["status"] == "accepted"
+
+
+def test_loss_report_with_equipment_and_commander_uses_one_transaction(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    country_id = database.create_country(7011, "کشور دارای فرمانده", "🏳️", country_key="iran")
+    commander = database.get_country_commanders(country_id)[0]
+
+    conn = database.get_connection()
+    conn.execute(
+        "INSERT INTO country_assets (country_id, country_key, equipment_key, equipment_name, category, amount) VALUES (?, ?, ?, ?, ?, ?)",
+        (country_id, "iran", "f14", "جنگنده F-14", "Aircraft", 5),
+    )
+    conn.commit()
+    conn.close()
+
+    items = [
+        {"key": "f14", "name": "جنگنده F-14", "category": "Aircraft", "qty": 1},
+        {
+            "key": f"__cmd_{commander['key']}__",
+            "name": commander["title"],
+            "special": "commander",
+            "cmd_key": commander["key"],
+            "qty": 1,
+        },
+    ]
+    ok, report_id, error = database.create_loss_report(country_id, items, "عملیات ترکیبی", "", 1)
+    assert ok, error
+    assert database.get_asset_by_key(country_id, "f14")["amount"] == 4
+    assert database.get_country_commanders(country_id)[0]["status"] == "assassinated"
+
+    ok_revert, error = database.revert_loss_report(report_id)
+    assert ok_revert, error
+    assert database.get_asset_by_key(country_id, "f14")["amount"] == 5
+    assert database.get_country_commanders(country_id)[0]["status"] == "active"
+
+
+def test_loss_tool_live_mode_reads_snapshot_without_touching_source(monkeypatch, tmp_path):
+    source_path = tmp_path / "live.db"
+    monkeypatch.setattr(config, "DB_PATH", str(source_path))
+    db.init_db()
+    country_id = db.create_country(7012, "کشور زنده", "🏳️", country_key="iran")
+    db.update_country_field(country_id, "treasury", 123_456_789)
+
+    from tools.loss_tool import _boot
+
+    snapshot_db, country = _boot("iran", str(source_path))
+    assert country["treasury"] == 123_456_789
+    snapshot_db.update_country_field(country["id"], "treasury", 1)
+
+    source_conn = sqlite3.connect(source_path)
+    source_treasury = source_conn.execute(
+        "SELECT treasury FROM countries WHERE id = ?", (country_id,)
+    ).fetchone()[0]
+    source_conn.close()
+    assert source_treasury == 123_456_789
 
 
 def test_intel_operation_rejects_self_target_and_forged_chip_boost(monkeypatch, tmp_path):
