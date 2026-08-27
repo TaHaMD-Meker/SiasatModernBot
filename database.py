@@ -859,6 +859,108 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tournament_players_score ON tournament_players(season_id, status, score DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tournament_snapshots_lookup ON tournament_snapshots(season_id, country_id, captured_at)")
 
+    # ─────────────────────────────────────────────────────────────────────
+    # لاگ عمومی اقدامات (add_log). این جدول قبلاً ساخته نمی‌شد و هر فراخوانی
+    # add_log روی دیتابیس تازه با «no such table: logs» کرش می‌کرد — از جمله
+    # خرید فروشگاه، ارتقای تکنولوژی، درخواست کشور و تأیید/رد کشور توسط ادمین.
+    # ─────────────────────────────────────────────────────────────────────
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor TEXT,
+        action TEXT NOT NULL,
+        details TEXT DEFAULT '',
+        created_at TEXT NOT NULL
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_logs_action ON logs(action, created_at DESC)")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # سیستم جمعیت پویا، مالیات، ناآرامی و بحران (internal_affairs)
+    # ─────────────────────────────────────────────────────────────────────
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS country_internal (
+        country_id INTEGER PRIMARY KEY,
+        tax_policy TEXT NOT NULL DEFAULT 'normal',
+        tax_policy_changed_at TEXT,
+        tax_policy_days INTEGER NOT NULL DEFAULT 0,
+        baseline_population INTEGER NOT NULL DEFAULT 0,
+        baseline_tax_income INTEGER NOT NULL DEFAULT 0,
+        unrest REAL NOT NULL DEFAULT 0,
+        unrest_stage INTEGER NOT NULL DEFAULT 0,
+        critical_days INTEGER NOT NULL DEFAULT 0,
+        collapse_risk INTEGER NOT NULL DEFAULT 0,
+        emergency_until TEXT,
+        crisis_shield_until TEXT,
+        last_cycle_date TEXT,
+        created_at TEXT,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS internal_daily_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        log_date TEXT NOT NULL,
+        population_before INTEGER NOT NULL DEFAULT 0,
+        population_after INTEGER NOT NULL DEFAULT 0,
+        population_delta INTEGER NOT NULL DEFAULT 0,
+        tax_before INTEGER NOT NULL DEFAULT 0,
+        tax_after INTEGER NOT NULL DEFAULT 0,
+        approval INTEGER NOT NULL DEFAULT 0,
+        unrest REAL NOT NULL DEFAULT 0,
+        unrest_stage INTEGER NOT NULL DEFAULT 0,
+        tax_policy TEXT NOT NULL DEFAULT 'normal',
+        notes TEXT DEFAULT '',
+        details_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        UNIQUE(country_id, log_date),
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS country_crises (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        crisis_key TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'medium',
+        stage TEXT NOT NULL DEFAULT 'warning',
+        origin TEXT NOT NULL DEFAULT 'random',
+        duration_days INTEGER NOT NULL DEFAULT 2,
+        warned_at TEXT,
+        started_at TEXT,
+        ends_at TEXT,
+        ended_at TEXT,
+        mitigation REAL NOT NULL DEFAULT 0,
+        damage_json TEXT NOT NULL DEFAULT '{}',
+        created_by INTEGER,
+        created_at TEXT NOT NULL,
+        news_flags TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS crisis_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        crisis_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        action_key TEXT NOT NULL,
+        actor_id INTEGER,
+        cost INTEGER NOT NULL DEFAULT 0,
+        mitigation REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(crisis_id, action_key),
+        FOREIGN KEY(crisis_id) REFERENCES country_crises(id) ON DELETE CASCADE,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_country_crises_active ON country_crises(country_id, stage)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_internal_daily_log_lookup ON internal_daily_log(country_id, log_date DESC)")
+
     conn.commit()
     conn.close()
 
