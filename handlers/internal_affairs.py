@@ -154,32 +154,53 @@ async def _tax_page(query, country: dict, state: dict):
     policy = state.get("tax_policy") or ia.DEFAULT_TAX_POLICY
     approval = int(country.get("approval_rating") or 0)
     compliance = ia.compliance_for(approval)
+    locked = bool(int(state.get("policy_locked") or 0))
     lines = [
         "💰 <b>سیاست مالیاتی</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"سیاست فعلی: <b>{ia.tax_policy_label(policy)}</b>",
-        f"درآمد مالیاتی فعلی: <b>{format_money(country.get('tax_income'))}</b>",
-        f"جمعیت مشمول: <b>{format_number(country.get('population'))}</b>",
-        f"رضایت عمومی: <b>{approval}٪</b>",
-        f"نرخ تمکین مالیاتی: <b>{int(compliance * 100)}٪</b>",
-        f"فرار مالیاتی برآوردی: <b>{max(0, 100 - int(compliance * 100))}٪</b>",
-        f"اثر ناآرامی: <b>{int(ia.UNREST_TAX_MULT.get(int(state.get('unrest_stage') or 0), 1.0) * 100)}٪</b>",
+        f"💵 <b>درآمد مالیاتی فعلی (هم‌اکنون در حال پرداخت): {format_money(country.get('tax_income'))}</b>",
+        "",
+        f"👥 جمعیت مشمول: {format_number(country.get('population'))}",
+        f"😊 رضایت عمومی: {approval}٪",
+        f"🧾 نرخ تمکین مالیاتی: {int(compliance * 100)}٪",
+        f"🕳 فرار مالیاتی برآوردی: {max(0, 100 - int(compliance * 100))}٪",
+        f"⚖️ اثر ناآرامی: {int(ia.UNREST_TAX_MULT.get(int(state.get('unrest_stage') or 0), 1.0) * 100)}٪",
         "",
         "📌 هرچه رضایت عمومی پایین‌تر بیاید، مردم کمتر مالیات می‌پردازند.",
         "ممکن است نرخ را بالا ببرید اما وصولی واقعی کمتر شود.",
         "",
-        "<b>پیش‌بینی درآمد با هر سیاست:</b>",
+        "<b>اگر سیاست را عوض کنید، درآمد شما این می‌شود:</b>",
     ]
     rows = []
     for key, spec in ia.TAX_POLICIES.items():
         projected = ia.project_tax_income(country, state, key)
-        marker = " ✅" if key == policy else ""
-        lines.append(f"• {spec['label']}: {format_money(projected)}{marker}")
-        if key != policy:
-            rows.append([InlineKeyboardButton(f"تغییر به {spec['label']}", callback_data=f"dom:setpolicy:{key}")])
-    lines.append("\nℹ️ سیاست جدید از چرخه‌ی روزانه‌ی بعدی اعمال می‌شود.")
+        if key == policy:
+            lines.append(f"• {spec['label']}: {format_money(projected)} ✅ <i>(فعال)</i>")
+            continue
+        current = int(country.get("tax_income") or 0)
+        diff = projected - current
+        sign = "🔼" if diff > 0 else ("🔽" if diff < 0 else "➖")
+        lines.append(f"• {spec['label']}: {format_money(projected)} {sign}")
+        if not locked:
+            rows.append([InlineKeyboardButton(
+                f"تغییر به {spec['label']}", callback_data=f"dom:setpolicy:{key}"
+            )])
+
+    if locked:
+        lines.append(
+            "\n🔒 <b>شما امروز یک‌بار سیاست را تغییر داده‌اید.</b>\n"
+            "تغییر بعدی از چرخه‌ی روزانه‌ی بعد ممکن است."
+        )
+    else:
+        lines.append(
+            "\n⚡ تغییر سیاست <b>بلافاصله</b> روی درآمد مالیاتی اعمال می‌شود.\n"
+            "⚠️ اما هزینه‌ی آن (رضایت و ناآرامی) در چرخه‌ی روزانه‌ی بعد کسر می‌شود، "
+            "و تا آن موقع نمی‌توانید دوباره سیاست را عوض کنید."
+        )
     rows.append(_back_row())
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
+
 
 
 async def _unrest_page(query, country: dict, state: dict):

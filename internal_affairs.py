@@ -357,7 +357,13 @@ def get_state(country_id: int) -> dict | None:
 
 
 def set_tax_policy(country_id: int, policy: str, actor_id: int | None = None):
-    """تغییر سیاست مالیاتی کشور. مالیات از چرخه‌ی روزانه‌ی بعدی اعمال می‌شود."""
+    """تغییر سیاست مالیاتی کشور.
+
+    درآمد مالیاتی **بلافاصله** بازمحاسبه و اعمال می‌شود (سند: «مالیات اضطراری،
+    درآمد فوری»). در عوض تا چرخه‌ی روزانه‌ی بعد قفل می‌شود تا کسی نتواند قبل از
+    پرداخت دوره‌ای به اضطراری سوییچ کند، پول را بگیرد و قبل از پرداختِ هزینه‌ی
+    رضایت و ناآرامی به سیاست ملایم برگردد.
+    """
     if policy not in TAX_POLICIES:
         return False, "سیاست مالیاتی نامعتبر است."
     country = db.get_country_by_id(country_id)
@@ -369,21 +375,39 @@ def set_tax_policy(country_id: int, policy: str, actor_id: int | None = None):
         with conn:
             cur = conn.cursor()
             state = _ensure_state_cur(cur, country)
-            if state["tax_policy"] == policy:
+            previous = state["tax_policy"]
+            if previous == policy:
                 return False, "همین سیاست مالیاتی هم‌اکنون فعال است."
+            if int(state.get("policy_locked") or 0) and is_enabled():
+                return False, (
+                    "شما امروز یک‌بار سیاست مالیاتی را تغییر داده‌اید. "
+                    "تغییر بعدی از چرخه‌ی روزانه‌ی بعد ممکن است."
+                )
+
+            state["tax_policy"] = policy
+            new_tax = project_tax_income(country, state, policy)
             cur.execute(
-                "UPDATE country_internal SET tax_policy = ?, tax_policy_changed_at = ?, tax_policy_days = 0 WHERE country_id = ?",
+                """
+                UPDATE country_internal
+                SET tax_policy = ?, tax_policy_changed_at = ?, tax_policy_days = 0, policy_locked = 1
+                WHERE country_id = ?
+                """,
                 (policy, _iso(), country_id),
             )
+            cur.execute("UPDATE countries SET tax_income = ? WHERE id = ?", (new_tax, country_id))
     finally:
         conn.close()
 
     db.add_log(
         f"country:{country_id}" if actor_id is None else f"player:{actor_id}",
         "tax_policy_change",
-        f"{state['tax_policy']} → {policy}",
+        f"{previous} → {policy} | tax_income={new_tax}",
     )
-    return True, f"سیاست مالیاتی به «{TAX_POLICIES[policy]['label']}» تغییر کرد."
+    return True, (
+        f"سیاست مالیاتی به «{TAX_POLICIES[policy]['label']}» تغییر کرد و "
+        f"درآمد مالیاتی هم‌اکنون {new_tax:,} دلار در روز است."
+    )
+
 
 
 def project_tax_income(country: dict, state: dict, policy: str | None = None) -> int:
@@ -797,7 +821,9 @@ def _chain_crisis_candidates(country: dict, state: dict, reqs: dict) -> list[tup
     treasury = int(country.get("treasury") or 0)
     unrest = float(state.get("unrest") or 0)
     policy = state.get("tax_policy") or DEFAULT_TAX_POLICY
-    policy_days = int(state.get("tax_policy_days") or 0)
+    # عمداً pressure_days و نه tax_policy_days: جابه‌جایی بین «سنگین» و «اضطراری»
+    # نباید شمارنده را صفر کند، وگرنه با فلیپ‌فلاپ می‌شد بحران را برای همیشه دور زد.
+    policy_days = int(state.get("pressure_days") or 0)
 
     if grain <= 0:
         candidates.append(("famine", "severe" if unrest >= 50 else "medium"))
@@ -987,10 +1013,13 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
                 new_crises.append(crisis)
 
     # ── ۷. ذخیره وضعیت و لاگ
+    pressure_days = int(state.get("pressure_days") or 0)
+    pressure_days = pressure_days + 1 if policy in ("heavy", "emergency") else 0
     details = {
         "band": band_label,
         "rate": round(rate, 6),
         "policy": policy,
+        "pressure_days": pressure_days,
         "compliance": compliance_for(approval),
         "grain_ok": bool(grain_ok),
         "elec_ok": bool(elec_ok),
@@ -1005,10 +1034,11 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
             conn.execute(
                 """
                 UPDATE country_internal SET unrest = ?, unrest_stage = ?, critical_days = ?,
-                    collapse_risk = ?, tax_policy_days = tax_policy_days + 1
+                    collapse_risk = ?, tax_policy_days = tax_policy_days + 1,
+                    pressure_days = ?, policy_locked = 0
                 WHERE country_id = ?
                 """,
-                (unrest, stage, critical_days, collapse_risk, cid),
+                (unrest, stage, critical_days, collapse_risk, pressure_days, cid),
             )
             conn.execute(
                 """

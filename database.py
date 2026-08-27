@@ -958,6 +958,16 @@ def init_db():
     )
     """)
 
+    # مهاجرت‌های افزایشی country_internal
+    for column, ddl in (
+        ("pressure_days", "ALTER TABLE country_internal ADD COLUMN pressure_days INTEGER NOT NULL DEFAULT 0"),
+        ("policy_locked", "ALTER TABLE country_internal ADD COLUMN policy_locked INTEGER NOT NULL DEFAULT 0"),
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_country_crises_active ON country_crises(country_id, stage)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_internal_daily_log_lookup ON internal_daily_log(country_id, log_date DESC)")
 

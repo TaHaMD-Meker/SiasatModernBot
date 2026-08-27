@@ -476,3 +476,65 @@ def test_every_crisis_has_actions_and_news():
         assert spec.get("warning") and spec.get("impact")
         news = ia.build_news({"name": "X", "flag": "🏳️"}, crisis, "warning")
         assert news and news[0] and news[1]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# رگرسیون گزارش بازیکن (۲۰۲۶-۰۸-۲۷): «مالیات را بردم روی ۲ میل ولی وضعیت ۱.۴ زده»
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_tax_policy_change_applies_immediately(monkeypatch, tmp_path):
+    """درآمد مالیاتی باید همان لحظه عوض شود، نه چرخه‌ی بعد.
+
+    قبلاً صفحه‌ی مالیات پیش‌بینی ۱٫۸۹M را نشان می‌داد ولی «وضعیت کشور» هنوز
+    ۱٫۴M بود و بازیکن فکر می‌کرد باگ است.
+    """
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, approval=86)
+    database.update_country_field(cid, "population", 59_000_000)
+    database.update_country_field(cid, "tax_income", 1_333_000)
+    state = ia.get_state(cid)
+
+    expected = ia.project_tax_income(database.get_country_by_id(cid), state, "heavy")
+    ok, message = ia.set_tax_policy(cid, "heavy")
+    assert ok
+
+    shown_in_country_status = database.get_country_by_id(cid)["tax_income"]
+    assert shown_in_country_status == expected
+    assert str(f"{expected:,}") in message
+
+
+def test_policy_is_locked_until_next_cycle(monkeypatch, tmp_path):
+    """جلوی «اضطراری بزن، پول بگیر، برگرد به کم» گرفته می‌شود."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, approval=80)
+
+    assert ia.set_tax_policy(cid, "emergency")[0]
+    ok, message = ia.set_tax_policy(cid, "low")
+    assert not ok
+    assert "چرخه" in message
+
+    _run(cid)  # چرخه‌ی روزانه قفل را باز می‌کند و هزینه‌ی رضایت را می‌گیرد
+    assert ia.set_tax_policy(cid, "low")[0]
+
+
+def test_flipping_between_harsh_policies_cannot_dodge_unrest_crisis(monkeypatch, tmp_path):
+    """اکسپلویت: جابه‌جایی سنگین↔اضطراری شمارنده را صفر می‌کرد و بحران را دور می‌زد."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    flipper = _country(database, player_id=7901, approval=70, key="c_flip")
+    honest = _country(database, player_id=7902, approval=70, key="c_honest")
+
+    start = ia._now()
+    ia.set_tax_policy(honest, "heavy")
+    for day in range(8):
+        moment = start + datetime.timedelta(days=day)
+        ia.set_tax_policy(flipper, "emergency" if day % 2 else "heavy")
+        ia.run_daily_cycle(database.get_country_by_id(flipper), None, now_dt=moment)
+        ia.run_daily_cycle(database.get_country_by_id(honest), None, now_dt=moment)
+
+    flipper_pressure = ia.get_state(flipper)["pressure_days"]
+    assert flipper_pressure >= 7, "روزهای فشار مالیاتی نباید با تعویض سیاست صفر شود"
+
+    flipper_crises = [c for c in ia.get_crisis_history(flipper, 50) if c["crisis_key"] == "civil_unrest"]
+    honest_crises = [c for c in ia.get_crisis_history(honest, 50) if c["crisis_key"] == "civil_unrest"]
+    assert flipper_crises, "بازیکنی که سیاست را جابه‌جا می‌کند نباید از بحران فرار کند"
+    assert len(flipper_crises) >= len(honest_crises) - 1
