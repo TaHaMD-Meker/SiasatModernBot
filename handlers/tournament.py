@@ -110,6 +110,7 @@ async def tournament_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     entry = tournament.get_player_entry(season["id"], player_id=country["player_id"])
     if entry and season["status"] == tournament.ACTIVE:
         tournament.refresh_player(season["id"], player_id=country["player_id"], force=False)
+        season = tournament.get_open_season() or tournament.get_latest_season() or season
         entry = tournament.get_player_entry(season["id"], player_id=country["player_id"]) or entry
 
     text = _season_header(season)
