@@ -607,3 +607,64 @@ def test_defender_oil_loss_is_separate_from_attacker_fuel_cost(db):
     assert "oil" in COST_SPECIALS
     assert db.LOSS_SPECIAL_COLUMNS["oil_reserves"] == "oil_reserves"
     assert db.LOSS_SPECIAL_COLUMNS["oil"] == "oil_reserves"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ترتیب تطبیق: ساختمانِ دقیق باید قبل از فرماندهِ فازی بررسی شود
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_building_name_is_never_matched_as_a_commander(db, country):
+    """رگرسیون: «مرکز تجاری» با «کمیسیون نظامی مرکزی (CMC)» تطبیق می‌خورد.
+
+    نتیجه‌اش این بود که پیست‌کردن یک گزارش خسارت شهری، به‌جای تخریب ساختمان،
+    یک فرمانده ارشد را ترور می‌کرد.
+    """
+    from handlers.losses import match_commander, match_building
+
+    cid = country["id"]
+    conn = db.get_connection()
+    with conn:
+        conn.execute(
+            "INSERT INTO equipment (country_id, item_key, quantity) VALUES (?,?,?)"
+            " ON CONFLICT(country_id, item_key) DO UPDATE SET quantity = quantity + excluded.quantity",
+            (cid, "commercial", 3),
+        )
+    conn.close()
+
+    commanders = [
+        {"key": "cmc_vice_chair", "title": "نایب‌رئیس کمیسیون نظامی مرکزی (CMC)", "status": "active"},
+        {"key": "army_chief", "title": "رئیس ستاد کل ارتش", "status": "active"},
+    ]
+
+    # ساختمان باید پیدا شود
+    assert match_building("مرکز تجاری", cid) is not None
+    # و همان اسم نباید به فرمانده تبدیل شود مگر اینکه ساختمان پیدا نشود
+    building_first = match_building("مرکز تجاری", cid)
+    assert building_first["key"] == "commercial"
+
+    # و حتی وقتی کشور آن ساختمان را نساخته، باز هم نباید فرمانده شود:
+    # match_commander نام‌های کاتالوگ ساخت‌وساز را رد می‌کند.
+    assert match_commander("مرکز تجاری", commanders) is None
+    assert match_commander("هتل بین‌المللی", commanders) is None
+    assert match_commander("مرکز رسانه و پخش ملی", commanders) is None
+    # ولی عنوان واقعی فرمانده همچنان باید پیدا شود
+    assert match_commander("نایب‌رئیس کمیسیون نظامی مرکزی", commanders)["key"] == "cmc_vice_chair"
+
+
+def test_loss_pipeline_checks_buildings_before_commanders():
+    """ترتیب در بات و در ابزار loss_tool باید یکی باشد."""
+    import inspect
+    from handlers import losses as losses_handler
+
+    source = inspect.getsource(losses_handler)
+    build_at = source.index("b = match_building(name, country[\"id\"])")
+    cmd_at = source.index("cmd_match = match_commander(name,")
+    assert build_at < cmd_at, "match_building باید قبل از match_commander اجرا شود"
+
+    tool_source = open(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "loss_tool.py"),
+        encoding="utf-8",
+    ).read()
+    t_build = tool_source.index("b = match_building(name, cid)")
+    t_cmd = tool_source.index("cmd_match = match_commander(name,")
+    assert t_build < t_cmd, "ابزار loss_tool باید هم‌ترتیب با بات باشد"

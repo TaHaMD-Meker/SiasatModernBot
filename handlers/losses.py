@@ -311,6 +311,24 @@ def _cmd_tokens(text: str):
     return {w for w in _clean_str(text).split() if len(w) >= 3 and w not in _CMD_STOPWORDS}
 
 
+def _is_catalog_building_name(cleaned: str) -> bool:
+    """آیا این نام، نام یکی از ساختمان‌های کاتالوگ ساخت‌وساز است؟
+
+    مستقل از اینکه کشور آن را ساخته باشد یا نه. برای جلوگیری از این‌که نام
+    ساختمان به تطبیق فازیِ فرمانده بیفتد.
+    """
+    if not cleaned:
+        return False
+    for item in (getattr(config, "ALL_SHOP_ITEMS", {}) or {}).values():
+        raw = item.get("name") if isinstance(item, dict) else item
+        if not raw:
+            continue
+        catalog_name = _clean_str(_split_emoji(str(raw), "")[0])
+        if catalog_name and (cleaned == catalog_name or catalog_name in cleaned):
+            return True
+    return False
+
+
 def match_commander(name: str, commanders: list):
     """بهترین فرماندهٔ فعالِ منطبق با نام را برمی‌گرداند (یا None).
 
@@ -319,6 +337,11 @@ def match_commander(name: str, commanders: list):
     """
     q = _clean_str(name)
     if len(q) < 4:
+        return None
+    # نام‌های کاتالوگ ساخت‌وساز هرگز فرمانده نیستند — حتی اگر کشور آن ساختمان را
+    # نساخته باشد. بدون این محافظ، «مرکز تجاری» با «کمیسیون نظامی مرکزی» تطبیق
+    # می‌خورد و یک گزارش خسارت شهری به ترور فرمانده تبدیل می‌شد.
+    if _is_catalog_building_name(q):
         return None
     q_tokens = _cmd_tokens(name)
     best, best_score = None, 0
@@ -1136,7 +1159,19 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                 matched.append(res_match)
                 continue
 
-            # تطبیق با سران و فرماندهان نظامی کشور
+            # تطبیق با ساختمان‌ها و صنایع
+            # عمداً قبل از تطبیق فرمانده: کاتالوگ ساختمان‌ها بسته و دقیق است، اما
+            # match_commander فازی است. با ترتیب قبلی، «مرکز تجاری» با «کمیسیون
+            # نظامی مرکزی» تطبیق می‌خورد و به‌جای تخریب ساختمان، فرمانده ترور می‌شد.
+            b = match_building(name, country["id"])
+            if b:
+                b_name, b_emoji = _split_emoji(b["name"], "🏗️")
+                matched.append({"key": b["key"], "name": b_name, "special": "building",
+                                "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": b_emoji,
+                                "unit": "واحد", "qty": qty})
+                continue
+
+            # تطبیق با سران و فرماندهان نظامی کشور (آخرین و فازی‌ترین مرحله)
             cmd_list = db.get_country_commanders(country["id"])
             # فرماندهانی که در همین گزارش قبلاً ترور شده‌اند دوباره انتخاب نشوند
             _taken = {m.get("cmd_key") for m in matched if m.get("special") == "commander"}
@@ -1153,15 +1188,6 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "unit": "نفر",
                     "qty": qty
                 })
-                continue
-
-            # تطبیق با ساختمان‌ها و صنایع
-            b = match_building(name, country["id"])
-            if b:
-                b_name, b_emoji = _split_emoji(b["name"], "🏗️")
-                matched.append({"key": b["key"], "name": b_name, "special": "building",
-                                "category": "Infrastructure", "subcat": "ساخت‌سازی", "emoji": b_emoji,
-                                "unit": "واحد", "qty": qty})
                 continue
 
             unmatched.append(name)

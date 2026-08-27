@@ -256,7 +256,17 @@ def cmd_check(args):
             matched.append(r)
             continue
 
-        # تطبیق با سران و فرماندهان نظامی
+        # تطبیق با ساختمان‌ها (قبل از فرمانده — هم‌ترتیب با handlers/losses.py)
+        b = match_building(name, cid)
+        if b:
+            bn, be = _split_emoji(b["name"], "🏗️")
+            print(f"🏗️  {name[:44]:<46} → {bn}")
+            matched.append({"key": b["key"], "name": bn, "special": "building",
+                            "category": "Infrastructure", "subcat": "ساخت‌سازی",
+                            "emoji": be, "unit": "واحد", "qty": qty})
+            continue
+
+        # تطبیق با سران و فرماندهان نظامی (آخرین و فازی‌ترین مرحله)
         cmd_list = db.get_country_commanders(cid)
         _taken = {m.get("cmd_key") for m in matched if m.get("special") == "commander"}
         cmd_match = match_commander(name, [c for c in cmd_list if c["key"] not in _taken])
@@ -265,15 +275,6 @@ def cmd_check(args):
             matched.append({"key": f"__cmd_{cmd_match['key']}__", "name": f"{cmd_match['title']} (ترور / شهید)",
                             "special": "commander", "cmd_key": cmd_match["key"],
                             "category": "Command", "subcat": "سران نظامی", "emoji": "🎖️", "unit": "نفر", "qty": qty})
-            continue
-
-        b = match_building(name, cid)
-        if b:
-            bn, be = _split_emoji(b["name"], "🏗️")
-            print(f"🏗️  {name[:44]:<46} → {bn}")
-            matched.append({"key": b["key"], "name": bn, "special": "building",
-                            "category": "Infrastructure", "subcat": "ساخت‌سازی",
-                            "emoji": be, "unit": "واحد", "qty": qty})
             continue
 
         unmatched.append(name)
