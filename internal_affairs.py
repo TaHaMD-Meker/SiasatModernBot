@@ -154,6 +154,10 @@ MAX_SPREAD_PER_NIGHT = 2
 # بحرانی که رسیدگی نشود، هر شب یک سطح تشدید می‌شود.
 # «رسیدگی‌شده» یعنی مهار حداقل به این حد رسیده باشد.
 ESCALATION_MITIGATION_THRESHOLD = 0.25
+# و برعکس: مهار خوب، بحران را پله‌پله پایین می‌آورد و در نهایت خاتمه می‌دهد.
+DEESCALATION_MITIGATION_THRESHOLD = 0.50
+CONTAINMENT_THRESHOLD = 0.80
+CONTAINMENT_DAYS_TO_RESOLVE = 2
 
 # ─────────────────────────────────────────────────────────────────────────────
 # کاتالوگ بحران‌ها
@@ -170,70 +174,70 @@ CRISIS_CATALOG = {
         "warning": "منابع محلی از افزایش فعالیت لرزه‌ای در منطقه خبر می‌دهند.",
         "impact": "زلزله‌ای شدید چند منطقه کشور را لرزاند. نیروهای امدادی در آماده‌باش کامل هستند.",
         "duration": 3,
-        "effects": {"pop": 0.004, "elec": 25, "treasury": 0.04, "approval": -6, "unrest": 10},
+        "effects": {"pop": 0.00040, "elec": 18, "treasury": 0.018, "approval": -6, "unrest": 10},
     },
     "flood": {
         "label": "🌊 سیل",
         "warning": "هواشناسی نسبت به بارش‌های سنگین و طغیان رودخانه‌ها هشدار داد.",
         "impact": "سیل گسترده به اراضی کشاورزی و راه‌های ارتباطی خسارت زد.",
         "duration": 3,
-        "effects": {"grain": 0.22, "pop": 0.001, "income": 0.10, "approval": -4, "unrest": 7},
+        "effects": {"grain": 0.15, "pop": 0.00012, "income": 0.05, "approval": -4, "unrest": 7},
     },
     "drought": {
         "label": "🏜 خشکسالی",
         "warning": "کاهش بی‌سابقه‌ی بارش، نگرانی از کم‌آبی و افت محصول را افزایش داده است.",
         "impact": "خشکسالی تولید غلات را به‌شدت کاهش داد و موج مهاجرت روستایی آغاز شد.",
         "duration": 5,
-        "effects": {"grain": 0.30, "pop": 0.002, "approval": -5, "unrest": 8},
+        "effects": {"grain": 0.20, "pop": 0.00018, "approval": -5, "unrest": 8},
     },
     "storm": {
         "label": "🌪 طوفان",
         "warning": "سامانه‌ی طوفانی نیرومندی در حال نزدیک‌شدن به سواحل کشور است.",
         "impact": "طوفان به بنادر و تأسیسات ساحلی آسیب زد و صادرات موقتاً متوقف شد.",
         "duration": 2,
-        "effects": {"income": 0.15, "elec": 15, "treasury": 0.02, "approval": -3, "unrest": 5},
+        "effects": {"income": 0.07, "elec": 10, "treasury": 0.010, "approval": -3, "unrest": 5},
     },
     "wildfire": {
         "label": "🔥 آتش‌سوزی گسترده",
         "warning": "گرمای بی‌سابقه و خشکی پوشش گیاهی، خطر آتش‌سوزی را بحرانی کرده است.",
         "impact": "آتش‌سوزی گسترده به مناطق صنعتی و مسکونی سرایت کرد.",
         "duration": 2,
-        "effects": {"pop": 0.0015, "treasury": 0.05, "income": 0.08, "approval": -4, "unrest": 6},
+        "effects": {"pop": 0.00015, "treasury": 0.022, "income": 0.04, "approval": -4, "unrest": 6},
     },
     "epidemic": {
         "label": "🦠 اپیدمی",
         "warning": "مراکز بهداشتی از افزایش غیرعادی موارد بیماری در چند استان خبر می‌دهند.",
         "impact": "شیوع بیماری، نظام درمانی کشور را زیر فشار برد و فعالیت اقتصادی کاهش یافت.",
         "duration": 5,
-        "effects": {"pop": 0.006, "income": 0.12, "approval": -7, "unrest": 9},
+        "effects": {"pop": 0.00060, "income": 0.055, "approval": -7, "unrest": 9},
     },
     "energy_crisis": {
         "label": "⚡ بحران انرژی",
         "warning": "ذخایر سوخت نیروگاه‌ها رو به اتمام است و شبکه‌ی برق در وضعیت هشدار قرار دارد.",
         "impact": "خاموشی‌های گسترده، تولید کارخانه‌ها را متوقف کرد.",
         "duration": 3,
-        "effects": {"elec": 35, "oil": 0.20, "income": 0.18, "approval": -6, "unrest": 11},
+        "effects": {"elec": 25, "oil": 0.12, "income": 0.08, "approval": -6, "unrest": 11},
     },
     "economic_collapse": {
         "label": "📉 سقوط اقتصادی",
         "warning": "شاخص‌های اقتصادی و خروج سرمایه، نشانه‌های یک بحران مالی جدی را نشان می‌دهند.",
         "impact": "بازارها سقوط کردند، سرمایه از کشور خارج شد و بیکاری جهش کرد.",
         "duration": 4,
-        "effects": {"treasury": 0.08, "income": 0.22, "approval": -8, "unrest": 13},
+        "effects": {"treasury": 0.035, "income": 0.10, "approval": -8, "unrest": 13},
     },
     "famine": {
         "label": "🌾 قحطی",
         "warning": "ذخایر راهبردی غلات به سطح بحرانی رسیده است.",
         "impact": "کمبود شدید مواد غذایی به قحطی و ناآرامی در شهرهای بزرگ انجامید.",
         "duration": 4,
-        "effects": {"grain": 0.40, "pop": 0.005, "approval": -10, "unrest": 16},
+        "effects": {"grain": 0.28, "pop": 0.00045, "approval": -10, "unrest": 16},
     },
     "civil_unrest": {
         "label": "✊ ناآرامی مدنی",
         "warning": "فراخوان‌های اعتراضی گسترده‌ای در شبکه‌های اجتماعی منتشر شده است.",
         "impact": "اعتصاب سراسری، تولید و حمل‌ونقل کشور را فلج کرد.",
         "duration": 3,
-        "effects": {"treasury": 0.06, "income": 0.20, "approval": -6, "unrest": 14},
+        "effects": {"treasury": 0.028, "income": 0.09, "approval": -6, "unrest": 14},
     },
 }
 
@@ -1032,18 +1036,26 @@ def create_crisis(
     return True, f"بحران «{spec['label']}» برای کشور ثبت شد.", crisis
 
 
-def end_crisis(crisis_id: int, admin_id: int | None = None):
+def end_crisis(crisis_id: int, admin_id: int | None = None, outcome: str = "ended"):
+    """پایان بحران. افت درآمد روزانه که موقتی بوده، اینجا برمی‌گردد."""
     crisis = get_crisis(crisis_id)
     if not crisis:
         return False, "بحران یافت نشد."
     if crisis["stage"] == "ended":
         return False, "این بحران قبلاً پایان یافته است."
+    damage = _json_load(crisis.get("damage_json"), {})
+    income_lost = int(damage.get("daily_income") or 0)
     conn = db.get_connection()
     try:
         with conn:
+            if income_lost > 0:
+                conn.execute(
+                    "UPDATE countries SET daily_income = COALESCE(daily_income, 0) + ? WHERE id = ?",
+                    (income_lost, crisis["country_id"]),
+                )
             conn.execute(
-                "UPDATE country_crises SET stage = 'ended', ended_at = ? WHERE id = ?",
-                (_iso(), crisis_id),
+                "UPDATE country_crises SET stage = 'ended', ended_at = ?, outcome = ? WHERE id = ?",
+                (_iso(), outcome, crisis_id),
             )
             if crisis["severity"] == "severe":
                 conn.execute(
@@ -1731,6 +1743,45 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
     """
     events = []
     for crisis in get_active_crises(country_id):
+        # ── مهار خوب: بحران پایین می‌آید و در نهایت خاتمه می‌یابد
+        if crisis["stage"] in ("warning", "impact", "recovery"):
+            mitigation = float(crisis.get("mitigation") or 0)
+            already_today = crisis.get("last_escalation_date") == _today(now_dt)
+
+            if mitigation >= CONTAINMENT_THRESHOLD:
+                contained = int(crisis.get("contained_days") or 0) + 1
+                conn = db.get_connection()
+                try:
+                    with conn:
+                        conn.execute(
+                            "UPDATE country_crises SET contained_days = ?, last_escalation_date = ? WHERE id = ?",
+                            (contained, _today(now_dt), crisis["id"]),
+                        )
+                finally:
+                    conn.close()
+                if contained >= CONTAINMENT_DAYS_TO_RESOLVE:
+                    end_crisis(crisis["id"], outcome="contained")
+                    events.append({"crisis": get_crisis(crisis["id"]), "event": "contained"})
+                    continue
+                crisis = get_crisis(crisis["id"])
+            else:
+                if int(crisis.get("contained_days") or 0):
+                    conn = db.get_connection()
+                    try:
+                        with conn:
+                            conn.execute(
+                                "UPDATE country_crises SET contained_days = 0 WHERE id = ?", (crisis["id"],)
+                            )
+                    finally:
+                        conn.close()
+
+                if not already_today and mitigation >= DEESCALATION_MITIGATION_THRESHOLD:
+                    if crisis["severity"] != SEVERITY_ORDER[0]:
+                        ok, _msg, eased, _x = change_severity(crisis["id"], -1, reason="auto")
+                        if ok:
+                            crisis = eased
+                            events.append({"crisis": eased, "event": "deescalated"})
+
         # ── تشدید شبانه‌ی بحران رسیدگی‌نشده
         if crisis["stage"] in ("warning", "impact"):
             mitigated = float(crisis.get("mitigation") or 0) >= ESCALATION_MITIGATION_THRESHOLD
@@ -2110,6 +2161,17 @@ def build_news(country: dict, crisis: dict, event: str, damage: dict | None = No
             f"سرایت {spec['label']} به {flag} {name}",
             f"{spec['label']} از مرز {source} عبور کرد و اولین موارد در {name} گزارش شد. "
             f"مقامات مرزها را زیر نظر گرفته‌اند.",
+        )
+    if event == "deescalated":
+        return (
+            f"مهار {spec['label']} — {flag} {name}",
+            f"با اقدامات دولت، شدت {spec['label']} به سطح {severity} کاهش یافت و اوضاع رو به بهبود است.",
+        )
+    if event == "contained":
+        return (
+            f"پایان {spec['label']} — {flag} {name}",
+            f"{spec['label']} پس از دو روز مهار کامل، رسماً پایان‌یافته اعلام شد. "
+            f"دولت توانست بحران را پیش از موعد جمع کند.",
         )
     if event == "escalated":
         body = SEVERITY_NEWS.get(crisis["severity"], "")

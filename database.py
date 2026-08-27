@@ -936,6 +936,8 @@ def init_db():
         mitigation REAL NOT NULL DEFAULT 0,
         escalations INTEGER NOT NULL DEFAULT 0,
         last_escalation_date TEXT,
+        contained_days INTEGER NOT NULL DEFAULT 0,
+        outcome TEXT,
         damage_json TEXT NOT NULL DEFAULT '{}',
         created_by INTEGER,
         created_at TEXT NOT NULL,
@@ -1024,6 +1026,8 @@ def init_db():
     for column, ddl in (
         ("escalations", "ALTER TABLE country_crises ADD COLUMN escalations INTEGER NOT NULL DEFAULT 0"),
         ("last_escalation_date", "ALTER TABLE country_crises ADD COLUMN last_escalation_date TEXT"),
+        ("contained_days", "ALTER TABLE country_crises ADD COLUMN contained_days INTEGER NOT NULL DEFAULT 0"),
+        ("outcome", "ALTER TABLE country_crises ADD COLUMN outcome TEXT"),
     ):
         try:
             cur.execute(ddl)
@@ -4198,7 +4202,7 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             r_extra_cost = t_cost if t_payer == "buyer" else 0
             strait_toll_total = sum(toll[1] for toll in strait_tolls)
 
-            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
+            col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel", "vaccine_doses": "vaccine_doses"}
 
             # Handle Military Asset Transfer
             if off_type == "military_asset":
@@ -4342,6 +4346,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
         "grain": "grain",
         "iron_ore": "iron_ore",
         "microchips": "microchips",
+        "vaccine_doses": "vaccine_doses",
         "uranium_ore": "uranium_ore",
         "nuclear_fuel": "nuclear_fuel",
     }
@@ -5237,6 +5242,7 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
         "grain": "grain",
         "iron_ore": "iron_ore",
         "microchips": "microchips",
+        "vaccine_doses": "vaccine_doses",
         "uranium_ore": "uranium_ore",
         "nuclear_fuel": "nuclear_fuel"
     }

@@ -145,8 +145,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     elif data.startswith("market:cat:"):
         res_type = data.split(":")[2]
-        res_names = {"oil": "🛢️ نفت خام", "gold": "🪙 شمش طلا", "grain": "🌾 غلات و گندم", "iron_ore": "⛏️ سنگ آهن و فولاد", "microchips": "💻 میکروچیپ و تراشه", "uranium_ore": "☢️ کیک زرد اورانیوم", "nuclear_fuel": "🧪 سوخت هسته‌ای غنی‌شده"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "🛢️ نفت خام", "gold": "🪙 شمش طلا", "grain": "🌾 غلات و گندم", "iron_ore": "⛏️ سنگ آهن و فولاد", "microchips": "💻 میکروچیپ و تراشه", "uranium_ore": "☢️ کیک زرد اورانیوم", "nuclear_fuel": "🧪 سوخت هسته‌ای غنی‌شده", "vaccine_doses": "💉 دُز واکسن"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
 
         orders = db.get_market_orders(res_type)
 
@@ -191,8 +191,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             )
             return
 
-        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
         r_type = order["resource_type"]
 
         text = (
@@ -238,8 +238,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             return
 
         commodity_cost = qty * order["unit_price"]
-        res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
         r_type = order["resource_type"]
 
         sea_lim = config.TRANSPORT_CAPACITY_LIMITS["sea"]["limits"].get(r_type, 500_000)
@@ -428,8 +428,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         clear_text_input_flags(context.user_data)
         context.user_data["market_sell_draft"] = {"step": "amount", "res_type": res_type}
 
-        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
-        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+        res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+        unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
         res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
 
         curr_qty = country.get(res_cols[res_type], 0)
@@ -458,8 +458,8 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         if not my_orders:
             lines.append("شما در حال حاضر هیچ عرضه فعالی در بورس کالا ندارید.")
         else:
-            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
-            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+            res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+            unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
 
             for ord_item in my_orders:
                 o_id = ord_item["id"]
@@ -544,8 +544,8 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
 
     step = draft.get("step")
     res_type = draft.get("res_type")
-    res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای"}
-    unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
+    res_names = {"oil": "نفت خام", "gold": "شمش طلا", "grain": "غلات", "iron_ore": "سنگ آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد اورانیوم", "nuclear_fuel": "سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+    unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
 
     if step == "amount":
         res_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}

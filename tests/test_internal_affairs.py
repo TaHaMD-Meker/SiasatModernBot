@@ -246,7 +246,10 @@ def test_crisis_lifecycle_warning_impact_recovery_end(monkeypatch, tmp_path):
     start = ia._now()
     _run(cid, days=1, start=start)  # هشدار → وقوع
     assert ia.get_crisis(crisis_id)["stage"] == "impact"
-    assert database.get_country_by_id(cid)["population"] < pop_before
+    # تلفات از خسارت ثبت‌شده سنجیده می‌شود، نه از جمعیت خالص:
+    # با اعداد واقع‌گرایانه‌ی جدید، رشد طبیعی جمعیت از تلفات یک زلزله بیشتر است.
+    damage = ia._json_load(ia.get_crisis(crisis_id)["damage_json"], {})
+    assert damage.get("population", 0) > 0
 
     _run(cid, days=1, start=start + datetime.timedelta(days=5))  # وقوع → بازسازی
     assert ia.get_crisis(crisis_id)["stage"] == "recovery"
@@ -1303,17 +1306,29 @@ def test_vaccine_action_requires_stock_and_consumes_it(monkeypatch, tmp_path):
     assert database.get_country_by_id(cid)["vaccine_doses"] == 0
 
 
-def test_vaccine_doses_are_not_tradeable():
-    """واکسن نباید در بازار، اهدا یا انتقال دارایی ظاهر شود."""
-    import inspect
-    from handlers import market, diplomacy
+def test_vaccine_doses_are_tradeable_on_the_commodity_market():
+    """واکسن باید در بورس کالا قابل خرید و فروش باشد."""
+    assert "vaccine_doses" in config.COMMODITY_MARKET_BOUNDS
+    bounds = config.COMMODITY_MARKET_BOUNDS["vaccine_doses"]
+    assert bounds["min_price"] > 0 and bounds["max_price"] > bounds["min_price"]
+    for mode in ("sea", "land", "air"):
+        assert config.TRANSPORT_CAPACITY_LIMITS[mode]["limits"].get("vaccine_doses", 0) > 0
 
-    for module in (market, diplomacy):
-        assert "vaccine_doses" not in inspect.getsource(module), (
-            f"{module.__name__} نباید به واکسن دسترسی داشته باشد"
-        )
-    tradeable = getattr(config, "MARKET_RESOURCES", None) or {}
-    assert "vaccine_doses" not in tradeable
+
+def test_market_and_aid_know_the_vaccine_column():
+    import inspect
+    from handlers import market
+
+    source = inspect.getsource(database_module())
+    assert source.count('"vaccine_doses": "vaccine_doses"') >= 3, (
+        "بازار، کمک خارجی و معاوضه هر سه باید ستون واکسن را بشناسند"
+    )
+    assert "vaccine_doses" in inspect.getsource(market)
+
+
+def database_module():
+    import database
+    return database
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1434,3 +1449,126 @@ def test_academy_numbers_come_from_the_engine_not_hardcoded():
     assert "ia.MAX_MITIGATION_CAP" in source
     assert "ia.VACCINE_MIN_TECH_LEVEL" in source
     assert "ia.vaccine_requirements" in source
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# مهار: بحران پایین می‌آید و در نهایت حذف می‌شود
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_two_nights_above_eighty_percent_resolves_the_crisis(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 900_000_000)
+    database.update_country_field(cid, "tech_level", 5)
+    database.update_country_field(cid, "vaccine_doses", 200_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", severity="severe", admin_id=1, force=True)
+    ia.force_impact(crisis["id"], admin_id=1)
+
+    start = ia._now()
+    for day in range(2):
+        for action in ("vaccine_program", "quarantine", "field_hospital", "emergency_aid"):
+            ia.respond_to_crisis(crisis["id"], action, actor_id=1)
+        ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=start + datetime.timedelta(days=day))
+
+    final = ia.get_crisis(crisis["id"])
+    assert final["stage"] == "ended"
+    assert final["outcome"] == "contained"
+    assert final["contained_days"] >= ia.CONTAINMENT_DAYS_TO_RESOLVE
+
+
+def test_one_night_of_containment_is_not_enough(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 900_000_000)
+    database.update_country_field(cid, "tech_level", 5)
+    database.update_country_field(cid, "vaccine_doses", 200_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", severity="severe", admin_id=1, force=True)
+    ia.force_impact(crisis["id"], admin_id=1)
+
+    for action in ("vaccine_program", "quarantine", "field_hospital", "emergency_aid"):
+        ia.respond_to_crisis(crisis["id"], action, actor_id=1)
+    _run(cid, days=1)
+
+    assert ia.get_crisis(crisis["id"])["stage"] != "ended"
+    assert ia.get_crisis(crisis["id"])["contained_days"] == 1
+
+
+def test_moderate_containment_steps_the_crisis_down(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 900_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "earthquake", severity="severe", admin_id=1, force=True)
+    ia.force_impact(crisis["id"], admin_id=1)
+
+    start = ia._now()
+    levels = []
+    for day in range(3):
+        current = ia.get_crisis(crisis["id"])
+        if current["stage"] != "ended" and float(current["mitigation"]) < 0.55:
+            ia.respond_to_crisis(crisis["id"], "search_rescue", actor_id=1)
+            ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)
+        ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=start + datetime.timedelta(days=day))
+        levels.append(ia.get_crisis(crisis["id"])["severity"])
+
+    assert levels[0] == "medium", "مهار متوسط باید شدت را یک پله پایین بیاورد"
+    assert levels[-1] == "light"
+
+
+def test_containment_counter_resets_if_the_country_stops(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 900_000_000)
+    database.update_country_field(cid, "tech_level", 5)
+    database.update_country_field(cid, "vaccine_doses", 200_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", severity="severe", admin_id=1, force=True)
+    ia.force_impact(crisis["id"], admin_id=1)
+
+    for action in ("vaccine_program", "quarantine", "field_hospital", "emergency_aid"):
+        ia.respond_to_crisis(crisis["id"], action, actor_id=1)
+    _run(cid, days=1)
+    assert ia.get_crisis(crisis["id"])["contained_days"] == 1
+
+    # مهار را دستی پایین می‌آوریم (انگار اثر اقدامات تمام شده)
+    conn = database.get_connection()
+    with conn:
+        conn.execute("UPDATE country_crises SET mitigation = 0.1 WHERE id = ?", (crisis["id"],))
+    conn.close()
+
+    _run(cid, days=1, start=ia._now() + datetime.timedelta(days=1))
+    assert ia.get_crisis(crisis["id"])["contained_days"] == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# بالانس خسارت
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_single_day_casualties_stay_plausible():
+    """یک ضربه نباید صدها هزار نفر بکشد."""
+    population = 50_000_000
+    worst = ia.SEVERITY_FACTORS["severe"]
+    for key, spec in ia.CRISIS_CATALOG.items():
+        deaths = population * float(spec["effects"].get("pop", 0)) * worst
+        assert deaths <= population * 0.0015, f"{key} تلفات غیرمنطقی: {int(deaths):,}"
+
+
+def test_crisis_never_wipes_out_a_treasury_or_income_in_one_hit():
+    for key, spec in ia.CRISIS_CATALOG.items():
+        effects = spec["effects"]
+        assert float(effects.get("treasury", 0)) * 1.8 <= 0.10, f"{key} خزانه را زیادی می‌زند"
+        assert float(effects.get("income", 0)) * 1.8 <= 0.20, f"{key} درآمد را زیادی می‌زند"
+
+
+def test_income_loss_is_temporary_and_returns_when_the_crisis_ends(monkeypatch, tmp_path):
+    """رگرسیون: افت درآمد روزانه دائمی بود و هرگز برنمی‌گشت."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "daily_income", 5_000_000)
+    database.update_country_field(cid, "treasury", 200_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "economic_collapse", severity="severe", admin_id=1, force=True)
+    ia.force_impact(crisis["id"], admin_id=1)
+
+    during = database.get_country_by_id(cid)["daily_income"]
+    assert during < 5_000_000, "بحران باید درآمد را موقتاً کم کند"
+
+    assert ia.end_crisis(crisis["id"], admin_id=1)[0]
+    assert database.get_country_by_id(cid)["daily_income"] == 5_000_000
