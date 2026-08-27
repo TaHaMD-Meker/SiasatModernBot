@@ -172,7 +172,10 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("⭐️ بتل‌پس فصلی (/pass)", callback_data="bp:menu"),
             InlineKeyboardButton("👑 خدمات VIP", callback_data="vip:menu")
         ],
-        [InlineKeyboardButton("🏛️ سیاست داخلی و رضایت عمومی", callback_data="dom:unrest")],
+        [
+            InlineKeyboardButton("🏛️ سیاست داخلی", callback_data="dom:menu"),
+            InlineKeyboardButton("📉 رضایت عمومی", callback_data="dom:unrest"),
+        ],
         [
             InlineKeyboardButton("🔬 مرکز تحقیق و توسعه (R&D)", callback_data="research:menu"),
             InlineKeyboardButton("☢️ برنامه هسته‌ای", callback_data="nuc:menu"),

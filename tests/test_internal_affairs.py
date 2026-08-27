@@ -1347,3 +1347,60 @@ def test_mitigation_never_reaches_one_hundred_percent():
     assert ia.MAX_MITIGATION_CAP < 1.0
     for action in ia.CRISIS_ACTIONS.values():
         assert float(action.get("raises_cap", 0) or 0) <= ia.MAX_MITIGATION_CAP
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# جای‌گذاری منوها: واکسن در مرکز تحقیقات، بحران‌ها در سیاست داخلی
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_research_centre_hosts_the_vaccine_programme():
+    import inspect
+    from handlers import research
+
+    source = inspect.getsource(research.research_menu)
+    assert "برنامه واکسن" in source
+    assert "dom:vaccine" in source, "دکمه باید به همان صفحه‌ی واحد واکسن برود"
+    assert "VACCINE_MIN_TECH_LEVEL" in source, "سطح فناوری لازم باید نمایش داده شود"
+    assert "dom:menu" in source, "میان‌بر سیاست داخلی هم باید باشد"
+
+
+def test_country_profile_links_to_domestic_politics():
+    import inspect
+    from handlers import country as country_handlers
+
+    source = inspect.getsource(country_handlers.country_profile)
+    assert "dom:menu" in source
+    assert "سیاست داخلی" in source
+
+
+def test_domestic_menu_is_the_single_crisis_hub():
+    import inspect
+    from handlers import internal_affairs as domestic
+
+    source = inspect.getsource(domestic._menu_keyboard)
+    for target in ("dom:population", "dom:tax", "dom:unrest", "dom:crises",
+                   "dom:actions", "dom:vaccine", "dom:readiness", "dom:trend", "dom:history"):
+        assert target in source, f"{target} باید در منوی سیاست داخلی باشد"
+
+
+def test_readiness_page_reflects_country_geography(monkeypatch, tmp_path):
+    import asyncio
+    from handlers.internal_affairs import _readiness_page
+
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, key="iran")
+    database.update_country_field(cid, "grain", 10)
+    database.update_country_field(cid, "tech_level", 2)
+
+    class FakeQuery:
+        async def edit_message_text(self, text, reply_markup=None, parse_mode=None):
+            self.text = text
+
+        async def answer(self, *a, **k):
+            pass
+
+    query = FakeQuery()
+    asyncio.run(_readiness_page(query, database.get_country_by_id(cid), ia.get_state(cid)))
+    assert "خشکسالی" in query.text and "زلزله" in query.text
+    assert "⚠️" in query.text, "کمبود ذخایر باید هشدار بگیرد"
+    assert str(ia.VACCINE_MIN_TECH_LEVEL) in query.text

@@ -61,6 +61,25 @@ async def research_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• *هزینه نگهداری پرسنل ارتش:* {format_money(maint_info['personnel_maint'])}/روز\n\n"
     )
 
+    # برنامه‌ی واکسن: پروژه‌ی تحقیقاتی-تولیدی، جایش همین‌جاست
+    try:
+        import internal_affairs as ia
+        doses = int(c.get("vaccine_doses") or 0)
+        active = ia.get_active_vaccine_project(c["id"])
+        text += "💉 *برنامه واکسن*\n"
+        if active:
+            ready = ia._parse_dt(active["ready_at"])
+            hours = max(0, int((ready - ia._now()).total_seconds() // 3600)) if ready else 0
+            text += f"• 🏭 در حال تولید: *{active['doses']:,} دُز* — {hours} ساعت تا تحویل\n"
+        else:
+            text += f"• 📦 دُز آماده در انبار: *{doses:,}*\n"
+        if tech_lvl < ia.VACCINE_MIN_TECH_LEVEL:
+            text += f"• 🔒 برای شروع تولید، سطح فناوری *{ia.VACCINE_MIN_TECH_LEVEL}* لازم است\n"
+        text += "\n"
+        vaccine_row = [InlineKeyboardButton("💉 برنامه واکسن", callback_data="dom:vaccine")]
+    except Exception:
+        vaccine_row = None
+
     if tech_lvl < 5:
         up_info = TECH_UPGRADES[tech_lvl]
         text += (
@@ -76,6 +95,10 @@ async def research_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "🌟 *کشور شما در بالاترین سطح فناوری بومی (سطح ۵ - ۴۰٪ تخفیف) قرار دارد.*"
         keyboard = []
+
+    if vaccine_row:
+        keyboard.append(vaccine_row)
+    keyboard.append([InlineKeyboardButton("🏛️ سیاست داخلی و بحران‌ها", callback_data="dom:menu")])
 
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")

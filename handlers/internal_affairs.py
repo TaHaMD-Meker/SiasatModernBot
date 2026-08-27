@@ -51,17 +51,23 @@ def _trend_arrow(delta: int) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # منوی اصلی
 # ─────────────────────────────────────────────────────────────────────────────
-def _menu_keyboard(active_crises: int):
+def _menu_keyboard(active_crises: int, doses: int = 0):
     crisis_label = f"🚨 بحران‌های فعال ({active_crises})" if active_crises else "🚨 بحران‌های فعال"
+    vaccine_label = f"💉 برنامه واکسن ({format_number(doses)} دُز)" if doses else "💉 برنامه واکسن"
     return _kb([
-        [InlineKeyboardButton("👥 گزارش جمعیت", callback_data="dom:population")],
-        [InlineKeyboardButton("💰 سیاست مالیاتی", callback_data="dom:tax")],
+        [
+            InlineKeyboardButton("👥 جمعیت", callback_data="dom:population"),
+            InlineKeyboardButton("💰 مالیات", callback_data="dom:tax"),
+        ],
         [InlineKeyboardButton("📉 رضایت و ناآرامی", callback_data="dom:unrest")],
         [InlineKeyboardButton(crisis_label, callback_data="dom:crises")],
         [InlineKeyboardButton("🛠️ اقدامات اضطراری", callback_data="dom:actions")],
-        [InlineKeyboardButton("💉 برنامه واکسن", callback_data="dom:vaccine")],
-        [InlineKeyboardButton("📈 روند تغییرات کشور", callback_data="dom:trend")],
-        [InlineKeyboardButton("📜 تاریخچه اتفاقات", callback_data="dom:history")],
+        [InlineKeyboardButton(vaccine_label, callback_data="dom:vaccine")],
+        [InlineKeyboardButton("🛡 آمادگی و پیشگیری", callback_data="dom:readiness")],
+        [
+            InlineKeyboardButton("📈 روند کشور", callback_data="dom:trend"),
+            InlineKeyboardButton("📜 تاریخچه", callback_data="dom:history"),
+        ],
         [InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")],
     ])
 
@@ -116,7 +122,7 @@ async def domestic_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = ia.get_state(country["id"]) or {}
     active = ia.get_active_crises(country["id"])
     text = _menu_text(country, state, active)
-    markup = _menu_keyboard(len(active))
+    markup = _menu_keyboard(len(active), int(country.get("vaccine_doses") or 0))
     if query:
         await query.edit_message_text(text, reply_markup=markup, parse_mode="HTML")
     else:
@@ -497,6 +503,60 @@ async def _actions_page(query, country: dict):
     await _crises_page(query, country)
 
 
+async def _readiness_page(query, country: dict, state: dict):
+    """آمادگی کشور در برابر بحران‌هایی که جغرافیایش محتمل می‌کند."""
+    labels = {"earthquake": "🌍 زلزله", "flood": "🌊 سیل", "drought": "🏜 خشکسالی",
+              "storm": "🌪 طوفان", "wildfire": "🔥 آتش‌سوزی", "epidemic": "🦠 اپیدمی"}
+    weights = ia.hazard_weights(country)
+    total = sum(weights.values()) or 1.0
+    ranked = sorted(weights.items(), key=lambda kv: -kv[1])
+
+    lines = [
+        "🛡 <b>آمادگی و پیشگیری</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"{country.get('flag', '🏳️')} <b>{html.escape(country.get('name', 'کشور'))}</b>",
+        "",
+        "<b>محتمل‌ترین بلایا در کشور شما</b>",
+        "<i>بر پایه‌ی موقعیت جغرافیایی و فصل جاری</i>",
+        "",
+    ]
+    for hazard, weight in ranked:
+        share = int(weight / total * 100)
+        filled = max(0, min(10, round(share / 10)))
+        lines.append(f"{labels.get(hazard, hazard)}  <code>{'█' * filled}{'░' * (10 - filled)}</code> {share}٪")
+
+    grain = int(country.get("grain") or 0)
+    oil = int(country.get("oil_reserves") or 0)
+    doses = int(country.get("vaccine_doses") or 0)
+    treasury = int(country.get("treasury") or 0)
+    tech = int(country.get("tech_level") or 1)
+
+    lines.extend(["", "<b>وضعیت ذخایر شما</b>"])
+    lines.append(f"{'✅' if grain > 50_000 else '⚠️'} غلات: {format_number(grain)} تن — سپر قحطی و خشکسالی")
+    lines.append(f"{'✅' if oil > 200_000 else '⚠️'} نفت: {format_number(oil)} بشکه — لازم برای اطفای حریق هوایی")
+    lines.append(f"{'✅' if doses >= ia.VACCINE_DOSES_PER_USE else '⚠️'} واکسن: {format_number(doses)} دُز — تنها راه عبور از سقف مهار ۸۰٪")
+    lines.append(f"{'✅' if treasury > 50_000_000 else '⚠️'} خزانه: {format_money(treasury)} — بدون پول هیچ اقدامی ممکن نیست")
+    lines.append(f"{'✅' if tech >= ia.VACCINE_MIN_TECH_LEVEL else '⚠️'} فناوری: سطح {tech} — سطح {ia.VACCINE_MIN_TECH_LEVEL} برای تولید واکسن")
+
+    top_hazard = ranked[0][0]
+    advice = {
+        "earthquake": "خزانه و بودجه‌ی بازسازی نگه دارید؛ زلزله هشدار کوتاهی دارد.",
+        "flood": "ذخیره‌ی غلات و بودجه‌ی سیل‌بند مهم‌ترین سپر شماست.",
+        "drought": "غله ذخیره کنید و اگر فناوری‌تان به ۳ رسید، آب‌شیرین‌کن سقف مهار را به ۹۰٪ می‌برد.",
+        "storm": "بنادر و ذخایر سوخت را پیش از فصل طوفان آماده کنید.",
+        "wildfire": "بدون ذخیره‌ی نفت، اطفای حریق هوایی ممکن نیست.",
+        "epidemic": "از همین حالا واکسن تولید کنید — سه روز طول می‌کشد و در بحران دیر است.",
+    }.get(top_hazard, "")
+    if advice:
+        lines.append(f"\n💡 <b>توصیه:</b> {advice}")
+
+    rows = [
+        [InlineKeyboardButton("💉 برنامه واکسن", callback_data="dom:vaccine")],
+        _back_row(),
+    ]
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
+
+
 async def _vaccine_page(query, country: dict, notice: str = ""):
     doses = int(country.get("vaccine_doses") or 0)
     active = ia.get_active_vaccine_project(country["id"])
@@ -640,6 +700,8 @@ async def domestic_callback_handler(update: Update, context: ContextTypes.DEFAUL
         await _crises_page(query, country)
     elif data == "dom:actions":
         await _actions_page(query, country)
+    elif data == "dom:readiness":
+        await _readiness_page(query, country, state)
     elif data == "dom:vaccine":
         await _vaccine_page(query, country)
     elif data.startswith("dom:vax_start:"):
