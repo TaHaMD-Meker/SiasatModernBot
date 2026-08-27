@@ -411,9 +411,6 @@ async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = "")
         await query.answer("بحران یافت نشد.", show_alert=True)
         return
     spec = ia.CRISIS_CATALOG.get(crisis["crisis_key"], {})
-    done = ia.get_actions_done_today(crisis_id)
-    treasury = int(country.get("treasury") or 0)
-
     lines = [
         (f"✅ {html.escape(notice)}\n" if notice else "") + f"{spec.get('label', '')} — <b>{ia.SEVERITY_LABELS.get(crisis['severity'], '')}</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -437,19 +434,44 @@ async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = "")
         lines.append(f"\n<i>{spec.get('warning', '')}</i>")
         lines.append("\n⏳ هنوز فرصت آماده‌سازی دارید.")
 
-    lines.append("\n<b>اقدامات در دسترس:</b>")
+    lines.append("\n<b>🛠 اقدامات در دسترس</b>")
     rows = []
+    locked_lines = []
     for action_key in ia.available_actions(crisis):
         action = ia.CRISIS_ACTIONS[action_key]
-        cost = max(int(action.get("min_cost", 0)), int(max(0, treasury) * float(action.get("cost_pct", 0))))
-        if action_key in done:
-            lines.append(f"• {action['label']} — ✅ امروز انجام شد (فردا دوباره فعال)")
-            continue
-        cost_text = "رایگان" if cost == 0 else format_money(cost)
-        lines.append(f"• {action['label']} — {cost_text}\n  <i>{action['desc']}</i>")
-        rows.append([InlineKeyboardButton(
-            f"{action['label']} ({cost_text})", callback_data=f"dom:act:{crisis_id}:{action_key}"
-        )])
+        costs = ia.action_cost(action_key, country)
+        ok, reason = ia.check_action(action_key, crisis, country)
+
+        price_parts = ["رایگان"] if costs["money"] == 0 else [format_money(costs["money"])]
+        if costs["money"] == 0:
+            price_parts = ["رایگان"]
+        for field, amount in (costs["resources"] or {}).items():
+            unit = {"grain": "تن غله", "oil_reserves": "بشکه نفت", "microchips": "چیپ"}.get(field, field)
+            price_parts.append(f"{format_number(amount)} {unit}")
+        for field, amount in (action.get("grants") or {}).items():
+            unit = {"grain": "تن غله", "oil_reserves": "بشکه نفت"}.get(field, field)
+            price_parts.append(f"➕ {format_number(amount)} {unit}")
+        price_text = " + ".join(price_parts)
+
+        effect = f"مهار {int(float(action['mitigation']) * 100)}٪"
+        if action.get("approval"):
+            effect += f" | رضایت {action['approval']:+d}"
+        if action.get("unrest"):
+            effect += f" | ناآرامی {int(action['unrest']):+d}"
+
+        if ok:
+            lines.append(f"\n{action['label']} — <b>{price_text}</b>\n<i>{action['desc']}</i>\n<code>{effect}</code>")
+            rows.append([InlineKeyboardButton(
+                f"{action['label']} ({price_text.split(' + ')[0]})",
+                callback_data=f"dom:act:{crisis_id}:{action_key}",
+            )])
+        else:
+            locked_lines.append(f"🔒 {action['label']} — <i>{html.escape(reason)}</i>")
+
+    if locked_lines:
+        lines.append("\n<b>غیرقابل اجرا</b>")
+        lines.extend(locked_lines)
+
     rows.append([InlineKeyboardButton("🔙 بحران‌ها", callback_data="dom:crises")])
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
 

@@ -204,13 +204,220 @@ CRISIS_CATALOG = {
     },
 }
 
-# اقدامات اضطراری بازیکن: هزینه نسبت به خزانه، اثر کاهش خسارت و رضایت
+# ─────────────────────────────────────────────────────────────────────────────
+# اقدامات اضطراری بازیکن
+#
+# کلیدهای هر اقدام:
+#   cost_pct / min_cost   هزینه‌ی نقدی (درصدی از خزانه، با کف مشخص)
+#   res_cost              مصرف منابع، نسبتی از موجودی: {"grain": 0.15}
+#   grants                منابعی که این اقدام تولید/وارد می‌کند: {"grain": 12000}
+#   requires              پیش‌نیاز: {"tech_level": 4} یا {"oil": 200_000}
+#   mitigation            کاهش خسارت بحران (سقف کل ۸۰٪)
+#   approval / unrest     اثر روی رضایت عمومی و شاخص ناآرامی
+#   once_per_crisis       فقط یک‌بار در کل بحران (نه هر روز)
+# ─────────────────────────────────────────────────────────────────────────────
 CRISIS_ACTIONS = {
+    # ── عمومی (همه‌ی بحران‌ها) ──
+    "official_address": {
+        "label": "📢 بیانیه رسمی",
+        "cost_pct": 0.0, "min_cost": 0,
+        "mitigation": 0.06, "approval": 2, "unrest": -4,
+        "desc": "سخنرانی و شفاف‌سازی برای افکار عمومی. رایگان.",
+    },
     "emergency_aid": {
         "label": "🚑 کمک اضطراری",
         "cost_pct": 0.05, "min_cost": 2_000_000,
         "mitigation": 0.25, "approval": 3, "unrest": -6,
         "desc": "تخصیص بودجه‌ی فوری امداد و اسکان.",
+    },
+    "foreign_help": {
+        "label": "🌐 درخواست کمک بین‌المللی",
+        "cost_pct": 0.01, "min_cost": 500_000,
+        "mitigation": 0.20, "approval": -2, "unrest": -2,
+        "once_per_crisis": True,
+        "desc": "پذیرش کمک خارجی. مؤثر و ارزان، اما اعتبار داخلی را کم می‌کند.",
+    },
+
+    # ── اپیدمی ──
+    "quarantine": {
+        "label": "🚧 قرنطینه سراسری",
+        "cost_pct": 0.04, "min_cost": 2_000_000,
+        "mitigation": 0.32, "approval": -5, "unrest": 6,
+        "desc": "تعطیلی و محدودیت تردد. بسیار مؤثر، اما مردم و اقتصاد را می‌آزارد.",
+    },
+    "mask_distribution": {
+        "label": "😷 توزیع ماسک و اقلام بهداشتی",
+        "cost_pct": 0.015, "min_cost": 600_000,
+        "mitigation": 0.14, "approval": 2, "unrest": -3,
+        "desc": "ارزان و سریع. اثر متوسط ولی رضایت‌آور.",
+    },
+    "field_hospital": {
+        "label": "🏥 بیمارستان صحرایی",
+        "cost_pct": 0.05, "min_cost": 2_500_000,
+        "mitigation": 0.24, "approval": 4, "unrest": -5,
+        "desc": "افزایش ظرفیت درمان و کاهش تلفات.",
+    },
+    "vaccine_program": {
+        "label": "💉 تولید و تزریق واکسن",
+        "cost_pct": 0.12, "min_cost": 8_000_000,
+        "res_cost": {"microchips": 0.10},
+        "requires": {"tech_level": 4},
+        "mitigation": 0.45, "approval": 8, "unrest": -10,
+        "once_per_crisis": True,
+        "desc": "قوی‌ترین پاسخ به اپیدمی. نیازمند سطح فناوری ۴ و صنعت پیشرفته.",
+    },
+    "import_medicine": {
+        "label": "💊 واردات فوری دارو",
+        "cost_pct": 0.07, "min_cost": 3_500_000,
+        "mitigation": 0.20, "approval": 3, "unrest": -3,
+        "desc": "جایگزین واکسن برای کشورهایی که فناوری کافی ندارند.",
+    },
+
+    # ── آتش‌سوزی ──
+    "aerial_firefight": {
+        "label": "🚁 اطفای حریق هوایی",
+        "cost_pct": 0.06, "min_cost": 3_000_000,
+        "res_cost": {"oil_reserves": 0.03},
+        "requires": {"oil_reserves": 50_000},
+        "mitigation": 0.34, "approval": 5, "unrest": -4,
+        "desc": "بالگرد و هواپیمای آب‌پاش. مؤثرترین راه، اما سوخت‌بر است.",
+    },
+    "firebreak": {
+        "label": "🪓 ایجاد خط آتش‌بر",
+        "cost_pct": 0.02, "min_cost": 800_000,
+        "mitigation": 0.18, "approval": 1, "unrest": -2,
+        "desc": "قطع مسیر گسترش آتش با ماشین‌آلات سنگین. ارزان و مطمئن.",
+    },
+    "evacuate_zone": {
+        "label": "🚌 تخلیه مناطق پرخطر",
+        "cost_pct": 0.03, "min_cost": 1_200_000,
+        "mitigation": 0.16, "approval": 4, "unrest": -4,
+        "desc": "جان مردم را نجات می‌دهد، هرچند جلوی خسارت مادی را نمی‌گیرد.",
+    },
+
+    # ── زلزله ──
+    "search_rescue": {
+        "label": "⛑️ آواربرداری و جست‌وجوی زنده‌یاب",
+        "cost_pct": 0.05, "min_cost": 2_500_000,
+        "mitigation": 0.26, "approval": 5, "unrest": -5,
+        "desc": "عملیات ۷۲ ساعت طلایی. بیشترین اثر روی تلفات انسانی.",
+    },
+    "temporary_housing": {
+        "label": "⛺️ اسکان اضطراری",
+        "cost_pct": 0.04, "min_cost": 2_000_000,
+        "mitigation": 0.18, "approval": 5, "unrest": -6,
+        "desc": "چادر و کانکس برای بی‌خانمان‌ها.",
+    },
+    "rapid_rebuild": {
+        "label": "🏗️ بازسازی سریع",
+        "cost_pct": 0.08, "min_cost": 3_000_000,
+        "mitigation": 0.30, "approval": 4, "unrest": -5,
+        "desc": "پروژه‌ی فوری بازسازی زیرساخت آسیب‌دیده.",
+    },
+
+    # ── سیل و طوفان ──
+    "levee_reinforcement": {
+        "label": "🧱 تقویت سیل‌بند و پمپاژ",
+        "cost_pct": 0.05, "min_cost": 2_000_000,
+        "mitigation": 0.28, "approval": 3, "unrest": -3,
+        "desc": "مهار آب پیش از رسیدن به مناطق مسکونی.",
+    },
+    "port_shutdown": {
+        "label": "⚓️ تعطیلی پیشگیرانه بنادر",
+        "cost_pct": 0.02, "min_cost": 700_000,
+        "mitigation": 0.20, "approval": -1, "unrest": 1,
+        "desc": "شناورها و تأسیسات ساحلی حفظ می‌شوند، اما تجارت متوقف می‌ماند.",
+    },
+
+    # ── خشکسالی ──
+    "water_rationing": {
+        "label": "🚰 جیره‌بندی آب",
+        "cost_pct": 0.01, "min_cost": 300_000,
+        "mitigation": 0.22, "approval": -4, "unrest": 5,
+        "desc": "کم‌هزینه و مؤثر، اما مردم را عصبانی می‌کند.",
+    },
+    "desalination": {
+        "label": "🏭 راه‌اندازی آب‌شیرین‌کن اضطراری",
+        "cost_pct": 0.10, "min_cost": 6_000_000,
+        "requires": {"tech_level": 3},
+        "mitigation": 0.34, "approval": 5, "unrest": -5,
+        "once_per_crisis": True,
+        "desc": "راه‌حل پایدار خشکسالی. نیازمند سطح فناوری ۳.",
+    },
+    "import_grain": {
+        "label": "🌾 واردات اضطراری غله",
+        "cost_pct": 0.09, "min_cost": 4_000_000,
+        "grants": {"grain": 20_000},
+        "mitigation": 0.26, "approval": 5, "unrest": -7,
+        "desc": "خرید غله از بازار جهانی. هم بحران را مهار می‌کند هم انبار را پر.",
+    },
+    "food_release": {
+        "label": "🌾 توزیع ذخایر غذایی",
+        "cost_pct": 0.02, "min_cost": 500_000,
+        "res_cost": {"grain": 0.15},
+        "mitigation": 0.22, "approval": 4, "unrest": -7,
+        "desc": "آزادسازی ذخایر راهبردی. اگر انبار خالی باشد ممکن نیست.",
+    },
+
+    # ── انرژی ──
+    "energy_priority": {
+        "label": "⚡ اولویت‌بندی و سهمیه‌بندی برق",
+        "cost_pct": 0.02, "min_cost": 500_000,
+        "mitigation": 0.20, "approval": -2, "unrest": 2,
+        "desc": "اولویت با خانه و بیمارستان. صنعت خاموش می‌شود.",
+    },
+    "import_fuel": {
+        "label": "🛢️ واردات فوری سوخت",
+        "cost_pct": 0.10, "min_cost": 5_000_000,
+        "grants": {"oil_reserves": 400_000},
+        "mitigation": 0.30, "approval": 3, "unrest": -4,
+        "desc": "پرهزینه اما ذخایر نفتی را هم شارژ می‌کند.",
+    },
+
+    # ── سقوط اقتصادی ──
+    "stimulus_package": {
+        "label": "💵 بسته محرک اقتصادی",
+        "cost_pct": 0.14, "min_cost": 8_000_000,
+        "mitigation": 0.32, "approval": 6, "unrest": -8,
+        "desc": "تزریق نقدینگی به بازار. گران، اما اعتماد را برمی‌گرداند.",
+    },
+    "capital_controls": {
+        "label": "🔒 کنترل سرمایه و ارز",
+        "cost_pct": 0.01, "min_cost": 300_000,
+        "mitigation": 0.24, "approval": -5, "unrest": 5,
+        "desc": "جلوی فرار سرمایه را می‌گیرد، اما بازار را می‌ترساند.",
+    },
+
+    # ── ناآرامی ──
+    "concessions": {
+        "label": "🤝 امتیازدهی و باج سیاسی",
+        "cost_pct": 0.10, "min_cost": 5_000_000,
+        "mitigation": 0.28, "approval": 6, "unrest": -16,
+        "desc": "پذیرش بخشی از خواسته‌ها. گران است ولی ناآرامی را واقعاً می‌خواباند.",
+    },
+    "emergency_subsidy": {
+        "label": "🧾 یارانه اضطراری",
+        "cost_pct": 0.08, "min_cost": 4_000_000,
+        "mitigation": 0.22, "approval": 7, "unrest": -12,
+        "desc": "پرداخت مستقیم به مردم. سریع‌ترین راه خریدن آرامش.",
+    },
+    "dialogue": {
+        "label": "🗣 مذاکره با معترضان",
+        "cost_pct": 0.0, "min_cost": 0,
+        "mitigation": 0.12, "approval": 4, "unrest": -9,
+        "desc": "رایگان، اما فقط وقتی جواب می‌دهد که اوضاع خیلی وخیم نشده باشد.",
+    },
+    "curfew": {
+        "label": "🌃 حکومت نظامی و منع رفت‌وآمد",
+        "cost_pct": 0.03, "min_cost": 1_500_000,
+        "mitigation": 0.20, "approval": -6, "unrest": -10,
+        "desc": "کنترل خیابان‌ها بدون خونریزی. رضایت را می‌سوزاند.",
+    },
+    "security_crackdown": {
+        "label": "🛡 سرکوب مسلحانه",
+        "cost_pct": 0.03, "min_cost": 1_000_000,
+        "mitigation": 0.10, "approval": -12, "unrest": -22,
+        "desc": "ناآرامی را سریع می‌خواباند، اما رضایت عمومی را نابود می‌کند و در تورنومنت امتیاز منفی دارد.",
     },
     "medical_mobilization": {
         "label": "🏥 بسیج درمانی",
@@ -218,38 +425,30 @@ CRISIS_ACTIONS = {
         "mitigation": 0.20, "approval": 3, "unrest": -4,
         "desc": "بسیج کادر درمان و تجهیزات پزشکی.",
     },
-    "food_release": {
-        "label": "🌾 توزیع ذخایر غذایی",
-        "cost_pct": 0.02, "min_cost": 500_000, "grain_cost": 0.15,
-        "mitigation": 0.22, "approval": 4, "unrest": -7,
-        "desc": "آزادسازی ذخایر راهبردی غلات بین مردم.",
-    },
-    "energy_priority": {
-        "label": "⚡ اولویت‌بندی انرژی",
-        "cost_pct": 0.02, "min_cost": 500_000,
-        "mitigation": 0.18, "approval": 1, "unrest": -3,
-        "desc": "سهمیه‌بندی برق و اولویت‌دادن به بخش خانگی و درمان.",
-    },
-    "rapid_rebuild": {
-        "label": "🏗️ بازسازی سریع",
-        "cost_pct": 0.08, "min_cost": 3_000_000,
-        "mitigation": 0.30, "approval": 4, "unrest": -5,
-        "desc": "پروژه‌ی فوری بازسازی زیرساخت‌های آسیب‌دیده.",
-    },
-    "official_address": {
-        "label": "📢 بیانیه رسمی",
-        "cost_pct": 0.0, "min_cost": 0,
-        "mitigation": 0.06, "approval": 2, "unrest": -4,
-        "desc": "سخنرانی رسمی و شفاف‌سازی برای افکار عمومی. بدون هزینه.",
-    },
-    "security_crackdown": {
-        "label": "🛡 استفاده از نیروهای امنیتی",
-        "cost_pct": 0.03, "min_cost": 1_000_000,
-        "mitigation": 0.10, "approval": -6, "unrest": -18,
-        "desc": "کنترل قهری ناآرامی. ناآرامی را سریع می‌خواباند اما رضایت عمومی را می‌سوزاند.",
-    },
 }
 
+# اقدامات هر بحران: عمومی + اختصاصی
+_COMMON_ACTIONS = ["official_address", "emergency_aid", "foreign_help"]
+CRISIS_ACTION_MAP = {
+    "epidemic": ["quarantine", "mask_distribution", "field_hospital", "vaccine_program", "import_medicine"],
+    "wildfire": ["aerial_firefight", "firebreak", "evacuate_zone", "medical_mobilization"],
+    "earthquake": ["search_rescue", "temporary_housing", "field_hospital", "rapid_rebuild"],
+    "flood": ["levee_reinforcement", "evacuate_zone", "food_release", "rapid_rebuild"],
+    "storm": ["port_shutdown", "evacuate_zone", "rapid_rebuild", "energy_priority"],
+    "drought": ["water_rationing", "desalination", "import_grain", "food_release"],
+    "famine": ["import_grain", "food_release", "field_hospital", "emergency_subsidy"],
+    "energy_crisis": ["energy_priority", "import_fuel", "rapid_rebuild"],
+    "economic_collapse": ["stimulus_package", "capital_controls", "emergency_subsidy", "import_grain"],
+    "civil_unrest": ["dialogue", "concessions", "emergency_subsidy", "curfew", "security_crackdown"],
+}
+
+# ستون منابع در جدول countries
+_RESOURCE_COLUMNS = {
+    "grain": "grain",
+    "oil_reserves": "oil_reserves",
+    "microchips": "microchips",
+    "gold": "gold",
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # کمکی‌ها
@@ -1044,30 +1243,66 @@ def estimate_damage(crisis: dict) -> dict:
 
 
 def available_actions(crisis: dict) -> list[str]:
-    """اقدامات متناسب با نوع بحران."""
-    key = crisis["crisis_key"]
-    base = ["official_address", "emergency_aid"]
-    mapping = {
-        "earthquake": ["medical_mobilization", "rapid_rebuild"],
-        "flood": ["food_release", "rapid_rebuild"],
-        "drought": ["food_release", "energy_priority"],
-        "storm": ["rapid_rebuild", "energy_priority"],
-        "wildfire": ["medical_mobilization", "rapid_rebuild"],
-        "epidemic": ["medical_mobilization", "food_release"],
-        "energy_crisis": ["energy_priority", "rapid_rebuild"],
-        "economic_collapse": ["food_release", "energy_priority"],
-        "famine": ["food_release", "medical_mobilization"],
-        "civil_unrest": ["security_crackdown", "food_release"],
-    }
-    actions = base + mapping.get(key, [])
-    if key != "civil_unrest":
-        actions.append("security_crackdown")
-    seen, ordered = set(), []
-    for action in actions:
-        if action not in seen:
+    """اقدامات متناسب با نوع بحران (عمومی + اختصاصی)."""
+    specific = CRISIS_ACTION_MAP.get(crisis["crisis_key"], [])
+    ordered, seen = [], set()
+    for action in list(specific) + _COMMON_ACTIONS:
+        if action in CRISIS_ACTIONS and action not in seen:
             seen.add(action)
             ordered.append(action)
     return ordered
+
+
+def action_cost(action_key: str, country: dict) -> dict:
+    """هزینه‌ی نقدی و منابعی یک اقدام برای این کشور."""
+    spec = CRISIS_ACTIONS.get(action_key, {})
+    treasury = max(0, int(country.get("treasury") or 0))
+    money = max(int(spec.get("min_cost", 0)), int(treasury * float(spec.get("cost_pct", 0))))
+    resources = {}
+    for field, fraction in (spec.get("res_cost") or {}).items():
+        current = int(country.get(field) or 0)
+        resources[field] = max(0, int(current * float(fraction)))
+    return {"money": money, "resources": resources}
+
+
+def check_action(action_key: str, crisis: dict, country: dict) -> tuple[bool, str]:
+    """آیا این اقدام هم‌اکنون برای این کشور ممکن است؟ (ok, دلیل نبودن)"""
+    spec = CRISIS_ACTIONS.get(action_key)
+    if not spec:
+        return False, "اقدام نامعتبر است."
+    if action_key not in available_actions(crisis):
+        return False, "این اقدام برای این نوع بحران در دسترس نیست."
+
+    for field, needed in (spec.get("requires") or {}).items():
+        if field == "tech_level":
+            level = int(country.get("tech_level") or 1)
+            if level < int(needed):
+                return False, f"نیازمند سطح فناوری {needed} (سطح فعلی شما: {level})"
+        else:
+            current = int(country.get(field) or 0)
+            if current < int(needed):
+                label = {"oil_reserves": "ذخایر نفت", "grain": "ذخایر غلات",
+                         "microchips": "میکروچیپ"}.get(field, field)
+                return False, f"نیازمند حداقل {int(needed):,} {label}"
+
+    costs = action_cost(action_key, country)
+    if costs["money"] > 0 and int(country.get("treasury") or 0) < costs["money"]:
+        return False, f"خزانه کافی نیست (نیاز: {costs['money']:,} دلار)"
+    for field, amount in costs["resources"].items():
+        if amount <= 0:
+            label = {"grain": "ذخایر غلات", "oil_reserves": "ذخایر نفت",
+                     "microchips": "میکروچیپ"}.get(field, field)
+            return False, f"{label} شما خالی است"
+
+    if spec.get("once_per_crisis"):
+        for record in get_crisis_actions(crisis["id"]):
+            if record["action_key"] == action_key:
+                return False, "این اقدام فقط یک‌بار در هر بحران ممکن است."
+
+    if action_key in get_actions_done_today(crisis["id"]):
+        return False, "امروز انجام شده — فردا دوباره فعال می‌شود."
+
+    return True, ""
 
 
 def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = None):
@@ -1079,43 +1314,46 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
         return False, "بحران یافت نشد.", None
     if crisis["stage"] not in ("warning", "impact", "recovery"):
         return False, "این بحران دیگر فعال نیست.", None
-    if action_key not in available_actions(crisis):
-        return False, "این اقدام برای این نوع بحران در دسترس نیست.", None
 
     country = db.get_country_by_id(crisis["country_id"])
     if not country:
         return False, "کشور یافت نشد.", None
 
-    spec = CRISIS_ACTIONS[action_key]
-    treasury = int(country.get("treasury") or 0)
-    cost = max(int(spec.get("min_cost", 0)), int(max(0, treasury) * float(spec.get("cost_pct", 0))))
-    if cost > 0 and treasury < cost:
-        return False, f"خزانه کافی نیست. هزینه‌ی این اقدام {cost:,} دلار است.", None
+    ok, reason = check_action(action_key, crisis, country)
+    if not ok:
+        return False, reason, None
 
-    grain_cost = 0
-    if spec.get("grain_cost"):
-        grain_cost = int(int(country.get("grain") or 0) * float(spec["grain_cost"]))
+    spec = CRISIS_ACTIONS[action_key]
+    costs = action_cost(action_key, country)
+    money = costs["money"]
+    resources = costs["resources"]
+    grants = spec.get("grants") or {}
 
     conn = db.get_connection()
     try:
         with conn:
             cur = conn.cursor()
             today = _today()
-            duplicate = cur.execute(
-                "SELECT id FROM crisis_actions WHERE crisis_id = ? AND action_key = ? AND action_date = ?",
-                (crisis_id, action_key, today),
-            ).fetchone()
-            if duplicate:
-                return False, "این اقدام را امروز انجام داده‌اید. فردا دوباره در دسترس است.", None
-
-            if cost > 0:
-                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (cost, crisis["country_id"]))
+            if money > 0:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (money, crisis["country_id"]))
                 cur.execute(
                     "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'crisis_response', ?, ?, ?)",
-                    (crisis["country_id"], f"اقدام اضطراری: {spec['label']}", -cost, _iso()),
+                    (crisis["country_id"], f"اقدام اضطراری: {spec['label']}", -money, _iso()),
                 )
-            if grain_cost > 0:
-                cur.execute("UPDATE countries SET grain = MAX(0, grain - ?) WHERE id = ?", (grain_cost, crisis["country_id"]))
+            for field, amount in resources.items():
+                column = _RESOURCE_COLUMNS.get(field)
+                if column and amount > 0:
+                    cur.execute(
+                        f"UPDATE countries SET {column} = MAX(0, COALESCE({column}, 0) - ?) WHERE id = ?",
+                        (amount, crisis["country_id"]),
+                    )
+            for field, amount in grants.items():
+                column = _RESOURCE_COLUMNS.get(field)
+                if column and amount > 0:
+                    cur.execute(
+                        f"UPDATE countries SET {column} = COALESCE({column}, 0) + ? WHERE id = ?",
+                        (int(amount), crisis["country_id"]),
+                    )
 
             new_mitigation = min(0.80, float(crisis.get("mitigation") or 0) + float(spec["mitigation"]))
             cur.execute("UPDATE country_crises SET mitigation = ? WHERE id = ?", (new_mitigation, crisis_id))
@@ -1125,7 +1363,7 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
                 (crisis_id, country_id, action_key, actor_id, cost, mitigation, action_date, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (crisis_id, crisis["country_id"], action_key, actor_id, cost,
+                (crisis_id, crisis["country_id"], action_key, actor_id, money,
                  float(spec["mitigation"]), today, _iso()),
             )
 
@@ -1141,8 +1379,8 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
     finally:
         conn.close()
 
-    db.add_log(f"player:{actor_id}", "crisis_response", f"crisis={crisis_id} action={action_key} cost={cost}")
-    return True, f"{spec['label']} اجرا شد.", {"cost": cost, "grain_cost": grain_cost}
+    db.add_log(f"player:{actor_id}", "crisis_response", f"crisis={crisis_id} action={action_key} cost={money}")
+    return True, f"{spec['label']} اجرا شد.", {"cost": money, "resources": resources, "grants": grants}
 
 
 def get_actions_done_today(crisis_id: int) -> set:

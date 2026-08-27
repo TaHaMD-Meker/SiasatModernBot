@@ -977,3 +977,122 @@ def test_active_crisis_list_is_paginated_and_loses_nothing(monkeypatch, tmp_path
     assert "مجموع: <b>25</b>" in first.text
     header_end = first.text.index("#")
     assert "شدید" in first.text[header_end:header_end + 200], "شدیدترها باید اول فهرست بیایند"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# اقدامات اختصاصی هر بحران و پیش‌نیازها
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_each_crisis_has_its_own_distinct_action_set():
+    seen_signatures = {}
+    for crisis_key in ia.CRISIS_CATALOG:
+        crisis = {"crisis_key": crisis_key, "severity": "medium", "stage": "impact", "mitigation": 0, "id": 1}
+        actions = ia.available_actions(crisis)
+        assert len(actions) >= 4, f"{crisis_key} گزینه‌ی کافی ندارد"
+        assert all(a in ia.CRISIS_ACTIONS for a in actions)
+        specific = tuple(sorted(set(actions) - set(ia._COMMON_ACTIONS)))
+        assert specific, f"{crisis_key} هیچ اقدام اختصاصی ندارد"
+        seen_signatures[crisis_key] = specific
+    # حداقل نیمی از بحران‌ها ترکیب اقدامات یکتا داشته باشند
+    assert len(set(seen_signatures.values())) >= len(seen_signatures) - 1
+
+
+def test_vaccine_requires_high_tech_level(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 300_000_000)
+    database.update_country_field(cid, "microchips", 5_000)
+    database.update_country_field(cid, "tech_level", 2)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", admin_id=1)
+
+    ok, reason = ia.check_action("vaccine_program", crisis, database.get_country_by_id(cid))
+    assert not ok and "فناوری" in reason
+    ok, message, _i = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
+    assert not ok
+
+    # کشور با فناوری کافی می‌تواند
+    database.update_country_field(cid, "tech_level", 5)
+    ok, message, info = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
+    assert ok, message
+    assert database.get_country_by_id(cid)["microchips"] < 5_000, "واکسن باید میکروچیپ مصرف کند"
+
+
+def test_vaccine_is_once_per_crisis(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 900_000_000)
+    database.update_country_field(cid, "microchips", 50_000)
+    database.update_country_field(cid, "tech_level", 5)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", admin_id=1)
+    assert ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)[0]
+
+    tomorrow = ia._now() + datetime.timedelta(days=1)
+    monkeypatch.setattr(ia, "_today", lambda dt=None: ia._iso(tomorrow)[:10])
+    ok, reason, _i = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
+    assert not ok and "یک‌بار" in reason
+    # ولی قرنطینه فردا باز است
+    assert ia.respond_to_crisis(crisis["id"], "quarantine", actor_id=1)[0]
+
+
+def test_aerial_firefighting_needs_fuel(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 300_000_000)
+    database.update_country_field(cid, "oil_reserves", 1_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "wildfire", admin_id=1)
+
+    ok, reason = ia.check_action("aerial_firefight", crisis, database.get_country_by_id(cid))
+    assert not ok and "نفت" in reason
+    # با سوخت کافی ممکن می‌شود و سوخت مصرف می‌کند
+    database.update_country_field(cid, "oil_reserves", 2_000_000)
+    ok, _msg, _i = ia.respond_to_crisis(crisis["id"], "aerial_firefight", actor_id=1)
+    assert ok
+    assert database.get_country_by_id(cid)["oil_reserves"] < 2_000_000
+
+
+def test_import_actions_actually_deliver_resources(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 300_000_000)
+    database.update_country_field(cid, "grain", 1_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "famine", admin_id=1)
+
+    before = database.get_country_by_id(cid)["grain"]
+    ok, _msg, info = ia.respond_to_crisis(crisis["id"], "import_grain", actor_id=1)
+    assert ok
+    assert database.get_country_by_id(cid)["grain"] > before
+    assert info["grants"]["grain"] > 0
+
+
+def test_unrest_options_trade_approval_against_order(monkeypatch, tmp_path):
+    """سرکوب ناآرامی را بیشتر می‌خواباند ولی رضایت را می‌سوزاند؛ باج برعکس."""
+    crackdown = ia.CRISIS_ACTIONS["security_crackdown"]
+    concessions = ia.CRISIS_ACTIONS["concessions"]
+    assert crackdown["unrest"] < concessions["unrest"]
+    assert crackdown["approval"] < 0 < concessions["approval"]
+
+    database = _fresh_db(monkeypatch, tmp_path)
+    hard = _country(database, player_id=8201, approval=60, key="c_hard")
+    soft = _country(database, player_id=8202, approval=60, key="c_soft")
+    for cid in (hard, soft):
+        database.update_country_field(cid, "treasury", 400_000_000)
+    _ok, _m, c_hard = ia.create_crisis(hard, "civil_unrest", admin_id=1)
+    _ok, _m, c_soft = ia.create_crisis(soft, "civil_unrest", admin_id=1)
+
+    assert ia.respond_to_crisis(c_hard["id"], "security_crackdown", actor_id=1)[0]
+    assert ia.respond_to_crisis(c_soft["id"], "concessions", actor_id=1)[0]
+
+    assert database.get_country_by_id(hard)["approval_rating"] < database.get_country_by_id(soft)["approval_rating"]
+    assert ia.get_state(hard)["unrest"] <= ia.get_state(soft)["unrest"]
+
+
+def test_free_actions_are_always_reachable_when_broke(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 0)
+    _ok, _m, crisis = ia.create_crisis(cid, "civil_unrest", admin_id=1)
+
+    country = database.get_country_by_id(cid)
+    assert ia.check_action("official_address", crisis, country)[0]
+    assert ia.check_action("dialogue", crisis, country)[0]
+    assert not ia.check_action("concessions", crisis, country)[0]
