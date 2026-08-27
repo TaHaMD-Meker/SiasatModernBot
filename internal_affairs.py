@@ -131,9 +131,17 @@ VACCINE_BATCH_DOSES = 50_000          # واحد پایه‌ی تولید
 VACCINE_MAX_BATCHES = 6               # سقف هر پروژه
 VACCINE_BASE_DAYS = 3                 # حداقل زمان تولید
 VACCINE_DAYS_PER_EXTRA_BATCH = 1      # هر واحد اضافه، یک روز بیشتر
-VACCINE_COST_PER_BATCH = 6_000_000
-VACCINE_CHIPS_PER_BATCH = 400
-VACCINE_ISOTOPES_PER_BATCH = 5
+# هزینه‌ی هر واحد تولید، تفکیک‌شده به مراحل واقعی یک برنامه‌ی واکسن.
+# جمع نقدی + ارزش بازاری میکروچیپ ≈ ۸۵ میلیون دلار برای هر واحد.
+VACCINE_COST_BREAKDOWN = {
+    "🔬 تحقیق و توسعه و کارآزمایی": 20_000_000,
+    "🏭 راه‌اندازی خط تولید": 22_000_000,
+    "🧪 کنترل کیفیت و ایمنی": 8_000_000,
+    "🚚 توزیع و زنجیره سرد": 5_000_000,
+}
+VACCINE_COST_PER_BATCH = sum(VACCINE_COST_BREAKDOWN.values())   # ۵۵ میلیون نقدی
+VACCINE_CHIPS_PER_BATCH = 2_000                                  # ≈ ۳۰ میلیون ارزش بازار
+VACCINE_ISOTOPES_PER_BATCH = 0                                   # فعلاً لازم نیست
 VACCINE_DOSES_PER_USE = 50_000        # مصرف هر بار تزریق در بحران
 
 # سقف مهار: عادی ۸۰٪، اما اقدامات راهبردیِ سخت‌به‌دست سقف را بالاتر می‌برند.
@@ -174,21 +182,21 @@ CRISIS_CATALOG = {
         "warning": "منابع محلی از افزایش فعالیت لرزه‌ای در منطقه خبر می‌دهند.",
         "impact": "زلزله‌ای شدید چند منطقه کشور را لرزاند. نیروهای امدادی در آماده‌باش کامل هستند.",
         "duration": 3,
-        "effects": {"pop": 0.00040, "elec": 18, "treasury": 0.018, "approval": -6, "unrest": 10},
+        "effects": {"pop": 0.00020, "elec": 18, "treasury": 0.018, "approval": -6, "unrest": 10},
     },
     "flood": {
         "label": "🌊 سیل",
         "warning": "هواشناسی نسبت به بارش‌های سنگین و طغیان رودخانه‌ها هشدار داد.",
         "impact": "سیل گسترده به اراضی کشاورزی و راه‌های ارتباطی خسارت زد.",
         "duration": 3,
-        "effects": {"grain": 0.15, "pop": 0.00012, "income": 0.05, "approval": -4, "unrest": 7},
+        "effects": {"grain": 0.15, "pop": 0.000030, "income": 0.05, "approval": -4, "unrest": 7},
     },
     "drought": {
         "label": "🏜 خشکسالی",
         "warning": "کاهش بی‌سابقه‌ی بارش، نگرانی از کم‌آبی و افت محصول را افزایش داده است.",
         "impact": "خشکسالی تولید غلات را به‌شدت کاهش داد و موج مهاجرت روستایی آغاز شد.",
         "duration": 5,
-        "effects": {"grain": 0.20, "pop": 0.00018, "approval": -5, "unrest": 8},
+        "effects": {"grain": 0.20, "pop": 0.000008, "approval": -5, "unrest": 8},
     },
     "storm": {
         "label": "🌪 طوفان",
@@ -202,14 +210,14 @@ CRISIS_CATALOG = {
         "warning": "گرمای بی‌سابقه و خشکی پوشش گیاهی، خطر آتش‌سوزی را بحرانی کرده است.",
         "impact": "آتش‌سوزی گسترده به مناطق صنعتی و مسکونی سرایت کرد.",
         "duration": 2,
-        "effects": {"pop": 0.00015, "treasury": 0.022, "income": 0.04, "approval": -4, "unrest": 6},
+        "effects": {"pop": 0.000006, "treasury": 0.022, "income": 0.04, "approval": -4, "unrest": 6},
     },
     "epidemic": {
         "label": "🦠 اپیدمی",
         "warning": "مراکز بهداشتی از افزایش غیرعادی موارد بیماری در چند استان خبر می‌دهند.",
         "impact": "شیوع بیماری، نظام درمانی کشور را زیر فشار برد و فعالیت اقتصادی کاهش یافت.",
         "duration": 5,
-        "effects": {"pop": 0.00060, "income": 0.055, "approval": -7, "unrest": 9},
+        "effects": {"pop": 0.000015, "income": 0.055, "approval": -7, "unrest": 9},
     },
     "energy_crisis": {
         "label": "⚡ بحران انرژی",
@@ -230,7 +238,7 @@ CRISIS_CATALOG = {
         "warning": "ذخایر راهبردی غلات به سطح بحرانی رسیده است.",
         "impact": "کمبود شدید مواد غذایی به قحطی و ناآرامی در شهرهای بزرگ انجامید.",
         "duration": 4,
-        "effects": {"grain": 0.28, "pop": 0.00045, "approval": -10, "unrest": 16},
+        "effects": {"grain": 0.28, "pop": 0.000020, "approval": -10, "unrest": 16},
     },
     "civil_unrest": {
         "label": "✊ ناآرامی مدنی",
@@ -1557,8 +1565,6 @@ def can_start_vaccine(country: dict, batches: int = 1) -> tuple[bool, str, dict]
         return False, f"خزانه کافی نیست (نیاز: {need['cost']:,} دلار)", need
     if int(country.get("microchips") or 0) < need["microchips"]:
         return False, f"میکروچیپ کافی نیست (نیاز: {need['microchips']:,} عدد)", need
-    if int(country.get("medical_isotopes") or 0) < need["medical_isotopes"]:
-        return False, f"ایزوتوپ پزشکی کافی نیست (نیاز: {need['medical_isotopes']:,} کیلوگرم)", need
     if get_active_vaccine_project(country["id"]):
         return False, "یک پروژه‌ی واکسن هم‌اکنون در حال تولید است.", need
     return True, "", need

@@ -1231,7 +1231,7 @@ def _vaccine_ready_country(database, doses=0, tech=3, treasury=400_000_000):
     return cid
 
 
-def test_vaccine_needs_tech_three_plus_chips_and_isotopes(monkeypatch, tmp_path):
+def test_vaccine_needs_tech_three_plus_chips(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _vaccine_ready_country(database, tech=2)
 
@@ -1245,9 +1245,8 @@ def test_vaccine_needs_tech_three_plus_chips_and_isotopes(monkeypatch, tmp_path)
     assert not ok and "میکروچیپ" in reason
 
     database.update_country_field(cid, "microchips", 9_000)
-    database.update_country_field(cid, "medical_isotopes", 0)
     ok, reason, _n = ia.can_start_vaccine(database.get_country_by_id(cid), 1)
-    assert not ok and "ایزوتوپ" in reason
+    assert ok, f"با فناوری و چیپ کافی باید ممکن باشد: {reason}"
 
 
 def test_vaccine_production_takes_at_least_three_days(monkeypatch, tmp_path):
@@ -1280,7 +1279,6 @@ def test_starting_a_project_consumes_resources_immediately(monkeypatch, tmp_path
     after = database.get_country_by_id(cid)
     assert after["treasury"] < before["treasury"]
     assert after["microchips"] < before["microchips"]
-    assert after["medical_isotopes"] < before["medical_isotopes"]
     assert after["vaccine_doses"] == 0, "دُز فقط بعد از اتمام زمان تحویل می‌شود"
 
 
@@ -1572,3 +1570,51 @@ def test_income_loss_is_temporary_and_returns_when_the_crisis_ends(monkeypatch, 
 
     assert ia.end_crisis(crisis["id"], admin_id=1)[0]
     assert database.get_country_by_id(cid)["daily_income"] == 5_000_000
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# بالانس نهایی: هزینه واکسن و نرخ مرگ‌ومیر واقعی
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_vaccine_no_longer_needs_enriched_isotopes(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "tech_level", 3)
+    database.update_country_field(cid, "treasury", 200_000_000)
+    database.update_country_field(cid, "microchips", 5_000)
+    database.update_country_field(cid, "medical_isotopes", 0)
+
+    assert ia.VACCINE_ISOTOPES_PER_BATCH == 0
+    ok, reason, _n = ia.can_start_vaccine(database.get_country_by_id(cid), 1)
+    assert ok, f"ایزوتوپ نباید دیگر لازم باشد: {reason}"
+
+
+def test_vaccine_total_cost_is_about_eighty_five_million():
+    need = ia.vaccine_requirements(1)
+    chip_value = need["microchips"] * 15_000
+    total = need["cost"] + chip_value
+    assert 80_000_000 <= total <= 90_000_000, f"جمع کل باید حدود ۸۵ میلیون باشد، شد {total:,}"
+    assert sum(ia.VACCINE_COST_BREAKDOWN.values()) == ia.VACCINE_COST_PER_BATCH
+    assert len(ia.VACCINE_COST_BREAKDOWN) >= 3, "هزینه باید تفکیک‌شده باشد"
+
+
+def test_daily_deaths_match_real_pandemic_scale():
+    """اوج کرونا بین ۰.۰۰۰۸٪ و ۰.۰۰۲٪ جمعیت در روز بود."""
+    population = 50_000_000
+    epidemic = ia.CRISIS_CATALOG["epidemic"]["effects"]["pop"]
+    deaths_medium = population * epidemic
+    deaths_severe = deaths_medium * ia.SEVERITY_FACTORS["severe"]
+
+    assert 300 <= deaths_medium <= 1_500, f"اپیدمی متوسط: {int(deaths_medium):,}"
+    assert deaths_severe <= 2_500, f"اپیدمی شدید: {int(deaths_severe):,}"
+    # نسبت جمعیتی در بازه‌ی واقعی
+    assert 0.0000060 <= epidemic <= 0.0000250
+
+
+def test_slow_disasters_kill_less_per_day_than_a_sudden_one():
+    """قحطی و خشکسالی تدریجی‌اند؛ زلزله یک رویداد آنی و مرگبار است."""
+    effects = {key: spec["effects"].get("pop", 0) for key, spec in ia.CRISIS_CATALOG.items()}
+    assert effects["earthquake"] > effects["epidemic"]
+    assert effects["earthquake"] > effects["famine"]
+    assert effects["drought"] < effects["famine"]
+    assert effects["wildfire"] < effects["flood"]

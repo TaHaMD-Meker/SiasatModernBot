@@ -587,8 +587,7 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
             ok, reason, _n = ia.can_start_vaccine(country, batches)
             body = (
                 f"\n{'✅' if ok else '🔒'} <b>{format_number(need['doses'])} دُز</b> — {need['days']} روز\n"
-                f"   {format_money(need['cost'])} | {format_number(need['microchips'])} چیپ | "
-                f"{need['medical_isotopes']} کیلو ایزوتوپ"
+                f"   {format_money(need['cost'])} نقدی + {format_number(need['microchips'])} میکروچیپ"
             )
             if not ok:
                 body += f"\n   <i>{html.escape(reason)}</i>"
@@ -599,11 +598,13 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
                     callback_data=f"dom:vax_start:{batches}",
                 )])
 
-        lines.extend([
-            "",
-            f"<b>پیش‌نیازها:</b> سطح فناوری {ia.VACCINE_MIN_TECH_LEVEL} + میکروچیپ + ایزوتوپ پزشکی",
-            "<i>ایزوتوپ پزشکی از نیروگاه هسته‌ای و چرخه‌ی سوخت به دست می‌آید.</i>",
-        ])
+        chip_value = ia.VACCINE_CHIPS_PER_BATCH * 15_000
+        lines.extend(["", "<b>🧾 تفکیک هزینه‌ی هر واحد (۵۰ هزار دُز)</b>"])
+        for part, amount in ia.VACCINE_COST_BREAKDOWN.items():
+            lines.append(f"• {part}: {format_money(amount)}")
+        lines.append(f"• 💻 میکروچیپ ({format_number(ia.VACCINE_CHIPS_PER_BATCH)} عدد): ≈ {format_money(chip_value)}")
+        lines.append(f"<b>جمع کل: ≈ {format_money(ia.VACCINE_COST_PER_BATCH + chip_value)}</b>")
+        lines.append(f"\n<b>پیش‌نیاز:</b> سطح فناوری {ia.VACCINE_MIN_TECH_LEVEL} و صنعت نیمه‌هادی")
 
     history = [p for p in ia.get_vaccine_history(country["id"], 5) if p["status"] == "delivered"]
     if history:
