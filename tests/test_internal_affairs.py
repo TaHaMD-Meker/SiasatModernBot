@@ -998,31 +998,30 @@ def test_each_crisis_has_its_own_distinct_action_set():
 
 
 def test_vaccine_requires_high_tech_level(monkeypatch, tmp_path):
+    """فناوری حالا پروژه‌ی تولید را قفل می‌کند، نه خودِ تزریق."""
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _country(database)
-    database.update_country_field(cid, "treasury", 300_000_000)
-    database.update_country_field(cid, "microchips", 5_000)
+    database.update_country_field(cid, "treasury", 400_000_000)
+    database.update_country_field(cid, "microchips", 9_000)
+    database.update_country_field(cid, "medical_isotopes", 200)
     database.update_country_field(cid, "tech_level", 2)
-    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", admin_id=1)
 
-    ok, reason = ia.check_action("vaccine_program", crisis, database.get_country_by_id(cid))
+    ok, reason, _n = ia.can_start_vaccine(database.get_country_by_id(cid), 1)
     assert not ok and "فناوری" in reason
-    ok, message, _i = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
-    assert not ok
 
-    # کشور با فناوری کافی می‌تواند
-    database.update_country_field(cid, "tech_level", 5)
-    ok, message, info = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
+    database.update_country_field(cid, "tech_level", ia.VACCINE_MIN_TECH_LEVEL)
+    ok, message, project = ia.start_vaccine_project(cid, 1, actor_id=1)
     assert ok, message
-    assert database.get_country_by_id(cid)["microchips"] < 5_000, "واکسن باید میکروچیپ مصرف کند"
+    assert project["doses"] == ia.VACCINE_BATCH_DOSES
+    assert database.get_country_by_id(cid)["microchips"] < 9_000
 
 
 def test_vaccine_is_once_per_crisis(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _country(database)
     database.update_country_field(cid, "treasury", 900_000_000)
-    database.update_country_field(cid, "microchips", 50_000)
     database.update_country_field(cid, "tech_level", 5)
+    database.update_country_field(cid, "vaccine_doses", ia.VACCINE_DOSES_PER_USE * 4)
     _ok, _m, crisis = ia.create_crisis(cid, "epidemic", admin_id=1)
     assert ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)[0]
 
@@ -1212,3 +1211,139 @@ def test_spread_news_names_the_source_country():
     title, body = ia.build_news({"name": "عراق", "flag": "🇮🇶"}, crisis, "spread")
     assert "سرایت" in title and "عراق" in title
     assert "ایران" in body
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# واکسن به‌عنوان آیتم تولیدی، زمان‌بر و غیرقابل فروش
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _vaccine_ready_country(database, doses=0, tech=3, treasury=400_000_000):
+    cid = _country(database, approval=80)
+    database.update_country_field(cid, "tech_level", tech)
+    database.update_country_field(cid, "treasury", treasury)
+    database.update_country_field(cid, "microchips", 9_000)
+    database.update_country_field(cid, "medical_isotopes", 200)
+    if doses:
+        database.update_country_field(cid, "vaccine_doses", doses)
+    return cid
+
+
+def test_vaccine_needs_tech_three_plus_chips_and_isotopes(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _vaccine_ready_country(database, tech=2)
+
+    ok, reason, _n = ia.can_start_vaccine(database.get_country_by_id(cid), 1)
+    assert not ok and "فناوری" in reason
+    assert ia.VACCINE_MIN_TECH_LEVEL == 3
+
+    database.update_country_field(cid, "tech_level", 3)
+    database.update_country_field(cid, "microchips", 0)
+    ok, reason, _n = ia.can_start_vaccine(database.get_country_by_id(cid), 1)
+    assert not ok and "میکروچیپ" in reason
+
+    database.update_country_field(cid, "microchips", 9_000)
+    database.update_country_field(cid, "medical_isotopes", 0)
+    ok, reason, _n = ia.can_start_vaccine(database.get_country_by_id(cid), 1)
+    assert not ok and "ایزوتوپ" in reason
+
+
+def test_vaccine_production_takes_at_least_three_days(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _vaccine_ready_country(database)
+
+    assert ia.vaccine_requirements(1)["days"] >= 3
+    assert ia.vaccine_requirements(6)["days"] > ia.vaccine_requirements(1)["days"]
+
+    ok, message, _p = ia.start_vaccine_project(cid, 1, actor_id=1)
+    assert ok, message
+    start = ia._now()
+
+    for day in (1, 2):
+        assert ia.collect_ready_vaccines(cid, start + datetime.timedelta(days=day)) == 0
+        assert database.get_country_by_id(cid)["vaccine_doses"] == 0
+
+    delivered = ia.collect_ready_vaccines(cid, start + datetime.timedelta(days=3, hours=1))
+    assert delivered == ia.VACCINE_BATCH_DOSES
+    assert database.get_country_by_id(cid)["vaccine_doses"] == ia.VACCINE_BATCH_DOSES
+
+
+def test_starting_a_project_consumes_resources_immediately(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _vaccine_ready_country(database)
+    before = database.get_country_by_id(cid)
+
+    ok, _msg, _p = ia.start_vaccine_project(cid, 3, actor_id=1)
+    assert ok
+    after = database.get_country_by_id(cid)
+    assert after["treasury"] < before["treasury"]
+    assert after["microchips"] < before["microchips"]
+    assert after["medical_isotopes"] < before["medical_isotopes"]
+    assert after["vaccine_doses"] == 0, "دُز فقط بعد از اتمام زمان تحویل می‌شود"
+
+
+def test_only_one_vaccine_project_at_a_time(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _vaccine_ready_country(database)
+    assert ia.start_vaccine_project(cid, 1, actor_id=1)[0]
+    ok, message, _p = ia.start_vaccine_project(cid, 1, actor_id=1)
+    assert not ok and "در حال تولید" in message
+
+
+def test_vaccine_action_requires_stock_and_consumes_it(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _vaccine_ready_country(database, doses=0)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", admin_id=1)
+
+    ok, reason = ia.check_action("vaccine_program", crisis, database.get_country_by_id(cid))
+    assert not ok and "واکسن" in reason
+
+    database.update_country_field(cid, "vaccine_doses", ia.VACCINE_DOSES_PER_USE)
+    ok, _msg, _i = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
+    assert ok
+    assert database.get_country_by_id(cid)["vaccine_doses"] == 0
+
+
+def test_vaccine_doses_are_not_tradeable():
+    """واکسن نباید در بازار، اهدا یا انتقال دارایی ظاهر شود."""
+    import inspect
+    from handlers import market, diplomacy
+
+    for module in (market, diplomacy):
+        assert "vaccine_doses" not in inspect.getsource(module), (
+            f"{module.__name__} نباید به واکسن دسترسی داشته باشد"
+        )
+    tradeable = getattr(config, "MARKET_RESOURCES", None) or {}
+    assert "vaccine_doses" not in tradeable
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# سقف مهار
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_mitigation_cap_is_eighty_until_a_strategic_action(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _vaccine_ready_country(database, doses=ia.VACCINE_DOSES_PER_USE, treasury=900_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", severity="severe", admin_id=1)
+
+    assert ia.mitigation_cap(ia.get_crisis(crisis["id"])) == ia.BASE_MITIGATION_CAP
+
+    base = ia._now()
+    for day in range(4):
+        monkeypatch.setattr(ia, "_today", lambda dt=None, d=day: ia._iso(base + datetime.timedelta(days=d))[:10])
+        for action in ia.available_actions(ia.get_crisis(crisis["id"])):
+            if action != "vaccine_program":
+                ia.respond_to_crisis(crisis["id"], action, actor_id=1)
+    assert float(ia.get_crisis(crisis["id"])["mitigation"]) <= ia.BASE_MITIGATION_CAP + 1e-9
+
+    monkeypatch.setattr(ia, "_today", lambda dt=None: ia._iso(base + datetime.timedelta(days=9))[:10])
+    ok, message, _i = ia.respond_to_crisis(crisis["id"], "vaccine_program", actor_id=1)
+    assert ok, message
+    refreshed = ia.get_crisis(crisis["id"])
+    assert ia.mitigation_cap(refreshed) == 0.95
+    assert float(refreshed["mitigation"]) > ia.BASE_MITIGATION_CAP
+
+
+def test_mitigation_never_reaches_one_hundred_percent():
+    assert ia.MAX_MITIGATION_CAP < 1.0
+    for action in ia.CRISIS_ACTIONS.values():
+        assert float(action.get("raises_cap", 0) or 0) <= ia.MAX_MITIGATION_CAP

@@ -119,6 +119,27 @@ SEVERITY_FACTORS = {"light": 0.5, "medium": 1.0, "severe": 1.8}
 SEVERITY_LABELS = {"light": "خفیف", "medium": "متوسط", "severe": "شدید"}
 SEVERITY_ORDER = ("light", "medium", "severe")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# برنامه‌ی واکسن — آیتم تولیدی، زمان‌بر و غیرقابل فروش
+#
+# واکسن با پول خریدنی نیست: کشور باید فناوری، صنعت نیمه‌هادی و ایزوتوپ پزشکی
+# داشته باشد و چند روز صبر کند. دُزهای تولیدشده در انبار کشور می‌مانند و
+# قابل فروش، اهدا یا انتقال نیستند.
+# ─────────────────────────────────────────────────────────────────────────────
+VACCINE_MIN_TECH_LEVEL = 3
+VACCINE_BATCH_DOSES = 50_000          # واحد پایه‌ی تولید
+VACCINE_MAX_BATCHES = 6               # سقف هر پروژه
+VACCINE_BASE_DAYS = 3                 # حداقل زمان تولید
+VACCINE_DAYS_PER_EXTRA_BATCH = 1      # هر واحد اضافه، یک روز بیشتر
+VACCINE_COST_PER_BATCH = 6_000_000
+VACCINE_CHIPS_PER_BATCH = 400
+VACCINE_ISOTOPES_PER_BATCH = 5
+VACCINE_DOSES_PER_USE = 50_000        # مصرف هر بار تزریق در بحران
+
+# سقف مهار: عادی ۸۰٪، اما اقدامات راهبردیِ سخت‌به‌دست سقف را بالاتر می‌برند.
+BASE_MITIGATION_CAP = 0.80
+MAX_MITIGATION_CAP = 0.95
+
 # بحران‌های واگیردار: وقتی از «خفیف» عبور کنند، به کشورهای هم‌مرز سرایت می‌کنند.
 CONTAGIOUS_CRISES = {
     "epidemic": {"chance": 0.28, "severity": "light", "label": "اپیدمی"},
@@ -270,13 +291,17 @@ CRISIS_ACTIONS = {
         "desc": "افزایش ظرفیت درمان و کاهش تلفات.",
     },
     "vaccine_program": {
-        "label": "💉 تولید و تزریق واکسن",
-        "cost_pct": 0.12, "min_cost": 8_000_000,
-        "res_cost": {"microchips": 0.10},
-        "requires": {"tech_level": 4},
+        "label": "💉 تزریق سراسری واکسن",
+        "cost_pct": 0.03, "min_cost": 1_500_000,
+        "requires": {"vaccine_doses": VACCINE_DOSES_PER_USE},
+        "consumes_doses": VACCINE_DOSES_PER_USE,
         "mitigation": 0.45, "approval": 8, "unrest": -10,
+        "raises_cap": 0.95,
         "once_per_crisis": True,
-        "desc": "قوی‌ترین پاسخ به اپیدمی. نیازمند سطح فناوری ۴ و صنعت پیشرفته.",
+        "desc": (
+            "قوی‌ترین پاسخ به اپیدمی و تنها راه عبور از سقف مهار ۸۰٪. "
+            "نیازمند دُز واکسن آماده در انبار — از «💉 برنامه واکسن» تولیدش کنید."
+        ),
     },
     "import_medicine": {
         "label": "💊 واردات فوری دارو",
@@ -353,8 +378,9 @@ CRISIS_ACTIONS = {
         "cost_pct": 0.10, "min_cost": 6_000_000,
         "requires": {"tech_level": 3},
         "mitigation": 0.34, "approval": 5, "unrest": -5,
+        "raises_cap": 0.90,
         "once_per_crisis": True,
-        "desc": "راه‌حل پایدار خشکسالی. نیازمند سطح فناوری ۳.",
+        "desc": "راه‌حل پایدار خشکسالی. نیازمند سطح فناوری ۳ و سقف مهار را به ۹۰٪ می‌برد.",
     },
     "import_grain": {
         "label": "🌾 واردات اضطراری غله",
@@ -456,6 +482,8 @@ CRISIS_ACTION_MAP = {
 
 # ستون منابع در جدول countries
 _RESOURCE_COLUMNS = {
+    "vaccine_doses": "vaccine_doses",
+    "medical_isotopes": "medical_isotopes",
     "grain": "grain",
     "oil_reserves": "oil_reserves",
     "microchips": "microchips",
@@ -1071,7 +1099,7 @@ def _crisis_damage(crisis: dict, factor: float | None = None) -> dict:
     spec = CRISIS_CATALOG.get(crisis["crisis_key"], {})
     if factor is None:
         factor = SEVERITY_FACTORS.get(crisis["severity"], 1.0)
-    mitigation = max(0.0, min(0.80, float(crisis.get("mitigation") or 0)))
+    mitigation = max(0.0, min(MAX_MITIGATION_CAP, float(crisis.get("mitigation") or 0)))
     scale = factor * (1.0 - mitigation)
     return {key: value * scale for key, value in (spec.get("effects") or {}).items()}
 
@@ -1307,7 +1335,8 @@ def check_action(action_key: str, crisis: dict, country: dict) -> tuple[bool, st
             current = int(country.get(field) or 0)
             if current < int(needed):
                 label = {"oil_reserves": "ذخایر نفت", "grain": "ذخایر غلات",
-                         "microchips": "میکروچیپ"}.get(field, field)
+                         "microchips": "میکروچیپ", "vaccine_doses": "دُز واکسن",
+                         "medical_isotopes": "ایزوتوپ پزشکی"}.get(field, field)
                 return False, f"نیازمند حداقل {int(needed):,} {label}"
 
     costs = action_cost(action_key, country)
@@ -1372,6 +1401,12 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
                         f"UPDATE countries SET {column} = MAX(0, COALESCE({column}, 0) - ?) WHERE id = ?",
                         (amount, crisis["country_id"]),
                     )
+            doses = int(spec.get("consumes_doses") or 0)
+            if doses > 0:
+                cur.execute(
+                    "UPDATE countries SET vaccine_doses = MAX(0, COALESCE(vaccine_doses, 0) - ?) WHERE id = ?",
+                    (doses, crisis["country_id"]),
+                )
             for field, amount in grants.items():
                 column = _RESOURCE_COLUMNS.get(field)
                 if column and amount > 0:
@@ -1380,7 +1415,10 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
                         (int(amount), crisis["country_id"]),
                     )
 
-            new_mitigation = min(0.80, float(crisis.get("mitigation") or 0) + float(spec["mitigation"]))
+            cap = mitigation_cap(crisis)
+            if spec.get("raises_cap"):
+                cap = max(cap, min(MAX_MITIGATION_CAP, float(spec["raises_cap"])))
+            new_mitigation = min(cap, float(crisis.get("mitigation") or 0) + float(spec["mitigation"]))
             cur.execute("UPDATE country_crises SET mitigation = ? WHERE id = ?", (new_mitigation, crisis_id))
             cur.execute(
                 """
@@ -1480,6 +1518,155 @@ def _random_crisis_candidate(country: dict, state: dict) -> tuple[str, str] | No
     key = random.choices(natural, weights=[weights[k] for k in natural], k=1)[0]
     severity = random.choices(["light", "medium", "severe"], weights=[0.5, 0.38, 0.12], k=1)[0]
     return key, severity
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# تولید واکسن
+# ─────────────────────────────────────────────────────────────────────────────
+def vaccine_requirements(batches: int = 1) -> dict:
+    batches = max(1, min(VACCINE_MAX_BATCHES, int(batches)))
+    return {
+        "batches": batches,
+        "doses": batches * VACCINE_BATCH_DOSES,
+        "cost": batches * VACCINE_COST_PER_BATCH,
+        "microchips": batches * VACCINE_CHIPS_PER_BATCH,
+        "medical_isotopes": batches * VACCINE_ISOTOPES_PER_BATCH,
+        "days": VACCINE_BASE_DAYS + (batches - 1) * VACCINE_DAYS_PER_EXTRA_BATCH,
+        "tech_level": VACCINE_MIN_TECH_LEVEL,
+    }
+
+
+def can_start_vaccine(country: dict, batches: int = 1) -> tuple[bool, str, dict]:
+    """آیا این کشور می‌تواند پروژه‌ی واکسن شروع کند؟"""
+    need = vaccine_requirements(batches)
+    if int(country.get("tech_level") or 1) < need["tech_level"]:
+        return False, f"نیازمند سطح فناوری {need['tech_level']} (سطح فعلی: {int(country.get('tech_level') or 1)})", need
+    if int(country.get("treasury") or 0) < need["cost"]:
+        return False, f"خزانه کافی نیست (نیاز: {need['cost']:,} دلار)", need
+    if int(country.get("microchips") or 0) < need["microchips"]:
+        return False, f"میکروچیپ کافی نیست (نیاز: {need['microchips']:,} عدد)", need
+    if int(country.get("medical_isotopes") or 0) < need["medical_isotopes"]:
+        return False, f"ایزوتوپ پزشکی کافی نیست (نیاز: {need['medical_isotopes']:,} کیلوگرم)", need
+    if get_active_vaccine_project(country["id"]):
+        return False, "یک پروژه‌ی واکسن هم‌اکنون در حال تولید است.", need
+    return True, "", need
+
+
+def get_active_vaccine_project(country_id: int):
+    conn = db.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM vaccine_projects WHERE country_id = ? AND status = 'in_progress' ORDER BY id DESC LIMIT 1",
+            (country_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def get_vaccine_history(country_id: int, limit: int = 10) -> list[dict]:
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM vaccine_projects WHERE country_id = ? ORDER BY id DESC LIMIT ?",
+            (country_id, max(1, min(50, int(limit)))),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def start_vaccine_project(country_id: int, batches: int = 1, actor_id: int | None = None):
+    """شروع تولید واکسن. منابع همان لحظه کسر می‌شوند، دُزها بعد از چند روز آماده."""
+    country = db.get_country_by_id(country_id)
+    if not country:
+        return False, "کشور یافت نشد.", None
+    ok, reason, need = can_start_vaccine(country, batches)
+    if not ok:
+        return False, reason, None
+
+    now_dt = _now()
+    ready = now_dt + datetime.timedelta(days=need["days"])
+    conn = db.get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE countries SET treasury = treasury - ?, microchips = MAX(0, microchips - ?),"
+                " medical_isotopes = MAX(0, COALESCE(medical_isotopes, 0) - ?) WHERE id = ?",
+                (need["cost"], need["microchips"], need["medical_isotopes"], country_id),
+            )
+            cur.execute(
+                "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'vaccine_project', ?, ?, ?)",
+                (country_id, f"شروع تولید {need['doses']:,} دُز واکسن", -need["cost"], _iso(now_dt)),
+            )
+            cur.execute(
+                """
+                INSERT INTO vaccine_projects
+                (country_id, doses, status, cost, microchips_used, isotopes_used, started_at, ready_at, started_by)
+                VALUES (?, ?, 'in_progress', ?, ?, ?, ?, ?, ?)
+                """,
+                (country_id, need["doses"], need["cost"], need["microchips"],
+                 need["medical_isotopes"], _iso(now_dt), _iso(ready), actor_id),
+            )
+    finally:
+        conn.close()
+
+    db.add_log(f"player:{actor_id}", "vaccine_project_start", f"country={country_id} doses={need['doses']}")
+    return True, (
+        f"تولید {need['doses']:,} دُز واکسن آغاز شد. "
+        f"زمان تحویل: {need['days']} روز دیگر."
+    ), get_active_vaccine_project(country_id)
+
+
+def collect_ready_vaccines(country_id: int, now_dt: datetime.datetime | None = None) -> int:
+    """پروژه‌های تمام‌شده را به انبار واکسن کشور اضافه می‌کند."""
+    now_dt = now_dt or _now()
+    conn = db.get_connection()
+    delivered = 0
+    try:
+        with conn:
+            cur = conn.cursor()
+            rows = cur.execute(
+                "SELECT id, doses, ready_at FROM vaccine_projects WHERE country_id = ? AND status = 'in_progress'",
+                (country_id,),
+            ).fetchall()
+            for row in rows:
+                ready = _parse_dt(row["ready_at"])
+                if ready and now_dt >= ready:
+                    cur.execute(
+                        "UPDATE countries SET vaccine_doses = COALESCE(vaccine_doses, 0) + ? WHERE id = ?",
+                        (int(row["doses"]), country_id),
+                    )
+                    cur.execute(
+                        "UPDATE vaccine_projects SET status = 'delivered', collected_at = ? WHERE id = ?",
+                        (_iso(now_dt), row["id"]),
+                    )
+                    delivered += int(row["doses"])
+    except Exception:
+        logger.exception("Could not collect vaccines for country %s", country_id)
+    finally:
+        conn.close()
+    return delivered
+
+
+def mitigation_cap(crisis: dict) -> float:
+    """سقف مهار این بحران.
+
+    عادی ۸۰٪ است تا پول به‌تنهایی نتواند بلا را لغو کند. اما اقدامات راهبردیِ
+    سخت‌به‌دست (واکسن، آب‌شیرین‌کن) سقف را تا ۹۵٪ بالا می‌برند — یعنی سرمایه‌گذاری
+    واقعی پاداش دارد.
+    """
+    cap = BASE_MITIGATION_CAP
+    for record in get_crisis_actions(crisis["id"]):
+        bonus = CRISIS_ACTIONS.get(record["action_key"], {}).get("raises_cap")
+        if bonus:
+            cap = max(cap, float(bonus))
+    return min(MAX_MITIGATION_CAP, cap)
 
 
 def _spread_to_neighbours(crisis: dict, now_dt: datetime.datetime) -> list[dict]:
@@ -1629,6 +1816,12 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
     grain_ok = approval_result.get("grain_ok", int(country.get("grain") or 0) > 0)
     elec_ok = approval_result.get("elec_ok", int(country.get("electricity") or 0) >= reqs["elec_need"])
     oil_ok = approval_result.get("oil_ok", True)
+
+    # ── واکسن‌های آماده تحویل انبار می‌شوند
+    try:
+        collect_ready_vaccines(cid, now_dt)
+    except Exception:
+        logger.exception("Vaccine collection failed for country %s", cid)
 
     # ── ۰. پیشروی بحران‌های موجود (هشدار → وقوع → بازسازی → پایان)
     # عمداً قبل از محاسبه‌ی جمعیت و مالیات انجام می‌شود تا خسارت بحران در همان

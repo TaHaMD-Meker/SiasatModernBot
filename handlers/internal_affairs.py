@@ -59,6 +59,7 @@ def _menu_keyboard(active_crises: int):
         [InlineKeyboardButton("📉 رضایت و ناآرامی", callback_data="dom:unrest")],
         [InlineKeyboardButton(crisis_label, callback_data="dom:crises")],
         [InlineKeyboardButton("🛠️ اقدامات اضطراری", callback_data="dom:actions")],
+        [InlineKeyboardButton("💉 برنامه واکسن", callback_data="dom:vaccine")],
         [InlineKeyboardButton("📈 روند تغییرات کشور", callback_data="dom:trend")],
         [InlineKeyboardButton("📜 تاریخچه اتفاقات", callback_data="dom:history")],
         [InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")],
@@ -415,7 +416,8 @@ async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = "")
         (f"✅ {html.escape(notice)}\n" if notice else "") + f"{spec.get('label', '')} — <b>{ia.SEVERITY_LABELS.get(crisis['severity'], '')}</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"مرحله: <b>{_stage_fa(crisis['stage'])}</b>",
-        f"کاهش خسارت فعلی: <b>{int(float(crisis.get('mitigation') or 0) * 100)}٪</b>",
+        f"کاهش خسارت فعلی: <b>{int(float(crisis.get('mitigation') or 0) * 100)}٪</b>"
+        f" از سقف <b>{int(ia.mitigation_cap(crisis) * 100)}٪</b>",
     ]
     damage = ia._json_load(crisis.get("damage_json"), {})
     if damage:
@@ -472,6 +474,12 @@ async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = "")
         lines.append("\n<b>غیرقابل اجرا</b>")
         lines.extend(locked_lines)
 
+    cap = int(ia.mitigation_cap(crisis) * 100)
+    lines.append(
+        f"\nℹ️ <i>سقف مهار این بحران {cap}٪ است — هیچ بحرانی کاملاً خنثی نمی‌شود. "
+        f"با اقدامات راهبردی مثل واکسن، سقف تا ۹۵٪ بالا می‌رود.</i>"
+    )
+
     rows.append([InlineKeyboardButton("🔙 بحران‌ها", callback_data="dom:crises")])
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
 
@@ -487,6 +495,68 @@ async def _actions_page(query, country: dict):
         )
         return
     await _crises_page(query, country)
+
+
+async def _vaccine_page(query, country: dict, notice: str = ""):
+    doses = int(country.get("vaccine_doses") or 0)
+    active = ia.get_active_vaccine_project(country["id"])
+    lines = [
+        (f"✅ {html.escape(notice)}\n" if notice else "") + "💉 <b>برنامه واکسن</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📦 دُز آماده در انبار: <b>{format_number(doses)}</b>",
+        "",
+        "<i>واکسن خریدنی نیست. باید تولیدش کنید و چند روز صبر کنید.</i>",
+        "<i>دُزها قابل فروش، اهدا یا انتقال به کشور دیگر نیستند.</i>",
+    ]
+
+    rows = []
+    if active:
+        ready = ia._parse_dt(active["ready_at"])
+        remaining = max(0, int((ready - ia._now()).total_seconds() // 3600)) if ready else 0
+        lines.extend([
+            "",
+            "🏭 <b>پروژه در حال تولید</b>",
+            f"• مقدار: <b>{format_number(active['doses'])}</b> دُز",
+            f"• زمان باقی‌مانده: <b>{remaining} ساعت</b>",
+            "<i>تا تحویل این پروژه، پروژه‌ی جدید نمی‌توانید شروع کنید.</i>",
+        ])
+    else:
+        lines.extend(["", "<b>شروع تولید جدید</b>"])
+        for batches in (1, 3, 6):
+            need = ia.vaccine_requirements(batches)
+            ok, reason, _n = ia.can_start_vaccine(country, batches)
+            body = (
+                f"\n{'✅' if ok else '🔒'} <b>{format_number(need['doses'])} دُز</b> — {need['days']} روز\n"
+                f"   {format_money(need['cost'])} | {format_number(need['microchips'])} چیپ | "
+                f"{need['medical_isotopes']} کیلو ایزوتوپ"
+            )
+            if not ok:
+                body += f"\n   <i>{html.escape(reason)}</i>"
+            lines.append(body)
+            if ok:
+                rows.append([InlineKeyboardButton(
+                    f"🏭 تولید {format_number(need['doses'])} دُز ({need['days']} روز)",
+                    callback_data=f"dom:vax_start:{batches}",
+                )])
+
+        lines.extend([
+            "",
+            f"<b>پیش‌نیازها:</b> سطح فناوری {ia.VACCINE_MIN_TECH_LEVEL} + میکروچیپ + ایزوتوپ پزشکی",
+            "<i>ایزوتوپ پزشکی از نیروگاه هسته‌ای و چرخه‌ی سوخت به دست می‌آید.</i>",
+        ])
+
+    history = [p for p in ia.get_vaccine_history(country["id"], 5) if p["status"] == "delivered"]
+    if history:
+        lines.append("\n<b>تولیدهای پیشین</b>")
+        for project in history:
+            lines.append(f"• {format_number(project['doses'])} دُز — {str(project.get('collected_at') or '')[:10]}")
+
+    lines.append(
+        f"\n💡 هر بار تزریق سراسری <b>{format_number(ia.VACCINE_DOSES_PER_USE)}</b> دُز مصرف می‌کند "
+        f"و سقف مهار بحران را به <b>۹۵٪</b> می‌رساند."
+    )
+    rows.append(_back_row())
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
 
 
 async def _trend_page(query, country: dict):
@@ -570,6 +640,13 @@ async def domestic_callback_handler(update: Update, context: ContextTypes.DEFAUL
         await _crises_page(query, country)
     elif data == "dom:actions":
         await _actions_page(query, country)
+    elif data == "dom:vaccine":
+        await _vaccine_page(query, country)
+    elif data.startswith("dom:vax_start:"):
+        batches = int(data.split(":")[2])
+        ok, message, _project = ia.start_vaccine_project(country["id"], batches, actor_id=query.from_user.id)
+        await query.answer(message, show_alert=True)
+        await _vaccine_page(query, db.get_country_by_id(country["id"]) or country, notice=message if ok else "")
     elif data == "dom:trend":
         await _trend_page(query, country)
     elif data == "dom:history":

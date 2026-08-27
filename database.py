@@ -996,6 +996,30 @@ def init_db():
         pass
 
 
+    # واکسن: آیتم تولیدی و غیرقابل فروش/انتقال
+    try:
+        cur.execute("ALTER TABLE countries ADD COLUMN vaccine_doses INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS vaccine_projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        doses INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'in_progress',
+        cost INTEGER NOT NULL DEFAULT 0,
+        microchips_used INTEGER NOT NULL DEFAULT 0,
+        isotopes_used INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL,
+        ready_at TEXT NOT NULL,
+        collected_at TEXT,
+        started_by INTEGER,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_vaccine_projects_country ON vaccine_projects(country_id, status)")
+
     # مهاجرت‌های افزایشی country_crises
     for column, ddl in (
         ("escalations", "ALTER TABLE country_crises ADD COLUMN escalations INTEGER NOT NULL DEFAULT 0"),
@@ -2258,7 +2282,9 @@ def update_country_field(country_id: int, field: str, value):
         "is_vip", "vip_tier", "vip_expires_at",
         # فیلدهای فروشگاه مصرفی و دیده شدن
         "custom_title", "title_expires_at", "golden_frame_until", "drill_tickets", "statement_tickets",
-        "golden_stmt_credits", "pin_credits", "contract_boost_until", "bp_booster_until", "bp_booster_mult"
+        "golden_stmt_credits", "pin_credits", "contract_boost_until", "bp_booster_until", "bp_booster_mult",
+        # واکسن: تولیدی و غیرقابل فروش، اما ادمین باید بتواند اصلاحش کند
+        "vaccine_doses",
     }
     if field not in allowed:
         raise ValueError(f"فیلد غیرمجاز: {field}")
