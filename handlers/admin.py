@@ -19,6 +19,7 @@ import config
 import asyncio
 from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.losses import handle_losses_input
+from handlers.tournament_admin import tournament_admin_callback, handle_tournament_admin_input
 from handlers.admin_dossier import (
     show_country_dashboard,
     show_country_trades_menu,
@@ -141,6 +142,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💾 پشتیبان‌گیری فوری از دیتابیس (Backup)", callback_data="admin:backup_db")],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
+        [InlineKeyboardButton("🏆 مدیریت تورنومنت فصلی", callback_data="admin:tournament")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
@@ -590,6 +592,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     data = query.data
     await query.answer()
+
+    if data.startswith("admin:tour"):
+        if await tournament_admin_callback(query, context, data):
+            return
 
     if data == "ignore":
         return
@@ -2537,6 +2543,9 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
 
     if await handle_dossier_inputs(update, context, input_type, text, input_state):
         context.user_data["admin_awaiting_input"] = None
+        return
+
+    if await handle_tournament_admin_input(update, context, input_type, text, input_state):
         return
 
     if input_type == "cstat_set":

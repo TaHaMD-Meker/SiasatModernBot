@@ -49,6 +49,8 @@ from handlers.bases import get_bases_handlers, mv_text_input_handler
 from handlers.guide import get_guide_handlers
 from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
 from handlers.battlepass import get_battlepass_handlers, battlepass_menu
+from handlers.tournament import get_tournament_handlers, tournament_menu
+import tournament_system as tournament
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -514,6 +516,16 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
         logger.info(f"Daily inactivity audit completed: {revoked_count} countries revoked.")
 
 
+async def tournament_snapshot_job(context: ContextTypes.DEFAULT_TYPE):
+    """ثبت snapshot دوره‌ای امتیازهای تورنومنت؛ در حالت بدون فصل هیچ کاری نمی‌کند."""
+    try:
+        updated = tournament.refresh_active_tournament(force=False)
+        if updated:
+            logger.info(f"Tournament scores refreshed for {updated} participant(s).")
+    except Exception as exc:
+        logger.exception(f"Tournament snapshot job failed: {exc}")
+
+
 async def _handle_health_check(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     """پاسخ به هلث‌چک‌های HTTP پلتفرم‌های ابری (Railway / PaaS)."""
     try:
@@ -612,6 +624,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🪖 وضعیت ارتش$"), army))
     app.add_handler(MessageHandler(filters.Regex("^🏪 فروشگاه$"), shop))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:⭐️\s*بتل‌پس|⭐️\s*بتل پس|⭐️\s*بتل‌پس فصلی|⭐️\s*Battle Pass|/pass|/bp)$"), battlepass_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^🏆 تورنومنت فصل$"), tournament_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:💎\s*خدمات ویژه VIP|👑\s*خدمات VIP|💎\s*اشتراک VIP)$"), vip_main_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:🏛️ دانشکده|📜 راهنما)$"), help_command))
     app.add_handler(MessageHandler(filters.Regex("^👑 پنل مدیریت$"), admin_panel))
@@ -707,6 +720,10 @@ def main():
     for handler in get_battlepass_handlers():
         app.add_handler(handler)
 
+    # سیستم تورنومنت فصلی با امتیازدهی ترکیبی (/tournament, /tour)
+    for handler in get_tournament_handlers():
+        app.add_handler(handler)
+
     # دستورات متنی قدیمی ادمین
     app.add_handler(CommandHandler("addmoney", addmoney))
     app.add_handler(CommandHandler("removemoney", removemoney))
@@ -780,6 +797,7 @@ def main():
     job_queue = app.job_queue
     if job_queue:
         job_queue.run_repeating(daily_income_job, interval=900, first=10)  # چک هر ۱۵ دقیقه؛ پرداخت هر ۶ ساعت
+        job_queue.run_repeating(tournament_snapshot_job, interval=900, first=180)  # محاسبه‌ی دوره‌ای؛ خود ماژول فاصله‌ی ۶ ساعته را enforce می‌کند
         job_queue.run_repeating(auto_backup_job, interval=14400, first=120)  # پشتیبان‌گیری خودکار هر ۴ ساعت
         job_queue.run_repeating(check_daily_inactivity_job, interval=300, first=30)  # بررسی سلب مالکیت روزانه ۰۰:۰۰ (چک هر ۵ دقیقه)
 

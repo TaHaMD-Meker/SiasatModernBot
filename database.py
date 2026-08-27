@@ -771,6 +771,94 @@ def init_db():
     )
     """)
 
+    # تورنومنت امتیازدهی ترکیبی (پیش‌نویس/فعال/متوقف/پایان‌یافته)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS tournament_seasons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        duration_days INTEGER NOT NULL DEFAULT 7,
+        starts_at TEXT,
+        ends_at TEXT,
+        prize_text TEXT DEFAULT '',
+        scoring_config TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        activated_at TEXT,
+        paused_at TEXT,
+        ended_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS tournament_players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        joined_at TEXT NOT NULL,
+        baseline_at TEXT,
+        baseline_json TEXT NOT NULL DEFAULT '{}',
+        last_metrics_json TEXT NOT NULL DEFAULT '{}',
+        score REAL NOT NULL DEFAULT 0,
+        economy_score REAL NOT NULL DEFAULT 0,
+        military_score REAL NOT NULL DEFAULT 0,
+        diplomacy_score REAL NOT NULL DEFAULT 0,
+        activity_score REAL NOT NULL DEFAULT 0,
+        objectives_score REAL NOT NULL DEFAULT 0,
+        stability_score REAL NOT NULL DEFAULT 0,
+        manual_score REAL NOT NULL DEFAULT 0,
+        last_snapshot_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        disqualified_reason TEXT,
+        UNIQUE(season_id, player_id),
+        UNIQUE(season_id, country_id),
+        FOREIGN KEY(season_id) REFERENCES tournament_seasons(id) ON DELETE CASCADE,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS tournament_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        captured_at TEXT NOT NULL,
+        total_score REAL NOT NULL DEFAULT 0,
+        economy_score REAL NOT NULL DEFAULT 0,
+        military_score REAL NOT NULL DEFAULT 0,
+        diplomacy_score REAL NOT NULL DEFAULT 0,
+        activity_score REAL NOT NULL DEFAULT 0,
+        objectives_score REAL NOT NULL DEFAULT 0,
+        stability_score REAL NOT NULL DEFAULT 0,
+        metrics_json TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(season_id, country_id, captured_at),
+        FOREIGN KEY(season_id) REFERENCES tournament_seasons(id) ON DELETE CASCADE,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS tournament_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        event_key TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        points REAL NOT NULL,
+        description TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        admin_id INTEGER,
+        UNIQUE(season_id, country_id, event_key),
+        FOREIGN KEY(season_id) REFERENCES tournament_seasons(id) ON DELETE CASCADE,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tournament_players_score ON tournament_players(season_id, status, score DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tournament_snapshots_lookup ON tournament_snapshots(season_id, country_id, captured_at)")
+
     conn.commit()
     conn.close()
 

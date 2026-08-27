@@ -113,6 +113,21 @@ BATTLE_PASS_XP_PER_TIER = 1000         # میزان XP لازم برای باز 
 BATTLE_PASS_SEASON = 1
 BATTLE_PASS_SEASON_TITLE = "فصل ۱: طوفان ژئوپلیتیک و نبرد ابرقدرت‌ها (Season 1)"
 
+# ===== تنظیمات تورنومنت امتیازدهی ترکیبی =====
+# فصل به‌صورت پیش‌فرض فقط پیش‌نویس است و تا فعال‌سازی ادمین هیچ امتیازی ثبت نمی‌شود.
+TOURNAMENT_DEFAULT_DURATION_DAYS = 7
+TOURNAMENT_SNAPSHOT_INTERVAL_MINUTES = 360
+TOURNAMENT_SCORE_WEIGHTS = {
+    "economy": 30,
+    "military": 30,
+    "diplomacy": 18,
+    "activity": 12,
+    "objectives": 7,
+    "stability": 3,
+}
+TOURNAMENT_DEFAULT_TITLE = "فصل اول رقابت سیاست مدرن"
+TOURNAMENT_DEFAULT_PRIZE_TEXT = "جایزه نقدی طبق اطلاعیه رسمی مدیریت"
+
 # ===== جدول پله‌ها، سطوح و جوایز ۲۰ لول بتل‌پس فصلی (اقتصادی و استراتژیک) =====
 BATTLE_PASS_TIERS = {
     1: {
