@@ -23,6 +23,7 @@ import json
 import logging
 import random
 
+import borders as border_map
 import config
 import database as db
 
@@ -117,6 +118,17 @@ COLLAPSE_CRITICAL_DAYS = 3  # چند روز پیاپی در مرحله ۴ تا �
 SEVERITY_FACTORS = {"light": 0.5, "medium": 1.0, "severe": 1.8}
 SEVERITY_LABELS = {"light": "خفیف", "medium": "متوسط", "severe": "شدید"}
 SEVERITY_ORDER = ("light", "medium", "severe")
+
+# بحران‌های واگیردار: وقتی از «خفیف» عبور کنند، به کشورهای هم‌مرز سرایت می‌کنند.
+CONTAGIOUS_CRISES = {
+    "epidemic": {"chance": 0.28, "severity": "light", "label": "اپیدمی"},
+    "famine": {"chance": 0.14, "severity": "light", "label": "قحطی"},
+    "civil_unrest": {"chance": 0.10, "severity": "light", "label": "ناآرامی"},
+}
+SPREAD_MITIGATION_SHIELD = 0.40  # مهار بالای این حد، جلوی سرایت را می‌گیرد
+# سقف سرایت در هر شب: بدون این، کشوری با ۸ همسایه در یک شب کل منطقه را آلوده
+# می‌کرد و بحران غیرقابل مدیریت می‌شد.
+MAX_SPREAD_PER_NIGHT = 2
 
 # بحرانی که رسیدگی نشود، هر شب یک سطح تشدید می‌شود.
 # «رسیدگی‌شده» یعنی مهار حداقل به این حد رسیده باشد.
@@ -626,6 +638,19 @@ SEASONAL_HAZARD_WEIGHTS = {
     10: {"storm": 1.4, "flood": 1.3},
     11: {"storm": 1.2, "flood": 1.2, "epidemic": 1.2},
 }
+
+_BORDERS: dict[str, list] | None = None
+
+
+def neighbours_of(country_key: str) -> list[str]:
+    """کشورهای هم‌مرز (بر پایه‌ی borders.py، محدود به کشورهای موجود در بازی)."""
+    global _BORDERS
+    if _BORDERS is None:
+        _BORDERS = border_map.build_border_map(
+            list((getattr(config, "COUNTRY_STARTING_OVERRIDES", {}) or {}).keys())
+        )
+    return _BORDERS.get(country_key or "", [])
+
 
 _CONTINENT_BY_COUNTRY_KEY: dict[str, str] | None = None
 
@@ -1457,6 +1482,61 @@ def _random_crisis_candidate(country: dict, state: dict) -> tuple[str, str] | No
     return key, severity
 
 
+def _spread_to_neighbours(crisis: dict, now_dt: datetime.datetime) -> list[dict]:
+    """سرایت بحران واگیردار به کشورهای هم‌مرز.
+
+    فقط وقتی رخ می‌دهد که بحران از «خفیف» عبور کرده و کشور مبدأ آن را مهار
+    نکرده باشد. مهار بالای ۴۰٪ یعنی قرنطینه/کنترل مؤثر بوده و مرز بسته است.
+    """
+    spec = CONTAGIOUS_CRISES.get(crisis["crisis_key"])
+    if not spec:
+        return []
+    if crisis["severity"] == SEVERITY_ORDER[0]:
+        return []
+    if float(crisis.get("mitigation") or 0) >= SPREAD_MITIGATION_SHIELD:
+        return []
+
+    source = db.get_country_by_id(crisis["country_id"])
+    if not source:
+        return []
+
+    # هرچه بحران شدیدتر، احتمال سرایت بیشتر
+    chance = float(spec["chance"]) * (1.6 if crisis["severity"] == SEVERITY_ORDER[-1] else 1.0)
+    spawned = []
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, country_key, name, flag FROM countries WHERE country_key IN ({})".format(
+                ",".join("?" for _ in neighbours_of(source.get("country_key") or ""))
+            ) if neighbours_of(source.get("country_key") or "") else "SELECT id, country_key, name, flag FROM countries WHERE 0",
+            tuple(neighbours_of(source.get("country_key") or "")),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    candidates = list(rows)
+    random.shuffle(candidates)
+    for row in candidates:
+        if len(spawned) >= MAX_SPREAD_PER_NIGHT:
+            break
+        neighbour_id = int(row["id"])
+        existing = [c for c in get_active_crises(neighbour_id) if c["crisis_key"] == crisis["crisis_key"]]
+        if existing:
+            continue
+        if random.random() > chance:
+            continue
+        ok, _msg, new_crisis = create_crisis(
+            neighbour_id, crisis["crisis_key"], severity=spec["severity"], origin="spread",
+        )
+        if ok and new_crisis:
+            spawned.append({
+                "crisis": new_crisis,
+                "from_country": source,
+                "to_country": dict(row),
+            })
+    return spawned
+
+
 def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
     """جابه‌جایی مرحله‌ی بحران‌ها: هشدار → وقوع → بازسازی → پایان.
 
@@ -1474,6 +1554,14 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
                 if ok:
                     crisis = escalated
                     events.append({"crisis": escalated, "event": "escalated", "damage": extra})
+
+        # ── سرایت به کشورهای هم‌مرز (فقط بحران‌های واگیردار و مهارنشده)
+        if crisis["stage"] in ("impact", "recovery"):
+            for spread in _spread_to_neighbours(crisis, now_dt):
+                events.append({
+                    "crisis": spread["crisis"], "event": "spread",
+                    "from_country": spread["from_country"], "to_country": spread["to_country"],
+                })
 
         stage = crisis["stage"]
         if stage == "warning":
@@ -1823,6 +1911,13 @@ def build_news(country: dict, crisis: dict, event: str, damage: dict | None = No
         return f"هشدار {spec['label']} — {flag} {name}", spec["warning"]
     if event == "impact":
         return f"{spec['label']} ({severity}) — {flag} {name}", spec["impact"]
+    if event == "spread":
+        source = (crisis.get("_from_name") or "کشور همسایه")
+        return (
+            f"سرایت {spec['label']} به {flag} {name}",
+            f"{spec['label']} از مرز {source} عبور کرد و اولین موارد در {name} گزارش شد. "
+            f"مقامات مرزها را زیر نظر گرفته‌اند.",
+        )
     if event == "escalated":
         body = SEVERITY_NEWS.get(crisis["severity"], "")
         extra = []

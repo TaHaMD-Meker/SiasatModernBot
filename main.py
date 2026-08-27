@@ -122,6 +122,20 @@ async def _publish_internal_news(context, country_id: int, cycle: dict):
     for item in cycle.get("crisis_events") or []:
         crisis = item.get("crisis")
         event = item.get("event")
+        if event == "spread" and crisis:
+            target = item.get("to_country") or {}
+            source = item.get("from_country") or {}
+            spread_crisis = dict(crisis)
+            spread_crisis["_from_name"] = f"{source.get('flag','')} {source.get('name','')}".strip()
+            if not internal_affairs.news_already_sent(crisis, "spread"):
+                news = internal_affairs.build_news(target, spread_crisis, "spread")
+                if news:
+                    try:
+                        await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
+                        internal_affairs.mark_news_sent(crisis["id"], "spread")
+                    except Exception:
+                        logger.exception("Could not publish spread news for crisis %s", crisis.get("id"))
+            continue
         if event == "escalated" and crisis:
             # هر سطح تشدید خبر مستقل خودش را دارد
             flag = f"escalated_{crisis.get('severity')}"

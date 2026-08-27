@@ -1096,3 +1096,119 @@ def test_free_actions_are_always_reachable_when_broke(monkeypatch, tmp_path):
     assert ia.check_action("official_address", crisis, country)[0]
     assert ia.check_action("dialogue", crisis, country)[0]
     assert not ia.check_action("concessions", crisis, country)[0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# سرایت بحران واگیردار به کشورهای هم‌مرز
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _border_world(database, keys, treasury=300_000_000):
+    ids = {}
+    for index, key in enumerate(keys):
+        cid = database.create_country(9800 + index, key, "🏳️", country_key=key)
+        database.update_country_field(cid, "approval_rating", 80)
+        database.update_country_field(cid, "treasury", treasury)
+        ids[key] = cid
+    return ids
+
+
+def test_border_map_is_symmetric_and_covers_the_game():
+    import borders
+    mapping = borders.build_border_map(config.COUNTRY_STARTING_OVERRIDES.keys())
+    for country, neighbours in mapping.items():
+        for neighbour in neighbours:
+            assert country in mapping[neighbour], f"{country}/{neighbour} یک‌طرفه است"
+            assert neighbour != country
+        # همسایه‌ای که در بازی نیست نباید بماند
+        assert all(n in config.COUNTRY_STARTING_OVERRIDES for n in neighbours)
+    assert mapping["iran"] and "iraq" in mapping["iran"]
+    assert "canada" in mapping["usa"] and "mexico" in mapping["usa"]
+    assert mapping["new_zealand"] == ["australia"]
+
+
+def test_epidemic_spreads_to_neighbours_once_past_light(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    ia.random.seed(7)
+    ids = _border_world(database, ["iran", "iraq", "turkey", "afghanistan", "pakistan", "usa"])
+    ia.create_crisis(ids["iran"], "epidemic", severity="light", admin_id=1, force=True)
+
+    start = ia._now()
+    for day in range(5):
+        for cid in ids.values():
+            ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=start + datetime.timedelta(days=day))
+
+    infected = [
+        key for key, cid in ids.items()
+        if [c for c in ia.get_active_crises(cid) if c["crisis_key"] == "epidemic"]
+    ]
+    assert len(infected) > 1, "اپیدمی باید به همسایه‌ها سرایت کند"
+    assert "usa" not in infected, "آمریکا با ایران هم‌مرز نیست"
+    spread = [
+        c for cid in ids.values() for c in ia.get_crisis_history(cid, 20)
+        if c["origin"] == "spread"
+    ]
+    assert spread, "بحران‌های سرایتی باید origin=spread داشته باشند"
+
+
+def test_a_light_epidemic_does_not_spread(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    ids = _border_world(database, ["iran", "iraq", "turkey"])
+    _ok, _m, crisis = ia.create_crisis(ids["iran"], "epidemic", severity="light", admin_id=1, force=True)
+
+    # بدون گذشت شب، هنوز خفیف است
+    assert ia._spread_to_neighbours(ia.get_crisis(crisis["id"]), ia._now()) == []
+
+
+def test_containing_an_epidemic_stops_the_spread(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    ia.random.seed(7)
+    ids = _border_world(database, ["iran", "iraq", "turkey", "afghanistan", "pakistan"], treasury=500_000_000)
+    for cid in ids.values():
+        database.update_country_field(cid, "tech_level", 5)
+        database.update_country_field(cid, "microchips", 9_000)
+    ia.create_crisis(ids["iran"], "epidemic", severity="light", admin_id=1, force=True)
+
+    start = ia._now()
+    for day in range(5):
+        moment = start + datetime.timedelta(days=day)
+        for crisis in ia.get_active_crises(ids["iran"]):
+            if crisis["crisis_key"] == "epidemic":
+                for action in ("quarantine", "vaccine_program", "field_hospital"):
+                    ia.respond_to_crisis(crisis["id"], action, actor_id=1)
+        for cid in ids.values():
+            ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=moment)
+
+    infected = [
+        key for key, cid in ids.items()
+        if [c for c in ia.get_active_crises(cid) if c["crisis_key"] == "epidemic"]
+    ]
+    assert infected == ["iran"], f"قرنطینه باید جلوی سرایت را بگیرد، ولی درگیر شدند: {infected}"
+
+
+def test_spread_is_capped_per_night(monkeypatch, tmp_path):
+    """کشوری با ۸ همسایه نباید در یک شب همه را آلوده کند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    ia.random.seed(1)
+    neighbours = ia.neighbours_of("iran")
+    ids = _border_world(database, ["iran"] + neighbours)
+    _ok, _m, crisis = ia.create_crisis(ids["iran"], "epidemic", severity="severe", admin_id=1, force=True)
+
+    spawned = ia._spread_to_neighbours(ia.get_crisis(crisis["id"]), ia._now())
+    assert len(spawned) <= ia.MAX_SPREAD_PER_NIGHT
+
+
+def test_only_contagious_crises_spread(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    ids = _border_world(database, ["iran", "iraq", "turkey"])
+    _ok, _m, quake = ia.create_crisis(ids["iran"], "earthquake", severity="severe", admin_id=1, force=True)
+    assert ia._spread_to_neighbours(ia.get_crisis(quake["id"]), ia._now()) == []
+    assert "earthquake" not in ia.CONTAGIOUS_CRISES
+    assert "epidemic" in ia.CONTAGIOUS_CRISES
+
+
+def test_spread_news_names_the_source_country():
+    crisis = {"crisis_key": "epidemic", "severity": "light", "stage": "warning",
+              "mitigation": 0, "_from_name": "🇮🇷 ایران"}
+    title, body = ia.build_news({"name": "عراق", "flag": "🇮🇶"}, crisis, "spread")
+    assert "سرایت" in title and "عراق" in title
+    assert "ایران" in body
