@@ -252,20 +252,31 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     channel_err_str = ""
     channel_id = config.get_channel_id()
 
+    # تلگرام caption رسانه را به ۱۰۲۴ کاراکتر محدود می‌کند (متن ساده تا ۴۰۹۶).
+    # بیانیه‌های بلند با «Message caption is too long» رد می‌شدند و هرگز منتشر
+    # نمی‌شدند. در این حالت رسانه با سرتیتر کوتاه می‌رود و متن کامل بلافاصله
+    # به‌صورت پیام جداگانه پست می‌شود.
+    CAPTION_LIMIT = 1024
+    long_statement = len(channel_card_plain) > CAPTION_LIMIT
+    short_caption_html = f"📢 <b>بیانیه رسمی {country['flag']} {country['name']}</b>"
+    short_caption_plain = f"📢 بیانیه رسمی {country['flag']} {country['name']}"
+
     if channel_id:
+        media_caption_md = short_caption_html if long_statement else channel_card_md
+        media_caption_plain = short_caption_plain if long_statement else channel_card_plain
         try:
             if video_file_id:
                 await context.bot.send_video(
                     chat_id=channel_id,
                     video=video_file_id,
-                    caption=channel_card_md,
+                    caption=media_caption_md,
                     parse_mode="HTML"
                 )
             else:
                 await context.bot.send_photo(
                     chat_id=channel_id,
                     photo=photo_file_id,
-                    caption=channel_card_md,
+                    caption=media_caption_md,
                     parse_mode="HTML"
                 )
             posted_to_channel = True
@@ -276,18 +287,33 @@ async def process_official_statement_input(update: Update, context: ContextTypes
                     await context.bot.send_video(
                         chat_id=channel_id,
                         video=video_file_id,
-                        caption=channel_card_plain
+                        caption=media_caption_plain
                     )
                 else:
                     await context.bot.send_photo(
                         chat_id=channel_id,
                         photo=photo_file_id,
-                        caption=channel_card_plain
+                        caption=media_caption_plain
                     )
                 posted_to_channel = True
             except Exception as e2:
                 print(f"Channel statement send {'video' if video_file_id else 'photo'} Plain error: {e2}")
                 channel_err_str = str(e2)
+
+        # متن کامل بیانیه‌ی بلند، بلافاصله بعد از رسانه
+        if posted_to_channel and long_statement:
+            for text, mode in ((channel_card_md, "HTML"), (channel_card_plain, None)):
+                try:
+                    await context.bot.send_message(
+                        chat_id=channel_id,
+                        text=text[:4096],
+                        parse_mode=mode,
+                    )
+                    break
+                except Exception as e3:
+                    print(f"Channel statement long-body send error ({mode}): {e3}")
+                    channel_err_str = str(e3)
+
 
     # Confirm to player
     conf_msg = f"✅ *بیانیه رسمی کشور {country['flag']} {country['name']} با موفقیت ثبت شد!*\n\n"

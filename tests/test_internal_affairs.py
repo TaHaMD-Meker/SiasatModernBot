@@ -927,3 +927,53 @@ def test_admin_panel_exposes_severity_controls():
     assert "_post_severity_news" in source
     panel = inspect.getsource(internal_admin._crisis_panel)
     assert "امشب یک سطح تشدید می‌شود" in panel
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# صفحه‌بندی فهرست بحران‌های فعال
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_active_crisis_list_is_paginated_and_loses_nothing(monkeypatch, tmp_path):
+    """با ۲۵ بحران، فهرست تک‌صفحه‌ای چندتا را جا می‌انداخت."""
+    import asyncio
+    from handlers import internal_admin as adm
+
+    database = _fresh_db(monkeypatch, tmp_path)
+    keys = list(ia.CRISIS_CATALOG)
+    for index in range(25):
+        cid = database.create_country(7700 + index, f"کشور{index}", "🏳️", country_key=f"pg{index}")
+        ia.create_crisis(cid, keys[index % len(keys)],
+                         severity=("light", "medium", "severe")[index % 3], admin_id=1, force=True)
+
+    class FakeQuery:
+        def __init__(self):
+            self.text = None
+            self.markup = None
+
+        async def edit_message_text(self, text, reply_markup=None, parse_mode=None):
+            self.text, self.markup = text, reply_markup
+
+        async def answer(self, *a, **k):
+            pass
+
+    reachable = set()
+    for page in range(6):
+        query = FakeQuery()
+        asyncio.run(adm._active_crises(query, page))
+        buttons = [
+            b.callback_data
+            for row in query.markup.inline_keyboard
+            for b in row
+            if b.callback_data.startswith("admin:dom_crisis:")
+        ]
+        reachable.update(buttons)
+        assert len(buttons) <= adm.PAGE_SIZE
+        assert len(query.text) < 3500, "پیام نباید به سقف طول تلگرام نزدیک شود"
+
+    assert len(reachable) == 25, "همه‌ی بحران‌ها باید از طریق صفحه‌بندی در دسترس باشند"
+
+    first = FakeQuery()
+    asyncio.run(adm._active_crises(first, 0))
+    assert "مجموع: <b>25</b>" in first.text
+    header_end = first.text.index("#")
+    assert "شدید" in first.text[header_end:header_end + 200], "شدیدترها باید اول فهرست بیایند"

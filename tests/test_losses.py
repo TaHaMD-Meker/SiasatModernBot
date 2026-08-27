@@ -668,3 +668,14 @@ def test_loss_pipeline_checks_buildings_before_commanders():
     t_build = tool_source.index("b = match_building(name, cid)")
     t_cmd = tool_source.index("cmd_match = match_commander(name,")
     assert t_build < t_cmd, "ابزار loss_tool باید هم‌ترتیب با بات باشد"
+
+
+def test_long_statement_is_split_instead_of_failing_as_caption():
+    """رگرسیون: بیانیه‌ی بلندتر از ۱۰۲۴ کاراکتر با «caption is too long» رد می‌شد."""
+    import inspect
+    from handlers import statements
+
+    source = inspect.getsource(statements)
+    assert "CAPTION_LIMIT = 1024" in source
+    assert "long_statement" in source
+    assert "send_message" in source, "متن کامل باید به‌صورت پیام جداگانه برود"

@@ -66,7 +66,7 @@ def _root_keyboard():
             callback_data="admin:dom_toggle_random",
         )],
         [InlineKeyboardButton("🌍 وضعیت داخلی کشورها", callback_data="admin:dom_overview:0")],
-        [InlineKeyboardButton("🚨 بحران‌های فعال", callback_data="admin:dom_active")],
+        [InlineKeyboardButton("🚨 بحران‌های فعال", callback_data="admin:dom_active:0")],
         [InlineKeyboardButton("➕ ایجاد بحران دستی", callback_data="admin:dom_new:0")],
         [InlineKeyboardButton("🏁 کشورهای در معرض سقوط", callback_data="admin:dom_risk")],
         [InlineKeyboardButton("📊 تاریخچه بحران‌ها", callback_data="admin:dom_hist")],
@@ -106,31 +106,71 @@ async def _overview(query, page: int):
     await query.edit_message_text("\n".join(lines), reply_markup=_kb([nav, _home_row()]), parse_mode="HTML")
 
 
-async def _active_crises(query):
-    crises = [c for c in ia.get_crisis_history(limit=100) if c["stage"] != "ended"]
+async def _active_crises(query, page: int = 0):
+    """فهرست بحران‌های فعال، صفحه‌بندی‌شده.
+
+    قبلاً همه در یک پیام می‌آمدند؛ با بیش از ۲۰ بحران، بقیه از فهرست جا می‌ماندند
+    و پیام هم به سقف طول تلگرام نزدیک می‌شد.
+    """
+    crises = [c for c in ia.get_crisis_history(limit=300) if c["stage"] != "ended"]
     if not crises:
         await query.edit_message_text(
-            "🚨 <b>بحران‌های فعال</b>\n━━━━━━━━━━━━━━━━━━\nهیچ بحرانی در جریان نیست.",
+            "🚨 <b>بحران‌های فعال</b>\n━━━━━━━━━━━━━━━━━━\nهیچ بحرانی در جریان نیست. 🟢",
             reply_markup=_kb([_home_row()]), parse_mode="HTML",
         )
         return
-    lines = ["🚨 <b>بحران‌های فعال</b>", "━━━━━━━━━━━━━━━━━━"]
+
+    # اولویت با آن‌هایی که رسیدگی نشده‌اند و شدیدترند
+    severity_rank = {"severe": 0, "medium": 1, "light": 2}
+    crises.sort(key=lambda c: (
+        severity_rank.get(c["severity"], 3),
+        float(c.get("mitigation") or 0),
+        -int(c["id"]),
+    ))
+
+    total = len(crises)
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    chunk = crises[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+
+    unattended = sum(
+        1 for c in crises
+        if c["stage"] in ("warning", "impact")
+        and float(c.get("mitigation") or 0) < ia.ESCALATION_MITIGATION_THRESHOLD
+        and c["severity"] != ia.SEVERITY_ORDER[-1]
+    )
+    lines = [
+        "🚨 <b>بحران‌های فعال</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"مجموع: <b>{total}</b>" + (f" | ⚠️ امشب تشدید می‌شوند: <b>{unattended}</b>" if unattended else ""),
+    ]
     rows = []
-    for crisis in crises[:20]:
+    for crisis in chunk:
         spec = ia.CRISIS_CATALOG.get(crisis["crisis_key"], {})
+        mitigation = int(float(crisis.get("mitigation") or 0) * 100)
         lines.append(
             f"\n#{crisis['id']} {crisis.get('country_flag', '🏳️')} "
             f"<b>{html.escape(crisis.get('country_name', ''))}</b>\n"
             f"{spec.get('label', '')} | {ia.SEVERITY_LABELS.get(crisis['severity'], '')} | "
-            f"{_stage_fa(crisis['stage'])} | مهار {int(float(crisis.get('mitigation') or 0) * 100)}٪ | "
-            f"منشأ: {crisis.get('origin')}"
-            + ("\n⏳ <i>هنوز خسارتی اعمال نشده — منتظر چرخه‌ی روزانه</i>" if crisis['stage'] == 'warning' else "")
+            f"{_stage_fa(crisis['stage'])} | مهار {mitigation}٪ | منشأ: {crisis.get('origin')}"
+            + ("\n⏳ <i>هنوز خسارتی اعمال نشده</i>" if crisis["stage"] == "warning" else "")
         )
         rows.append([InlineKeyboardButton(
-            f"⚙️ #{crisis['id']} {spec.get('label', '')}", callback_data=f"admin:dom_crisis:{crisis['id']}"
+            f"⚙️ #{crisis['id']} {crisis.get('country_flag', '')} {spec.get('label', '')}"
+            f" — {ia.SEVERITY_LABELS.get(crisis['severity'], '')}",
+            callback_data=f"admin:dom_crisis:{crisis['id']}",
         )])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:dom_active:{page - 1}"))
+    nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="ignore"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:dom_active:{page + 1}"))
+    rows.append(nav)
     rows.append(_home_row())
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
+
 
 
 async def _crisis_panel(query, crisis_id: int, notice: str = ""):
@@ -222,7 +262,7 @@ async def _crisis_panel(query, crisis_id: int, notice: str = ""):
     ])
     if crisis["stage"] != "ended":
         rows.append([InlineKeyboardButton("🛑 پایان‌دادن به بحران", callback_data=f"admin:dom_end:{crisis_id}")])
-    rows.append([InlineKeyboardButton("🔙 بحران‌های فعال", callback_data="admin:dom_active")])
+    rows.append([InlineKeyboardButton("🔙 بحران‌های فعال", callback_data="admin:dom_active:0")])
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
 
 
@@ -353,8 +393,10 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         await _show_root(query, "بحران‌های تصادفی فعال شد." if new_value else "بحران‌های تصادفی متوقف شد.")
     elif data.startswith("admin:dom_overview:"):
         await _overview(query, int(data.split(":")[2]))
-    elif data == "admin:dom_active":
-        await _active_crises(query)
+    elif data == "admin:dom_active" or data.startswith("admin:dom_active:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        await _active_crises(query, page)
     elif data.startswith("admin:dom_crisis:"):
         await _crisis_panel(query, int(data.split(":")[2]))
     elif data.startswith("admin:dom_new:"):
