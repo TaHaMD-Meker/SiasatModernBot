@@ -1404,3 +1404,33 @@ def test_readiness_page_reflects_country_geography(monkeypatch, tmp_path):
     assert "خشکسالی" in query.text and "زلزله" in query.text
     assert "⚠️" in query.text, "کمبود ذخایر باید هشدار بگیرد"
     assert str(ia.VACCINE_MIN_TECH_LEVEL) in query.text
+
+
+def test_academy_documents_the_crisis_and_vaccine_systems():
+    """دانشکده باید سیستم جدید را آموزش بدهد، وگرنه بازیکن‌ها نمی‌فهمندش."""
+    import inspect
+    from handlers import guide
+
+    keyboard_source = inspect.getsource(guide.get_guide_main_keyboard)
+    assert "help:cat:domestic" in keyboard_source
+    assert "help:cat:vaccine" in keyboard_source
+
+    handler_source = inspect.getsource(guide.guide_callback_handler)
+    assert 'cat == "domestic"' in handler_source
+    assert 'cat == "vaccine"' in handler_source
+    # میان‌بر به خود سیستم، نه فقط متن
+    assert "dom:menu" in handler_source
+    assert "dom:vaccine" in handler_source
+    assert "dom:readiness" in handler_source
+
+
+def test_academy_numbers_come_from_the_engine_not_hardcoded():
+    """اگر ضریبی عوض شود، متن دانشکده هم باید خودکار عوض شود."""
+    import inspect
+    from handlers import guide
+
+    source = inspect.getsource(guide.guide_callback_handler)
+    assert "ia.BASE_MITIGATION_CAP" in source
+    assert "ia.MAX_MITIGATION_CAP" in source
+    assert "ia.VACCINE_MIN_TECH_LEVEL" in source
+    assert "ia.vaccine_requirements" in source
