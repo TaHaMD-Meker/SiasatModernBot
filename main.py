@@ -50,7 +50,9 @@ from handlers.guide import get_guide_handlers
 from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
 from handlers.battlepass import get_battlepass_handlers, battlepass_menu
 from handlers.tournament import get_tournament_handlers, tournament_menu
+from handlers.internal_affairs import get_domestic_handlers, domestic_menu
 import tournament_system as tournament
+import internal_affairs
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -94,6 +96,41 @@ def _payout_due(last_raw, now_utc):
     first_of_day = local_last.date() != local_now.date()
     eligible = _iran_slot_key(last_dt) != _iran_slot_key(now_utc)
     return eligible, first_of_day
+
+
+async def _publish_internal_news(context, country_id: int, cycle: dict):
+    """انتشار اخبار کوتاه بحران‌ها؛ هر مرحله فقط یک‌بار منتشر می‌شود."""
+    country = db.get_country_by_id(country_id)
+    if not country:
+        return
+
+    async def _post(crisis, event):
+        if not crisis or internal_affairs.news_already_sent(crisis, event):
+            return
+        news = internal_affairs.build_news(country, crisis, event)
+        if not news:
+            return
+        try:
+            await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
+            internal_affairs.mark_news_sent(crisis["id"], event)
+        except Exception:
+            logger.exception("Could not publish crisis news for crisis %s", crisis.get("id"))
+
+    for crisis in cycle.get("new_crises") or []:
+        await _post(crisis, "warning" if crisis.get("stage") == "warning" else "impact")
+
+    for item in cycle.get("crisis_events") or []:
+        crisis = item.get("crisis")
+        event = item.get("event")
+        await _post(crisis, event)
+        if event == "impact" and item.get("damage"):
+            damage_news = internal_affairs.build_news(country, crisis, "damage", item["damage"])
+            if damage_news and not internal_affairs.news_already_sent(crisis, "damage"):
+                try:
+                    await news_engine.post_breaking_news(context.bot, damage_news[0], damage_news[1], "بحران داخلی")
+                    internal_affairs.mark_news_sent(crisis["id"], "damage")
+                except Exception:
+                    logger.exception("Could not publish damage report for crisis %s", crisis.get("id"))
 
 
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
@@ -164,6 +201,13 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         app_res = None
         if first_of_day:
             app_res = approval_system.process_daily_approval_and_emigration(c)
+            # چرخه‌ی جمعیت پویا، مالیات، ناآرامی و بحران‌ها (پشت کلید ادمین، idempotent)
+            try:
+                cycle = internal_affairs.run_daily_cycle(db.get_country_by_id(c["id"]) or c, app_res)
+                if cycle:
+                    await _publish_internal_news(context, c["id"], cycle)
+            except Exception:
+                logger.exception("Internal affairs daily cycle failed for country %s", c["id"])
             # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
             try:
                 fuel_need = db.calculate_military_fuel_consumption(c["id"])
@@ -625,6 +669,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🏪 فروشگاه$"), shop))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:⭐️\s*بتل‌پس|⭐️\s*بتل پس|⭐️\s*بتل‌پس فصلی|⭐️\s*Battle Pass|/pass|/bp)$"), battlepass_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^🏆 تورنومنت فصل$"), tournament_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^🏛️ سیاست داخلی$"), domestic_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:💎\s*خدمات ویژه VIP|👑\s*خدمات VIP|💎\s*اشتراک VIP)$"), vip_main_menu))
     app.add_handler(MessageHandler(filters.Regex(r"^(?:🏛️ دانشکده|📜 راهنما)$"), help_command))
     app.add_handler(MessageHandler(filters.Regex("^👑 پنل مدیریت$"), admin_panel))
@@ -721,6 +766,10 @@ def main():
         app.add_handler(handler)
 
     # سیستم تورنومنت فصلی با امتیازدهی ترکیبی (/tournament, /tour)
+    # سیستم جمعیت پویا، مالیات، ناآرامی و بحران (/domestic)
+    for handler in get_domestic_handlers():
+        app.add_handler(handler)
+
     for handler in get_tournament_handlers():
         app.add_handler(handler)
 
