@@ -280,7 +280,7 @@ def test_player_response_reduces_crisis_damage(monkeypatch, tmp_path):
     assert damage_active["population"] < damage_passive["population"]
 
 
-def test_same_response_cannot_be_used_twice(monkeypatch, tmp_path):
+def test_same_response_cannot_be_used_twice_in_one_day(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _country(database)
     database.update_country_field(cid, "treasury", 200_000_000)
@@ -289,7 +289,7 @@ def test_same_response_cannot_be_used_twice(monkeypatch, tmp_path):
     assert ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)[0]
     ok, message, _info = ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)
     assert not ok
-    assert "قبلاً" in message
+    assert "امروز" in message
 
 
 def test_response_requires_treasury(monkeypatch, tmp_path):
@@ -672,3 +672,86 @@ def test_admin_panel_offers_force_impact_only_while_pending():
     assert "admin:dom_impact" in source
     assert "هنوز هیچ خسارتی اعمال نشده است" in source
     assert "برآورد خسارت در زمان وقوع" in source
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# اقدامات مهار بحران هر روز دوباره در دسترس می‌شوند
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_crisis_actions_become_available_again_next_day(monkeypatch, tmp_path):
+    """بحران چندروزه است؛ بازیکن باید هر روز بتواند دوباره اقدام کند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 500_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "earthquake", severity="severe", admin_id=1)
+
+    assert ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)[0]
+    assert ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)[0] is False
+    assert ia.get_actions_done_today(crisis["id"]) == {"emergency_aid"}
+
+    # فردا
+    tomorrow = ia._now() + datetime.timedelta(days=1)
+    monkeypatch.setattr(ia, "_today", lambda dt=None: ia._iso(tomorrow)[:10])
+    assert ia.get_actions_done_today(crisis["id"]) == set()
+    ok, message, _info = ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)
+    assert ok, message
+
+
+def test_repeated_relief_still_cannot_fully_cancel_a_crisis(monkeypatch, tmp_path):
+    """حتی با اقدام هر روزه، سقف مهار ۸۰٪ است — پول نباید بحران را صفر کند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 5_000_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "earthquake", severity="severe", admin_id=1)
+
+    base = ia._now()
+    for day in range(6):
+        monkeypatch.setattr(ia, "_today", lambda dt=None, d=day: ia._iso(base + datetime.timedelta(days=d))[:10])
+        for action in ia.available_actions(ia.get_crisis(crisis["id"])):
+            ia.respond_to_crisis(crisis["id"], action, actor_id=1)
+
+    assert float(ia.get_crisis(crisis["id"])["mitigation"]) <= 0.80
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# وزن مخاطرات جغرافیایی و فصلی
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_hazard_profile_reflects_geography():
+    quake_country = {"country_key": "japan"}
+    calm_country = {"country_key": "norway"}
+    assert ia.hazard_weights(quake_country)["earthquake"] > ia.hazard_weights(calm_country)["earthquake"] * 5
+
+    assert ia.hazard_weights({"country_key": "usa"})["wildfire"] > ia.hazard_weights({"country_key": "bangladesh"})["wildfire"]
+    assert ia.hazard_weights({"country_key": "bangladesh"})["flood"] > ia.hazard_weights({"country_key": "saudi"})["flood"]
+    assert ia.hazard_weights({"country_key": "saudi"})["drought"] > ia.hazard_weights({"country_key": "norway"})["drought"]
+    assert ia.hazard_weights({"country_key": "iran"})["earthquake"] > ia.hazard_weights({"country_key": "egypt"})["earthquake"]
+    assert ia.hazard_weights({"country_key": "australia"})["wildfire"] > ia.hazard_weights({"country_key": "finland"})["wildfire"]
+
+
+def test_hazard_profile_reflects_season():
+    summer = datetime.datetime(2026, 7, 15, tzinfo=datetime.timezone.utc)
+    winter = datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc)
+    country = {"country_key": "spain"}
+    assert ia.hazard_weights(country, summer)["wildfire"] > ia.hazard_weights(country, winter)["wildfire"]
+    assert ia.hazard_weights(country, winter)["epidemic"] > ia.hazard_weights(country, summer)["epidemic"]
+
+
+def test_random_crisis_picks_geographically_plausible_hazard(monkeypatch, tmp_path):
+    """روی ۳۰۰ نمونه، زلزله در ژاپن باید بسیار بیشتر از هلند باشد."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(ia.random, "random", lambda: 0.0)  # همیشه بحران رخ بدهد
+
+    def sample(country_key):
+        counts = {}
+        country = {"country_key": country_key, "approval_rating": 80}
+        for _ in range(300):
+            picked = ia._random_crisis_candidate(country, {})
+            counts[picked[0]] = counts.get(picked[0], 0) + 1
+        return counts
+
+    japan = sample("japan")
+    netherlands = sample("netherlands")
+    assert japan.get("earthquake", 0) > netherlands.get("earthquake", 0) * 3
+    assert netherlands.get("flood", 0) > japan.get("earthquake", 0) * 0  # سیل هلند وجود دارد
+    assert netherlands.get("flood", 0) > 0

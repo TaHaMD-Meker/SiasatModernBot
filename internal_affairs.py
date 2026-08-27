@@ -23,6 +23,7 @@ import json
 import logging
 import random
 
+import config
 import database as db
 
 logger = logging.getLogger(__name__)
@@ -248,6 +249,130 @@ CRISIS_ACTIONS = {
 # ─────────────────────────────────────────────────────────────────────────────
 # کمکی‌ها
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# پروفایل مخاطرات جغرافیایی
+#
+# بدون این، شانس زلزله در آمریکا با ژاپن یکی بود و شانس خشکسالی در نروژ با
+# عربستان. سند طراحی صراحتاً «تصادفی منطقه‌ای بر اساس منطقه‌ی جغرافیایی» خواسته
+# بود. عددها ضریب وزن‌اند، نه درصد؛ ۰ یعنی آن بلا در آن کشور رخ نمی‌دهد.
+# ─────────────────────────────────────────────────────────────────────────────
+BASE_HAZARD_WEIGHTS = {
+    "earthquake": 1.0,
+    "flood": 1.0,
+    "drought": 1.0,
+    "storm": 1.0,
+    "wildfire": 1.0,
+    "epidemic": 0.8,
+}
+
+# وزن مخاطرات بر پایه‌ی قاره (config.CONTINENTS)
+CONTINENT_HAZARD_WEIGHTS = {
+    "mideast": {"earthquake": 1.4, "drought": 2.0, "storm": 0.5, "flood": 0.7, "wildfire": 1.1},
+    "asia": {"earthquake": 1.8, "storm": 1.8, "flood": 1.8, "drought": 0.9, "epidemic": 1.1},
+    "europe": {"earthquake": 0.6, "flood": 1.3, "wildfire": 1.2, "drought": 0.8, "storm": 0.9},
+    "americas": {"storm": 1.7, "wildfire": 1.6, "flood": 1.2, "earthquake": 1.0, "drought": 0.9},
+    "africa": {"drought": 2.2, "epidemic": 1.5, "flood": 1.1, "earthquake": 0.5, "wildfire": 0.8},
+    "oceania": {"storm": 1.8, "wildfire": 1.8, "drought": 1.3, "earthquake": 1.1, "flood": 0.9},
+}
+
+# اصلاح‌کننده‌ی اختصاصی کشور — بر واقعیت جغرافیایی سوار است و بر قاره غالب
+COUNTRY_HAZARD_WEIGHTS = {
+    # کمربند آتش و گسل‌های بزرگ
+    "japan": {"earthquake": 3.5, "storm": 2.0, "wildfire": 0.4},
+    "taiwan": {"earthquake": 3.0, "storm": 2.2},
+    "indonesia": {"earthquake": 3.0, "flood": 2.0, "storm": 1.4},
+    "philippines": {"storm": 3.0, "earthquake": 2.2, "flood": 2.0},
+    "iran": {"earthquake": 3.0, "drought": 2.2, "storm": 0.3},
+    "turkey": {"earthquake": 3.0, "wildfire": 1.5, "drought": 1.2},
+    "chile": {"earthquake": 3.0, "wildfire": 1.5},
+    "mexico": {"earthquake": 2.2, "storm": 2.0},
+    "nepal": {"earthquake": 2.8, "flood": 1.4, "storm": 0.2},
+    "afghanistan": {"earthquake": 2.5, "drought": 2.0, "storm": 0.2},
+    "pakistan": {"flood": 2.6, "earthquake": 2.0, "drought": 1.4},
+    # سیل‌خیز
+    "bangladesh": {"flood": 3.5, "storm": 2.6, "drought": 0.4},
+    "india": {"flood": 2.4, "storm": 1.8, "drought": 1.6, "epidemic": 1.3},
+    "netherlands": {"flood": 2.2, "earthquake": 0.2, "drought": 0.5},
+    "vietnam": {"storm": 2.6, "flood": 2.4},
+    # آتش‌سوزی و طوفان
+    "usa": {"wildfire": 2.6, "storm": 2.4, "earthquake": 1.2, "drought": 1.2},
+    "australia": {"wildfire": 3.2, "drought": 2.2, "storm": 1.6, "earthquake": 0.4},
+    "canada": {"wildfire": 2.4, "flood": 1.2, "drought": 0.6, "storm": 0.7},
+    "greece": {"wildfire": 2.6, "earthquake": 2.0, "drought": 1.5},
+    "spain": {"wildfire": 2.2, "drought": 1.8},
+    "portugal": {"wildfire": 2.4, "drought": 1.6},
+    # خشکسالی شدید
+    "saudi": {"drought": 2.6, "storm": 0.3, "flood": 0.3, "earthquake": 0.3},
+    "egypt": {"drought": 2.4, "earthquake": 0.6, "storm": 0.3},
+    "yemen": {"drought": 2.4, "flood": 1.2, "epidemic": 1.6},
+    "somalia": {"drought": 3.0, "epidemic": 1.8, "flood": 1.2},
+    "sudan": {"drought": 2.6, "epidemic": 1.5},
+    "iraq": {"drought": 2.4, "storm": 0.3},
+    "algeria": {"drought": 2.0, "wildfire": 1.6, "earthquake": 1.4},
+    # سرد و کم‌مخاطره
+    "russia": {"wildfire": 2.0, "flood": 1.0, "storm": 0.5, "drought": 0.6},
+    "norway": {"flood": 1.4, "earthquake": 0.2, "drought": 0.3, "storm": 0.8},
+    "sweden": {"wildfire": 1.2, "earthquake": 0.2, "drought": 0.4},
+    "finland": {"earthquake": 0.2, "drought": 0.3, "wildfire": 1.1},
+    "switzerland": {"flood": 1.3, "earthquake": 0.5, "storm": 0.3},
+}
+
+# فصل‌ها روی نیم‌کره شمالی تنظیم شده‌اند (اکثر کشورهای بازی)
+SEASONAL_HAZARD_WEIGHTS = {
+    12: {"storm": 1.3, "flood": 1.2, "wildfire": 0.5, "epidemic": 1.3},
+    1: {"storm": 1.3, "flood": 1.2, "wildfire": 0.4, "epidemic": 1.4},
+    2: {"storm": 1.2, "flood": 1.3, "wildfire": 0.4, "epidemic": 1.3},
+    3: {"flood": 1.5, "drought": 0.8},
+    4: {"flood": 1.5, "drought": 0.9},
+    5: {"flood": 1.2, "drought": 1.1},
+    6: {"wildfire": 1.6, "drought": 1.5, "flood": 0.7},
+    7: {"wildfire": 2.0, "drought": 1.8, "flood": 0.6},
+    8: {"wildfire": 2.0, "drought": 1.8, "storm": 1.3},
+    9: {"storm": 1.6, "wildfire": 1.3, "flood": 1.1},
+    10: {"storm": 1.4, "flood": 1.3},
+    11: {"storm": 1.2, "flood": 1.2, "epidemic": 1.2},
+}
+
+_CONTINENT_BY_COUNTRY_KEY: dict[str, str] | None = None
+
+
+def _continent_of(country_key: str) -> str | None:
+    """قاره‌ی یک کشور بر پایه‌ی config.CONTINENTS (یک‌بار کش می‌شود)."""
+    global _CONTINENT_BY_COUNTRY_KEY
+    if _CONTINENT_BY_COUNTRY_KEY is None:
+        mapping = {}
+        for continent, data in (getattr(config, "CONTINENTS", {}) or {}).items():
+            for key in (data.get("keys") or []) if isinstance(data, dict) else []:
+                mapping[key] = continent
+        _CONTINENT_BY_COUNTRY_KEY = mapping
+    return _CONTINENT_BY_COUNTRY_KEY.get(country_key or "")
+
+
+def hazard_weights(country: dict, now_dt: datetime.datetime | None = None) -> dict:
+    """وزن نهایی هر بلای طبیعی برای یک کشور مشخص.
+
+    ترتیب اعمال: پایه × قاره × کشور × فصل.
+    """
+    now_dt = now_dt or _now()
+    country_key = (country or {}).get("country_key") or ""
+    weights = dict(BASE_HAZARD_WEIGHTS)
+
+    continent = _continent_of(country_key)
+    for hazard, factor in (CONTINENT_HAZARD_WEIGHTS.get(continent) or {}).items():
+        if hazard in weights:
+            weights[hazard] *= factor
+
+    for hazard, factor in (COUNTRY_HAZARD_WEIGHTS.get(country_key) or {}).items():
+        if hazard in weights:
+            weights[hazard] *= factor
+
+    for hazard, factor in (SEASONAL_HAZARD_WEIGHTS.get(now_dt.month) or {}).items():
+        if hazard in weights:
+            weights[hazard] *= factor
+
+    return weights
+
+
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
@@ -800,12 +925,13 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
     try:
         with conn:
             cur = conn.cursor()
+            today = _today()
             duplicate = cur.execute(
-                "SELECT id FROM crisis_actions WHERE crisis_id = ? AND action_key = ?",
-                (crisis_id, action_key),
+                "SELECT id FROM crisis_actions WHERE crisis_id = ? AND action_key = ? AND action_date = ?",
+                (crisis_id, action_key, today),
             ).fetchone()
             if duplicate:
-                return False, "این اقدام قبلاً برای همین بحران انجام شده است.", None
+                return False, "این اقدام را امروز انجام داده‌اید. فردا دوباره در دسترس است.", None
 
             if cost > 0:
                 cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (cost, crisis["country_id"]))
@@ -820,10 +946,12 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
             cur.execute("UPDATE country_crises SET mitigation = ? WHERE id = ?", (new_mitigation, crisis_id))
             cur.execute(
                 """
-                INSERT INTO crisis_actions (crisis_id, country_id, action_key, actor_id, cost, mitigation, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO crisis_actions
+                (crisis_id, country_id, action_key, actor_id, cost, mitigation, action_date, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (crisis_id, crisis["country_id"], action_key, actor_id, cost, float(spec["mitigation"]), _iso()),
+                (crisis_id, crisis["country_id"], action_key, actor_id, cost,
+                 float(spec["mitigation"]), today, _iso()),
             )
 
             approval = int(country.get("approval_rating") or 0)
@@ -840,6 +968,21 @@ def respond_to_crisis(crisis_id: int, action_key: str, actor_id: int | None = No
 
     db.add_log(f"player:{actor_id}", "crisis_response", f"crisis={crisis_id} action={action_key} cost={cost}")
     return True, f"{spec['label']} اجرا شد.", {"cost": cost, "grain_cost": grain_cost}
+
+
+def get_actions_done_today(crisis_id: int) -> set:
+    """اقداماتی که امروز برای این بحران انجام شده‌اند (بقیه دوباره در دسترس‌اند)."""
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT action_key FROM crisis_actions WHERE crisis_id = ? AND action_date = ?",
+            (crisis_id, _today()),
+        ).fetchall()
+        return {row["action_key"] for row in rows}
+    except Exception:
+        return set()
+    finally:
+        conn.close()
 
 
 def get_crisis_actions(crisis_id: int) -> list[dict]:
@@ -881,7 +1024,7 @@ def _chain_crisis_candidates(country: dict, state: dict, reqs: dict) -> list[tup
 
 
 def _random_crisis_candidate(country: dict, state: dict) -> tuple[str, str] | None:
-    """بحران تصادفی با احتمال وابسته به وضعیت کشور (نه صرفاً شانس کور)."""
+    """بحران تصادفی با احتمال وابسته به جغرافیا، فصل و وضعیت کشور."""
     approval = float(country.get("approval_rating") or 0)
     unrest = float(state.get("unrest") or 0)
     chance = RANDOM_CRISIS_BASE_CHANCE
@@ -891,9 +1034,12 @@ def _random_crisis_candidate(country: dict, state: dict) -> tuple[str, str] | No
         chance += 0.04
     if random.random() > chance:
         return None
-    natural = ["earthquake", "flood", "drought", "storm", "wildfire", "epidemic"]
-    weights = [1.0, 1.2, 1.2, 1.0, 1.0, 0.8]
-    key = random.choices(natural, weights=weights, k=1)[0]
+
+    weights = hazard_weights(country)
+    natural = [key for key, weight in weights.items() if weight > 0]
+    if not natural:
+        return None
+    key = random.choices(natural, weights=[weights[k] for k in natural], k=1)[0]
     severity = random.choices(["light", "medium", "severe"], weights=[0.5, 0.38, 0.12], k=1)[0]
     return key, severity
 

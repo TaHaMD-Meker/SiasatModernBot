@@ -951,12 +951,48 @@ def init_db():
         actor_id INTEGER,
         cost INTEGER NOT NULL DEFAULT 0,
         mitigation REAL NOT NULL DEFAULT 0,
+        action_date TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
-        UNIQUE(crisis_id, action_key),
+        UNIQUE(crisis_id, action_key, action_date),
         FOREIGN KEY(crisis_id) REFERENCES country_crises(id) ON DELETE CASCADE,
         FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
+
+    # مهاجرت: نسخه‌ی اول UNIQUE(crisis_id, action_key) داشت، یعنی هر اقدام فقط
+    # یک‌بار در کل عمر بحران. برای بحران چندروزه باید هر روز دوباره در دسترس
+    # باشد، پس جدول با کلید یکتای سه‌ستونی بازسازی می‌شود.
+    try:
+        columns = {row[1] for row in cur.execute("PRAGMA table_info(crisis_actions)")}
+        if "action_date" not in columns:
+            cur.execute("ALTER TABLE crisis_actions RENAME TO crisis_actions_old")
+            cur.execute("""
+            CREATE TABLE crisis_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crisis_id INTEGER NOT NULL,
+                country_id INTEGER NOT NULL,
+                action_key TEXT NOT NULL,
+                actor_id INTEGER,
+                cost INTEGER NOT NULL DEFAULT 0,
+                mitigation REAL NOT NULL DEFAULT 0,
+                action_date TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(crisis_id, action_key, action_date),
+                FOREIGN KEY(crisis_id) REFERENCES country_crises(id) ON DELETE CASCADE,
+                FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+            )
+            """)
+            cur.execute("""
+                INSERT INTO crisis_actions
+                (id, crisis_id, country_id, action_key, actor_id, cost, mitigation, action_date, created_at)
+                SELECT id, crisis_id, country_id, action_key, actor_id, cost, mitigation,
+                       COALESCE(SUBSTR(created_at, 1, 10), ''), created_at
+                FROM crisis_actions_old
+            """)
+            cur.execute("DROP TABLE crisis_actions_old")
+    except sqlite3.OperationalError:
+        pass
+
 
     # مهاجرت‌های افزایشی country_internal
     for column, ddl in (

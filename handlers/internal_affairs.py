@@ -411,7 +411,7 @@ async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = "")
         await query.answer("بحران یافت نشد.", show_alert=True)
         return
     spec = ia.CRISIS_CATALOG.get(crisis["crisis_key"], {})
-    done = {action["action_key"] for action in ia.get_crisis_actions(crisis_id)}
+    done = ia.get_actions_done_today(crisis_id)
     treasury = int(country.get("treasury") or 0)
 
     lines = [
@@ -443,7 +443,7 @@ async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = "")
         action = ia.CRISIS_ACTIONS[action_key]
         cost = max(int(action.get("min_cost", 0)), int(max(0, treasury) * float(action.get("cost_pct", 0))))
         if action_key in done:
-            lines.append(f"• {action['label']} — ✅ انجام شد")
+            lines.append(f"• {action['label']} — ✅ امروز انجام شد (فردا دوباره فعال)")
             continue
         cost_text = "رایگان" if cost == 0 else format_money(cost)
         lines.append(f"• {action['label']} — {cost_text}\n  <i>{action['desc']}</i>")
