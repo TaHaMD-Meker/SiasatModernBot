@@ -529,3 +529,81 @@ class TestAdminAdjustGuards:
         assert c["oil_production"] == 0
         db.adjust_gold(cid, 300)
         assert db.get_country_by_id(cid)["gold"] == 300
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# کسر ذخایر نفت و غلات از کشور مدافع
+# (درخواست مدیریت: «نفتکش گفت نفت کم کن»)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_oil_and_grain_are_recognised_as_strategic_resources():
+    from handlers.losses import match_strategic_resource
+
+    for name in ("ذخایر نفت خام", "مخازن نفت", "نفتکش راهبردی", "انبار سوخت"):
+        match = match_strategic_resource(name)
+        assert match is not None, name
+        assert match["special"] == "oil_reserves"
+        assert match["unit"] == "بشکه"
+
+    for name in ("ذخایر غلات", "انبار گندم", "ذخایر غذایی"):
+        match = match_strategic_resource(name)
+        assert match is not None, name
+        assert match["special"] == "grain"
+        assert match["unit"] == "تن"
+
+
+def test_buildings_are_not_swallowed_by_the_resource_matcher():
+    """match_strategic_resource قبل از match_building اجرا می‌شود.
+
+    بدون محافظ، «پالایشگاه نفت» و «سیلوی استراتژیک غلات» به‌جای ساختمان،
+    منبع راهبردی تشخیص داده می‌شدند و ساختمان هرگز کسر نمی‌شد.
+    """
+    from handlers.losses import match_strategic_resource
+
+    for name in (
+        "پالایشگاه نفت",
+        "سیلوی استراتژیک غلات",
+        "مزرعه گندم و غلات",
+        "مجتمع استخراج سنگ آهن و فولاد",
+        "نیروگاه فسیلی",
+        "بندر تجاری",
+    ):
+        assert match_strategic_resource(name) is None, name
+
+
+def test_oil_reserve_loss_is_deducted_and_reverted(db, country):
+    cid = country["id"]
+    db.update_country_field(cid, "oil_reserves", 500_000)
+    db.update_country_field(cid, "grain", 40_000)
+
+    ok, report_id, _err = db.create_loss_report(cid, [
+        {"key": "__oil_reserves__", "name": "ذخایر نفت خام", "special": "oil_reserves",
+         "unit": "بشکه", "qty": 120_000},
+        {"key": "__grain__", "name": "ذخایر غلات", "special": "grain",
+         "unit": "تن", "qty": 9_000},
+    ], operation_name="آزمون کسر منابع")
+    assert ok and report_id
+
+    after = db.get_country_by_id(cid)
+    assert after["oil_reserves"] == 380_000
+    assert after["grain"] == 31_000
+
+    ok, _msg = db.revert_loss_report(report_id)
+    assert ok
+    restored = db.get_country_by_id(cid)
+    assert restored["oil_reserves"] == 500_000
+    assert restored["grain"] == 40_000
+
+
+def test_defender_oil_loss_is_separate_from_attacker_fuel_cost(db):
+    """special «oil» هزینه‌ی سوخت مهاجم است؛ «oil_reserves» کسر ذخایر مدافع.
+
+    اگر یکی شوند، خط «سوخت مصرفی» گزارش مهاجم با تلفات نفت مدافع قاطی می‌شود.
+    """
+    from handlers.losses import STRATEGIC_SPECIALS, COST_SPECIALS
+
+    assert "oil_reserves" in STRATEGIC_SPECIALS
+    assert "oil_reserves" not in COST_SPECIALS
+    assert "oil" in COST_SPECIALS
+    assert db.LOSS_SPECIAL_COLUMNS["oil_reserves"] == "oil_reserves"
+    assert db.LOSS_SPECIAL_COLUMNS["oil"] == "oil_reserves"

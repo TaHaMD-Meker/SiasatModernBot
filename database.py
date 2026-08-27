@@ -1324,6 +1324,9 @@ LOSS_SPECIAL_COLUMNS = {
     "warheads": "warheads",
     "microchips": "microchips",
     "gold": "gold",
+    # کسر ذخایر از کشور مدافع (متمایز از "oil" که هزینه‌ی سوخت مهاجم است)
+    "oil_reserves": "oil_reserves",
+    "grain": "grain",
 }
 
 # اقلامی که فقط ثبت گزارشی می‌شوند و روی هیچ موجودی اثر ندارند
@@ -1339,6 +1342,8 @@ _LOSS_SPECIAL_LABELS = {
     "microchips": "تلفات میکروچیپ",
     "iron_ore": "تلفات سنگ آهن و فولاد",
     "gold": "تلفات طلا",
+    "oil_reserves": "تلفات ذخایر نفت",
+    "grain": "تلفات ذخایر غلات",
 }
 
 _BUILDING_EFFECT_COLUMNS = {

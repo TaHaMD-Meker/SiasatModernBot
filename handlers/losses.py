@@ -271,6 +271,24 @@ def match_strategic_resource(name: str):
     if re.search(r"فرمانده|رئیس|ریاست|مدیر|سرتیپ|سرلشکر|امیر|ژنرال|وزیر|سخنگو|معاون", q):
         return None
 
+    # ساختمان‌ها اینجا نباید گرفته شوند؛ match_building بعداً آن‌ها را می‌گیرد.
+    # بدون این محافظ، «پالایشگاه نفت» یا «سیلوی استراتژیک غلات» به‌جای ساختمان،
+    # منبع راهبردی تشخیص داده می‌شد (این تابع قبل از match_building اجرا می‌شود).
+    if re.search(r"پالایشگاه|سیلو|کارخانه|مجتمع|نیروگاه|معدن|بندر|مزرعه|پتروشیمی|ترمینال|اسکله", q):
+        return None
+
+    # ذخایر نفت خام و سوخت (شامل نفتکش و مخازن)
+    if any(w in q for w in ("ذخایر نفت", "ذخیره نفت", "ذخائر نفت", "نفت خام", "مخازن نفت",
+                            "مخزن نفت", "نفتکش", "انبار سوخت", "مخازن سوخت", "بشکه نفت")):
+        return {"key": "__oil_reserves__", "name": "ذخایر نفت خام", "special": "oil_reserves",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🛢️", "unit": "بشکه"}
+
+    # ذخایر غلات و مواد غذایی
+    if any(w in q for w in ("ذخایر غلات", "ذخیره غلات", "ذخائر غلات", "انبار غلات",
+                            "ذخایر گندم", "انبار گندم", "ذخایر غذایی", "ذخیره راهبردی غذا")):
+        return {"key": "__grain__", "name": "ذخایر غلات", "special": "grain",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "🌾", "unit": "تن"}
+
     # طلا — با مرز واژه، تا زیررشته‌ی کلماتی مثل «اطلاعات» گرفته نشود
     if re.search(r"(?:^|\s)(?:شمش\s+)?طلا(?:\s|$)", q) or "شمش طلا" in q:
         return {"key": "__gold__", "name": "شمش طلا", "special": "gold",
@@ -494,7 +512,8 @@ def parse_loss_report_text(text: str):
 
 # ---------- ساخت گزارش استاندارد ----------
 # دسته‌بندی اقلام ویژه برای بخش‌بندی صحیح گزارش رسمی
-STRATEGIC_SPECIALS = ("warheads", "uranium_ore", "nuclear_fuel", "microchips", "gold")
+STRATEGIC_SPECIALS = ("warheads", "uranium_ore", "nuclear_fuel", "microchips", "gold",
+                      "oil_reserves", "grain")
 HUMAN_SPECIALS = ("mil_kia", "wounded", "civ_kia")
 COST_SPECIALS = ("money", "oil")
 
