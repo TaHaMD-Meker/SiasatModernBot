@@ -152,7 +152,13 @@ async def _crisis_panel(query, crisis_id: int, notice: str = ""):
         f"مدت: <b>{crisis['duration_days']} روز</b>",
         f"منشأ: <b>{crisis['origin']}</b>",
         f"مهار: <b>{int(float(crisis.get('mitigation') or 0) * 100)}٪</b>",
+        f"تشدید خودکار تاکنون: <b>{crisis.get('escalations', 0)} بار</b>",
     ]
+    if crisis["stage"] in ("warning", "impact") and float(crisis.get("mitigation") or 0) < ia.ESCALATION_MITIGATION_THRESHOLD:
+        if crisis["severity"] != ia.SEVERITY_ORDER[-1]:
+            lines.append("\n⚠️ <b>رسیدگی نشده — امشب یک سطح تشدید می‌شود.</b>")
+        else:
+            lines.append("\n⚠️ <b>رسیدگی نشده، اما در بالاترین سطح است.</b>")
 
     if crisis["stage"] == "warning":
         lines.append(
@@ -204,8 +210,13 @@ async def _crisis_panel(query, crisis_id: int, notice: str = ""):
     rows = []
     if crisis["stage"] == "warning":
         rows.append([InlineKeyboardButton("⚡ اعمال فوری خسارت", callback_data=f"admin:dom_impact:{crisis_id}")])
+    if crisis["stage"] != "ended":
+        rows.append([
+            InlineKeyboardButton("⬆️ تشدید یک سطح", callback_data=f"admin:dom_up:{crisis_id}"),
+            InlineKeyboardButton("⬇️ تخفیف یک سطح", callback_data=f"admin:dom_down:{crisis_id}"),
+        ])
     rows.extend([
-        [InlineKeyboardButton("⚙️ تنظیم شدت", callback_data=f"admin:dom_sev:{crisis_id}")],
+        [InlineKeyboardButton("⚙️ تنظیم مستقیم شدت", callback_data=f"admin:dom_sev:{crisis_id}")],
         [InlineKeyboardButton("⏱️ تنظیم مدت", callback_data=f"admin:dom_dur:{crisis_id}")],
         [InlineKeyboardButton("📢 ارسال خبر بحران", callback_data=f"admin:dom_news:{crisis_id}")],
     ])
@@ -306,6 +317,25 @@ async def _history_page(query):
 # ─────────────────────────────────────────────────────────────────────────────
 # روتر callback (از handlers/admin.py صدا زده می‌شود؛ احراز ادمین آنجا انجام شده)
 # ─────────────────────────────────────────────────────────────────────────────
+async def _post_severity_news(context, crisis: dict, damage: dict | None = None):
+    """خبر مخصوص سطح جدید بحران؛ هر سطح فقط یک‌بار منتشر می‌شود."""
+    if not crisis:
+        return
+    flag = f"escalated_{crisis.get('severity')}"
+    if ia.news_already_sent(crisis, flag):
+        return
+    country = db.get_country_by_id(crisis["country_id"])
+    news = ia.build_news(country or {}, crisis, "escalated", damage)
+    if not news:
+        return
+    try:
+        import news_engine
+        await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
+        ia.mark_news_sent(crisis["id"], flag)
+    except Exception:
+        pass
+
+
 async def internal_admin_callback(query, context, data: str) -> bool:
     admin_id = query.from_user.id
 
@@ -350,6 +380,14 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         ok, message, _applied = ia.force_impact(crisis_id, admin_id=admin_id)
         await query.answer(message, show_alert=not ok)
         await _crisis_panel(query, crisis_id, notice=message if ok else "")
+    elif data.startswith("admin:dom_up:") or data.startswith("admin:dom_down:"):
+        crisis_id = int(data.split(":")[2])
+        direction = 1 if ":dom_up:" in data else -1
+        ok, message, crisis, extra = ia.change_severity(crisis_id, direction, admin_id=admin_id)
+        await query.answer(message, show_alert=not ok)
+        if ok:
+            await _post_severity_news(context, crisis, extra)
+        await _crisis_panel(query, crisis_id, notice=message if ok else "")
     elif data.startswith("admin:dom_end:"):
         crisis_id = int(data.split(":")[2])
         ok, message = ia.end_crisis(crisis_id, admin_id=admin_id)
@@ -366,6 +404,8 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         _, _, crisis_id, severity = data.split(":", 3)
         ok, message = ia.update_crisis(int(crisis_id), severity=severity, admin_id=admin_id)
         await query.answer(message, show_alert=not ok)
+        if ok:
+            await _post_severity_news(context, ia.get_crisis(int(crisis_id)))
         await _crisis_panel(query, int(crisis_id), notice=message if ok else "")
     elif data.startswith("admin:dom_dur:"):
         crisis_id = int(data.split(":")[2])

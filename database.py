@@ -934,6 +934,8 @@ def init_db():
         ends_at TEXT,
         ended_at TEXT,
         mitigation REAL NOT NULL DEFAULT 0,
+        escalations INTEGER NOT NULL DEFAULT 0,
+        last_escalation_date TEXT,
         damage_json TEXT NOT NULL DEFAULT '{}',
         created_by INTEGER,
         created_at TEXT NOT NULL,
@@ -993,6 +995,16 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+
+    # مهاجرت‌های افزایشی country_crises
+    for column, ddl in (
+        ("escalations", "ALTER TABLE country_crises ADD COLUMN escalations INTEGER NOT NULL DEFAULT 0"),
+        ("last_escalation_date", "ALTER TABLE country_crises ADD COLUMN last_escalation_date TEXT"),
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
 
     # مهاجرت‌های افزایشی country_internal
     for column, ddl in (

@@ -815,3 +815,115 @@ def test_wet_tropical_countries_are_not_dominated_by_wildfire():
         weights = ia.hazard_weights({"country_key": key})
         dominant = max(weights, key=weights.get)
         assert dominant != "wildfire", f"{key} نباید بلای غالبش آتش‌سوزی باشد"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# تشدید شبانه‌ی بحرانِ رسیدگی‌نشده
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_unmanaged_crisis_escalates_one_level_each_night(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 200_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "flood", severity="light", admin_id=1)
+
+    start = ia._now()
+    levels = []
+    for day in range(4):
+        _run(cid, days=1, start=start + datetime.timedelta(days=day))
+        levels.append(ia.get_crisis(crisis["id"])["severity"])
+
+    assert levels[0] == "medium", "شب اول باید از خفیف به متوسط برود"
+    assert "severe" in levels, "بعد از دو شب باید به شدید برسد"
+    assert levels[-1] == "severe", "بالاتر از شدید نمی‌رود"
+    assert ia.get_crisis(crisis["id"])["escalations"] >= 2
+
+
+def test_a_managed_crisis_does_not_escalate(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 500_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "flood", severity="light", admin_id=1)
+    assert ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)[0]
+
+    _run(cid, days=1)
+    assert ia.get_crisis(crisis["id"])["severity"] == "light"
+    assert ia.get_crisis(crisis["id"])["escalations"] == 0
+
+
+def test_escalation_only_adds_the_difference_in_damage(monkeypatch, tmp_path):
+    """تشدید نباید کشور را دوباره از صفر جریمه کند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 400_000_000)
+    database.update_country_field(cid, "population", 50_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "earthquake", severity="light", admin_id=1)
+    ia.force_impact(crisis["id"], admin_id=1)
+
+    pop_after_light = database.get_country_by_id(cid)["population"]
+    ok, _msg, _c, extra = ia.change_severity(crisis["id"], +1, admin_id=1)
+    assert ok
+    pop_after_medium = database.get_country_by_id(cid)["population"]
+
+    light_loss = 50_000_000 - pop_after_light
+    escalation_loss = pop_after_light - pop_after_medium
+    # اختلاف ضریب خفیف→متوسط برابر ضریب خفیف است، پس خسارت افزایشی ≈ همان اندازه
+    assert escalation_loss > 0
+    assert abs(escalation_loss - light_loss) <= max(2, light_loss * 0.05)
+    assert extra["population"] > 0
+
+
+def test_admin_can_raise_and_lower_severity(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "treasury", 300_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "storm", severity="medium", admin_id=1)
+
+    ok, message, updated, _x = ia.change_severity(crisis["id"], +1, admin_id=1)
+    assert ok and updated["severity"] == "severe" and "تشدید" in message
+
+    ok, _msg, updated, _x = ia.change_severity(crisis["id"], -1, admin_id=1)
+    assert ok and updated["severity"] == "medium"
+
+    # سقف و کف
+    ia.change_severity(crisis["id"], -1, admin_id=1)
+    ok, message, _u, _x = ia.change_severity(crisis["id"], -1, admin_id=1)
+    assert not ok and "خفیف" in message
+    for _ in range(2):
+        ia.change_severity(crisis["id"], +1, admin_id=1)
+    ok, message, _u, _x = ia.change_severity(crisis["id"], +1, admin_id=1)
+    assert not ok and "شدید" in message
+
+
+def test_each_severity_level_has_its_own_news():
+    country = {"name": "آزمون", "flag": "🏳️"}
+    seen = set()
+    for severity in ia.SEVERITY_ORDER:
+        crisis = {"crisis_key": "flood", "severity": severity, "stage": "impact", "mitigation": 0}
+        title, body = ia.build_news(country, crisis, "escalated")
+        assert ia.SEVERITY_LABELS[severity] in title
+        assert body and body not in seen, "متن هر سطح باید متفاوت باشد"
+        seen.add(body)
+
+
+def test_escalation_news_is_published_once_per_level(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    _ok, _m, crisis = ia.create_crisis(cid, "drought", severity="light", admin_id=1)
+
+    ia.mark_news_sent(crisis["id"], "escalated_medium")
+    refreshed = ia.get_crisis(crisis["id"])
+    assert ia.news_already_sent(refreshed, "escalated_medium")
+    assert not ia.news_already_sent(refreshed, "escalated_severe")
+
+
+def test_admin_panel_exposes_severity_controls():
+    import inspect
+    from handlers import internal_admin
+
+    source = inspect.getsource(internal_admin)
+    assert "admin:dom_up" in source and "admin:dom_down" in source
+    assert "تشدید یک سطح" in source and "تخفیف یک سطح" in source
+    assert "_post_severity_news" in source
+    panel = inspect.getsource(internal_admin._crisis_panel)
+    assert "امشب یک سطح تشدید می‌شود" in panel

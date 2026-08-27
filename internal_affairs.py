@@ -116,6 +116,11 @@ COLLAPSE_CRITICAL_DAYS = 3  # چند روز پیاپی در مرحله ۴ تا �
 
 SEVERITY_FACTORS = {"light": 0.5, "medium": 1.0, "severe": 1.8}
 SEVERITY_LABELS = {"light": "خفیف", "medium": "متوسط", "severe": "شدید"}
+SEVERITY_ORDER = ("light", "medium", "severe")
+
+# بحرانی که رسیدگی نشود، هر شب یک سطح تشدید می‌شود.
+# «رسیدگی‌شده» یعنی مهار حداقل به این حد رسیده باشد.
+ESCALATION_MITIGATION_THRESHOLD = 0.25
 
 # ─────────────────────────────────────────────────────────────────────────────
 # کاتالوگ بحران‌ها
@@ -833,21 +838,30 @@ def update_crisis(crisis_id: int, severity: str | None = None, duration_days: in
     return True, "بحران به‌روزرسانی شد."
 
 
-def _crisis_damage(crisis: dict) -> dict:
-    """خسارت خام بحران با اعمال شدت و کاهش ناشی از واکنش بازیکن."""
+def _crisis_damage(crisis: dict, factor: float | None = None) -> dict:
+    """خسارت خام بحران با اعمال شدت و کاهش ناشی از واکنش بازیکن.
+
+    factor اختیاری برای خسارت افزایشیِ تشدید استفاده می‌شود: اختلاف ضریب
+    شدت جدید و قدیم، تا کشور دوباره از صفر خسارت نگیرد.
+    """
     spec = CRISIS_CATALOG.get(crisis["crisis_key"], {})
-    factor = SEVERITY_FACTORS.get(crisis["severity"], 1.0)
+    if factor is None:
+        factor = SEVERITY_FACTORS.get(crisis["severity"], 1.0)
     mitigation = max(0.0, min(0.80, float(crisis.get("mitigation") or 0)))
     scale = factor * (1.0 - mitigation)
     return {key: value * scale for key, value in (spec.get("effects") or {}).items()}
 
 
-def _apply_crisis_impact(crisis: dict) -> dict:
-    """اعمال اثر اصلی بحران روی کشور. فقط یک‌بار و در مرحله‌ی impact."""
+def _apply_crisis_impact(crisis: dict, factor: float | None = None, advance_stage: bool = True) -> dict:
+    """اعمال اثر بحران روی کشور.
+
+    advance_stage=False برای خسارت افزایشیِ تشدید است: مرحله و تاریخ پایان
+    دست نمی‌خورد و فقط خسارت اضافه اعمال می‌شود.
+    """
     country = db.get_country_by_id(crisis["country_id"])
     if not country:
         return {}
-    damage = _crisis_damage(crisis)
+    damage = _crisis_damage(crisis, factor=factor)
     applied = {}
     cid = country["id"]
 
@@ -900,15 +914,27 @@ def _apply_crisis_impact(crisis: dict) -> dict:
     conn = db.get_connection()
     try:
         with conn:
-            conn.execute(
-                "UPDATE country_crises SET stage = 'impact', started_at = COALESCE(started_at, ?), ends_at = ?, damage_json = ? WHERE id = ?",
-                (
-                    _iso(now_dt),
-                    _iso(now_dt + datetime.timedelta(days=int(crisis["duration_days"] or 2))),
-                    json.dumps(applied, ensure_ascii=False),
-                    crisis["id"],
-                ),
-            )
+            if advance_stage:
+                conn.execute(
+                    "UPDATE country_crises SET stage = 'impact', started_at = COALESCE(started_at, ?), ends_at = ?, damage_json = ? WHERE id = ?",
+                    (
+                        _iso(now_dt),
+                        _iso(now_dt + datetime.timedelta(days=int(crisis["duration_days"] or 2))),
+                        json.dumps(applied, ensure_ascii=False),
+                        crisis["id"],
+                    ),
+                )
+            else:
+                # خسارت افزایشی تشدید: مرحله و زمان پایان دست نمی‌خورد، فقط
+                # خسارت جدید روی خسارت ثبت‌شده‌ی قبلی جمع می‌شود.
+                previous = _json_load(crisis.get("damage_json"), {})
+                merged = dict(previous)
+                for key, value in applied.items():
+                    merged[key] = (merged.get(key) or 0) + value
+                conn.execute(
+                    "UPDATE country_crises SET damage_json = ? WHERE id = ?",
+                    (json.dumps(merged, ensure_ascii=False), crisis["id"]),
+                )
             if damage.get("unrest"):
                 conn.execute(
                     "UPDATE country_internal SET unrest = MIN(100, unrest + ?) WHERE country_id = ?",
@@ -917,6 +943,62 @@ def _apply_crisis_impact(crisis: dict) -> dict:
     finally:
         conn.close()
     return applied
+
+
+def change_severity(crisis_id: int, direction: int, admin_id: int | None = None, reason: str = "admin"):
+    """تغییر یک سطح شدت بحران. direction=+1 تشدید، -1 تخفیف.
+
+    تشدید خسارت افزایشی وارد می‌کند (فقط اختلاف ضریب دو سطح)، تا کشور بابت
+    بخشی که قبلاً خورده دوباره جریمه نشود. تخفیف خسارت را برنمی‌گرداند، فقط
+    ادامه‌ی بحران را سبک‌تر می‌کند.
+    """
+    crisis = get_crisis(crisis_id)
+    if not crisis:
+        return False, "بحران یافت نشد.", None, {}
+    if crisis["stage"] == "ended":
+        return False, "این بحران پایان یافته است.", crisis, {}
+
+    current = crisis["severity"] if crisis["severity"] in SEVERITY_ORDER else "medium"
+    index = SEVERITY_ORDER.index(current) + (1 if direction > 0 else -1)
+    if index >= len(SEVERITY_ORDER):
+        return False, "بحران هم‌اکنون در بالاترین سطح (شدید) است.", crisis, {}
+    if index < 0:
+        return False, "بحران هم‌اکنون در پایین‌ترین سطح (خفیف) است.", crisis, {}
+
+    new_severity = SEVERITY_ORDER[index]
+    applied = {}
+    if direction > 0 and crisis["stage"] in ("impact", "recovery"):
+        delta = SEVERITY_FACTORS[new_severity] - SEVERITY_FACTORS[current]
+        if delta > 0:
+            applied = _apply_crisis_impact(crisis, factor=delta, advance_stage=False)
+
+    conn = db.get_connection()
+    try:
+        with conn:
+            conn.execute(
+                """
+                UPDATE country_crises
+                SET severity = ?, escalations = escalations + ?, last_escalation_date = ?
+                WHERE id = ?
+                """,
+                (new_severity, 1 if direction > 0 else 0, _today(), crisis_id),
+            )
+    finally:
+        conn.close()
+
+    db.add_log(
+        f"admin:{admin_id}" if admin_id else f"system:{reason}",
+        "crisis_severity_change",
+        f"crisis={crisis_id} {current} → {new_severity}",
+    )
+    verb = "تشدید" if direction > 0 else "تخفیف"
+    return (
+        True,
+        f"بحران {verb} شد: {SEVERITY_LABELS[current]} ← {SEVERITY_LABELS[new_severity]}",
+        get_crisis(crisis_id),
+        applied,
+    )
+
 
 
 def force_impact(crisis_id: int, admin_id: int | None = None):
@@ -1138,9 +1220,23 @@ def _random_crisis_candidate(country: dict, state: dict) -> tuple[str, str] | No
 
 
 def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
-    """جابه‌جایی مرحله‌ی بحران‌ها: هشدار → وقوع → بازسازی → پایان."""
+    """جابه‌جایی مرحله‌ی بحران‌ها: هشدار → وقوع → بازسازی → پایان.
+
+    بحرانی که رسیدگی نشده باشد، پیش از پیشروی مرحله، یک سطح تشدید می‌شود.
+    """
     events = []
     for crisis in get_active_crises(country_id):
+        # ── تشدید شبانه‌ی بحران رسیدگی‌نشده
+        if crisis["stage"] in ("warning", "impact"):
+            mitigated = float(crisis.get("mitigation") or 0) >= ESCALATION_MITIGATION_THRESHOLD
+            already_today = crisis.get("last_escalation_date") == _today(now_dt)
+            at_max = crisis["severity"] == SEVERITY_ORDER[-1]
+            if not mitigated and not already_today and not at_max:
+                ok, _msg, escalated, extra = change_severity(crisis["id"], +1, reason="auto")
+                if ok:
+                    crisis = escalated
+                    events.append({"crisis": escalated, "event": "escalated", "damage": extra})
+
         stage = crisis["stage"]
         if stage == "warning":
             warned = _parse_dt(crisis["warned_at"])
@@ -1161,6 +1257,7 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
             end_crisis(crisis["id"])
             events.append({"crisis": get_crisis(crisis["id"]), "event": "ended"})
     return events
+
 
 
 def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: datetime.datetime | None = None) -> dict | None:
@@ -1468,6 +1565,13 @@ def crisis_management_stats(country_id: int, since: str | None = None) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # اخبار
 # ─────────────────────────────────────────────────────────────────────────────
+SEVERITY_NEWS = {
+    "light": "دامنه‌ی بحران محدود گزارش شده و تیم‌های محلی مشغول کنترل اوضاع‌اند.",
+    "medium": "بحران از کنترل محلی خارج شد و به مناطق بیشتری گسترش پیدا کرد.",
+    "severe": "وضعیت بحرانی اعلام شد؛ دامنه‌ی خسارت به‌سرعت در حال گسترش است.",
+}
+
+
 def build_news(country: dict, crisis: dict, event: str, damage: dict | None = None) -> tuple[str, str] | None:
     """(عنوان، متن) خبر کوتاه برای مرحله‌ی مشخصی از بحران."""
     spec = CRISIS_CATALOG.get(crisis["crisis_key"])
@@ -1481,7 +1585,21 @@ def build_news(country: dict, crisis: dict, event: str, damage: dict | None = No
         return f"هشدار {spec['label']} — {flag} {name}", spec["warning"]
     if event == "impact":
         return f"{spec['label']} ({severity}) — {flag} {name}", spec["impact"]
+    if event == "escalated":
+        body = SEVERITY_NEWS.get(crisis["severity"], "")
+        extra = []
+        if damage:
+            if damage.get("population"):
+                extra.append(f"تلفات جدید: {damage['population']:,} نفر")
+            if damage.get("treasury"):
+                extra.append(f"خسارت مالی تازه: {damage['treasury']:,} دلار")
+            if damage.get("grain"):
+                extra.append(f"از دست رفتن {damage['grain']:,} تن ذخایر غذایی")
+        if extra:
+            body += "\n" + "\n".join(f"• {item}" for item in extra)
+        return f"تشدید {spec['label']} به سطح {severity} — {flag} {name}", body
     if event == "damage" and damage:
+
         parts = []
         if damage.get("population"):
             parts.append(f"تلفات و آوارگی: {damage['population']:,} نفر")
