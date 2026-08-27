@@ -124,6 +124,7 @@ async def _active_crises(query):
             f"{spec.get('label', '')} | {ia.SEVERITY_LABELS.get(crisis['severity'], '')} | "
             f"{_stage_fa(crisis['stage'])} | مهار {int(float(crisis.get('mitigation') or 0) * 100)}٪ | "
             f"منشأ: {crisis.get('origin')}"
+            + ("\n⏳ <i>هنوز خسارتی اعمال نشده — منتظر چرخه‌ی روزانه</i>" if crisis['stage'] == 'warning' else "")
         )
         rows.append([InlineKeyboardButton(
             f"⚙️ #{crisis['id']} {spec.get('label', '')}", callback_data=f"admin:dom_crisis:{crisis['id']}"
@@ -152,20 +153,67 @@ async def _crisis_panel(query, crisis_id: int, notice: str = ""):
         f"منشأ: <b>{crisis['origin']}</b>",
         f"مهار: <b>{int(float(crisis.get('mitigation') or 0) * 100)}٪</b>",
     ]
+
+    if crisis["stage"] == "warning":
+        lines.append(
+            "\n⏳ <b>هنوز هیچ خسارتی اعمال نشده است.</b>\n"
+            "این بحران در اولین چرخه‌ی روزانه (بعد از ۰۰:۰۰ به وقت تهران) وارد "
+            "مرحله‌ی وقوع می‌شود. اگر رویداد زنده اجرا می‌کنید، از دکمه‌ی "
+            "«⚡ اعمال فوری خسارت» استفاده کنید."
+        )
+        preview = ia.estimate_damage(crisis)
+        if preview:
+            lines.append("\n<b>📉 برآورد خسارت در زمان وقوع:</b>")
+            if preview.get("population"):
+                lines.append(f"• جمعیت: {format_number(preview['population'])} نفر")
+            if preview.get("treasury"):
+                lines.append(f"• خزانه: {format_money(preview['treasury'])}")
+            if preview.get("daily_income"):
+                lines.append(f"• درآمد روزانه: {format_money(preview['daily_income'])}")
+            if preview.get("grain"):
+                lines.append(f"• غلات: {format_number(preview['grain'])} تن")
+            if preview.get("oil_reserves"):
+                lines.append(f"• نفت: {format_number(preview['oil_reserves'])} بشکه")
+            if preview.get("electricity"):
+                lines.append(f"• برق: {preview['electricity']} واحد")
+            if preview.get("approval"):
+                lines.append(f"• رضایت عمومی: {preview['approval']}")
+            if preview.get("unrest"):
+                lines.append(f"• ناآرامی: +{preview['unrest']}")
+    else:
+        damage = ia._json_load(crisis.get("damage_json"), {})
+        if damage:
+            lines.append("\n<b>📉 خسارت اعمال‌شده:</b>")
+            if damage.get("population"):
+                lines.append(f"• جمعیت: {format_number(damage['population'])} نفر")
+            if damage.get("treasury"):
+                lines.append(f"• خزانه: {format_money(damage['treasury'])}")
+            if damage.get("daily_income"):
+                lines.append(f"• درآمد روزانه: {format_money(damage['daily_income'])}")
+            if damage.get("grain"):
+                lines.append(f"• غلات: {format_number(damage['grain'])} تن")
+            if damage.get("approval"):
+                lines.append(f"• رضایت عمومی: {damage['approval']}")
+
     if actions:
         lines.append("\n<b>واکنش‌های بازیکن:</b>")
         for action in actions:
             label = ia.CRISIS_ACTIONS.get(action["action_key"], {}).get("label", action["action_key"])
             lines.append(f"• {label} — {format_money(action['cost'])}")
-    rows = [
+
+    rows = []
+    if crisis["stage"] == "warning":
+        rows.append([InlineKeyboardButton("⚡ اعمال فوری خسارت", callback_data=f"admin:dom_impact:{crisis_id}")])
+    rows.extend([
         [InlineKeyboardButton("⚙️ تنظیم شدت", callback_data=f"admin:dom_sev:{crisis_id}")],
         [InlineKeyboardButton("⏱️ تنظیم مدت", callback_data=f"admin:dom_dur:{crisis_id}")],
         [InlineKeyboardButton("📢 ارسال خبر بحران", callback_data=f"admin:dom_news:{crisis_id}")],
-    ]
+    ])
     if crisis["stage"] != "ended":
         rows.append([InlineKeyboardButton("🛑 پایان‌دادن به بحران", callback_data=f"admin:dom_end:{crisis_id}")])
     rows.append([InlineKeyboardButton("🔙 بحران‌های فعال", callback_data="admin:dom_active")])
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
+
 
 
 async def _country_picker(query, page: int):
@@ -297,6 +345,11 @@ async def internal_admin_callback(query, context, data: str) -> bool:
             await _show_root(query)
         else:
             await _crisis_panel(query, crisis["id"], notice=message)
+    elif data.startswith("admin:dom_impact:"):
+        crisis_id = int(data.split(":")[2])
+        ok, message, _applied = ia.force_impact(crisis_id, admin_id=admin_id)
+        await query.answer(message, show_alert=not ok)
+        await _crisis_panel(query, crisis_id, notice=message if ok else "")
     elif data.startswith("admin:dom_end:"):
         crisis_id = int(data.split(":")[2])
         ok, message = ia.end_crisis(crisis_id, admin_id=admin_id)

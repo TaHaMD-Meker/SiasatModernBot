@@ -701,6 +701,48 @@ def _apply_crisis_impact(crisis: dict) -> dict:
     return applied
 
 
+def force_impact(crisis_id: int, admin_id: int | None = None):
+    """اعمال فوری خسارتِ بحرانی که در مرحله‌ی هشدار مانده است.
+
+    برای رویدادهای زنده‌ی ادمین. در حالت عادی بحران در اولین چرخه‌ی روزانه‌ی
+    بعدی (بعد از ۰۰:۰۰ به وقت تهران) خودش وارد مرحله‌ی وقوع می‌شود.
+    """
+    crisis = get_crisis(crisis_id)
+    if not crisis:
+        return False, "بحران یافت نشد.", None
+    if crisis["stage"] != "warning":
+        return False, "این بحران از مرحله‌ی هشدار عبور کرده است.", crisis
+    applied = _apply_crisis_impact(crisis)
+    db.add_log(f"admin:{admin_id}" if admin_id else "system", "crisis_forced_impact", f"crisis={crisis_id}")
+    return True, "خسارت بحران هم‌اکنون اعمال شد.", applied
+
+
+def estimate_damage(crisis: dict) -> dict:
+    """برآورد خسارتی که این بحران در مرحله‌ی وقوع وارد می‌کند (برای پیش‌نمایش ادمین)."""
+    country = db.get_country_by_id(crisis["country_id"])
+    if not country:
+        return {}
+    damage = _crisis_damage(crisis)
+    preview = {}
+    if damage.get("pop"):
+        preview["population"] = int(int(country.get("population") or 0) * damage["pop"])
+    if damage.get("elec"):
+        preview["electricity"] = int(damage["elec"])
+    if damage.get("grain"):
+        preview["grain"] = int(int(country.get("grain") or 0) * damage["grain"])
+    if damage.get("oil"):
+        preview["oil_reserves"] = int(int(country.get("oil_reserves") or 0) * damage["oil"])
+    if damage.get("treasury"):
+        preview["treasury"] = int(max(0, int(country.get("treasury") or 0)) * damage["treasury"])
+    if damage.get("income"):
+        preview["daily_income"] = int(int(country.get("daily_income") or 0) * damage["income"])
+    if damage.get("approval"):
+        preview["approval"] = int(damage["approval"])
+    if damage.get("unrest"):
+        preview["unrest"] = round(float(damage["unrest"]), 1)
+    return preview
+
+
 def available_actions(crisis: dict) -> list[str]:
     """اقدامات متناسب با نوع بحران."""
     key = crisis["crisis_key"]

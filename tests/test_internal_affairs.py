@@ -610,3 +610,65 @@ def test_country_status_shows_approval_trend(monkeypatch, tmp_path):
     trend = ia.approval_trend(cid)
     assert trend is not None
     assert trend < 0, "مالیات سنگین باید روند نزولی رضایت بسازد"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# رگرسیون: بحران دستی ادمین در مرحله‌ی هشدار می‌ماند تا چرخه‌ی روزانه
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_admin_created_crisis_applies_nothing_until_impact(monkeypatch, tmp_path):
+    """توضیح رفتار گزارش‌شده: ساخت بحران از پنل، فوراً رضایت را کم نمی‌کند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, approval=86)
+    database.update_country_field(cid, "treasury", 50_000_000)
+
+    ok, _msg, crisis = ia.create_crisis(cid, "civil_unrest", severity="medium", admin_id=1)
+    assert ok
+    assert crisis["stage"] == "warning"
+    assert database.get_country_by_id(cid)["approval_rating"] == 86
+    assert float(ia.get_state(cid)["unrest"]) == 0
+
+
+def test_admin_can_force_impact_of_a_pending_crisis(monkeypatch, tmp_path):
+    """ادمین باید بتواند بحرانِ در حالت هشدار را همان لحظه اعمال کند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, approval=86)
+    database.update_country_field(cid, "treasury", 50_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "civil_unrest", severity="medium", admin_id=1)
+
+    ok, message, applied = ia.force_impact(crisis["id"], admin_id=1)
+    assert ok, message
+    assert ia.get_crisis(crisis["id"])["stage"] == "impact"
+    assert database.get_country_by_id(cid)["approval_rating"] < 86
+    assert float(ia.get_state(cid)["unrest"]) > 0
+    assert applied["treasury"] > 0
+
+    # دوباره اعمال نشود
+    ok2, _msg2, _a = ia.force_impact(crisis["id"], admin_id=1)
+    assert not ok2
+
+
+def test_damage_preview_matches_what_actually_happens(monkeypatch, tmp_path):
+    """پیش‌نمایش خسارت در پنل ادمین باید با خسارت واقعی بخواند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, approval=80)
+    database.update_country_field(cid, "treasury", 80_000_000)
+    database.update_country_field(cid, "population", 40_000_000)
+    _ok, _m, crisis = ia.create_crisis(cid, "earthquake", severity="severe", admin_id=1)
+
+    preview = ia.estimate_damage(ia.get_crisis(crisis["id"]))
+    ia.force_impact(crisis["id"], admin_id=1)
+    actual = ia._json_load(ia.get_crisis(crisis["id"])["damage_json"], {})
+
+    for key in ("population", "treasury"):
+        assert abs(preview[key] - actual[key]) <= max(1, preview[key] * 0.01)
+
+
+def test_admin_panel_offers_force_impact_only_while_pending():
+    import inspect
+    from handlers import internal_admin
+
+    source = inspect.getsource(internal_admin._crisis_panel)
+    assert "admin:dom_impact" in source
+    assert "هنوز هیچ خسارتی اعمال نشده است" in source
+    assert "برآورد خسارت در زمان وقوع" in source
