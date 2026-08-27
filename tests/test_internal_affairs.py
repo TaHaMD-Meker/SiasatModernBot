@@ -538,3 +538,75 @@ def test_flipping_between_harsh_policies_cannot_dodge_unrest_crisis(monkeypatch,
     honest_crises = [c for c in ia.get_crisis_history(honest, 50) if c["crisis_key"] == "civil_unrest"]
     assert flipper_crises, "بازیکنی که سیاست را جابه‌جا می‌کند نباید از بحران فرار کند"
     assert len(flipper_crises) >= len(honest_crises) - 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# یکپارچگی نمایش رضایت عمومی: یک صفحه‌ی تفصیلی، چند در ورودی
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_approval_detail_page_is_reachable_even_when_system_is_off(monkeypatch, tmp_path):
+    """رضایت عمومی مال سیاست داخلی نیست؛ خاموش‌بودن سیستم نباید قایمش کند."""
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "off_view.db"))
+    db.init_db()
+    assert ia.is_enabled() is False
+
+    from handlers.internal_affairs import build_approval_view
+    cid = _country(db, approval=42)
+    text, markup = build_approval_view(db.get_country_by_id(cid), {})
+
+    assert "رضایت عمومی" in text
+    assert "42" in text
+    assert "برق و انرژی" in text and "غذا و غلات" in text
+    assert markup.inline_keyboard
+
+
+def test_approval_page_merges_causes_and_effects_when_enabled(monkeypatch, tmp_path):
+    """صفحه‌ی واحد باید هم «چرا افتاد» و هم «چه شد» را داشته باشد."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    from handlers.internal_affairs import build_approval_view
+
+    cid = _country(database, approval=30)
+    database.update_country_field(cid, "grain", 0)
+    _run(cid)
+
+    text, _markup = build_approval_view(database.get_country_by_id(cid), ia.get_state(cid))
+    # علت‌ها (از approval_system)
+    assert "ارزیابی روزانه منابع حیاتی" in text
+    assert "غذا و غلات" in text
+    assert "جمعیت و مهاجرت" in text
+    # معلول‌ها (از سیستم جدید)
+    assert "ناآرامی داخلی" in text
+    assert "اثر روی درآمد مالیاتی" in text
+    assert "نرخ تمکین" in text
+
+
+def test_only_one_detailed_approval_renderer_remains(monkeypatch, tmp_path):
+    """رگرسیون: صفحه‌ی موازی قدیمی نباید برگردد."""
+    import inspect
+    from handlers import country as country_handlers
+
+    profile_src = inspect.getsource(country_handlers.country_profile)
+    callback_src = inspect.getsource(country_handlers.country_callback_handler)
+    command_src = inspect.getsource(country_handlers.approval_command)
+
+    # وضعیت کشور فقط خلاصه‌ی یک‌خطی دارد و به مقصد واحد اشاره می‌کند
+    assert "سیاست داخلی" in profile_src
+    assert "get_approval_status_message" not in profile_src
+    # هر سه در ورودی به همان یک صفحه می‌روند
+    assert "get_approval_status_message" not in callback_src
+    assert "get_approval_status_message" not in command_src
+    assert "show_approval_page" in command_src
+
+
+def test_country_status_shows_approval_trend(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database, approval=80)
+    assert ia.approval_trend(cid) is None  # هنوز داده‌ی کافی نیست
+
+    start = ia._now()
+    ia.set_tax_policy(cid, "heavy")
+    _run(cid, days=2, start=start)
+
+    trend = ia.approval_trend(cid)
+    assert trend is not None
+    assert trend < 0, "مالیات سنگین باید روند نزولی رضایت بسازد"

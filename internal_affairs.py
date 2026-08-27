@@ -1091,6 +1091,23 @@ def get_history(country_id: int, days: int = 7) -> list[dict]:
         conn.close()
 
 
+def approval_trend(country_id: int) -> int | None:
+    """تغییر رضایت عمومی نسبت به چرخه‌ی روزانه‌ی قبل. None یعنی داده‌ی کافی نیست."""
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT approval FROM internal_daily_log WHERE country_id = ? ORDER BY log_date DESC LIMIT 2",
+            (country_id,),
+        ).fetchall()
+        if len(rows) < 2:
+            return None
+        return int(rows[0]["approval"] or 0) - int(rows[1]["approval"] or 0)
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
 def countries_at_risk(limit: int = 20) -> list[dict]:
     conn = db.get_connection()
     try:

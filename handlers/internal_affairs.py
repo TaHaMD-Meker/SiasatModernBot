@@ -10,7 +10,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
 import database as db
 import internal_affairs as ia
-from utils import format_money, format_number
+from utils import format_money, format_number, format_oil
 
 
 def _kb(rows):
@@ -102,7 +102,10 @@ async def domestic_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
     if not ia.is_enabled():
-        markup = _kb([[InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")]])
+        markup = _kb([
+            [InlineKeyboardButton("📉 رضایت عمومی", callback_data="dom:unrest")],
+            [InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")],
+        ])
         if query:
             await query.edit_message_text(_disabled_text(), reply_markup=markup, parse_mode="HTML")
         else:
@@ -203,34 +206,172 @@ async def _tax_page(query, country: dict, state: dict):
 
 
 
-async def _unrest_page(query, country: dict, state: dict):
-    stage = int(state.get("unrest_stage") or 0)
-    unrest = float(state.get("unrest") or 0)
-    filled = int(round(unrest / 10))
-    bar = "█" * filled + "░" * (10 - filled)
+def _approval_causes(country: dict) -> list[str]:
+    """بخش «چرا رضایت این‌طور است» — منطق منتقل‌شده از approval_system.
+
+    این تنها جایی است که این توضیح رندر می‌شود؛ قبلاً یک نسخه‌ی موازی در
+    «وضعیت کشور → مشاهده کامل رضایت» بود که با این صفحه واگرا می‌شد.
+    """
+    import approval_system
+
+    reqs = approval_system.calculate_country_requirements(country)
+    lines = ["<b>📋 ارزیابی روزانه منابع حیاتی</b>"]
+
+    elec = int(country.get("electricity") or 0)
+    elec_need = int(reqs["elec_need"])
+    if elec >= elec_need:
+        lines.append(f"✅ برق و انرژی: تأمین کامل ({elec}٪ از {elec_need}٪ موردنیاز)")
+    else:
+        lines.append(f"❌ برق و انرژی: <b>کسری</b> ({elec}٪ از {elec_need}٪ موردنیاز)")
+
+    oil_res = int(country.get("oil_reserves") or 0)
+    oil_prod = int(country.get("oil_production") or 0)
+    oil_need = int(reqs["oil_need_daily"])
+    if oil_prod >= oil_need:
+        lines.append(f"✅ سوخت و نفت: تولید مازاد ({format_oil(oil_prod - oil_need)} در روز)")
+    elif oil_res + oil_prod >= oil_need:
+        lines.append(f"⚠️ سوخت و نفت: تأمین از ذخایر (کسری تولید {format_oil(oil_need - oil_prod)}/روز)")
+    else:
+        lines.append(f"❌ سوخت و نفت: <b>کمبود شدید</b> (کسری {format_oil(oil_need - oil_res - oil_prod)})")
+
+    grain = int(country.get("grain") or 0)
+    grain_daily = int(country.get("grain_daily") or 0)
+    grain_need = int(reqs["grain_need_daily"])
+    if grain + grain_daily >= grain_need:
+        lines.append(f"✅ غذا و غلات: تأمین کامل (ذخیره {format_number(grain)} تن، نیاز {format_number(grain_need)} تن/روز)")
+    else:
+        lines.append(f"❌ غذا و غلات: <b>گرسنگی</b> (کسری {format_number(grain_need - grain - grain_daily)} تن)")
+
+    treasury = int(country.get("treasury") or 0)
+    if treasury < 0:
+        lines.append(f"❌ بدهی خزانه: کسر {int(abs(treasury) / 10_000_000 * 10)}٪ از رضایت ({format_money(treasury)})")
+
+    approval = int(country.get("approval_rating") or 0)
+    lines.append("")
+    lines.append("<b>👥 جمعیت و مهاجرت</b>")
+    if approval >= 40:
+        lines.append(f"🟢 پایدار — نرخ مهاجرت ۰٪ (جمعیت {format_number(country.get('population'))} نفر)")
+        lines.append("<i>زیر ۴۰٪ رضایت، مهاجرت و کاهش ارتش شروع می‌شود.</i>")
+    else:
+        rate = 0.005 if approval >= 30 else (0.010 if approval >= 20 else (0.020 if approval >= 10 else 0.035))
+        leaving = int(int(country.get("population") or 0) * rate)
+        lines.append(f"🔴 <b>هشدار خروج جمعیت</b> — روزانه {rate * 100:g}٪ (حدود {format_number(leaving)} نفر)")
+        lines.append("<i>این مستقیماً نیروی انسانی ارتش و پایه‌ی درآمد مالیاتی را کم می‌کند.</i>")
+    return lines
+
+
+def build_approval_view(country: dict, state: dict):
+    """تنها صفحه‌ی تفصیلی رضایت عمومی در کل بات.
+
+    حتی وقتی سیستم سیاست داخلی خاموش است هم کار می‌کند — رضایت عمومی متعلق به
+    این سیستم نیست و مصرف‌کننده‌های دیگری (کمبود منابع، دیپلماسی، عملیات،
+    تحریم) هم دارد.
+    """
+    approval = int(country.get("approval_rating") or 0)
+    filled_a = max(0, min(10, int(round(approval / 10))))
+    bar_a = "█" * filled_a + "░" * (10 - filled_a)
+    if approval >= 75:
+        verdict = "🟢 رضایت عالی — ثبات کامل اجتماعی"
+    elif approval >= 50:
+        verdict = "🟡 رضایت متوسط — ثبات شکننده"
+    elif approval >= 40:
+        verdict = "🟠 رضایت پایین — آستانه بحران"
+    else:
+        verdict = "🔴 رضایت بحرانی — مهاجرت گسترده"
+
     lines = [
-        "📉 <b>رضایت و ناآرامی</b>",
+        "📉 <b>رضایت عمومی و ناآرامی</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"رضایت عمومی: <b>{int(country.get('approval_rating') or 0)}٪</b>",
-        f"شاخص ناآرامی: <code>[{bar}]</code> <b>{int(unrest)}/100</b>",
-        f"مرحله: <b>{ia.stage_label(stage)}</b>",
-        f"<i>{ia.UNREST_STAGES.get(stage, {}).get('desc', '')}</i>",
+        f"{country.get('flag', '🏳️')} <b>{html.escape(country.get('name', 'کشور'))}</b>",
         "",
-        "<b>مراحل ناآرامی:</b>",
+        f"<code>[{bar_a}]</code> <b>{approval}٪</b>",
+        verdict,
     ]
-    for level in range(5):
-        marker = "◀️" if level == stage else "　"
-        lines.append(f"{marker} {ia.UNREST_STAGES[level]['label']}")
-    if state.get("collapse_risk"):
-        lines.append("\n⚫️ <b>کشور شما چند روز است در بحران حکومتی قرار دارد. کنترل اوضاع فوری است.</b>")
-    lines.append("\n<b>راه‌های کاهش ناآرامی:</b>")
-    lines.append("• کاهش مالیات • تأمین غلات و برق • بازسازی زیرساخت")
-    lines.append("• بیانیه رسمی • کمک اضطراری • (در نهایت) نیروهای امنیتی")
-    await query.edit_message_text("\n".join(lines), reply_markup=_kb([
-        [InlineKeyboardButton("💰 تغییر سیاست مالیاتی", callback_data="dom:tax")],
-        [InlineKeyboardButton("🛠️ اقدامات اضطراری", callback_data="dom:actions")],
-        _back_row(),
-    ]), parse_mode="HTML")
+
+    trend = ia.approval_trend(country["id"])
+    if trend is not None:
+        lines.append(f"روند آخرین چرخه: <b>{_trend_arrow(trend)} {abs(trend)} واحد</b>")
+
+    lines.append("")
+    lines.extend(_approval_causes(country))
+
+    if ia.is_enabled():
+        stage = int(state.get("unrest_stage") or 0)
+        unrest = float(state.get("unrest") or 0)
+        filled_u = max(0, min(10, int(round(unrest / 10))))
+        bar_u = "█" * filled_u + "░" * (10 - filled_u)
+        lines.extend([
+            "",
+            "<b>⚖️ ناآرامی داخلی</b>",
+            f"<code>[{bar_u}]</code> <b>{int(unrest)}/100</b> — {ia.stage_label(stage)}",
+            f"<i>{ia.UNREST_STAGES.get(stage, {}).get('desc', '')}</i>",
+            "",
+        ])
+        for level in range(5):
+            lines.append(f"{'◀️' if level == stage else '　'} {ia.UNREST_STAGES[level]['label']}")
+
+        lines.extend([
+            "",
+            "<b>💰 اثر روی درآمد مالیاتی</b>",
+            f"• نرخ تمکین (از رضایت): <b>{int(ia.compliance_for(approval) * 100)}٪</b>",
+            f"• ضریب ناآرامی: <b>{int(ia.UNREST_TAX_MULT.get(stage, 1.0) * 100)}٪</b>",
+            f"• درآمد مالیاتی فعلی: <b>{format_money(country.get('tax_income'))}</b>",
+        ])
+
+        active = ia.get_active_crises(country["id"])
+        if active:
+            lines.append("")
+            lines.append(f"<b>🚨 بحران‌های فعال ({len(active)})</b>")
+            for crisis in active[:3]:
+                spec = ia.CRISIS_CATALOG.get(crisis["crisis_key"], {})
+                lines.append(f"• {spec.get('label', '')} — {_stage_fa(crisis['stage'])}")
+
+        if state.get("collapse_risk"):
+            lines.append("\n⚫️ <b>کشور شما چند روز است در بحران حکومتی قرار دارد. کنترل اوضاع فوری است.</b>")
+
+        lines.extend([
+            "",
+            "<b>🛠 راه‌های بهبود</b>",
+            "• کاهش مالیات • واردات غله • تأمین برق و سوخت",
+            "• بازسازی زیرساخت • بیانیه رسمی • اقدامات اضطراری",
+        ])
+        rows = [
+            [InlineKeyboardButton("💰 سیاست مالیاتی", callback_data="dom:tax")],
+            [InlineKeyboardButton("🛠️ اقدامات اضطراری", callback_data="dom:actions")],
+            [InlineKeyboardButton("🏛️ سیاست داخلی", callback_data="dom:menu")],
+            [InlineKeyboardButton("🔙 وضعیت کشور", callback_data="country:back_profile")],
+        ]
+    else:
+        lines.extend([
+            "",
+            "<i>سیستم سیاست داخلی (جمعیت پویا، مالیات و بحران‌ها) هنوز فعال نشده است.</i>",
+        ])
+        rows = [[InlineKeyboardButton("🔙 وضعیت کشور", callback_data="country:back_profile")]]
+
+    return "\n".join(lines), _kb(rows)
+
+
+async def _unrest_page(query, country: dict, state: dict):
+    text, markup = build_approval_view(country, state)
+    await query.edit_message_text(text, reply_markup=markup, parse_mode="HTML")
+
+
+async def show_approval_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نقطه‌ی ورود مشترک: /approval، دکمه‌ی «📊 رضایت عمومی» و دکمه‌های اینلاین.
+
+    همه به یک صفحه و یک پیاده‌سازی می‌رسند تا دو روایت موازی از یک عدد نداشته باشیم.
+    """
+    country = await _require_country(update)
+    if not country:
+        return
+    state = (ia.get_state(country["id"]) or {}) if ia.is_enabled() else {}
+    text, markup = build_approval_view(country, state)
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text(text, reply_markup=markup, parse_mode="HTML")
+    else:
+        await update.message.reply_text(text, reply_markup=markup, parse_mode="HTML")
 
 
 async def _crises_page(query, country: dict):
@@ -377,10 +518,18 @@ async def domestic_callback_handler(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     data = query.data
 
+    # رضایت عمومی متعلق به این سیستم نیست؛ صفحه‌اش همیشه باید باز شود.
+    if data == "dom:unrest":
+        await _unrest_page(query, country, ia.get_state(country["id"]) or {} if ia.is_enabled() else {})
+        return
+
     if not ia.is_enabled():
         await query.edit_message_text(
             _disabled_text(),
-            reply_markup=_kb([[InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")]]),
+            reply_markup=_kb([
+                [InlineKeyboardButton("📉 رضایت عمومی", callback_data="dom:unrest")],
+                [InlineKeyboardButton("🔙 بازگشت به کشور", callback_data="country:back_profile")],
+            ]),
             parse_mode="HTML",
         )
         return

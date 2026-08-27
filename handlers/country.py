@@ -111,6 +111,18 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+    # روند رضایت نسبت به چرخه‌ی روزانه‌ی قبل (اگر داده‌اش موجود باشد)
+    app_trend = ""
+    try:
+        import internal_affairs
+        _delta = internal_affairs.approval_trend(c["id"])
+        if _delta:
+            arrow = "🔼" if _delta > 0 else "🔽"
+            sign = "+" if _delta > 0 else "−"
+            app_trend = f" ({arrow} {sign}{abs(_delta)})"
+    except Exception:
+        app_trend = ""
+
     maint_info = db.calculate_country_maintenance_cost(c["id"])
     tax_val = c.get("tax_income", 0) or 0
     daily_val = c.get("daily_income", 0) or 0
@@ -127,7 +139,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>کشور:</b> {c['flag']} {c['name']}\n"
         f"{vip_badge}"
         f"{extra_lines}"
-        f"<b>رضایت عمومی:</b> {app_icon} {app_val}٪ (/approval)\n"
+        f"<b>رضایت عمومی:</b> {app_icon} {app_val}٪{app_trend} — جزئیات در 🏛️ سیاست داخلی\n"
         f"<b>آمادگی رزمی نیروها:</b> {pe('shield', '⚔️')} {readiness_val}٪\n"
         f"</blockquote>\n"
         f"<b>اقتصاد و خزانه ملی</b>\n"
@@ -160,7 +172,7 @@ async def country_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("⭐️ بتل‌پس فصلی (/pass)", callback_data="bp:menu"),
             InlineKeyboardButton("👑 خدمات VIP", callback_data="vip:menu")
         ],
-        [InlineKeyboardButton("📊 مشاهده کامل وضعیت رضایت عمومی", callback_data="country:approval_details")],
+        [InlineKeyboardButton("🏛️ سیاست داخلی و رضایت عمومی", callback_data="dom:unrest")],
         [
             InlineKeyboardButton("🔬 مرکز تحقیق و توسعه (R&D)", callback_data="research:menu"),
             InlineKeyboardButton("☢️ برنامه هسته‌ای", callback_data="nuc:menu"),
@@ -204,12 +216,10 @@ async def country_callback_handler(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
 
     if data == "country:approval_details":
-        c = await require_country(update)
-        if not c:
-            return
-        msg = approval_system.get_approval_status_message(c)
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت به وضعیت کشور", callback_data="country:back_profile")]]
-        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        # مقصد واحد: صفحه‌ی رضایت و ناآرامی در «سیاست داخلی».
+        # این شاخه فقط برای پیام‌های قدیمی نگه داشته شده که هنوز این callback را دارند.
+        from handlers.internal_affairs import show_approval_page
+        await show_approval_page(update, context)
 
     elif data == "country:back_profile":
         await country_profile(update, context)
@@ -225,12 +235,14 @@ async def country_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
 
 async def approval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    c = await require_country(update)
-    if not c:
-        return
+    """/approval و دکمه‌ی «📊 رضایت عمومی».
 
-    msg = approval_system.get_approval_status_message(c)
-    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_main_keyboard(update.effective_user.id))
+    مقصد واحد است: صفحه‌ی «رضایت عمومی و ناآرامی» در سیاست داخلی. قبلاً این
+    دستور یک روایت موازی از همان عدد نشان می‌داد که با صفحه‌ی سیاست داخلی
+    واگرا می‌شد.
+    """
+    from handlers.internal_affairs import show_approval_page
+    await show_approval_page(update, context)
 
 
 async def treasury(update: Update, context: ContextTypes.DEFAULT_TYPE):
