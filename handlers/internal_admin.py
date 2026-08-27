@@ -36,6 +36,17 @@ def _stage_fa(stage: str) -> str:
     return {"warning": "هشدار", "impact": "در جریان", "recovery": "بازسازی", "ended": "پایان‌یافته"}.get(stage, stage)
 
 
+_NEWS_MODE_LABELS = {
+    "severity": "🔔 فقط تغییر سطح بحران",
+    "all": "📢 همه‌ی رویدادها",
+    "off": "🔕 خاموش",
+}
+
+
+def _news_mode_label() -> str:
+    return _NEWS_MODE_LABELS.get(ia.news_mode(), ia.news_mode())
+
+
 def _root_text() -> str:
     enabled = ia.is_enabled()
     random_on = ia.random_crises_enabled()
@@ -46,6 +57,7 @@ def _root_text() -> str:
         "━━━━━━━━━━━━━━━━━━\n"
         f"سیستم جمعیت/مالیات/بحران: <b>{'🟢 فعال' if enabled else '🔴 غیرفعال'}</b>\n"
         f"بحران‌های تصادفی: <b>{'🟢 فعال' if random_on else '🔴 غیرفعال'}</b>\n"
+        f"اخبار کانال: <b>{_news_mode_label()}</b>\n"
         f"بحران‌های در جریان: <b>{active}</b>\n"
         f"کشورهای در معرض خطر: <b>{at_risk}</b>\n\n"
         "<i>تا وقتی کلید اصلی خاموش است، هیچ تغییری روی جمعیت، مالیات یا خزانه‌ی "
@@ -65,6 +77,7 @@ def _root_keyboard():
             f"{'🛡️ توقف بحران تصادفی' if random_on else '🎲 فعال‌سازی بحران تصادفی'}",
             callback_data="admin:dom_toggle_random",
         )],
+        [InlineKeyboardButton(f"📰 اخبار کانال: {_news_mode_label()}", callback_data="admin:dom_news_mode")],
         [InlineKeyboardButton("🌍 وضعیت داخلی کشورها", callback_data="admin:dom_overview:0")],
         [InlineKeyboardButton("🚨 بحران‌های فعال", callback_data="admin:dom_active:0")],
         [InlineKeyboardButton("➕ ایجاد بحران دستی", callback_data="admin:dom_new:0")],
@@ -391,6 +404,13 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         ia.set_random_crises(new_value)
         db.add_log(f"admin:{admin_id}", "internal_random_toggle", f"enabled={new_value}")
         await _show_root(query, "بحران‌های تصادفی فعال شد." if new_value else "بحران‌های تصادفی متوقف شد.")
+    elif data == "admin:dom_news_mode":
+        order = list(ia.NEWS_MODES)
+        current = ia.news_mode()
+        nxt = order[(order.index(current) + 1) % len(order)]
+        ia.set_news_mode(nxt)
+        db.add_log(f"admin:{admin_id}", "crisis_news_mode", f"{current} → {nxt}")
+        await _show_root(query, f"اخبار کانال: {_NEWS_MODE_LABELS.get(nxt, nxt)}")
     elif data.startswith("admin:dom_overview:"):
         await _overview(query, int(data.split(":")[2]))
     elif data == "admin:dom_active" or data.startswith("admin:dom_active:"):

@@ -1618,3 +1618,99 @@ def test_slow_disasters_kill_less_per_day_than_a_sudden_one():
     assert effects["earthquake"] > effects["famine"]
     assert effects["drought"] < effects["famine"]
     assert effects["wildfire"] < effects["flood"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# اسپم اخبار کانال
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _many_crises_world(database, count=15):
+    keys = list(ia.CRISIS_CATALOG)
+    ids = []
+    for index in range(count):
+        cid = database.create_country(8600 + index, f"کشور{index}", "🏳️", country_key=f"nw{index}")
+        database.update_country_field(cid, "approval_rating", 70)
+        database.update_country_field(cid, "treasury", 50_000_000)
+        ia.create_crisis(cid, keys[index % len(keys)], severity="light", admin_id=1, force=True)
+        ids.append(cid)
+    return ids
+
+
+def _one_cycle_news(database, ids):
+    now = ia._now()
+    batch = []
+    for cid in ids:
+        cycle = ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=now)
+        if cycle:
+            batch.extend(ia.collect_news(database.get_country_by_id(cid), cycle))
+    return batch
+
+
+def test_default_news_mode_only_reports_severity_changes(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    ids = _many_crises_world(database)
+    batch = _one_cycle_news(database, ids)
+
+    assert ia.news_mode() == "severity"
+    assert len(batch) > 20, "چرخه واقعاً ده‌ها رویداد تولید می‌کند"
+
+    published = [i for i in batch if i["event"] in ia.SEVERITY_EVENTS]
+    assert published, "تغییر سطح باید منتشر شود"
+    assert all(i["event"] in ("escalated", "deescalated", "contained") for i in published)
+    # رویدادهای پرحجم مثل impact و damage به کانال نمی‌روند
+    assert any(i["event"] == "impact" for i in batch)
+    assert not any(i["event"] == "impact" for i in published)
+
+
+def test_a_busy_cycle_collapses_into_one_digest(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    ids = _many_crises_world(database)
+    batch = [i for i in _one_cycle_news(database, ids) if i["event"] in ia.SEVERITY_EVENTS]
+
+    assert len(batch) > ia.NEWS_DIGEST_THRESHOLD
+    digest = ia.build_news_digest(batch)
+    assert digest is not None
+    title, body = digest
+    assert "بحران" in title
+    assert "🔺 تشدید شد" in body
+    for item in batch[:3]:
+        assert (item["country"].get("name") or "") in body
+
+
+def test_news_mode_can_be_switched_and_off_publishes_nothing(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    assert ia.set_news_mode("all") and ia.news_mode() == "all"
+    assert ia.set_news_mode("off") and ia.news_mode() == "off"
+    assert not ia.set_news_mode("nonsense")
+    assert ia.news_mode() == "off"
+    ia.set_news_mode("severity")
+
+
+def test_collect_news_does_not_mark_anything_as_sent(monkeypatch, tmp_path):
+    """ساخت خبر نباید آن را «ارسال‌شده» علامت بزند، وگرنه فیلترشده‌ها گم می‌شوند."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    _ok, _m, crisis = ia.create_crisis(cid, "flood", severity="light", admin_id=1, force=True)
+    cycle = ia.run_daily_cycle(database.get_country_by_id(cid), None)
+
+    first = ia.collect_news(database.get_country_by_id(cid), cycle)
+    second = ia.collect_news(database.get_country_by_id(cid), cycle)
+    assert first and len(first) == len(second), "تا ارسال نشده، باید دوباره ساخته شود"
+
+    ia.mark_news_sent(first[0]["crisis_id"], first[0]["flag"])
+    third = ia.collect_news(database.get_country_by_id(cid), cycle)
+    assert len(third) == len(first) - 1
+
+
+def test_player_is_notified_privately_even_when_channel_is_quiet():
+    import inspect
+    import main as main_module
+
+    source = inspect.getsource(main_module._notify_crisis_owner)
+    assert "player_id" in source and "send_message" in source
+    job = inspect.getsource(main_module.daily_income_job)
+    assert "_notify_crisis_owner" in job
+    assert "crisis_news_batch" in job, "اخبار باید تجمیع شوند نه کشور به کشور ارسال"
+
+    publisher = inspect.getsource(main_module._publish_crisis_news)
+    assert "news_mode" in publisher and "build_news_digest" in publisher

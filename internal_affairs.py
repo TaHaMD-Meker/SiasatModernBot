@@ -34,6 +34,16 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 SETTING_ENABLED = "internal_affairs_enabled"
 SETTING_RANDOM_CRISES = "internal_random_crises_enabled"
+SETTING_NEWS_MODE = "crisis_news_mode"
+
+# چه چیزی به کانال عمومی برود؟
+#   severity → فقط کشورهایی که سطح بحرانشان بالا یا پایین رفت (پیش‌فرض)
+#   all      → همه‌ی رویدادها (پرسروصدا)
+#   off      → هیچ‌چیز؛ فقط اطلاع خصوصی به خود بازیکن
+NEWS_MODES = ("severity", "all", "off")
+SEVERITY_EVENTS = ("escalated", "deescalated", "contained")
+# اگر تعداد خبرهای یک چرخه از این بیشتر شد، به‌جای اسپم، یک گزارش تجمیعی می‌رود
+NEWS_DIGEST_THRESHOLD = 4
 
 POPULATION_FLOOR = 100_000
 MAX_DAILY_POP_CHANGE_PCT = 0.03      # سقف ±۳٪ تغییر جمعیت در روز
@@ -786,6 +796,107 @@ def set_enabled(value: bool):
 
 def set_random_crises(value: bool):
     db.set_setting(SETTING_RANDOM_CRISES, "1" if value else "0")
+
+
+def news_mode() -> str:
+    mode = db.get_setting(SETTING_NEWS_MODE)
+    return mode if mode in NEWS_MODES else "severity"
+
+
+def set_news_mode(mode: str) -> bool:
+    if mode not in NEWS_MODES:
+        return False
+    db.set_setting(SETTING_NEWS_MODE, mode)
+    return True
+
+
+def collect_news(country: dict, cycle: dict) -> list[dict]:
+    """همه‌ی خبرهای این چرخه برای یک کشور — ساخته می‌شوند ولی ارسال نمی‌شوند.
+
+    جداکردن «ساخت» از «ارسال» باعث می‌شود بتوان قبل از فرستادن فیلتر و تجمیع کرد.
+    """
+    items = []
+
+    def add(crisis, event, flag=None, target=None, damage=None):
+        if not crisis:
+            return
+        flag = flag or event
+        if news_already_sent(crisis, flag):
+            return
+        news = build_news(target or country, crisis, event, damage)
+        if not news:
+            return
+        items.append({
+            "crisis_id": crisis["id"],
+            "country": target or country,
+            "crisis": crisis,
+            "event": event,
+            "flag": flag,
+            "title": news[0],
+            "body": news[1],
+        })
+
+    for crisis in cycle.get("new_crises") or []:
+        add(crisis, "warning" if crisis.get("stage") == "warning" else "impact")
+
+    for item in cycle.get("crisis_events") or []:
+        crisis = item.get("crisis")
+        event = item.get("event")
+        if not crisis:
+            continue
+        if event == "escalated":
+            add(crisis, event, flag=f"escalated_{crisis.get('severity')}", damage=item.get("damage"))
+        elif event == "deescalated":
+            add(crisis, event, flag=f"deescalated_{crisis.get('severity')}")
+        elif event == "contained":
+            add(crisis, event)
+        elif event == "spread":
+            source = item.get("from_country") or {}
+            enriched = dict(crisis)
+            enriched["_from_name"] = f"{source.get('flag', '')} {source.get('name', '')}".strip()
+            news = build_news(item.get("to_country") or {}, enriched, "spread")
+            if news and not news_already_sent(crisis, "spread"):
+                items.append({
+                    "crisis_id": crisis["id"], "country": item.get("to_country") or {},
+                    "crisis": crisis, "event": "spread", "flag": "spread",
+                    "title": news[0], "body": news[1],
+                })
+        else:
+            add(crisis, event)
+            if event == "impact" and item.get("damage"):
+                add(crisis, "damage", flag="damage", damage=item["damage"])
+
+    return items
+
+
+def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
+    """گزارش تجمیعی یک چرخه — به‌جای ده‌ها پیام جداگانه، یک پیام."""
+    if not items:
+        return None
+    groups = {"escalated": [], "deescalated": [], "contained": [], "spread": []}
+    for item in items:
+        if item["event"] in groups:
+            spec = CRISIS_CATALOG.get(item["crisis"]["crisis_key"], {})
+            country = item["country"] or {}
+            label = f"{country.get('flag', '🏳️')} {country.get('name', '')} — {spec.get('label', '')}"
+            if item["event"] in ("escalated", "deescalated"):
+                label += f" → {SEVERITY_LABELS.get(item['crisis']['severity'], '')}"
+            groups[item["event"]].append(label)
+
+    lines = []
+    for key, title in (
+        ("escalated", "🔺 تشدید شد"),
+        ("deescalated", "🔻 مهار شد"),
+        ("contained", "✅ پایان یافت"),
+        ("spread", "🦠 سرایت کرد"),
+    ):
+        if groups[key]:
+            lines.append(f"<b>{title}</b>")
+            lines.extend(f"• {entry}" for entry in groups[key])
+            lines.append("")
+    if not lines:
+        return None
+    return "گزارش وضعیت بحران‌ها", "\n".join(lines).strip()
 
 
 def tax_policy_label(key: str) -> str:
@@ -2231,4 +2342,22 @@ def mark_news_sent(crisis_id: int, flag: str):
 
 
 def news_already_sent(crisis: dict, flag: str) -> bool:
-    return f"{flag};" in (crisis.get("news_flags") or "")
+    """آیا این خبر قبلاً منتشر شده؟
+
+    عمداً از دیتابیس می‌خواند نه از شیء در حافظه: شیء بحران ممکن است از یک
+    چرخه‌ی قبلی مانده باشد و پرچم‌هایش کهنه باشد، که باعث ارسال دوباره می‌شد.
+    """
+    marker = f"{flag};"
+    if marker in (crisis.get("news_flags") or ""):
+        return True
+    crisis_id = crisis.get("id")
+    if not crisis_id:
+        return False
+    conn = db.get_connection()
+    try:
+        row = conn.execute("SELECT news_flags FROM country_crises WHERE id = ?", (crisis_id,)).fetchone()
+        return bool(row) and marker in (row["news_flags"] or "")
+    except Exception:
+        return False
+    finally:
+        conn.close()

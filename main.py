@@ -98,76 +98,61 @@ def _payout_due(last_raw, now_utc):
     return eligible, first_of_day
 
 
-async def _publish_internal_news(context, country_id: int, cycle: dict):
-    """انتشار اخبار کوتاه بحران‌ها؛ هر مرحله فقط یک‌بار منتشر می‌شود."""
-    country = db.get_country_by_id(country_id)
-    if not country:
+async def _notify_crisis_owner(context, country: dict, items: list):
+    """اطلاع خصوصی به خود بازیکن — مستقل از اینکه کانال چه چیزی منتشر می‌کند.
+
+    بازیکن باید همیشه از بحران کشورش خبردار شود، حتی وقتی کانال ساکت است.
+    """
+    player_id = country.get("player_id")
+    if not player_id or not items:
+        return
+    lines = [f"🚨 <b>وضعیت داخلی {country.get('flag', '')} {country.get('name', '')}</b>", ""]
+    for item in items[:6]:
+        lines.append(f"<b>{item['title']}</b>")
+        lines.append(item["body"])
+        lines.append("")
+    lines.append("برای واکنش: 🏛️ سیاست داخلی ← 🚨 بحران‌های فعال")
+    try:
+        await context.bot.send_message(chat_id=player_id, text="\n".join(lines), parse_mode="HTML")
+    except Exception:
+        pass
+
+
+async def _publish_crisis_news(context, items: list):
+    """انتشار اخبار بحران در کانال، با فیلتر و تجمیع.
+
+    قبلاً هر رویداد هر کشور یک پیام جدا می‌شد و سر ساعت چرخه، کانال پر از خبر
+    می‌شد. حالا پیش‌فرض فقط تغییر سطح بحران منتشر می‌شود و اگر تعدادش زیاد بود،
+    به‌جای ده‌ها پیام، یک گزارش تجمیعی می‌رود.
+    """
+    if not items:
+        return
+    mode = internal_affairs.news_mode()
+    if mode == "off":
+        return
+    if mode == "severity":
+        items = [i for i in items if i["event"] in internal_affairs.SEVERITY_EVENTS]
+    if not items:
         return
 
-    async def _post(crisis, event):
-        if not crisis or internal_affairs.news_already_sent(crisis, event):
-            return
-        news = internal_affairs.build_news(country, crisis, event)
-        if not news:
-            return
+    async def _send(title, body):
         try:
-            await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
-            internal_affairs.mark_news_sent(crisis["id"], event)
+            await news_engine.post_breaking_news(context.bot, title, body, "بحران داخلی")
+            return True
         except Exception:
-            logger.exception("Could not publish crisis news for crisis %s", crisis.get("id"))
+            logger.exception("Could not publish crisis news")
+            return False
 
-    for crisis in cycle.get("new_crises") or []:
-        await _post(crisis, "warning" if crisis.get("stage") == "warning" else "impact")
+    if len(items) > internal_affairs.NEWS_DIGEST_THRESHOLD:
+        digest = internal_affairs.build_news_digest(items)
+        if digest and await _send(digest[0], digest[1]):
+            for item in items:
+                internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])
+        return
 
-    for item in cycle.get("crisis_events") or []:
-        crisis = item.get("crisis")
-        event = item.get("event")
-        if event in ("deescalated", "contained") and crisis:
-            flag = f"{event}_{crisis.get('severity')}" if event == "deescalated" else "contained"
-            if not internal_affairs.news_already_sent(crisis, flag):
-                news = internal_affairs.build_news(country, crisis, event)
-                if news:
-                    try:
-                        await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
-                        internal_affairs.mark_news_sent(crisis["id"], flag)
-                    except Exception:
-                        logger.exception("Could not publish %s news for crisis %s", event, crisis.get("id"))
-            continue
-        if event == "spread" and crisis:
-            target = item.get("to_country") or {}
-            source = item.get("from_country") or {}
-            spread_crisis = dict(crisis)
-            spread_crisis["_from_name"] = f"{source.get('flag','')} {source.get('name','')}".strip()
-            if not internal_affairs.news_already_sent(crisis, "spread"):
-                news = internal_affairs.build_news(target, spread_crisis, "spread")
-                if news:
-                    try:
-                        await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
-                        internal_affairs.mark_news_sent(crisis["id"], "spread")
-                    except Exception:
-                        logger.exception("Could not publish spread news for crisis %s", crisis.get("id"))
-            continue
-        if event == "escalated" and crisis:
-            # هر سطح تشدید خبر مستقل خودش را دارد
-            flag = f"escalated_{crisis.get('severity')}"
-            if not internal_affairs.news_already_sent(crisis, flag):
-                news = internal_affairs.build_news(country, crisis, "escalated", item.get("damage"))
-                if news:
-                    try:
-                        await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران داخلی")
-                        internal_affairs.mark_news_sent(crisis["id"], flag)
-                    except Exception:
-                        logger.exception("Could not publish escalation news for crisis %s", crisis.get("id"))
-            continue
-        await _post(crisis, event)
-        if event == "impact" and item.get("damage"):
-            damage_news = internal_affairs.build_news(country, crisis, "damage", item["damage"])
-            if damage_news and not internal_affairs.news_already_sent(crisis, "damage"):
-                try:
-                    await news_engine.post_breaking_news(context.bot, damage_news[0], damage_news[1], "بحران داخلی")
-                    internal_affairs.mark_news_sent(crisis["id"], "damage")
-                except Exception:
-                    logger.exception("Could not publish damage report for crisis %s", crisis.get("id"))
+    for item in items:
+        if await _send(item["title"], item["body"]):
+            internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])
 
 
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
@@ -182,6 +167,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
     countries = db.get_all_countries()
 
     updated_count = 0
+    crisis_news_batch = []
     for c in countries:
         last_raw = c.get("last_income_date") or ""
         eligible, first_of_day = _payout_due(last_raw, now)
@@ -242,7 +228,11 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             try:
                 cycle = internal_affairs.run_daily_cycle(db.get_country_by_id(c["id"]) or c, app_res)
                 if cycle:
-                    await _publish_internal_news(context, c["id"], cycle)
+                    fresh = db.get_country_by_id(c["id"]) or c
+                    news_items = internal_affairs.collect_news(fresh, cycle)
+                    if news_items:
+                        crisis_news_batch.extend(news_items)
+                        await _notify_crisis_owner(context, fresh, news_items)
             except Exception:
                 logger.exception("Internal affairs daily cycle failed for country %s", c["id"])
             # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
@@ -483,6 +473,12 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         f"هزینه روزانه گشت رزمی و ناوگان جهت انسداد {s_name}",
                         -money_cost
                     )
+
+    # اخبار بحران یک‌جا و در پایان چرخه منتشر می‌شوند، نه کشور به کشور
+    try:
+        await _publish_crisis_news(context, crisis_news_batch)
+    except Exception:
+        logger.exception("Crisis news publishing failed")
 
     logger.info(f"درآمد روزانه، محاسبه رضایت عمومی و ارسال گزارش برای {updated_count} کشور انجام شد.")
     return updated_count
