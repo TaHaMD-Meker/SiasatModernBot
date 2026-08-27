@@ -37,6 +37,43 @@ RESOURCE_FIELDS = (
     "nuclear_fuel",
 )
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ضدتقلب: تزریق‌های بیرون از گیم‌پلی نباید امتیاز تورنومنت بسازند.
+#
+# قانون رسمی تورنومنت: «خرید VIP، بسته حمایتی و تزریق ادمین مستقیماً امتیاز
+# تورنومنت ایجاد نمی‌کند.» بدون خنثی‌سازی زیر، هر واریز نقدی یا بسته‌ی خریدنی
+# مستقیماً روی treasury_growth_pct و resource_growth_pct می‌نشیند و به امتیاز
+# «اقتصاد و توسعه» تبدیل می‌شود؛ یعنی pay-to-win.
+# ─────────────────────────────────────────────────────────────────────────────
+EXTERNAL_INFLOW_TYPES = (
+    "survival_pack",        # بسته‌های بقا (خرید واقعی)
+    "compensation_grant",   # واریز گروهی ادمین به همه
+    "admin_boost",          # تزریق مستقیم ادمین
+    "aid",                  # بسته‌های حمایتی سیستمی/مدیریتی
+    "grant",
+    "battle_pass",
+    "bp_booster",
+    "ticket",
+    "ticket_use",
+    "cosmetic",
+)
+
+# محتویات بسته‌های بقا برای خنثی‌سازی منابع تزریق‌شده.
+# کلید = مبلغ نقدی بسته که در ستون amount تراکنش ثبت می‌شود (شناسه‌ی یکتای بسته).
+SURVIVAL_PACK_CONTENTS = {
+    3_000_000: {"oil_reserves": 400_000, "grain": 15_000},
+    6_000_000: {"oil_reserves": 900_000, "grain": 30_000, "iron_ore": 8_000, "microchips": 300},
+    10_000_000: {"oil_reserves": 1_800_000, "grain": 60_000, "iron_ore": 15_000, "microchips": 800},
+    18_000_000: {"oil_reserves": 3_000_000, "grain": 100_000, "iron_ore": 30_000, "microchips": 1_500, "gold": 50},
+}
+
+# سقف ضدتقلب برای فعالیت‌هایی که با حساب دوم قابل فارم کردن‌اند.
+MAX_SCORED_AID_OUT = 6
+MAX_SCORED_MARKET_TRADES = 25
+MAX_SCORED_TRADE_CONTRACTS = 15
+MAX_SCORED_MANAGED_CRISES = 8
+MAX_SCORED_CRISIS_RESPONSES = 20
+
 FORCE_FACTORS = {
     "Aircraft": 1.50,
     "UAV": 0.85,
@@ -341,12 +378,103 @@ def _activity_counts(cur, country_id: int, since: str) -> dict:
     }
 
 
+def _external_inflow(cur, country_id: int, since: str) -> dict:
+    """جمع نقدینگی و منابعی که از بیرونِ گیم‌پلی به کشور تزریق شده است.
+
+    خروجی برای خنثی‌سازی امتیاز اقتصادیِ ناشی از خرید بسته، بسته حمایتی و
+    تزریق ادمین استفاده می‌شود تا رتبه‌بندی pay-to-win نشود.
+    """
+    inflow = {field: 0.0 for field in RESOURCE_FIELDS}
+    if not since:
+        return inflow
+    placeholders = ",".join("?" for _ in EXTERNAL_INFLOW_TYPES)
+    try:
+        rows = cur.execute(
+            f"""
+            SELECT type, amount FROM transactions
+            WHERE country_id = ? AND created_at >= ? AND type IN ({placeholders})
+            """,
+            (country_id, since, *EXTERNAL_INFLOW_TYPES),
+        ).fetchall()
+    except Exception:
+        logger.exception("Could not read external inflow for country %s", country_id)
+        return inflow
+
+    for row in rows:
+        try:
+            amount = float(row["amount"] or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount > 0:
+            inflow["treasury"] += amount
+        if row["type"] == "survival_pack":
+            for field, value in SURVIVAL_PACK_CONTENTS.get(int(amount), {}).items():
+                if field in inflow:
+                    inflow[field] += float(value)
+    return inflow
+
+
+def _elapsed_periods(entry: dict, now_dt: datetime.datetime) -> int:
+    """تعداد دوره‌های کاملِ سپری‌شده از baseline بر مبنای فاصله‌ی هدف snapshot.
+
+    عمداً به تعداد ردیف‌های tournament_snapshots وابسته نیست؛ در غیر این صورت هر
+    بار که ادمین «جدول زنده» را با force باز می‌کرد، امتیاز همه بالا می‌رفت.
+    """
+    interval = int(getattr(config, "TOURNAMENT_SNAPSHOT_INTERVAL_MINUTES", 360)) or 360
+    started = _parse_dt(entry.get("baseline_at")) or _parse_dt(entry.get("joined_at"))
+    if not started:
+        return 0
+    elapsed = (now_dt - started).total_seconds()
+    if elapsed <= 0:
+        return 0
+    return int(elapsed // (interval * 60))
+
+
+def _crisis_management(cur, country_id: int, since: str) -> dict:
+    """کیفیت مدیریت بحران‌های داخلی از زمان baseline.
+
+    عمداً «وقوع» بحران هیچ امتیاز مثبت یا منفی نمی‌دهد — بحران تصادفی است و
+    کشور بدشانس نباید از جدول حذف شود. فقط «نحوه‌ی واکنش» شمرده می‌شود.
+    از همان cursor تراکنش جاری استفاده می‌شود تا ریسک قفل SQLite ایجاد نشود.
+    """
+    result = {"managed": 0, "responses": 0, "crackdowns": 0}
+    if not since:
+        return result
+    try:
+        result["managed"] = int(cur.execute(
+            "SELECT COUNT(*) AS n FROM country_crises WHERE country_id = ? AND created_at >= ? AND mitigation >= 0.25",
+            (country_id, since),
+        ).fetchone()["n"] or 0)
+        result["responses"] = int(cur.execute(
+            "SELECT COUNT(*) AS n FROM crisis_actions WHERE country_id = ? AND created_at >= ?",
+            (country_id, since),
+        ).fetchone()["n"] or 0)
+        result["crackdowns"] = int(cur.execute(
+            "SELECT COUNT(*) AS n FROM crisis_actions WHERE country_id = ? AND created_at >= ? AND action_key = 'security_crackdown'",
+            (country_id, since),
+        ).fetchone()["n"] or 0)
+    except Exception:
+        # دیتابیس‌های قدیمی که هنوز جداول سیاست داخلی را ندارند
+        return {"managed": 0, "responses": 0, "crackdowns": 0}
+    return result
+
+
 def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count: int) -> dict:
     baseline_snapshot = _json_load(entry.get("baseline_json"), {})
     base_country = baseline_snapshot.get("country", {})
     current_country = current_snapshot["country"]
     since = entry.get("baseline_at") or entry.get("joined_at") or _iso()
     counts = _activity_counts(cur, entry["country_id"], since)
+
+    # منابع خالصِ حاصل از گیم‌پلی = وضعیت فعلی منهای تزریق‌های بیرونی
+    inflow = _external_inflow(cur, entry["country_id"], since)
+    organic_country = dict(current_country)
+    for field in RESOURCE_FIELDS:
+        if inflow.get(field):
+            organic_country[field] = float(current_country.get(field, 0) or 0) - inflow[field]
+
+    periods = _elapsed_periods(entry, _now())
+    crisis = _crisis_management(cur, entry["country_id"], since)
 
     current_force = _force_index(current_snapshot.get("assets", []))
     baseline_force = _force_index(baseline_snapshot.get("assets", []))
@@ -355,7 +483,7 @@ def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count:
     personnel_base = float(base_country.get("active_personnel", 0) or 0)
     personnel_growth_pct = ((float(current_country.get("active_personnel", 0) or 0) - personnel_base) / personnel_base * 100.0) if personnel_base > 0 else 0.0
     treasury_base = float(base_country.get("treasury", 0) or 0)
-    treasury_growth_pct = ((float(current_country.get("treasury", 0) or 0) - treasury_base) / treasury_base * 100.0) if treasury_base > 0 else 0.0
+    treasury_growth_pct = ((float(organic_country.get("treasury", 0) or 0) - treasury_base) / treasury_base * 100.0) if treasury_base > 0 else 0.0
     income_base = float(base_country.get("daily_income", 0) or 0)
     income_growth_pct = ((float(current_country.get("daily_income", 0) or 0) - income_base) / income_base * 100.0) if income_base > 0 else 0.0
     tech_delta = int(current_country.get("tech_level", 1) or 1) - int(base_country.get("tech_level", 1) or 1)
@@ -363,7 +491,8 @@ def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count:
     base_delta = max(0, current_snapshot.get("base_count", 0) - baseline_snapshot.get("base_count", 0))
     alliance_delta = max(0, current_snapshot.get("alliance_count", 0) - baseline_snapshot.get("alliance_count", 0))
     approval_delta = float(current_country.get("approval_rating", 0) or 0) - float(base_country.get("approval_rating", 0) or 0)
-    resource_growth_pct = _resource_growth_pct(current_country, base_country)
+    resource_growth_pct = _resource_growth_pct(organic_country, base_country)
+
 
     current_categories = {asset.get("category") for asset in current_snapshot.get("assets", []) if int(asset.get("amount", 0) or 0) > 0}
     baseline_categories = {asset.get("category") for asset in baseline_snapshot.get("assets", []) if int(asset.get("amount", 0) or 0) > 0}
@@ -383,21 +512,22 @@ def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count:
         + coverage_delta * 35.0
     )
     diplomacy_raw = (
-        counts["accepted_trades"] * 45.0
-        + counts["market_trades"] * 15.0
+        min(counts["accepted_trades"], MAX_SCORED_TRADE_CONTRACTS) * 45.0
+        + min(counts["market_trades"], MAX_SCORED_MARKET_TRADES) * 15.0
         + alliance_delta * 100.0
-        + counts["aid_count"] * 35.0
+        + min(counts["aid_count"], MAX_SCORED_AID_OUT) * 35.0
     )
     activity_raw = (
         counts["statement_days"] * 25.0
         + counts["approved_roles"] * 65.0
         + counts["missions"] * 40.0
-        + snapshot_count * 6.0
+        + periods * 6.0
     )
     objectives_raw = (
         max(0, tech_delta) * 100.0
         + infra_delta * 15.0
         + base_delta * 80.0
+        + min(crisis["managed"], MAX_SCORED_MANAGED_CRISES) * 70.0
     )
     resource_health = sum(
         1 for field in ("oil_reserves", "grain", "electricity") if float(current_country.get(field, 0) or 0) > 0
@@ -406,7 +536,10 @@ def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count:
         approval_delta * 4.0
         + resource_health * 15.0
         + (25.0 if float(current_country.get("treasury", 0) or 0) >= 0 else -25.0)
-        + snapshot_count * 8.0
+        + periods * 8.0
+        + min(crisis["managed"], MAX_SCORED_MANAGED_CRISES) * 25.0
+        + min(crisis["responses"], MAX_SCORED_CRISIS_RESPONSES) * 8.0
+        - crisis["crackdowns"] * 12.0
     )
 
     event_row = cur.execute(
@@ -433,7 +566,10 @@ def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count:
         key: raw_scores[key] * float(weights.get(key, 0) or 0) / 100.0
         for key in raw_scores
     }
-    total = sum(weighted_scores.values()) + manual_score + snapshot_count * 5.0
+    total = sum(weighted_scores.values()) + manual_score + periods * 5.0
+    # امتیاز کل از صفر شروع می‌شود و سقف ندارد؛ اما منفی هم نمی‌شود.
+    total = max(0.0, total)
+
 
     return {
         "economy": weighted_scores["economy"],
@@ -459,7 +595,11 @@ def _calculate_metrics(cur, entry: dict, current_snapshot: dict, snapshot_count:
         "alliance_delta": alliance_delta,
         "approval_delta": approval_delta,
         "snapshot_count": snapshot_count,
+        "elapsed_periods": periods,
+        "crisis_management": crisis,
+        "external_inflow": {key: value for key, value in inflow.items() if value},
     }
+
 
 
 def _get_player_row(cur, season_id: int, country_id: int | None = None, player_id: int | None = None):
@@ -542,14 +682,29 @@ def _change_status(season_id: int, expected: str, target: str, message: str):
     conn = db.get_connection()
     try:
         with conn:
-            now = _iso()
-            conn.execute(
-                "UPDATE tournament_seasons SET status = ?, paused_at = ? WHERE id = ? AND status = ?",
-                (target, now if target == PAUSED else season.get("paused_at"), season_id, expected),
-            )
+            now_dt = _now()
+            now = _iso(now_dt)
+            if target == PAUSED:
+                conn.execute(
+                    "UPDATE tournament_seasons SET status = ?, paused_at = ? WHERE id = ? AND status = ?",
+                    (target, now, season_id, expected),
+                )
+            else:
+                # ادامه‌ی فصل: مدتی که فصل متوقف بوده به زمان پایان اضافه می‌شود،
+                # وگرنه توقف مدیریتی عملاً از وقت بازیکنان کم می‌کرد.
+                paused_dt = _parse_dt(season.get("paused_at"))
+                end_dt = _parse_dt(season.get("ends_at"))
+                new_end = season.get("ends_at")
+                if paused_dt and end_dt and now_dt > paused_dt:
+                    new_end = _iso(end_dt + (now_dt - paused_dt))
+                conn.execute(
+                    "UPDATE tournament_seasons SET status = ?, paused_at = NULL, ends_at = ? WHERE id = ? AND status = ?",
+                    (target, new_end, season_id, expected),
+                )
         return True, message, get_season(season_id)
     except Exception as exc:
         return False, f"خطا در تغییر وضعیت فصل: {exc}", season
+
 
 
 def end_season(season_id: int):
@@ -710,15 +865,20 @@ def get_rank_for_player(season_id: int, player_id: int) -> int | None:
     entry = get_player_entry(season_id, player_id=player_id)
     if not entry:
         return None
+    # رتبه باید دقیقاً با جدول رتبه‌بندی هم‌خوان باشد؛ آنجا امتیاز با ۲ رقم اعشار
+    # گرد و مساوی‌ها هم‌رتبه می‌شوند. مقایسه‌ی خام باعث اختلاف رتبه بین «جدول»
+    # و «جزئیات امتیاز» می‌شد.
+    score = round(float(entry.get("score", 0) or 0), 2)
     conn = db.get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS n FROM tournament_players WHERE season_id = ? AND status != 'disqualified' AND (score > ? OR (score = ? AND id < ?))",
-            (season_id, entry["score"], entry["score"], entry["id"]),
+            "SELECT COUNT(*) AS n FROM tournament_players WHERE season_id = ? AND status != 'disqualified' AND ROUND(score, 2) > ?",
+            (season_id, score),
         ).fetchone()
         return int(row["n"] or 0) + 1
     finally:
         conn.close()
+
 
 
 def get_score_details(season_id: int, player_id: int):
@@ -854,16 +1014,32 @@ def refresh_season(season_id: int, force: bool = False) -> int:
     conn = db.get_connection()
     try:
         rows = conn.execute(
-            "SELECT country_id FROM tournament_players WHERE season_id = ? AND status = 'active'", (season_id,)
+            "SELECT country_id, last_snapshot_at FROM tournament_players WHERE season_id = ? AND status = 'active'",
+            (season_id,),
         ).fetchall()
     finally:
         conn.close()
+
+    # پیش‌فیلتر: بدون این، هر بار باز کردن جدول رتبه‌بندی به ازای هر شرکت‌کننده یک
+    # اتصال SQLite باز می‌کرد و زیر بار همزمان با گزارش تلفات، ریسک قفل داشت.
+    if not force:
+        now_dt = _now()
+        interval = int(getattr(config, "TOURNAMENT_SNAPSHOT_INTERVAL_MINUTES", 360)) or 360
+        pending = []
+        for row in rows:
+            last_dt = _parse_dt(row["last_snapshot_at"])
+            if last_dt and (now_dt - last_dt).total_seconds() < interval * 60:
+                continue
+            pending.append(row)
+        rows = pending
+
     count = 0
     for row in rows:
         ok, _, _ = refresh_player(season_id, country_id=row["country_id"], force=force)
         if ok:
             count += 1
     return count
+
 
 
 def refresh_active_tournament(force: bool = False) -> int:
