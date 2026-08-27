@@ -293,7 +293,6 @@ COUNTRY_HAZARD_WEIGHTS = {
     "bangladesh": {"flood": 3.5, "storm": 2.6, "drought": 0.4},
     "india": {"flood": 2.4, "storm": 1.8, "drought": 1.6, "epidemic": 1.3},
     "netherlands": {"flood": 2.2, "earthquake": 0.2, "drought": 0.5},
-    "vietnam": {"storm": 2.6, "flood": 2.4},
     # آتش‌سوزی و طوفان
     "usa": {"wildfire": 2.6, "storm": 2.4, "earthquake": 1.2, "drought": 1.2},
     "australia": {"wildfire": 3.2, "drought": 2.2, "storm": 1.6, "earthquake": 0.4},
@@ -311,13 +310,104 @@ COUNTRY_HAZARD_WEIGHTS = {
     "algeria": {"drought": 2.0, "wildfire": 1.6, "earthquake": 1.4},
     # سرد و کم‌مخاطره
     "russia": {"wildfire": 2.0, "flood": 1.0, "storm": 0.5, "drought": 0.6},
-    "norway": {"flood": 1.4, "earthquake": 0.2, "drought": 0.3, "storm": 0.8},
-    "sweden": {"wildfire": 1.2, "earthquake": 0.2, "drought": 0.4},
-    "finland": {"earthquake": 0.2, "drought": 0.3, "wildfire": 1.1},
-    "switzerland": {"flood": 1.3, "earthquake": 0.5, "storm": 0.3},
+    "norway": {"flood": 1.6, "earthquake": 0.2, "drought": 0.3, "storm": 1.3, "wildfire": 0.25},
+    "sweden": {"wildfire": 1.2, "earthquake": 0.2, "drought": 0.4, "flood": 1.1},
+    "finland": {"earthquake": 0.2, "drought": 0.3, "wildfire": 0.6, "flood": 1.4},
+    "switzerland": {"flood": 1.3, "earthquake": 0.5, "storm": 0.3, "wildfire": 0.5},
+
+    # ── خاورمیانه و غرب آسیا ──
+    "israel": {"earthquake": 1.6, "wildfire": 2.0, "drought": 1.8, "storm": 0.4, "flood": 0.5},
+    "syria": {"earthquake": 2.2, "drought": 2.2, "storm": 0.3, "epidemic": 1.3},
+    "lebanon": {"earthquake": 1.8, "wildfire": 2.0, "drought": 1.6, "storm": 0.5},
+    "jordan": {"drought": 2.6, "earthquake": 1.6, "storm": 0.3, "flood": 0.5},
+    "palestine": {"drought": 2.0, "earthquake": 1.4, "storm": 0.4, "epidemic": 1.4},
+    "hezbollah": {"earthquake": 1.8, "wildfire": 1.8, "drought": 1.6, "storm": 0.5},
+    "qatar": {"drought": 2.6, "storm": 0.4, "flood": 0.3, "earthquake": 0.3},
+    "kuwait": {"drought": 2.6, "storm": 0.5, "flood": 0.4, "earthquake": 0.4},
+    "bahrain": {"drought": 2.4, "flood": 0.4, "earthquake": 0.3, "storm": 0.4},
+    "uae": {"drought": 2.5, "storm": 0.5, "flood": 0.6, "earthquake": 0.3},
+    "oman": {"drought": 2.2, "storm": 1.6, "flood": 1.0, "earthquake": 0.5},
+    "azerbaijan": {"earthquake": 2.0, "drought": 1.4, "flood": 1.1, "storm": 0.4},
+    "armenia": {"earthquake": 2.4, "drought": 1.4, "storm": 0.2, "flood": 0.8},
+    "georgia": {"earthquake": 1.8, "flood": 1.4, "storm": 0.4, "drought": 0.8},
+    "cyprus": {"earthquake": 2.0, "wildfire": 2.2, "drought": 2.0, "storm": 0.6},
+
+    # ── شرق، جنوب و مرکز آسیا ──
+    "china": {"earthquake": 2.0, "flood": 2.4, "storm": 1.8, "drought": 1.2, "epidemic": 1.2},
+    "south_korea": {"storm": 2.0, "flood": 1.6, "earthquake": 0.9, "wildfire": 1.2},
+    "north_korea": {"flood": 2.2, "storm": 1.8, "drought": 1.4, "epidemic": 1.2},
+    "thailand": {"flood": 2.6, "storm": 1.8, "drought": 1.2, "earthquake": 0.6},
+    "vietnam": {"storm": 2.6, "flood": 2.4, "drought": 1.0, "earthquake": 0.5},
+    "myanmar": {"storm": 2.4, "flood": 2.2, "earthquake": 1.8, "epidemic": 1.2},
+    "malaysia": {"flood": 2.6, "storm": 1.2, "earthquake": 0.4, "wildfire": 0.6},
+    "singapore": {"flood": 1.6, "storm": 0.8, "earthquake": 0.2, "drought": 0.6, "wildfire": 0.3},
+    "cambodia": {"flood": 2.4, "drought": 1.4, "storm": 1.4, "earthquake": 0.2},
+    "laos": {"flood": 2.2, "drought": 1.4, "storm": 1.4, "earthquake": 0.5},
+    "sri_lanka": {"flood": 2.4, "storm": 1.6, "drought": 1.4, "earthquake": 0.2},
+    "mongolia": {"drought": 2.2, "earthquake": 1.0, "storm": 0.6, "flood": 0.5, "wildfire": 1.4},
+    "kazakhstan": {"drought": 2.0, "earthquake": 1.2, "flood": 1.0, "wildfire": 1.3},
+    "uzbekistan": {"drought": 2.2, "earthquake": 1.8, "storm": 0.2, "flood": 0.7},
+    "turkmenistan": {"drought": 2.6, "earthquake": 1.8, "storm": 0.2, "flood": 0.4},
+    "tajikistan": {"earthquake": 2.6, "flood": 1.6, "drought": 1.4, "storm": 0.2},
+    "kyrgyzstan": {"earthquake": 2.4, "flood": 1.4, "drought": 1.2, "storm": 0.2},
+
+    # ── اروپا ──
+    "france": {"wildfire": 1.8, "flood": 1.4, "storm": 1.2, "drought": 1.3, "earthquake": 0.5},
+    "germany": {"flood": 1.8, "storm": 1.2, "wildfire": 0.9, "earthquake": 0.3, "drought": 1.0},
+    "uk": {"flood": 1.8, "storm": 1.6, "earthquake": 0.2, "drought": 0.7, "wildfire": 0.6},
+    "italy": {"earthquake": 2.4, "wildfire": 2.0, "flood": 1.4, "drought": 1.3},
+    "poland": {"flood": 1.6, "storm": 1.0, "earthquake": 0.2, "drought": 1.0, "wildfire": 0.9},
+    "ukraine": {"flood": 1.4, "drought": 1.4, "storm": 0.6, "earthquake": 0.3, "wildfire": 1.2},
+    "belarus": {"flood": 1.6, "drought": 1.0, "earthquake": 0.2, "storm": 0.5, "wildfire": 0.6},
+    "romania": {"earthquake": 2.0, "flood": 1.6, "drought": 1.3, "storm": 0.5},
+    "bulgaria": {"earthquake": 1.6, "flood": 1.4, "wildfire": 1.8, "drought": 1.3},
+    "croatia": {"earthquake": 1.8, "wildfire": 2.0, "flood": 1.2, "drought": 1.2},
+    "serbia": {"flood": 1.8, "earthquake": 1.2, "drought": 1.2, "wildfire": 1.4},
+    "hungary": {"flood": 1.8, "drought": 1.4, "earthquake": 0.4, "storm": 0.6},
+    "czech": {"flood": 1.8, "storm": 0.8, "earthquake": 0.2, "drought": 1.0, "wildfire": 0.5},
+    "slovakia": {"flood": 1.6, "earthquake": 0.5, "storm": 0.6, "drought": 1.0},
+    "austria": {"flood": 1.5, "earthquake": 0.5, "storm": 0.6, "wildfire": 0.6},
+    "belgium": {"flood": 1.8, "storm": 1.2, "earthquake": 0.2, "wildfire": 0.5},
+    "denmark": {"storm": 1.8, "flood": 1.6, "earthquake": 0.1, "wildfire": 0.4},
+
+    # ── آمریکا ──
+    "brazil": {"flood": 2.2, "drought": 1.8, "wildfire": 2.0, "earthquake": 0.2, "storm": 0.7},
+    "argentina": {"flood": 1.8, "drought": 1.8, "wildfire": 1.6, "earthquake": 0.8, "storm": 0.8},
+    "colombia": {"flood": 2.2, "earthquake": 1.8, "storm": 1.0, "wildfire": 0.5},
+    "peru": {"earthquake": 2.6, "flood": 1.6, "drought": 1.2, "storm": 0.4},
+    "ecuador": {"earthquake": 2.6, "flood": 1.8, "storm": 0.5, "wildfire": 0.4},
+    "bolivia": {"flood": 1.8, "drought": 1.8, "wildfire": 1.6, "earthquake": 1.0, "storm": 0.3},
+    "venezuela": {"flood": 2.2, "drought": 1.4, "earthquake": 1.2, "storm": 1.0, "wildfire": 0.6},
+    "cuba": {"storm": 3.0, "flood": 1.8, "drought": 1.2, "earthquake": 0.6},
+
+    # ── آفریقا ──
+    "nigeria": {"flood": 2.4, "drought": 1.8, "epidemic": 1.6, "earthquake": 0.2, "storm": 0.4, "wildfire": 0.5},
+    "ethiopia": {"drought": 2.8, "epidemic": 1.6, "flood": 1.2, "earthquake": 0.8},
+    "kenya": {"drought": 2.6, "flood": 1.6, "epidemic": 1.5, "earthquake": 0.5},
+    "south_africa": {"drought": 2.2, "wildfire": 1.8, "flood": 1.2, "earthquake": 0.4, "storm": 0.6},
+    "angola": {"drought": 2.2, "flood": 1.4, "epidemic": 1.5, "earthquake": 0.3},
+    "morocco": {"earthquake": 1.8, "drought": 2.2, "flood": 1.2, "wildfire": 1.4},
+    "tunisia": {"drought": 2.2, "wildfire": 1.6, "flood": 1.2, "earthquake": 0.8},
+    "libya": {"drought": 2.4, "flood": 1.4, "storm": 0.6, "earthquake": 0.6},
+    "eritrea": {"drought": 2.8, "epidemic": 1.5, "flood": 0.8, "earthquake": 0.6},
+
+    # ── اقیانوسیه ──
+    "new_zealand": {"earthquake": 3.0, "storm": 1.8, "flood": 1.4, "wildfire": 0.8, "drought": 0.9},
+
+    # ── نهادها و گروه‌های بدون سرزمین مشخص ──
+    "un": {"earthquake": 0.0, "flood": 0.0, "drought": 0.0, "storm": 0.0, "wildfire": 0.0, "epidemic": 0.0},
+    "kurdistan": {"earthquake": 2.2, "drought": 2.0, "storm": 0.2, "flood": 0.8},
 }
 
-# فصل‌ها روی نیم‌کره شمالی تنظیم شده‌اند (اکثر کشورهای بازی)
+# کشورهای نیم‌کره جنوبی: فصلشان شش ماه با جدول زیر اختلاف دارد.
+# بدون این، مرداد برای استرالیا و شیلی «اوج فصل آتش‌سوزی» حساب می‌شد
+# در حالی که آنجا زمستان است.
+SOUTHERN_HEMISPHERE = {
+    "australia", "new_zealand", "argentina", "chile", "brazil",
+    "bolivia", "peru", "south_africa", "angola",
+}
+
+# فصل‌ها بر پایه‌ی نیم‌کره شمالی؛ برای نیم‌کره جنوبی شش ماه جابه‌جا می‌شوند
 SEASONAL_HAZARD_WEIGHTS = {
     12: {"storm": 1.3, "flood": 1.2, "wildfire": 0.5, "epidemic": 1.3},
     1: {"storm": 1.3, "flood": 1.2, "wildfire": 0.4, "epidemic": 1.4},
@@ -366,7 +456,10 @@ def hazard_weights(country: dict, now_dt: datetime.datetime | None = None) -> di
         if hazard in weights:
             weights[hazard] *= factor
 
-    for hazard, factor in (SEASONAL_HAZARD_WEIGHTS.get(now_dt.month) or {}).items():
+    month = now_dt.month
+    if country_key in SOUTHERN_HEMISPHERE:
+        month = (month + 5) % 12 + 1
+    for hazard, factor in (SEASONAL_HAZARD_WEIGHTS.get(month) or {}).items():
         if hazard in weights:
             weights[hazard] *= factor
 

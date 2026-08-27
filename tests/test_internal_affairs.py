@@ -755,3 +755,63 @@ def test_random_crisis_picks_geographically_plausible_hazard(monkeypatch, tmp_pa
     assert japan.get("earthquake", 0) > netherlands.get("earthquake", 0) * 3
     assert netherlands.get("flood", 0) > japan.get("earthquake", 0) * 0  # سیل هلند وجود دارد
     assert netherlands.get("flood", 0) > 0
+
+
+def test_every_country_in_the_game_has_a_hazard_profile():
+    """اگر کشور جدیدی به بازی اضافه شود، این تست یادآوری می‌کند پروفایلش را بنویسید."""
+    missing = [
+        key for key in config.COUNTRY_STARTING_OVERRIDES
+        if key not in ia.COUNTRY_HAZARD_WEIGHTS
+    ]
+    assert not missing, f"این کشورها پروفایل مخاطرات ندارند: {missing}"
+
+
+def test_hazard_profiles_are_well_formed():
+    valid = set(ia.BASE_HAZARD_WEIGHTS)
+    for country_key, profile in ia.COUNTRY_HAZARD_WEIGHTS.items():
+        unknown = set(profile) - valid
+        assert not unknown, f"{country_key} بلای ناشناخته دارد: {unknown}"
+        for hazard, factor in profile.items():
+            assert 0.0 <= factor <= 4.0, f"{country_key}/{hazard} ضریب نامعقول: {factor}"
+
+
+def test_every_country_can_still_get_some_disaster_except_the_un():
+    """هیچ کشوری نباید کاملاً مصون باشد — جز سازمان ملل که سرزمین ندارد."""
+    for country_key in config.COUNTRY_STARTING_OVERRIDES:
+        weights = ia.hazard_weights({"country_key": country_key})
+        total = sum(weights.values())
+        if country_key == "un":
+            assert total == 0, "سازمان ملل نباید بلای طبیعی بگیرد"
+        else:
+            assert total > 0, f"{country_key} از همه‌ی بلایا مصون است"
+
+
+def test_landlocked_and_desert_countries_are_not_storm_magnets():
+    for country_key in ("afghanistan", "nepal", "saudi", "iran", "turkmenistan"):
+        weights = ia.hazard_weights({"country_key": country_key})
+        assert weights["storm"] < weights["drought"] or weights["storm"] < weights["earthquake"], country_key
+
+
+def test_southern_hemisphere_seasons_are_inverted():
+    """مرداد در استرالیا زمستان است، نه اوج فصل آتش‌سوزی."""
+    july = datetime.datetime(2026, 7, 15, tzinfo=datetime.timezone.utc)
+    january = datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc)
+
+    au_summer = ia.hazard_weights({"country_key": "australia"}, january)["wildfire"]
+    au_winter = ia.hazard_weights({"country_key": "australia"}, july)["wildfire"]
+    assert au_summer > au_winter * 2
+
+    us_summer = ia.hazard_weights({"country_key": "usa"}, july)["wildfire"]
+    us_winter = ia.hazard_weights({"country_key": "usa"}, january)["wildfire"]
+    assert us_summer > us_winter * 2
+
+    # و هر کشور نیم‌کره جنوبی واقعاً در مجموعه باشد
+    for key in ia.SOUTHERN_HEMISPHERE:
+        assert key in config.COUNTRY_STARTING_OVERRIDES, key
+
+
+def test_wet_tropical_countries_are_not_dominated_by_wildfire():
+    for key in ("colombia", "ecuador", "malaysia", "nigeria", "venezuela", "finland", "norway"):
+        weights = ia.hazard_weights({"country_key": key})
+        dominant = max(weights, key=weights.get)
+        assert dominant != "wildfire", f"{key} نباید بلای غالبش آتش‌سوزی باشد"
