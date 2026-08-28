@@ -2036,6 +2036,147 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# بحران منطقه‌ای — یک بحران روی کل یک قاره/منطقه
+# ─────────────────────────────────────────────────────────────────────────────
+
+def region_choices() -> list[tuple[str, str]]:
+    """(کلید، عنوان) مناطق قابل انتخاب، از همان جدول قاره‌های بازی."""
+    return [(key, spec.get("name") or spec.get("short_name") or key)
+            for key, spec in getattr(config, "CONTINENTS", {}).items()]
+
+
+def region_label(region_key: str) -> str:
+    spec = getattr(config, "CONTINENTS", {}).get(region_key, {})
+    return spec.get("name") or spec.get("short_name") or region_key
+
+
+def countries_of_region(region_key: str) -> list[dict]:
+    """کشورهای ثبت‌شده‌ی یک منطقه. نهادهای غیرکشوری کنار گذاشته می‌شوند."""
+    keys = set(getattr(config, "CONTINENTS", {}).get(region_key, {}).get("keys", []))
+    if not keys:
+        return []
+    skip = {"un"}
+    rows = []
+    for country in db.get_all_countries():
+        country_key = country.get("country_key") or ""
+        if country_key in keys and country_key not in skip:
+            rows.append(country)
+    return rows
+
+
+def create_regional_crisis(
+    region_key: str,
+    crisis_key: str,
+    severity: str = "medium",
+    admin_id: int | None = None,
+    skip_warning: bool = False,
+) -> dict:
+    """یک بحران را روی کل منطقه اعمال می‌کند.
+
+    قانون کلیدی: کشوری که همین بحران را از قبل دارد، بحران دومی نمی‌گیرد؛
+    فقط یک سطح تشدید می‌شود. اگر همان کشور در بالاترین سطح باشد، دست‌نخورده می‌ماند.
+    """
+    spec = CRISIS_CATALOG.get(crisis_key)
+    if not spec:
+        return {"ok": False, "error": "نوع بحران نامعتبر است.", "created": [], "escalated": [], "skipped": []}
+    if severity not in SEVERITY_ORDER:
+        severity = "medium"
+
+    countries = countries_of_region(region_key)
+    if not countries:
+        return {"ok": False, "error": "کشوری در این منطقه ثبت نشده است.", "created": [], "escalated": [], "skipped": []}
+
+    created, escalated, skipped = [], [], []
+
+    for country in countries:
+        existing = [
+            crisis for crisis in get_active_crises(country["id"])
+            if crisis["crisis_key"] == crisis_key
+        ]
+        if existing:
+            crisis = existing[0]
+            if crisis["severity"] == SEVERITY_ORDER[-1]:
+                skipped.append({"country": country, "crisis": crisis, "reason": "max"})
+                continue
+            ok, _msg, worse, damage = change_severity(crisis["id"], +1, admin_id=admin_id, reason="regional")
+            if ok:
+                escalated.append({"country": country, "crisis": worse, "damage": damage})
+            else:
+                skipped.append({"country": country, "crisis": crisis, "reason": "locked"})
+            continue
+
+        ok, message, crisis = create_crisis(
+            country["id"], crisis_key, severity=severity, origin="regional",
+            admin_id=admin_id, skip_warning=skip_warning, force=True,
+        )
+        if ok:
+            created.append({"country": country, "crisis": crisis})
+        else:
+            skipped.append({"country": country, "crisis": None, "reason": message})
+
+    db.add_log(
+        f"admin:{admin_id}" if admin_id else "system:regional",
+        "regional_crisis",
+        f"region={region_key} type={crisis_key} severity={severity} "
+        f"created={len(created)} escalated={len(escalated)} skipped={len(skipped)}",
+    )
+
+    return {
+        "ok": True,
+        "error": "",
+        "region": region_key,
+        "crisis_key": crisis_key,
+        "severity": severity,
+        "created": created,
+        "escalated": escalated,
+        "skipped": skipped,
+    }
+
+
+def build_regional_news(result: dict) -> tuple[str, str] | None:
+    """یک خبر واحد برای کل منطقه — نه یک خبر به‌ازای هر کشور."""
+    if not result or not result.get("ok"):
+        return None
+    created = result.get("created") or []
+    escalated = result.get("escalated") or []
+    if not created and not escalated:
+        return None
+
+    spec = CRISIS_CATALOG.get(result["crisis_key"], {})
+    label = spec.get("label", "بحران")
+    region = region_label(result["region"])
+    severity = SEVERITY_LABELS.get(result["severity"], "")
+    involved = len(created) + len(escalated)
+
+    title = f"{label} سراسری در {region}"
+    lines = [
+        f"{region} رسماً درگیر {label} شد. در این موج {involved} کشور وارد وضعیت بحرانی شدند.",
+        "",
+    ]
+    if created:
+        lines.append("<b>کشورهای تازه درگیر</b>")
+        lines.extend(
+            f"• {item['country'].get('flag', '🏳️')} {item['country'].get('name', '')}"
+            for item in created[:20]
+        )
+        if len(created) > 20:
+            lines.append(f"• و {len(created) - 20} کشور دیگر")
+        lines.append("")
+    if escalated:
+        lines.append("<b>کشورهایی که وضعیتشان بدتر شد</b>")
+        lines.extend(
+            f"• {item['country'].get('flag', '🏳️')} {item['country'].get('name', '')} "
+            f"→ {SEVERITY_LABELS.get(item['crisis']['severity'], '')}"
+            for item in escalated[:20]
+        )
+        if len(escalated) > 20:
+            lines.append(f"• و {len(escalated) - 20} کشور دیگر")
+        lines.append("")
+    lines.append(f"سطح اعلام‌شده برای موج جدید: {severity}")
+    return title, "\n".join(lines).strip()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # چرخه‌ی ۶ ساعته‌ی شدت بحران — هم‌ضرب با نوبت‌های پرداخت درآمد
 # ─────────────────────────────────────────────────────────────────────────────
 

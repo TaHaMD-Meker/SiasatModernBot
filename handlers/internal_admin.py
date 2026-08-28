@@ -98,6 +98,7 @@ def _root_keyboard():
         [InlineKeyboardButton("🌍 وضعیت داخلی کشورها", callback_data="admin:dom_overview:0")],
         [InlineKeyboardButton("🚨 بحران‌های فعال", callback_data="admin:dom_active:0")],
         [InlineKeyboardButton("➕ ایجاد بحران دستی", callback_data="admin:dom_new:0")],
+        [InlineKeyboardButton("🌍 بحران منطقه‌ای (یک قاره کامل)", callback_data="admin:dom_region")],
         [InlineKeyboardButton("🏁 کشورهای در معرض سقوط", callback_data="admin:dom_risk")],
         [InlineKeyboardButton("📊 تاریخچه بحران‌ها", callback_data="admin:dom_hist")],
         [InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")],
@@ -352,6 +353,132 @@ async def _severity_picker(query, country_id: int, crisis_key: str):
     )
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# بحران منطقه‌ای
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _region_picker(query):
+    rows = []
+    for key, label in ia.region_choices():
+        count = len(ia.countries_of_region(key))
+        rows.append([InlineKeyboardButton(f"{label} ({count} کشور)", callback_data=f"admin:dom_rgn:{key}")])
+    rows.append(_home_row())
+    await query.edit_message_text(
+        "🌍 <b>بحران منطقه‌ای</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "یک منطقه انتخاب کن. بحران روی همه‌ی کشورهای همان منطقه اعمال می‌شود.\n\n"
+        "<i>کشوری که همین بحران را از قبل داشته باشد، بحران دوم نمی‌گیرد؛ فقط یک سطح "
+        "تشدید می‌شود. برای کل منطقه هم یک خبر واحد منتشر می‌شود، نه یک خبر به‌ازای هر کشور.</i>",
+        reply_markup=_kb(rows), parse_mode="HTML",
+    )
+
+
+async def _region_type_picker(query, region_key: str):
+    rows = [[InlineKeyboardButton(spec["label"], callback_data=f"admin:dom_rtype:{region_key}:{key}")]
+            for key, spec in ia.CRISIS_CATALOG.items()]
+    rows.append([InlineKeyboardButton("🔙 انتخاب منطقه", callback_data="admin:dom_region")])
+    contagious = "، ".join(
+        ia.CRISIS_CATALOG[key]["label"] for key in ia.CONTAGIOUS_CRISES if key in ia.CRISIS_CATALOG
+    )
+    await query.edit_message_text(
+        f"🌍 <b>{ia.region_label(region_key)}</b>\n"
+        f"کشورهای این منطقه: <b>{len(ia.countries_of_region(region_key))}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "نوع بحران را انتخاب کن.\n\n"
+        f"<i>واگیردارها: {contagious}</i>",
+        reply_markup=_kb(rows), parse_mode="HTML",
+    )
+
+
+async def _region_severity_picker(query, region_key: str, crisis_key: str):
+    rows = [[InlineKeyboardButton(
+        ia.SEVERITY_LABELS[sev], callback_data=f"admin:dom_rgo:{region_key}:{crisis_key}:{sev}:0"
+    )] for sev in ia.SEVERITY_ORDER]
+    rows.append([InlineKeyboardButton(
+        "⚡ اعمال فوری خسارت (بدون مرحله هشدار)",
+        callback_data=f"admin:dom_rgo:{region_key}:{crisis_key}:medium:1",
+    )])
+    rows.append([InlineKeyboardButton("🔙 نوع بحران", callback_data=f"admin:dom_rgn:{region_key}")])
+
+    spec = ia.CRISIS_CATALOG.get(crisis_key, {})
+    countries = ia.countries_of_region(region_key)
+    already = [c for c in countries if any(
+        x["crisis_key"] == crisis_key for x in ia.get_active_crises(c["id"])
+    )]
+    await query.edit_message_text(
+        f"🌍 <b>{ia.region_label(region_key)}</b> — {spec.get('label', '')}\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"• کشورهای منطقه: <b>{len(countries)}</b>\n"
+        f"• از قبل درگیر همین بحران: <b>{len(already)}</b> (فقط یک سطح تشدید می‌شوند)\n"
+        f"• تازه درگیر می‌شوند: <b>{len(countries) - len(already)}</b>\n\n"
+        "شدت موج جدید را انتخاب کن:",
+        reply_markup=_kb(rows), parse_mode="HTML",
+    )
+
+
+async def _apply_region(query, context, region_key: str, crisis_key: str, severity: str, instant: bool):
+    result = ia.create_regional_crisis(
+        region_key, crisis_key, severity=severity,
+        admin_id=query.from_user.id, skip_warning=instant,
+    )
+    if not result.get("ok"):
+        await query.answer(result.get("error") or "اعمال نشد.", show_alert=True)
+        return
+
+    created, escalated, skipped = result["created"], result["escalated"], result["skipped"]
+
+    # یک خبر واحد برای کل منطقه
+    published = False
+    import news_engine
+    news = ia.build_regional_news(result)
+    if news and ia.news_mode() != "off":
+        try:
+            published = await news_engine.post_breaking_news(context.bot, news[0], news[1], "بحران منطقه‌ای")
+        except Exception:
+            published = False
+
+    # اطلاع خصوصی به هر بازیکن درگیر
+    spec = ia.CRISIS_CATALOG.get(crisis_key, {})
+    for item in created + escalated:
+        country = item["country"]
+        player_id = country.get("player_id")
+        if not player_id:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=player_id,
+                text=(
+                    f"🚨 <b>{spec.get('label', 'بحران')} — {country.get('flag', '')} {country.get('name', '')}</b>\n"
+                    f"موج منطقه‌ای {ia.region_label(region_key)} به کشور شما هم رسید.\n"
+                    f"سطح فعلی: <b>{ia.SEVERITY_LABELS.get(item['crisis']['severity'], '')}</b>\n\n"
+                    "از دکمه‌ی «🏛️ سیاست داخلی» ← «🚨 بحران‌ها» می‌توانید واکنش نشان دهید."
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    lines = [
+        f"✅ <b>{spec.get('label', '')} در {ia.region_label(region_key)} اعمال شد</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🆕 تازه درگیر: <b>{len(created)}</b>",
+        f"🔺 یک سطح تشدید شد: <b>{len(escalated)}</b>",
+        f"⏭ بدون تغییر: <b>{len(skipped)}</b>",
+        f"📢 خبر منطقه‌ای: {'منتشر شد' if published else 'منتشر نشد'}",
+    ]
+    if escalated:
+        lines.append("\n<b>تشدیدشده‌ها</b>")
+        lines.extend(
+            f"• {i['country'].get('flag', '')} {i['country'].get('name', '')} "
+            f"→ {ia.SEVERITY_LABELS.get(i['crisis']['severity'], '')}" for i in escalated[:10]
+        )
+    if skipped:
+        lines.append(f"\n<i>{len(skipped)} کشور از قبل در بالاترین سطح بودند یا قفل داشتند.</i>")
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb([_home_row()]), parse_mode="HTML")
+
+
 async def _risk_page(query, page: int = 0):
     """کشورهای در معرض سقوط، صفحه‌بندی‌شده تا با زیاد شدن کشورها ردیفی گم نشود."""
     all_rows = ia.countries_at_risk(limit=100)
@@ -545,6 +672,16 @@ async def internal_admin_callback(query, context, data: str) -> bool:
                     sent = False
         await query.answer("خبر منتشر شد." if sent else "ارسال خبر ناموفق بود (کانال تنظیم نشده؟).", show_alert=True)
         await _crisis_panel(query, crisis_id)
+    elif data == "admin:dom_region":
+        await _region_picker(query)
+    elif data.startswith("admin:dom_rgn:"):
+        await _region_type_picker(query, data.split(":")[2])
+    elif data.startswith("admin:dom_rtype:"):
+        _, _, region_key, crisis_key = data.split(":")
+        await _region_severity_picker(query, region_key, crisis_key)
+    elif data.startswith("admin:dom_rgo:"):
+        _, _, region_key, crisis_key, severity, instant = data.split(":")
+        await _apply_region(query, context, region_key, crisis_key, severity, instant == "1")
     elif data == "admin:dom_risk" or data.startswith("admin:dom_risk:"):
         await _risk_page(query, _parse_page(data, "admin:dom_risk"))
     elif data == "admin:dom_hist" or data.startswith("admin:dom_hist:"):
