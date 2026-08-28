@@ -313,7 +313,10 @@ async def operations_text_input_handler(update: Update, context: ContextTypes.DE
     if not context.user_data.get("roleplay_text_input"):
         return
 
-    text = update.message.text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
+    if not text:
+        await update.message.reply_text("متن رول را به‌صورت پیام متنی بفرست.")
+        return
     draft = context.user_data.get("role_submit_draft", {})
     role_type = draft.get("role_type", "attack")
 

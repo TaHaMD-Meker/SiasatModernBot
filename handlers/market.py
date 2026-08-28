@@ -532,7 +532,11 @@ async def market_text_input_handler(update: Update, context: ContextTypes.DEFAUL
     if not draft:
         return
 
-    text_input = update.message.text.strip().replace(",", "").replace("٬", "")
+    raw_input = (update.message.text or update.message.caption or "").strip()
+    if not raw_input:
+        await update.message.reply_text("لطفاً عدد را به‌صورت متن بفرست.")
+        return
+    text_input = raw_input.replace(",", "").replace("٬", "")
     if not text_input.isdigit():
         await update.message.reply_text("⛔ لطفاً فقط یک عدد صحیح انگلیسی ارسال فرمایید.", parse_mode="Markdown")
         return

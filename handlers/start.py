@@ -199,7 +199,9 @@ async def start_country_search_input_handler(update: Update, context: ContextTyp
         return False
 
     del context.user_data["start_country_search"]
-    user_query = update.message.text.strip()
+    user_query = (update.message.text or update.message.caption or "").strip()
+    if not user_query:
+        return False
     clean_q = _clean_persian_str(user_query)
 
     if not clean_q:

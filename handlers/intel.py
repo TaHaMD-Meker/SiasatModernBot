@@ -782,7 +782,9 @@ async def intel_search_input_handler(update: Update, context: ContextTypes.DEFAU
     if not country:
         return False
 
-    user_query = update.message.text.strip()
+    user_query = (update.message.text or update.message.caption or "").strip()
+    if not user_query:
+        return
     clean_q = _clean_persian_str(user_query)
 
     all_countries = db.get_all_countries()

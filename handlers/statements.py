@@ -458,7 +458,10 @@ def generate_diplomatic_statement(country_name: str, raw_text: str) -> str:
 async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT_TYPE, country: dict):
     """رسمی‌سازی هوشمند متن محاوره‌ای به بیانیه ۳ سطری دیپلماتیک."""
     
-    raw_text = update.message.text.strip()
+    raw_text = (update.message.text or update.message.caption or "").strip()
+    if not raw_text:
+        await update.message.reply_text("لطفاً متن را بفرست.")
+        return
     polished_text = generate_diplomatic_statement(country['name'], raw_text)
 
 
@@ -479,7 +482,10 @@ async def process_ai_rewrite_input(update: Update, context: ContextTypes.DEFAULT
 async def process_official_tweet_input(update: Update, context: ContextTypes.DEFAULT_TYPE, country: dict):
     """ثبت و انتشار توییت سریع کشوری."""
     
-    tweet_text = update.message.text.strip()
+    tweet_text = (update.message.text or update.message.caption or "").strip()
+    if not tweet_text:
+        await update.message.reply_text("لطفاً متن توییت را بفرست.")
+        return
     user_name_str = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
 
     # قالب استاندارد توییت + حفظ فرمت‌بندی خود بازیکن (بولد/نقل‌قول/اسپویلر و...)

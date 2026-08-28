@@ -258,7 +258,10 @@ async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if not draft:
         return
 
-    text = update.message.text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
+    if not text:
+        await update.message.reply_text("لطفاً متن را بفرست.")
+        return
     step = draft.get("step")
 
     if step == "res_title":

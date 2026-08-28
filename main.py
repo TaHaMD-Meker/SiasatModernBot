@@ -21,6 +21,7 @@ import config
 import database as db
 import approval_system
 import news_engine
+from input_modes import ExclusiveInputUserData
 from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
 from handlers.intel import intel_main_menu, intel_callback_handler
@@ -730,9 +731,12 @@ def main():
 
     # concurrent_updates: پردازش موازی پیام‌ها — یک درخواست کند (مثل تحلیل AI)
     # نباید بقیه‌ی بازیکن‌ها را در صف قفل کند
+    # user_data سفارشی: باز کردن یک حالت ورودی، حالت‌های ورودی قبلی را می‌بندد
+    # (وگرنه پرچم رهاشده‌ی یک منو، پیام منوی بعدی را می‌بلعد)
     app = (
         Application.builder()
         .token(config.BOT_TOKEN)
+        .context_types(ContextTypes(user_data=ExclusiveInputUserData))
         .concurrent_updates(True)
         .post_init(on_post_init)
         .post_shutdown(on_post_shutdown)
@@ -932,6 +936,40 @@ def main():
             logger.warning(f"Telegram BadRequest ignored: {err}")
             return
         logger.error(f"Unhandled error in bot: {err}", exc_info=err)
+
+        # سکوت ممنوع: بازیکن باید بداند کارش انجام نشد، و ادمین باید خبردار شود.
+        # (پیش از این، خطای هندلر فقط در لاگ می‌نشست و بازیکن هیچ پاسخی نمی‌گرفت.)
+        message = getattr(update, "effective_message", None)
+        if message is not None:
+            try:
+                await message.reply_text(
+                    "⚠️ در پردازش این پیام خطایی رخ داد و کار شما ثبت نشد.\n"
+                    "لطفاً یک بار دیگر از منوی مربوطه تلاش کنید. موضوع به مدیریت گزارش شد."
+                )
+            except Exception:
+                pass
+
+        now_ts = datetime.datetime.now().timestamp()
+        last_ts = context.bot_data.get("_last_error_report_ts", 0) if hasattr(context, "bot_data") else 0
+        if now_ts - float(last_ts or 0) > 60:  # حداکثر یک گزارش در دقیقه تا ادمین اسپم نشود
+            try:
+                context.bot_data["_last_error_report_ts"] = now_ts
+            except Exception:
+                pass
+            chat = getattr(update, "effective_chat", None)
+            user = getattr(update, "effective_user", None)
+            detail = (
+                "🐞 <b>خطای پردازش‌نشده</b>\n"
+                f"• کاربر: <code>{getattr(user, 'id', '?')}</code> "
+                f"(@{getattr(user, 'username', '') or '—'})\n"
+                f"• چت: <code>{getattr(chat, 'id', '?')}</code>\n"
+                f"• خطا: <code>{str(err)[:400]}</code>"
+            )
+            for admin_id in getattr(config, "ADMIN_IDS", []):
+                try:
+                    await context.bot.send_message(chat_id=admin_id, text=detail, parse_mode="HTML")
+                except Exception:
+                    pass
 
     app.add_error_handler(global_error_handler)
 

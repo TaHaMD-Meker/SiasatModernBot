@@ -2101,7 +2101,10 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
     if not dip_input:
         return
 
-    text = update.message.text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
+    if not text:
+        await update.message.reply_text("لطفاً متن پیام را بفرست.")
+        return
     input_type = dip_input.get("type")
     del context.user_data["diplomacy_input"]
 

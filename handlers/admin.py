@@ -2644,7 +2644,10 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
     if not input_state:
         return
 
-    text = update.message.text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
+    if not text:
+        await update.message.reply_text("لطفاً پاسخ را به‌صورت متن بفرست.")
+        return
     input_type = input_state.get("type")
 
     if await handle_dossier_inputs(update, context, input_type, text, input_state):
