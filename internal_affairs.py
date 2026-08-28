@@ -35,6 +35,23 @@ logger = logging.getLogger(__name__)
 SETTING_ENABLED = "internal_affairs_enabled"
 SETTING_RANDOM_CRISES = "internal_random_crises_enabled"
 SETTING_NEWS_MODE = "crisis_news_mode"
+SETTING_POWER_PENALTY = "power_income_penalty_enabled"
+
+# مصرف برق هر واحد صنعتی (هم‌راستا با approval_system.calculate_country_requirements)
+POWER_CONSUMERS = {
+    "small_factory": 1,
+    "medium_factory": 2,
+    "large_factory": 3,
+    "industrial_complex": 5,
+    "oil_refinery": 4,
+    "gold_mine": 3,
+    "chip_fab": 4,
+    "iron_mine": 2,
+    "copper_mine": 2,
+    "uranium_mine": 3,
+    "enrichment_facility": 5,
+}
+HOUSEHOLD_POWER_BASE = 100  # پوشش پایه‌ی شبکه‌ی خانگی
 
 # چه چیزی به کانال عمومی برود؟
 #   severity → فقط کشورهایی که سطح بحرانشان بالا یا پایین رفت (پیش‌فرض)
@@ -796,6 +813,73 @@ def set_enabled(value: bool):
 
 def set_random_crises(value: bool):
     db.set_setting(SETTING_RANDOM_CRISES, "1" if value else "0")
+
+
+def power_penalty_enabled() -> bool:
+    return db.get_setting(SETTING_POWER_PENALTY) == "1"
+
+
+def set_power_penalty(value: bool):
+    db.set_setting(SETTING_POWER_PENALTY, "1" if value else "0")
+
+
+def power_status(country: dict) -> dict:
+    """کدام واحدهای صنعتی به‌خاطر کمبود برق خاموش‌اند و چقدر درآمد از دست می‌رود.
+
+    منطق خاموشی: بودجه‌ی برق صنعتی بین واحدها تقسیم می‌شود و ابتدا واحدهایی
+    روشن می‌مانند که به ازای هر واحد برق، درآمد بیشتری می‌دهند. یعنی شبکه مثل
+    یک اپراتور عاقل، پربازده‌ها را نگه می‌دارد و پرمصرفِ کم‌بازده را خاموش می‌کند.
+    """
+    result = {
+        "available": int(country.get("electricity") or 0),
+        "household": HOUSEHOLD_POWER_BASE,
+        "industrial_need": 0,
+        "industrial_budget": 0,
+        "offline": {},
+        "online": {},
+        "income_lost": 0,
+        "shortage": False,
+    }
+    try:
+        equipment = db.get_equipment(country["id"]) or {}
+    except Exception:
+        return result
+
+    shop = getattr(config, "ALL_SHOP_ITEMS", {}) or {}
+    units = []
+    for key, elec_each in POWER_CONSUMERS.items():
+        count = int(equipment.get(key) or 0)
+        if count <= 0:
+            continue
+        income_each = int((shop.get(key) or {}).get("income_add") or 0)
+        units.append({
+            "key": key,
+            "name": (shop.get(key) or {}).get("name", key),
+            "count": count,
+            "elec": elec_each,
+            "income": income_each,
+            "efficiency": income_each / elec_each if elec_each else 0,
+        })
+        result["industrial_need"] += count * elec_each
+
+    budget = max(0, result["available"] - HOUSEHOLD_POWER_BASE)
+    result["industrial_budget"] = budget
+    if not units or result["industrial_need"] <= budget:
+        result["online"] = {u["key"]: u["count"] for u in units}
+        return result
+
+    result["shortage"] = True
+    # پربازده‌ترین‌ها اول روشن می‌مانند
+    for unit in sorted(units, key=lambda u: -u["efficiency"]):
+        affordable = min(unit["count"], budget // unit["elec"]) if unit["elec"] else unit["count"]
+        budget -= affordable * unit["elec"]
+        offline = unit["count"] - affordable
+        if affordable:
+            result["online"][unit["key"]] = affordable
+        if offline:
+            result["offline"][unit["key"]] = offline
+            result["income_lost"] += offline * unit["income"]
+    return result
 
 
 def news_mode() -> str:

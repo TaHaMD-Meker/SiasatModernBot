@@ -8,6 +8,7 @@ import html
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
+import config
 import database as db
 import internal_affairs as ia
 from utils import format_money, format_number, format_oil
@@ -530,6 +531,23 @@ async def _readiness_page(query, country: dict, state: dict):
     doses = int(country.get("vaccine_doses") or 0)
     treasury = int(country.get("treasury") or 0)
     tech = int(country.get("tech_level") or 1)
+
+    power = ia.power_status(country)
+    if power["industrial_need"]:
+        need_total = power["household"] + power["industrial_need"]
+        state_icon = "🔴" if power["shortage"] else "✅"
+        lines.extend([
+            "",
+            "<b>⚡ شبکه برق و تولید صنعتی</b>",
+            f"{state_icon} تأمین: {power['available']} از {need_total} واحد موردنیاز",
+        ])
+        if power["shortage"]:
+            lines.append(f"🏭 <b>{sum(power['offline'].values())} واحد صنعتی خاموش است</b>")
+            for key, count in power["offline"].items():
+                name = (getattr(config, "ALL_SHOP_ITEMS", {}).get(key) or {}).get("name", key)
+                lines.append(f"   • {name} × {count}")
+            lines.append(f"💸 درآمد ازدست‌رفته: <b>{format_money(power['income_lost'])}/روز</b>")
+            lines.append("<i>با افزایش ظرفیت برق، این واحدها خودکار روشن می‌شوند.</i>")
 
     lines.extend(["", "<b>وضعیت ذخایر شما</b>"])
     lines.append(f"{'✅' if grain > 50_000 else '⚠️'} غلات: {format_number(grain)} تن — سپر قحطی و خشکسالی")

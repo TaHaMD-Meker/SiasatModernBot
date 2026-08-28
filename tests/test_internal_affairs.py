@@ -1714,3 +1714,106 @@ def test_player_is_notified_privately_even_when_channel_is_quiet():
 
     publisher = inspect.getsource(main_module._publish_crisis_news)
     assert "news_mode" in publisher and "build_news_digest" in publisher
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# کمبود برق، تولید صنعتی را می‌خواباند
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _industrial_country(database):
+    cid = _country(database)
+    for key, count in (("small_factory", 10), ("large_factory", 6),
+                       ("industrial_complex", 4), ("oil_refinery", 3), ("gold_mine", 2)):
+        database.add_equipment(cid, key, count)
+    return cid
+
+
+def test_enough_power_means_no_shutdown(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _industrial_country(database)
+    database.update_country_field(cid, "electricity", 250)
+
+    power = ia.power_status(database.get_country_by_id(cid))
+    assert not power["shortage"]
+    assert power["offline"] == {}
+    assert power["income_lost"] == 0
+
+
+def test_power_shortage_shuts_units_down_and_costs_income(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _industrial_country(database)
+    database.update_country_field(cid, "electricity", 132)
+
+    power = ia.power_status(database.get_country_by_id(cid))
+    assert power["shortage"]
+    assert sum(power["offline"].values()) > 0
+    assert power["income_lost"] > 0
+    # مصرف واحدهای روشن نباید از بودجه‌ی برق بیشتر باشد
+    used = sum(ia.POWER_CONSUMERS[k] * v for k, v in power["online"].items())
+    assert used <= power["industrial_budget"]
+
+
+def test_the_grid_keeps_the_most_efficient_units_running(monkeypatch, tmp_path):
+    """اپراتور عاقل بیشترین درآمد را از برق محدود بیرون می‌کشد."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _industrial_country(database)
+    database.update_country_field(cid, "electricity", 120)
+
+    power = ia.power_status(database.get_country_by_id(cid))
+    shop = config.ALL_SHOP_ITEMS
+
+    # پربازده‌ترین نوع باید کامل روشن بماند
+    best = max(ia.POWER_CONSUMERS, key=lambda k: shop.get(k, {}).get("income_add", 0) / ia.POWER_CONSUMERS[k]
+               if k in shop else 0)
+    assert power["online"].get("gold_mine") == 2, "معدن طلا پربازده‌ترین است و باید کامل روشن بماند"
+
+    # تخصیص باید بهتر از «خاموش‌کردن کورکورانه‌ی پرمصرف‌ها» باشد
+    budget = power["industrial_budget"]
+    naive_income, remaining = 0, budget
+    for key in sorted(ia.POWER_CONSUMERS, key=lambda k: ia.POWER_CONSUMERS[k]):
+        count = int((database.get_equipment(cid) or {}).get(key) or 0)
+        if not count:
+            continue
+        fit = min(count, remaining // ia.POWER_CONSUMERS[key])
+        remaining -= fit * ia.POWER_CONSUMERS[key]
+        naive_income += fit * shop[key]["income_add"]
+
+    smart_income = sum(shop[k]["income_add"] * v for k, v in power["online"].items())
+    assert smart_income >= naive_income, "تخصیص باید حداقل به‌اندازه‌ی حالت ساده بازده داشته باشد"
+
+    # و برق مصرف‌شده هرگز از بودجه بیشتر نشود
+    assert sum(ia.POWER_CONSUMERS[k] * v for k, v in power["online"].items()) <= budget
+
+
+def test_deeper_shortage_shuts_down_more(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _industrial_country(database)
+
+    losses = []
+    for electricity in (166, 140, 120, 100):
+        database.update_country_field(cid, "electricity", electricity)
+        losses.append(ia.power_status(database.get_country_by_id(cid))["income_lost"])
+    assert losses == sorted(losses), "هرچه برق کمتر، افت درآمد بیشتر"
+    assert losses[0] == 0 and losses[-1] > 0
+
+
+def test_power_penalty_is_off_until_an_admin_enables_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "power_off.db"))
+    db.init_db()
+    assert ia.power_penalty_enabled() is False
+    ia.set_power_penalty(True)
+    assert ia.power_penalty_enabled() is True
+
+
+def test_payout_uses_the_power_penalty_without_touching_stored_income():
+    """درآمد ذخیره‌شده نباید دست بخورد — فقط پرداختِ همان دوره کم می‌شود."""
+    import inspect
+    import main as main_module
+
+    source = inspect.getsource(main_module.daily_income_job)
+    assert "power_penalty_enabled" in source
+    assert "power_status" in source
+    assert "daily_income = max(0, daily_income - power[\"income_lost\"])" in source
+    # هیچ نوشتنی روی ستون daily_income در این مسیر نباشد
+    segment = source[source.index("power_note = \"\""):source.index("gross_income = daily_income")]
+    assert "update_country_field" not in segment

@@ -180,6 +180,24 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         maint_info = db.calculate_country_maintenance_cost(c["id"])
         tax_income = c.get("tax_income", 0) or 0
         daily_income = c.get("daily_income", 0) or 0
+
+        # ⚡ کمبود برق: واحدهای صنعتیِ بی‌برق تولید نمی‌کنند.
+        # درآمد ذخیره‌شده دست نمی‌خورد؛ فقط پرداختِ این دوره کم می‌شود، پس
+        # به‌محض ترمیم شبکه، درآمد خودبه‌خود برمی‌گردد.
+        power_note = ""
+        if internal_affairs.power_penalty_enabled():
+            try:
+                power = internal_affairs.power_status(c)
+                if power["shortage"] and power["income_lost"] > 0:
+                    daily_income = max(0, daily_income - power["income_lost"])
+                    offline_units = sum(power["offline"].values())
+                    power_note = (
+                        f" — ⚡ کمبود برق: {offline_units} واحد صنعتی خاموش "
+                        f"({format_money(power['income_lost'])}/روز از دست رفت)"
+                    )
+            except Exception:
+                logger.exception("Power shortage calculation failed for country %s", c["id"])
+
         gross_income = daily_income + tax_income
         sanction_note = ""
         # 🚫 تحریم جامع سازمان ملل: درآمد روزانه کشور تحریمی کاهش می‌یابد
@@ -260,7 +278,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         if force:
             db.add_transaction(c["id"], "daily_income", f"توزیع فوری درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)})", net_full)
         else:
-            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)}){sanction_note}", net_payment)
+            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)}){sanction_note}{power_note}", net_payment)
 
         p_id = c.get("player_id")
         if p_id:

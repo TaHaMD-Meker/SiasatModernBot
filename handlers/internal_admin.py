@@ -58,6 +58,7 @@ def _root_text() -> str:
         f"سیستم جمعیت/مالیات/بحران: <b>{'🟢 فعال' if enabled else '🔴 غیرفعال'}</b>\n"
         f"بحران‌های تصادفی: <b>{'🟢 فعال' if random_on else '🔴 غیرفعال'}</b>\n"
         f"اخبار کانال: <b>{_news_mode_label()}</b>\n"
+        f"قطع تولید بر اثر کمبود برق: <b>{'🟢 فعال' if ia.power_penalty_enabled() else '🔴 غیرفعال'}</b>\n"
         f"بحران‌های در جریان: <b>{active}</b>\n"
         f"کشورهای در معرض خطر: <b>{at_risk}</b>\n\n"
         "<i>تا وقتی کلید اصلی خاموش است، هیچ تغییری روی جمعیت، مالیات یا خزانه‌ی "
@@ -78,6 +79,10 @@ def _root_keyboard():
             callback_data="admin:dom_toggle_random",
         )],
         [InlineKeyboardButton(f"📰 اخبار کانال: {_news_mode_label()}", callback_data="admin:dom_news_mode")],
+        [InlineKeyboardButton(
+            f"{'🛑 لغو' if ia.power_penalty_enabled() else '⚡ فعال‌سازی'} قطع تولید با کمبود برق",
+            callback_data="admin:dom_power_toggle",
+        )],
         [InlineKeyboardButton("🌍 وضعیت داخلی کشورها", callback_data="admin:dom_overview:0")],
         [InlineKeyboardButton("🚨 بحران‌های فعال", callback_data="admin:dom_active:0")],
         [InlineKeyboardButton("➕ ایجاد بحران دستی", callback_data="admin:dom_new:0")],
@@ -404,6 +409,11 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         ia.set_random_crises(new_value)
         db.add_log(f"admin:{admin_id}", "internal_random_toggle", f"enabled={new_value}")
         await _show_root(query, "بحران‌های تصادفی فعال شد." if new_value else "بحران‌های تصادفی متوقف شد.")
+    elif data == "admin:dom_power_toggle":
+        new_value = not ia.power_penalty_enabled()
+        ia.set_power_penalty(new_value)
+        db.add_log(f"admin:{admin_id}", "power_penalty_toggle", f"enabled={new_value}")
+        await _show_root(query, "قطع تولید با کمبود برق فعال شد." if new_value else "قطع تولید با کمبود برق غیرفعال شد.")
     elif data == "admin:dom_news_mode":
         order = list(ia.NEWS_MODES)
         current = ia.news_mode()
