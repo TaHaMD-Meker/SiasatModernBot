@@ -714,3 +714,34 @@ def test_power_grid_and_vaccine_are_deductible_and_reversible(db, country):
     restored = db.get_country_by_id(cid)
     assert restored["electricity"] == 170
     assert restored["vaccine_doses"] == 250_000
+
+
+def test_power_grid_is_not_confused_with_a_barq_sam_battery(monkeypatch, tmp_path):
+    """«شبکه برق» نباید با سامانه‌ی پدافند «برق-۲» یمن تطبیق بخورد.
+
+    گزارش واقعی عملیات «الله مدینه» روی همین گیر کرد: زیرساخت برق کسر نمی‌شد و
+    به‌جایش ۲۲ آتشبار برق-۲ (از ۱۰ موجود) خواسته می‌شد و کل گزارش رد می‌شد.
+    """
+    from handlers.losses import is_explicit_strategic, match_strategic_resource, match_asset_by_name
+
+    assets = [
+        {"equipment_key": "barq2", "equipment_name": "سامانه موشکی پدافند هوایی برق-۲ (Barq-2)",
+         "category": "AirDefense", "amount": 10},
+    ]
+    name = "شبکه برق و پست‌های انتقال"
+
+    assert is_explicit_strategic(name) is True
+    assert match_strategic_resource(name)["special"] == "electricity"
+    # بدون محافظ، تطبیق فازی تجهیزات این را می‌قاپید
+    assert match_asset_by_name(name, assets) is not None
+    # ولی نام صریح راهبردی باید مسیر تجهیزات را دور بزند
+    assert is_explicit_strategic("سامانه موشکی پدافند هوایی برق-۲ (Barq-2)") is False
+
+
+def test_explicit_strategic_phrases_cover_the_main_stockpiles():
+    from handlers.losses import is_explicit_strategic
+
+    for name in ("ذخایر نفت خام", "مخازن نفت", "ذخایر غلات", "ذخایر واکسن", "شمش طلا", "شبکه برق"):
+        assert is_explicit_strategic(name), name
+    for name in ("موشک بالستیک برکان-۳ (Borkan-3)", "پهپاد انتحاری قاصف-2K (Qasef-2K)", "F-15SA"):
+        assert not is_explicit_strategic(name), name

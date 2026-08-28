@@ -169,7 +169,7 @@ def cmd_list(args):
 
 def cmd_find(args):
     db, c = _boot(args.country_key, _live_path_from_args(args))
-    from handlers.losses import match_asset_by_name, _clean_str
+    from handlers.losses import match_asset_by_name, _clean_str, is_explicit_strategic
 
     assets = db.get_country_assets(c["id"])
     q = _clean_str(args.query)
@@ -209,7 +209,7 @@ def cmd_check(args):
         print(f"🏗️  شبیه‌سازی مالکیت: {config.ALL_SHOP_ITEMS[key].get('name', key)} × {qty}")
 
     from handlers.losses import (parse_loss_report_text, match_country_by_name,
-                                 match_asset_by_name, match_strategic_resource,
+                                 match_asset_by_name, match_strategic_resource, is_explicit_strategic,
                                  match_building, classify_subcat, build_loss_report_text,
                                  _UNIT_BY_CATEGORY, _split_emoji, _clean_str, match_commander)
 
@@ -233,7 +233,7 @@ def cmd_check(args):
     matched, unmatched, over = [], [], []
 
     for name, qty, unit in p["items"]:
-        a = match_asset_by_name(name, assets)
+        a = None if is_explicit_strategic(name) else match_asset_by_name(name, assets)
         if a:
             sub, emo = classify_subcat(a)
             stock = a["amount"]

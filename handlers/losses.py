@@ -225,6 +225,26 @@ def match_asset_by_name(name: str, assets: list):
     return best if best_score >= 50 else None
 
 
+# عبارت‌های صریحِ منابع راهبردی: اگر گزارش عیناً این‌ها را نوشته باشد، تطبیق فازی
+# با نام تجهیزات نباید جلوی آن را بگیرد. نمونه‌ی واقعی: «شبکه برق و پست‌های انتقال»
+# در یمن با سامانه‌ی پدافند «برق-۲ (Barq-2)» تطبیق می‌خورد و به‌جای زیرساخت برق،
+# آتشبار پدافند کسر می‌شد.
+_EXPLICIT_STRATEGIC_PHRASES = (
+    "شبکه برق", "پست انتقال", "پست های انتقال", "پستهای انتقال", "شبکه انتقال برق",
+    "زیرساخت برق", "سوییچ یارد", "سوئیچ یارد",
+    "ذخایر نفت", "ذخیره نفت", "ذخائر نفت", "نفت خام", "مخازن نفت", "مخزن نفت",
+    "ذخایر غلات", "ذخیره غلات", "انبار غلات", "ذخایر گندم",
+    "ذخایر واکسن", "ذخیره واکسن", "دز واکسن", "دوز واکسن",
+    "شمش طلا", "کلاهک هسته", "کیک زرد",
+)
+
+
+def is_explicit_strategic(name: str) -> bool:
+    """آیا این نام صریحاً یک منبع راهبردی است (و نباید با تجهیزات تطبیق بخورد)؟"""
+    q = _clean_str(name)
+    return any(phrase in q for phrase in _EXPLICIT_STRATEGIC_PHRASES)
+
+
 def match_strategic_resource(name: str):
     """تطبیق نام با ذخایر استراتژیک (اورانیوم، سوخت هسته‌ای، کلاهک اتمی، میکروچیپ، طلا)."""
     q = _clean_str(name)
@@ -1146,7 +1166,7 @@ async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         matched, unmatched = [], []
         for name, qty, unit in parsed["items"]:
-            a = match_asset_by_name(name, assets)
+            a = None if is_explicit_strategic(name) else match_asset_by_name(name, assets)
             if a:
                 existing = next((x for x in matched if x["key"] == a["equipment_key"]), None)
                 if existing:
