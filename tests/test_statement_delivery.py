@@ -239,3 +239,29 @@ def test_stale_militia_wizard_no_longer_eats_a_tweet(monkeypatch, tmp_path):
 
     published = [m for m in context.bot.messages if m["chat_id"] == "@TestChannel"]
     assert published, "توییت به کانال نرفت"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ۵. پست کانال نباید وارد مسیر ورودی بازیکن شود
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_stale_check_survives_a_missing_user_data():
+    """پست کانال user_data ندارد؛ نباید استثنا بدهد."""
+    assert input_modes.drop_stale_input_modes(None) is False
+    assert input_modes.clear_input_modes(None) == []
+
+
+def test_text_input_handler_is_limited_to_private_chats():
+    import inspect
+    import main
+    source = inspect.getsource(main.main)
+    assert "filters.ChatType.PRIVATE" in source, "هندلر ورودی هنوز پست کانال را می‌گیرد"
+    assert "if update.effective_user is None or context.user_data is None" in source
+
+
+def test_error_handler_stays_silent_outside_private_chats():
+    import inspect
+    import main
+    source = inspect.getsource(main.main)
+    assert "in_private = chat is not None and chat.type == ChatType.PRIVATE and user is not None" in source
+    assert "if message is not None and in_private:" in source

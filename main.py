@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import telegram.error
 
 from telegram import Update
+from telegram.constants import ChatType
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 )
@@ -899,6 +900,15 @@ def main():
 
     # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها، بیانیه‌ها و فیش‌های VIP
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # پست کانال و پیام گروه اصلاً ورودی بازیکن نیست. برای پست کانال، تلگرام
+        # کاربری نمی‌فرستد و PTB هم user_data نمی‌سازد؛ بدون این محافظ، هر خبر کانال
+        # یک استثنا می‌داد و خطاگیر سراسری زیر همان خبر پیام خطا می‌گذاشت.
+        if update.effective_user is None or context.user_data is None:
+            return
+        chat = update.effective_chat
+        if chat is not None and chat.type != ChatType.PRIVATE:
+            return
+
         # حالت ورودی نیمه‌کاره‌ای که نیم‌ساعت پیش باز شده، نباید پیام تازه را ببلعد
         drop_stale_input_modes(context.user_data)
 
@@ -932,7 +942,12 @@ def main():
         elif context.user_data.get("statement_input"):
             await statements_text_input_handler(update, context)
 
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.VIDEO_NOTE) & ~filters.COMMAND, combined_text_input_handler))
+    app.add_handler(MessageHandler(
+        (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.VIDEO_NOTE)
+        & ~filters.COMMAND
+        & filters.ChatType.PRIVATE,
+        combined_text_input_handler,
+    ))
 
     # مدیریت سراسری خطاها (جهت پایداری و عدم کرش بات در ترافیک بالا)
     async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -956,8 +971,11 @@ def main():
 
         # سکوت ممنوع: بازیکن باید بداند کارش انجام نشد، و ادمین باید خبردار شود.
         # (پیش از این، خطای هندلر فقط در لاگ می‌نشست و بازیکن هیچ پاسخی نمی‌گرفت.)
+        chat = getattr(update, "effective_chat", None)
+        user = getattr(update, "effective_user", None)
         message = getattr(update, "effective_message", None)
-        if message is not None:
+        in_private = chat is not None and chat.type == ChatType.PRIVATE and user is not None
+        if message is not None and in_private:
             try:
                 await message.reply_text(
                     "⚠️ در پردازش این پیام خطایی رخ داد و کار شما ثبت نشد.\n"
@@ -973,8 +991,6 @@ def main():
                 context.bot_data["_last_error_report_ts"] = now_ts
             except Exception:
                 pass
-            chat = getattr(update, "effective_chat", None)
-            user = getattr(update, "effective_user", None)
             detail = (
                 "🐞 <b>خطای پردازش‌نشده</b>\n"
                 f"• کاربر: <code>{getattr(user, 'id', '?')}</code> "

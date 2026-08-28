@@ -45,6 +45,8 @@ INPUT_MODE_MAX_AGE_SECONDS = 30 * 60
 
 def clear_input_modes(user_data, keep_group: str | None = None) -> list[str]:
     """پاک‌کردن همه‌ی حالت‌های ورودی به‌جز گروهی که باید بماند. فهرست پاک‌شده‌ها را برمی‌گرداند."""
+    if user_data is None:
+        return []
     removed = []
     for key, group in KEY_TO_GROUP.items():
         if group == keep_group:
@@ -59,7 +61,12 @@ def clear_input_modes(user_data, keep_group: str | None = None) -> list[str]:
 
 
 def drop_stale_input_modes(user_data, max_age: int = INPUT_MODE_MAX_AGE_SECONDS) -> bool:
-    """حالت ورودی کهنه را می‌بندد. True یعنی چیزی بسته شد."""
+    """حالت ورودی کهنه را می‌بندد. True یعنی چیزی بسته شد.
+
+    برای پست کانال، PTB اصلاً user_data نمی‌سازد و None می‌دهد؛ اینجا باید بی‌سروصدا رد شود.
+    """
+    if not user_data:
+        return False
     opened_at = user_data.get(OPENED_AT_KEY)
     if opened_at is None:
         return False
