@@ -998,7 +998,7 @@ def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
         ("spread", "🦠 سرایت کرد"),
     ):
         if groups[key]:
-            lines.append(f"<b>{title}</b>")
+            lines.append(title)
             lines.extend(f"• {entry}" for entry in groups[key])
             lines.append("")
     if not lines:
@@ -2154,7 +2154,7 @@ def build_regional_news(result: dict) -> tuple[str, str] | None:
         "",
     ]
     if created:
-        lines.append("<b>کشورهای تازه درگیر</b>")
+        lines.append("🆕 کشورهای تازه درگیر")
         lines.extend(
             f"• {item['country'].get('flag', '🏳️')} {item['country'].get('name', '')}"
             for item in created[:20]
@@ -2163,7 +2163,7 @@ def build_regional_news(result: dict) -> tuple[str, str] | None:
             lines.append(f"• و {len(created) - 20} کشور دیگر")
         lines.append("")
     if escalated:
-        lines.append("<b>کشورهایی که وضعیتشان بدتر شد</b>")
+        lines.append("🔺 کشورهایی که وضعیتشان بدتر شد")
         lines.extend(
             f"• {item['country'].get('flag', '🏳️')} {item['country'].get('name', '')} "
             f"→ {SEVERITY_LABELS.get(item['crisis']['severity'], '')}"

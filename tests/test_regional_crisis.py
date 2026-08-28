@@ -233,3 +233,31 @@ def test_router_knows_the_regional_callbacks():
     source = inspect.getsource(internal_admin.internal_admin_callback)
     for key in ("admin:dom_region", "admin:dom_rgn:", "admin:dom_rtype:", "admin:dom_rgo:"):
         assert key in source
+
+
+def test_news_body_never_carries_html_tags(monkeypatch, tmp_path):
+    """کانال با Markdown ارسال می‌شود؛ هر تگ HTML عیناً به‌صورت متن دیده می‌شود."""
+    _fresh(monkeypatch, tmp_path, "region_html.db")
+    ids = _build_europe(5)
+    ia.create_crisis(list(ids.values())[0], "epidemic", severity="light", origin="admin", force=True)
+
+    result = ia.create_regional_crisis("europe", "epidemic", severity="medium", admin_id=1)
+    title, body = ia.build_regional_news(result)
+    for tag in ("<b>", "</b>", "<i>", "</i>", "<code>"):
+        assert tag not in body and tag not in title
+
+
+def test_crisis_digest_is_also_free_of_html(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "region_digest.db")
+    ids = _build_europe(6)
+    result = ia.create_regional_crisis("europe", "epidemic", severity="medium", admin_id=1)
+    items = []
+    for entry in result["created"]:
+        items.append({
+            "crisis_id": entry["crisis"]["id"], "country": entry["country"],
+            "crisis": entry["crisis"], "event": "escalated", "flag": "x",
+            "title": "t", "body": "b",
+        })
+    digest = ia.build_news_digest(items)
+    assert digest is not None
+    assert "<b>" not in digest[1]
