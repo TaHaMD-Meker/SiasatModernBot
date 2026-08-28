@@ -998,6 +998,37 @@ def init_db():
         pass
 
 
+    # ─────────────────────────────────────────────────────────────────────
+    # قرنطینه‌ی کشور رهاشده و صف انتظار بازیکنان
+    # ─────────────────────────────────────────────────────────────────────
+    for column, ddl in (
+        ("quarantined_at", "ALTER TABLE countries ADD COLUMN quarantined_at TEXT"),
+        ("quarantine_until", "ALTER TABLE countries ADD COLUMN quarantine_until TEXT"),
+        ("previous_player_id", "ALTER TABLE countries ADD COLUMN previous_player_id INTEGER"),
+        ("absence_insurance_until", "ALTER TABLE countries ADD COLUMN absence_insurance_until TEXT"),
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS country_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL UNIQUE,
+        first_name TEXT,
+        username TEXT,
+        preferred_country_key TEXT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'waiting',
+        offered_country_id INTEGER,
+        offer_expires_at TEXT,
+        joined_at TEXT NOT NULL,
+        resolved_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_country_queue_order ON country_queue(status, priority DESC, id ASC)")
+
     # واکسن: آیتم تولیدی و غیرقابل فروش/انتقال
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN vaccine_doses INTEGER NOT NULL DEFAULT 0")

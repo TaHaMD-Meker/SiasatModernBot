@@ -51,8 +51,10 @@ from handlers.vip import get_vip_handlers, vip_input_handler, vip_main_menu
 from handlers.battlepass import get_battlepass_handlers, battlepass_menu
 from handlers.tournament import get_tournament_handlers, tournament_menu
 from handlers.internal_affairs import get_domestic_handlers, domestic_menu
+from handlers.queue import get_queue_handlers, queue_status
 import tournament_system as tournament
 import internal_affairs
+import country_queue
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -502,6 +504,44 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
     return updated_count
 
 
+async def country_queue_job(context: ContextTypes.DEFAULT_TYPE):
+    """آزادسازی قرنطینه‌های تمام‌شده و پیشنهاد کشور به نفر بعدی صف."""
+    try:
+        result = country_queue.process_queue()
+    except Exception:
+        logger.exception("Country queue processing failed")
+        return
+
+    for item in result.get("offered") or []:
+        entry, country = item["entry"], item["country"]
+        try:
+            await context.bot.send_message(
+                chat_id=entry["player_id"],
+                text=(
+                    f"🎉 <b>نوبت شما رسید!</b>\n\n"
+                    f"کشور {country.get('flag', '')} <b>{country.get('name', '')}</b> برای شما آزاد شد.\n"
+                    f"⏰ <b>{country_queue.OFFER_HOURS} ساعت</b> برای پاسخ فرصت دارید، "
+                    f"بعد از آن به نفر بعدی پیشنهاد می‌شود.\n\n"
+                    f"برای پذیرش: /queue"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    for entry in result.get("expired") or []:
+        try:
+            await context.bot.send_message(
+                chat_id=entry["player_id"],
+                text="⌛️ مهلت پاسخ شما تمام شد و کشور به نفر بعدی پیشنهاد شد. شما دوباره در صف قرار گرفتید.",
+            )
+        except Exception:
+            pass
+
+    if result.get("released"):
+        logger.info(f"{len(result['released'])} country/countries left quarantine and entered the free pool.")
+
+
 async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_date: str = None):
     """بررسی روزانه ساعت ۰۰:۰۰ به وقت ایران — سلب مالکیت کشورهایی که در روز گذشته کمتر از ۲ بیانیه داده‌اند."""
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -568,8 +608,11 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
             name = c.get("name", "کشور")
             username = c.get("username") or ""
 
-            # سلب مالکیت و حذف کشور
-            db.delete_country_by_id(c_id)
+            # سلب مالکیت → قرنطینه (نه حذف). دارایی‌ها دست‌نخورده می‌مانند و
+            # صاحب قبلی تا پایان مهلت می‌تواند کشورش را پس بگیرد.
+            ok_q, _q_msg = country_queue.quarantine_country(c_id, reason="inactivity")
+            if not ok_q:
+                continue
             revoked_count += 1
 
             # ارسال اخطار و اطلاعیه به خود بازیکن
@@ -577,7 +620,10 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
                 f"🏛️ *سلب مالکیت کشور به دلیل عدم فعالیت روزانه*\n\n"
                 f"کاربر گرامی،\n"
                 f"به دلیل عدم ثبت حداقل {req_stmts} بیانیه یا توییت رسمی در روز گذشته ({yesterday_str})، "
-                f"مالکیت کشور *{flag} {name}* از شما سلب شد و این کشور برای انتخاب مجدد سایر کاربران آزاد گردید.\n\n"
+                f"مالکیت کشور *{flag} {name}* موقتاً از شما سلب شد.\n\n"
+                f"⏳ *این کشور به مدت {country_queue.QUARANTINE_DAYS} روز در قرنطینه است.* "
+                f"تا پایان این مهلت می‌توانید با دستور /reclaim کشورتان را با تمام تجهیزات و "
+                f"ساختمان‌هایش پس بگیرید. بعد از آن، به نفر اول صف انتظار واگذار می‌شود.\n\n"
                 f"• تعداد بیانیه‌های ثبت‌شده شما: *{user_stmts} از {req_stmts} بیانیه*\n\n"
                 f"💡 *قوانین بازی:* جهت حفظ رهبری کشور، ثبت روزانه حداقل ۲ بیانیه یا توییت رسمی در ربات الزامی است."
             )
@@ -817,6 +863,10 @@ def main():
         app.add_handler(handler)
 
     # سیستم تورنومنت فصلی با امتیازدهی ترکیبی (/tournament, /tour)
+    # صف انتظار کشور و بازپس‌گیری (/queue, /reclaim)
+    for handler in get_queue_handlers():
+        app.add_handler(handler)
+
     # سیستم جمعیت پویا، مالیات، ناآرامی و بحران (/domestic)
     for handler in get_domestic_handlers():
         app.add_handler(handler)
@@ -899,7 +949,8 @@ def main():
         job_queue.run_repeating(daily_income_job, interval=900, first=10)  # چک هر ۱۵ دقیقه؛ پرداخت هر ۶ ساعت
         job_queue.run_repeating(tournament_snapshot_job, interval=900, first=180)  # محاسبه‌ی دوره‌ای؛ خود ماژول فاصله‌ی ۶ ساعته را enforce می‌کند
         job_queue.run_repeating(auto_backup_job, interval=14400, first=120)  # پشتیبان‌گیری خودکار هر ۴ ساعت
-        job_queue.run_repeating(check_daily_inactivity_job, interval=300, first=30)  # بررسی سلب مالکیت روزانه ۰۰:۰۰ (چک هر ۵ دقیقه)
+        job_queue.run_repeating(check_daily_inactivity_job, interval=300, first=30)
+        job_queue.run_repeating(country_queue_job, interval=600, first=60)  # صف و قرنطینه هر ۱۰ دقیقه  # بررسی سلب مالکیت روزانه ۰۰:۰۰ (چک هر ۵ دقیقه)
 
     logger.info("بات در حال اجراست...")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)

@@ -126,5 +126,9 @@ def test_inactivity_revocation_paused_by_admin_lock(db):
     db.set_setting("last_inactivity_check_date", "2026-08-20")  # ریست آخرین تاریخ چک
     asyncio.run(main.check_daily_inactivity_job(MockContext(), force_date="2026-08-22"))
 
-    # اکنون اسپانیا به دلیل نداشتن بیانیه حذف می‌شود
-    assert db.get_country_by_id(cid) is None
+    # اکنون اسپانیا به دلیل نداشتن بیانیه به قرنطینه می‌رود (نه حذف)
+    revoked = db.get_country_by_id(cid)
+    assert revoked is not None, "کشور نباید حذف شود؛ فقط قرنطینه می‌شود"
+    assert revoked["player_id"] == 0
+    assert revoked["quarantine_until"] is not None
+    assert revoked["previous_player_id"] == 3001

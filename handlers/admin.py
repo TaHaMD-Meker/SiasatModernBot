@@ -145,6 +145,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("🏆 مدیریت تورنومنت فصلی", callback_data="admin:tournament")],
         [InlineKeyboardButton("🚨 مدیریت بحران و سیاست داخلی", callback_data="admin:dom")],
+        [InlineKeyboardButton("⏳ صف انتظار و کشورهای قرنطینه", callback_data="admin:queue")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
         [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
@@ -1587,15 +1588,26 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if not pending_reqs:
             text += "✅ هیچ درخواست معلقی در حال حاضر وجود ندارد."
         else:
-            text += "لطفاً جهت مشاهده مشخصات متقاضی، بررسی پیوی و تایید/رد، روی هر مورد کلیک کنید:\n\n"
+            no_username = sum(1 for r in pending_reqs if not r.get("username"))
+            text += (
+                f"مجموع: <b>{len(pending_reqs)}</b> درخواست"
+                + (f" | ⚠️ بدون یوزرنیم: <b>{no_username}</b>" if no_username else "")
+                + "\n\n✅ کنار هر ردیف = تأیید سریع بدون باز کردن کارت\n"
+                "🔍 = مشاهده‌ی کامل مشخصات\n\n"
+            )
             for req in pending_reqs:
                 c_info = config.COUNTRIES.get(req["country_key"], {})
                 flag = c_info.get("flag", "🏴")
                 c_name = c_info.get("name", req["country_key"])
                 u_name = f"@{req['username']}" if req.get("username") else f"ID: {req['player_id']}"
 
+                risky = not req.get("username")
                 keyboard.append([
-                    InlineKeyboardButton(f"🔍 {flag} {c_name} — {u_name}", callback_data=f"admin:view_req:{req['id']}")
+                    InlineKeyboardButton(
+                        f"{'⚠️ ' if risky else ''}🔍 {flag} {c_name} — {u_name}",
+                        callback_data=f"admin:view_req:{req['id']}",
+                    ),
+                    InlineKeyboardButton("✅", callback_data=f"admin:quick_approve:{req['id']}"),
                 ])
 
         keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
@@ -2263,6 +2275,94 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]),
             parse_mode="Markdown"
         )
+
+    elif data == "admin:queue":
+        import country_queue as cq
+        stats = cq.queue_stats()
+        waiting = cq.get_queue("waiting", 10)
+        quarantined = cq.get_quarantined_countries(10)
+        lines = [
+            "⏳ <b>صف انتظار و قرنطینه</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            f"👥 در صف: <b>{stats['waiting']}</b>",
+            f"🎯 پیشنهاد فعال: <b>{stats['offered']}</b>",
+            f"✅ واگذارشده: <b>{stats['done']}</b>",
+            f"🌍 کشور آزاد: <b>{stats['free_countries']}</b>",
+            f"⏳ در قرنطینه: <b>{stats['quarantined']}</b>",
+        ]
+        if waiting:
+            lines.append("\n<b>نفرات اول صف</b>")
+            for index, entry in enumerate(waiting, 1):
+                tag = f"@{entry['username']}" if entry.get("username") else str(entry["player_id"])
+                star = " ⭐️" if entry["priority"] > 0 else ""
+                lines.append(f"{index}. {tag}{star}")
+        if quarantined:
+            lines.append("\n<b>کشورهای در قرنطینه</b>")
+            for country in quarantined:
+                until = cq._parse(country.get("quarantine_until"))
+                hours = max(0, int((until - cq._now()).total_seconds() // 3600)) if until else 0
+                lines.append(f"• {country.get('flag','')} {country.get('name','')} — {hours} ساعت مانده")
+        await safe_edit_or_reply(
+            query, "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("▶️ اجرای فوری صف", callback_data="admin:queue_run")],
+                [InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")],
+            ]),
+            parse_mode="HTML",
+        )
+        return
+
+    elif data == "admin:queue_run":
+        import country_queue as cq
+        result = cq.process_queue()
+        await query.answer(
+            f"آزادشده: {len(result['released'])} | پیشنهاد جدید: {len(result['offered'])} | منقضی: {len(result['expired'])}",
+            show_alert=True,
+        )
+        return
+
+    elif data.startswith("admin:quick_approve:"):
+        # تأیید سریع بدون باز کردن کارت — وقتی ده‌ها درخواست در صف است
+        req_id = int(data.split(":")[2])
+        req = db.get_pending_country_request(req_id)
+        if not req:
+            await query.answer("این درخواست دیگر معتبر نیست.", show_alert=True)
+            return
+        c_key = req["country_key"]
+        c_info = config.COUNTRIES.get(c_key, {})
+        if db.get_country_by_key(c_key):
+            db.delete_pending_country_request(req_id)
+            await query.answer(f"کشور {c_info.get('name', c_key)} قبلاً واگذار شده است.", show_alert=True)
+            return
+        db.create_country(
+            player_id=req["player_id"], name=c_info["name"], flag=c_info["flag"],
+            country_key=c_key, username=req["username"],
+        )
+        db.delete_pending_country_request(req_id)
+        db.add_log(actor=str(user_id), action="approve_country", details=f"quick {c_key} to {req['player_id']}")
+        try:
+            await context.bot.send_message(
+                chat_id=req["player_id"],
+                text=(
+                    f"✅ درخواست شما تأیید شد!\n\n"
+                    f"شما رهبر {c_info['flag']} {c_info['name']} شدید.\n"
+                    f"با /start وارد بازی شوید."
+                ),
+            )
+        except Exception:
+            pass
+        await query.answer(f"✅ {c_info.get('name', c_key)} واگذار شد.")
+        remaining = db.get_all_pending_country_requests()
+        await query.edit_message_text(
+            f"✅ <b>{c_info.get('name', c_key)}</b> واگذار شد.\n\n"
+            f"📥 <b>{len(remaining)}</b> درخواست باقی مانده است.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"📥 ادامه‌ی بررسی ({len(remaining)})", callback_data="admin:pending_countries")],
+                [InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")],
+            ]),
+            parse_mode="HTML",
+        )
+        return
 
     elif data.startswith("admin:approve_country:"):
         req_id = int(data.split(":")[2])
