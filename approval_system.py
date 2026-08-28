@@ -390,6 +390,15 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str, p
 
     lines.append(f"• *موجودی نهایی خزانه:* {format_money(treasury)}\n")
 
+    # بخش سیاست داخلی (جمعیت، مالیات، ناآرامی، بحران، واکسن) — اگر سیستم روشن باشد
+    try:
+        import internal_affairs
+        domestic_section = internal_affairs.daily_report_section(c)
+    except Exception:
+        domestic_section = ""
+    if domestic_section:
+        lines.append(domestic_section)
+
     lines.append("━━━━━━━━━━━━━━━━━━\n")
     lines.append("*روایت روزانه کشور:*\n")
     lines.append(f'"{narrative}"')

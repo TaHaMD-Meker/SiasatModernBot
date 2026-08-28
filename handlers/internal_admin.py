@@ -13,6 +13,7 @@ import internal_affairs as ia
 from utils import format_money, format_number
 
 PAGE_SIZE = 8
+HISTORY_PAGE_SIZE = 15  # تاریخچه یک‌خطی است، در هر صفحه بیشتر جا می‌شود
 _DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٬،", "0123456789  ")
 
 
@@ -24,6 +25,16 @@ def _home_row():
     return [InlineKeyboardButton("🔙 مدیریت بحران", callback_data="admin:dom")]
 
 
+def _parse_page(data: str, prefix: str) -> int:
+    """شماره صفحه از انتهای callback؛ اگر نبود یا خراب بود، صفحه اول."""
+    if not data.startswith(prefix + ":"):
+        return 0
+    try:
+        return max(0, int(data[len(prefix) + 1:]))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _parse_int(text: str):
     raw = re.sub(r"[^0-9-]", "", str(text).translate(_DIGITS))
     try:
@@ -33,7 +44,8 @@ def _parse_int(text: str):
 
 
 def _stage_fa(stage: str) -> str:
-    return {"warning": "هشدار", "impact": "در جریان", "recovery": "بازسازی", "ended": "پایان‌یافته"}.get(stage, stage)
+    # یک منبع واحد برای برچسب مرحله، تا پنل ادمین و گزارش بازیکن یکی حرف بزنند
+    return ia.crisis_stage_label(stage)
 
 
 _NEWS_MODE_LABELS = {
@@ -340,10 +352,19 @@ async def _severity_picker(query, country_id: int, crisis_key: str):
     )
 
 
-async def _risk_page(query):
-    rows = ia.countries_at_risk(limit=30)
-    lines = ["🏁 <b>کشورهای در معرض سقوط</b>", "━━━━━━━━━━━━━━━━━━"]
-    if not rows:
+async def _risk_page(query, page: int = 0):
+    """کشورهای در معرض سقوط، صفحه‌بندی‌شده تا با زیاد شدن کشورها ردیفی گم نشود."""
+    all_rows = ia.countries_at_risk(limit=100)
+    total_pages = max(1, (len(all_rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    rows = all_rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+
+    lines = [
+        "🏁 <b>کشورهای در معرض سقوط</b>",
+        f"مجموع: <b>{len(all_rows)}</b> کشور",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
+    if not all_rows:
         lines.append("هیچ کشوری در وضعیت بحرانی نیست. 🟢")
     for row in rows:
         lines.append(
@@ -355,13 +376,28 @@ async def _risk_page(query):
     lines.append(
         "\n\n<i>سیستم هرگز خودش کشوری را حذف یا آزاد نمی‌کند؛ تصمیم نهایی با مدیریت است.</i>"
     )
-    await query.edit_message_text("\n".join(lines), reply_markup=_kb([_home_row()]), parse_mode="HTML")
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:dom_risk:{page - 1}"))
+    nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="ignore"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:dom_risk:{page + 1}"))
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb([nav, _home_row()]), parse_mode="HTML")
 
 
-async def _history_page(query):
-    crises = ia.get_crisis_history(limit=25)
-    lines = ["📊 <b>تاریخچه بحران‌ها</b>", "━━━━━━━━━━━━━━━━━━"]
-    if not crises:
+async def _history_page(query, page: int = 0):
+    """تاریخچه بحران‌ها، صفحه‌بندی‌شده."""
+    all_crises = ia.get_crisis_history(limit=100)
+    total_pages = max(1, (len(all_crises) + HISTORY_PAGE_SIZE - 1) // HISTORY_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    crises = all_crises[page * HISTORY_PAGE_SIZE:(page + 1) * HISTORY_PAGE_SIZE]
+
+    lines = [
+        "📊 <b>تاریخچه بحران‌ها</b>",
+        f"مجموع ثبت‌شده (تا ۱۰۰ مورد اخیر): <b>{len(all_crises)}</b>",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
+    if not all_crises:
         lines.append("هنوز بحرانی ثبت نشده است.")
     for crisis in crises:
         spec = ia.CRISIS_CATALOG.get(crisis["crisis_key"], {})
@@ -369,7 +405,14 @@ async def _history_page(query):
             f"• #{crisis['id']} {crisis.get('country_flag', '')} {html.escape(crisis.get('country_name', ''))} — "
             f"{spec.get('label', '')} | {_stage_fa(crisis['stage'])} | مهار {int(float(crisis.get('mitigation') or 0) * 100)}٪"
         )
-    await query.edit_message_text("\n".join(lines), reply_markup=_kb([_home_row()]), parse_mode="HTML")
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:dom_hist:{page - 1}"))
+    nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="ignore"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:dom_hist:{page + 1}"))
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb([nav, _home_row()]), parse_mode="HTML")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -502,10 +545,10 @@ async def internal_admin_callback(query, context, data: str) -> bool:
                     sent = False
         await query.answer("خبر منتشر شد." if sent else "ارسال خبر ناموفق بود (کانال تنظیم نشده؟).", show_alert=True)
         await _crisis_panel(query, crisis_id)
-    elif data == "admin:dom_risk":
-        await _risk_page(query)
-    elif data == "admin:dom_hist":
-        await _history_page(query)
+    elif data == "admin:dom_risk" or data.startswith("admin:dom_risk:"):
+        await _risk_page(query, _parse_page(data, "admin:dom_risk"))
+    elif data == "admin:dom_hist" or data.startswith("admin:dom_hist:"):
+        await _history_page(query, _parse_page(data, "admin:dom_hist"))
     else:
         return False
     return True

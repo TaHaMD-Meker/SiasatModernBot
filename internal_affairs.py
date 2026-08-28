@@ -2448,3 +2448,106 @@ def news_already_sent(crisis: dict, flag: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+CRISIS_STAGE_LABELS = {
+    "warning": "هشدار",
+    "impact": "در جریان",
+    "recovery": "بازسازی",
+    "contained": "مهارشده",
+    "ended": "پایان‌یافته",
+}
+
+
+def crisis_stage_label(stage: str) -> str:
+    return CRISIS_STAGE_LABELS.get(stage, str(stage or ""))
+
+
+def daily_report_section(country: dict) -> str:
+    """بخش «سیاست داخلی» برای گزارش روزانه‌ی بازیکن.
+
+    گزارش روزانه تا امروز فقط اقتصاد و ارتش را نشان می‌داد؛ بازیکن مجبور بود
+    برای دیدن جمعیت، مالیات، ناآرامی و بحران‌ها دستی وارد منوی سیاست داخلی شود.
+    خروجی این تابع مارک‌داون ساده است (هم‌سبک بقیه‌ی گزارش) و اگر سیستم خاموش
+    باشد رشته‌ی خالی برمی‌گرداند تا چیزی به گزارش اضافه نشود.
+    """
+    if not is_enabled():
+        return ""
+    country_id = country.get("id")
+    if not country_id:
+        return ""
+    try:
+        state = get_state(country_id)
+    except Exception:
+        state = None
+    if not state:
+        return ""
+
+    from utils import format_money, format_number
+
+    lines = ["━━━━━━━━━━━━━━━━━━\n", "*وضعیت داخلی کشور (جمعیت، مالیات، ناآرامی):*\n"]
+
+    # جمعیت و تغییر آن در آخرین چرخه
+    population = int(country.get("population") or 0)
+    delta_txt = ""
+    try:
+        history = get_history(country_id, days=1)
+    except Exception:
+        history = []
+    if history:
+        delta = int(history[0].get("population_delta") or 0)
+        if delta:
+            delta_txt = f" ({'+' if delta > 0 else ''}{format_number(delta)} نفر در آخرین چرخه)"
+    lines.append(f"• *جمعیت فعلی:* {format_number(population)} نفر{delta_txt}\n")
+
+    # سیاست مالیاتی و اثر رضایت بر وصول مالیات
+    policy = state.get("tax_policy", "normal")
+    approval = float(country.get("approval_rating") or 0)
+    compliance = compliance_for(approval)
+    lines.append(
+        f"• *سیاست مالیاتی:* {tax_policy_label(policy)} | "
+        f"تمکین مالیاتی مردم: {int(compliance * 100)}٪ "
+        f"(درآمد مالیاتی امروز: +{format_money(country.get('tax_income') or 0)}/روز)\n"
+    )
+
+    # ناآرامی
+    unrest = float(state.get("unrest") or 0)
+    stage = int(state.get("unrest_stage") or 0)
+    unrest_line = f"• *ناآرامی داخلی:* {stage_label(stage)} (شاخص {int(unrest)}/100)"
+    if int(state.get("collapse_risk") or 0):
+        unrest_line += f"\n⚫️ *هشدار سقوط دولت:* {int(state.get('critical_days') or 0)} روز در وضعیت بحرانی"
+    lines.append(unrest_line + "\n")
+
+    # بحران‌های فعال
+    try:
+        crises = get_active_crises(country_id)
+    except Exception:
+        crises = []
+    if crises:
+        lines.append(f"• *بحران‌های فعال:* {len(crises)} مورد\n")
+        for crisis in crises[:3]:
+            spec = CRISIS_CATALOG.get(crisis.get("crisis_key"), {})
+            lines.append(
+                f"   ‌ ◦ {spec.get('label', 'بحران')} — شدت {SEVERITY_LABELS.get(crisis.get('severity'), '')} | "
+                f"مهار {int(float(crisis.get('mitigation') or 0) * 100)}٪ | "
+                f"مرحله: {crisis_stage_label(crisis.get('stage'))}\n"
+            )
+        if len(crises) > 3:
+            lines.append(f"   ‌ ◦ و {len(crises) - 3} بحران دیگر\n")
+        lines.append("⚠️ برای واکنش: دکمه *🏛️ سیاست داخلی* ← *🚨 بحران‌ها*\n")
+    else:
+        lines.append("• *بحران‌های فعال:* ندارد ✅\n")
+
+    # واکسن
+    doses = int(country.get("vaccine_doses") or 0)
+    try:
+        project = get_active_vaccine_project(country_id)
+    except Exception:
+        project = None
+    if doses or project:
+        vaccine_line = f"• *ذخیره واکسن:* {format_number(doses)} دُز"
+        if project:
+            vaccine_line += f" | پروژه در حال تولید ({int(project.get('batches') or 1)} بچ)"
+        lines.append(vaccine_line + "\n")
+
+    return "\n".join(lines)
