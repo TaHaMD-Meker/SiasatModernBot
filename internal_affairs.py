@@ -2609,7 +2609,11 @@ def create_regional_crisis(
 
 
 def build_regional_news(result: dict) -> tuple[str, str] | None:
-    """یک خبر واحد برای کل منطقه — نه یک خبر به‌ازای هر کشور."""
+    """یک خبر واحد برای کل منطقه — به سبک روزنامه، نه فهرست.
+
+    تیتر + لید + پاراگراف روان. کشورهای تازه درگیر و کشورهایی که بدتر شده‌اند
+    در متن خبر قاطی نمی‌شوند؛ با شمارنده و جمله‌ی خبری توصیف می‌شوند.
+    """
     if not result or not result.get("ok"):
         return None
     created = result.get("created") or []
@@ -2622,31 +2626,41 @@ def build_regional_news(result: dict) -> tuple[str, str] | None:
     region = region_label(result["region"])
     severity = SEVERITY_LABELS.get(result["severity"], "")
     involved = len(created) + len(escalated)
+    crisis_name = _crisis_name(result["crisis_key"])
 
     title = f"{label} سراسری در {region}"
     lines = [
-        f"{region} رسماً درگیر {label} شد. در این موج {involved} کشور وارد وضعیت بحرانی شدند.",
+        f"🗓 {_jalali_date_line()}",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "",
+        f"{region} رسماً درگیر {label} شد. در این موج {_fa(involved)} کشور وارد وضعیت بحرانی شدند.",
         "",
     ]
+
     if created:
-        lines.append("🆕 کشورهای تازه درگیر")
-        lines.extend(
-            f"• {item['country'].get('flag', '🏳️')} {item['country'].get('name', '')}"
-            for item in created[:20]
+        names = _join_names(
+            [f"{item['country'].get('flag', '🏳️')} {item['country'].get('name', '')}"
+             for item in created], limit=5,
         )
-        if len(created) > 20:
-            lines.append(f"• و {len(created) - 20} کشور دیگر")
+        sentence = (
+            f"🆕 {_fa(len(created))} کشور به‌تازگی درگیر شدند؛ از جمله {names}. "
+            f"مقامات محلی قرنطینه و محدودیت‌های اضطراری اعلام کردند."
+        )
+        lines.append(sentence)
         lines.append("")
+
     if escalated:
-        lines.append("🔺 کشورهایی که وضعیتشان بدتر شد")
-        lines.extend(
-            f"• {item['country'].get('flag', '🏳️')} {item['country'].get('name', '')} "
-            f"→ {SEVERITY_LABELS.get(item['crisis']['severity'], '')}"
-            for item in escalated[:20]
+        worse_names = _join_names(
+            [f"{item['country'].get('flag', '🏳️')} {item['country'].get('name', '')}"
+             for item in escalated], limit=5,
         )
-        if len(escalated) > 20:
-            lines.append(f"• و {len(escalated) - 20} کشور دیگر")
+        sentence = (
+            f"🔺 در {_fa(len(escalated))} کشور که از قبل درگیر بودند، {crisis_name} تشدید شد؛ "
+            f"از جمله {worse_names}."
+        )
+        lines.append(sentence)
         lines.append("")
+
     lines.append(f"سطح اعلام‌شده برای موج جدید: {severity}")
     return title, "\n".join(lines).strip()
 

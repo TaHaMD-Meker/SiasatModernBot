@@ -168,8 +168,9 @@ def test_regional_news_lists_new_and_worsened_countries(monkeypatch, tmp_path):
 
     result = ia.create_regional_crisis("europe", "epidemic", severity="medium", admin_id=1)
     _title, body = ia.build_regional_news(result)
-    assert "تازه درگیر" in body
-    assert "بدتر شد" in body
+    assert "به‌تازگی درگیر شدند" in body
+    assert "تشدید شد" in body
+    assert "▫️" not in body and "• " not in body, "روزنامه‌ای، نه لیست"
 
 
 def test_no_news_when_nothing_actually_changed(monkeypatch, tmp_path):
@@ -285,3 +286,19 @@ def test_no_duplicate_region_picker_definitions():
     # «ایجاد بحران دستی» مستقیم لیست کشورها را باز می‌کند
     assert "admin:dom_new\" or data.startswith(\"admin:dom_new:\")" in source
     assert "_country_picker(query, 0, region=None)" in source
+
+
+def test_regional_news_reads_like_a_newspaper(monkeypatch, tmp_path):
+    """خبر بحران منطقه‌ای مثل روزنامه است — تیتر، تاریخ، لید و متن روان."""
+    _fresh(monkeypatch, tmp_path, "region_paper.db")
+    _build_europe(5)
+    result = ia.create_regional_crisis("europe", "epidemic", severity="medium", admin_id=1)
+    title, body = ia.build_regional_news(result)
+    assert "سراسری" in title and "اروپا" in title
+    assert "🗓" in body and "━━━" in body
+    assert "رسماً درگیر" in body
+    assert "کشور وارد وضعیت بحرانی شدند" in body
+    assert "از جمله" in body          # جمله‌ی خبری، نه ردیف
+    assert "سطح اعلام‌شده برای موج جدید: متوسط" in body
+    # هیچ اثری از لیست/جدول نباشد
+    assert "• " not in body and "▫️" not in body and "— " not in body
