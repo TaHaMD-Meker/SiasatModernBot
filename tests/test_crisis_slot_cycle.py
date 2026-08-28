@@ -385,12 +385,11 @@ def test_digest_has_newspaper_layout():
     title, body = ia.build_news_digest(items)
     assert "روزنامه" in title and "بحران" in title
     assert "🗓" in body and "━━━" in body
-    assert "🔺 تشدید شد" in body
-    assert "🔻 مهار شد" in body
-    assert "✅ پایان یافت" in body
+    # هر نوع بحران تیتر خودش را دارد و قاطی نشده
+    assert "\n🦠 اپیدمی\n" in body
+    assert "\n🌊 سیل\n" in body
     # لید خبر با شمارنده
     assert "تشدید شد" in body
-    assert "۱" in body
     # متن روان، نه جدول
     assert "▫️" not in body
     assert "—" not in body
@@ -399,3 +398,100 @@ def test_digest_has_newspaper_layout():
     # ریشه‌کنی اپیدمی در برابر پایان سیل
     assert "ریشه‌کن شد" in body
     assert "پایان یافت" in body
+    # مقاله‌ی اپیدمی، تشدید و مهار و پایانِ همان نوع را یک‌جا دارد
+    epidemic_article = body.split("\n🦠 اپیدمی\n")[1].split("\n🌊 سیل\n")[0]
+    assert "به «شدید» رسید" in epidemic_article
+    assert "کاهش یافت" in epidemic_article
+    assert "ریشه‌کن شد" in epidemic_article
+
+
+def test_war_summary_dedupes_crisis_countries():
+    """کشوری که تلفات انسانی دارد فقط در «میدان جنگ» بیاید، نه در بخش بحران."""
+    items = [
+        {"crisis_id": 1, "country": {"name": "یمن"},
+         "crisis": {"crisis_key": "epidemic", "severity": "severe"},
+         "event": "escalated", "flag": "x", "title": "t", "body": "b"},
+        {"crisis_id": 2, "country": {"name": "اتریش"},
+         "crisis": {"crisis_key": "epidemic", "severity": "medium"},
+         "event": "escalated", "flag": "x", "title": "t", "body": "b"},
+    ]
+    war = [{"name": "یمن", "flag": "🇾🇪", "mil_kia": 35, "wounded": 120, "civ_kia": 55,
+            "ops": ["الله مدینه"], "equip_items": 0}]
+    title, body = ia.build_news_digest(items, war)
+    assert "⚔️ میدان جنگ" in body
+    war_part, crisis_part = body.split("⚔️ میدان جنگ")[1].split("\n🦠 اپیدمی\n", 1)
+    assert "یمن" in war_part  # یمن فقط در میدان جنگ
+    assert "یمن" not in crisis_part
+    assert "اتریش" in crisis_part
+    assert "در اتریش به «متوسط» رسید" in crisis_part
+
+
+def test_war_only_digest():
+    """بدون رویداد بحرانی، تلفاتِ جدید همان روز «گزارش میدان جنگ» می‌شود."""
+    war = [{"name": "عربستان", "flag": "🇸🇦", "mil_kia": 240, "wounded": 720, "civ_kia": 90,
+            "ops": ["وعده صادق"], "equip_items": 10}]
+    title, body = ia.build_news_digest([], war)
+    assert title == "گزارش میدان جنگ"
+    assert "میدان جنگ" in body
+    assert "عربستان" in body
+    assert "۲۴۰ نظامی کشته" in body
+    assert "۹۰ غیرنظامی کشته" in body
+    assert "۷۲۰ مجروح" in body
+    assert "وعده صادق" in body
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# اتصال روزنامه به گزارش تلفاتِ همان روز
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _loss_item(special, qty):
+    return {"key": f"__{special}__", "special": special, "qty": qty, "name": special, "unit": "نفر"}
+
+
+def test_collect_new_war_summary_reads_todays_losses(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "war_sum.db")
+    yemen = db.create_country(70_001, "انصارالله یمن", "🇾🇪", country_key="yemen")
+    saudi = db.create_country(70_002, "عربستان", "🇸🇦", country_key="saudi")
+    ok, rid1, err = db.create_loss_report(
+        yemen, [_loss_item("mil_kia", 35), _loss_item("wounded", 120), _loss_item("civ_kia", 55)],
+        operation_name="الله مدینه",
+    )
+    assert ok, err
+    ok, rid2, err = db.create_loss_report(
+        saudi, [_loss_item("mil_kia", 0), _loss_item("wounded", 0), _loss_item("civ_kia", 0),
+                {"key": "f15", "special": None, "qty": 2, "name": "F-15", "unit": "فروند"}],
+        operation_name="وعده صادق",
+    )
+    assert ok, err
+
+    summaries, marker = ia.collect_new_war_summary()
+    assert marker >= rid2
+    names = {s["name"] for s in summaries}
+    assert names == {"انصارالله یمن"}, "کشورِ بدون تلفات انسانی نباید در میدان جنگ بیاید"
+    y = [s for s in summaries if s["name"] == "انصارالله یمن"][0]
+    assert y["mil_kia"] == 35 and y["wounded"] == 120 and y["civ_kia"] == 55
+    assert "الله مدینه" in y["ops"]
+
+    ia.mark_war_summary_published(marker)
+    again, marker2 = ia.collect_new_war_summary()
+    assert again == [], "بعد از انتشار، نباید دوباره همان گزارش بیاید"
+
+
+def test_war_summary_only_uses_todays_reports(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "war_old.db")
+    cid = db.create_country(70_003, "کشور آزمون", "🏳️", country_key="w1")
+    db.create_loss_report(cid, [_loss_item("mil_kia", 5)], operation_name="قدیمی")
+
+    # گزارشِ دیروز را شبیه‌سازی کن
+    import datetime as _dt
+    conn = db.get_connection()
+    with conn:
+        yesterday = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=1)).isoformat()
+        conn.execute("UPDATE loss_reports SET created_at = ? WHERE id = 1", (yesterday,))
+    conn.close()
+
+    summaries, marker = ia.collect_new_war_summary()
+    assert summaries == [], "گزارش دیروز نباید وارد روزنامه‌ی امروز شود"
+    # ولی مارکر جلو می‌رود تا دفعه‌ی بعد دوباره خوانده نشود
+    again, marker2 = ia.collect_new_war_summary()
+    assert marker == marker2

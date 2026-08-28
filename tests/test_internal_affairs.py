@@ -1696,8 +1696,8 @@ def test_a_busy_cycle_collapses_into_one_digest(monkeypatch, tmp_path):
     digest = ia.build_news_digest(batch)
     assert digest is not None
     title, body = digest
-    assert "بحران" in title
-    assert "🔺 تشدید شد" in body
+    assert "بحران" in title and "روزنامه" in title
+    assert "🗓" in body
     for item in batch[:3]:
         assert (item["country"].get("name") or "") in body
 

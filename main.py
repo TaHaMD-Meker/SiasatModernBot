@@ -127,31 +127,41 @@ async def _publish_crisis_news(context, items: list):
 
     قبلاً هر رویداد هر کشور یک پیام جدا می‌شد و سر ساعت چرخه، کانال پر از خبر
     می‌شد. حالا پیش‌فرض فقط تغییر سطح بحران منتشر می‌شود و اگر تعدادش زیاد بود،
-    به‌جای ده‌ها پیام، یک گزارش تجمیعی می‌رود.
+    به‌جای ده‌ها پیام، یک روزنامه‌ی تجمیعی می‌رود.
+
+    روزنامه به «گزارش تلفاتِ امروز» هم وصل است: کشوری که تلفات انسانی دارد فقط
+    در بخش «میدان جنگ» می‌آید و از بخش بحران همان شماره حذف می‌شود. حتی وقتی
+    رویداد بحرانی نباشد، تلفاتِ جدیدِ همان روز در قالب «گزارش میدان جنگ» منتشر
+    می‌شود (هر گزارش فقط یک‌بار).
     """
-    if not items:
-        return
     mode = internal_affairs.news_mode()
     if mode == "off":
-        return
-    if mode == "severity":
+        items = []
+    elif mode == "severity":
         items = [i for i in items if i["event"] in internal_affairs.SEVERITY_EVENTS]
-    if not items:
+
+    war_summary, war_marker = internal_affairs.collect_new_war_summary()
+    if not items and not war_summary:
         return
 
-    async def _send(title, body):
+    async def _send(title, body, category="بحران داخلی"):
         try:
-            await news_engine.post_breaking_news(context.bot, title, body, "بحران داخلی")
+            await news_engine.post_breaking_news(context.bot, title, body, category)
             return True
         except Exception:
             logger.exception("Could not publish crisis news")
             return False
 
-    if len(items) > internal_affairs.NEWS_DIGEST_THRESHOLD:
-        digest = internal_affairs.build_news_digest(items)
-        if digest and await _send(digest[0], digest[1]):
-            for item in items:
-                internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])
+    use_digest = len(items) > internal_affairs.NEWS_DIGEST_THRESHOLD or bool(war_summary)
+    if use_digest:
+        digest = internal_affairs.build_news_digest(items, war_summary)
+        if digest:
+            category = "میدان جنگ" if (war_summary and not items) else "بحران داخلی"
+            if await _send(digest[0], digest[1], category):
+                for item in items:
+                    internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])
+                if war_summary:
+                    internal_affairs.mark_war_summary_published(war_marker)
         return
 
     for item in items:
