@@ -24,13 +24,31 @@ def _country(database, player_id=7101, approval=80, key="iran"):
 
 
 def _run(cid, days=1, start=None):
-    """اجرای چند چرخه‌ی روزانه‌ی متوالی با تاریخ‌های متفاوت."""
+    """اجرای چند «روز» کامل: چرخه‌ی روزانه به‌علاوه‌ی چهار نوبت ۶ ساعته‌ی شدت بحران."""
     base = start or ia._now()
     results = []
     for offset in range(days):
         moment = base + datetime.timedelta(days=offset)
         results.append(ia.run_daily_cycle(db.get_country_by_id(cid), None, now_dt=moment))
+        _run_slots(cid, moment)
     return results
+
+
+
+def _run_slots(cid, moment, count=4):
+    """نوبت‌های ۶ ساعته‌ی همان روز تقویمی تهران (گرید پرداخت درآمد).
+
+    نوبت‌هایی که به روز بعد سُر می‌خورند اجرا نمی‌شوند، وگرنه سقف «یک تشدید در روز»
+    در آزمون بی‌معنا می‌شود.
+    """
+    day = moment.astimezone(ia.IRAN_TZ).date()
+    events = []
+    for index in range(count):
+        instant = moment + datetime.timedelta(hours=6 * index)
+        if instant.astimezone(ia.IRAN_TZ).date() != day:
+            break
+        events.extend(ia.run_crisis_slot_cycle(db.get_country_by_id(cid), instant))
+    return events
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1136,8 +1154,10 @@ def test_epidemic_spreads_to_neighbours_once_past_light(monkeypatch, tmp_path):
 
     start = ia._now()
     for day in range(5):
+        moment = start + datetime.timedelta(days=day)
         for cid in ids.values():
-            ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=start + datetime.timedelta(days=day))
+            ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=moment)
+            _run_slots(cid, moment)
 
     infected = [
         key for key, cid in ids.items()
@@ -1505,7 +1525,9 @@ def test_moderate_containment_steps_the_crisis_down(monkeypatch, tmp_path):
         if current["stage"] != "ended" and float(current["mitigation"]) < 0.55:
             ia.respond_to_crisis(crisis["id"], "search_rescue", actor_id=1)
             ia.respond_to_crisis(crisis["id"], "emergency_aid", actor_id=1)
-        ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=start + datetime.timedelta(days=day))
+        moment = start + datetime.timedelta(days=day)
+        ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=moment)
+        _run_slots(cid, moment)
         levels.append(ia.get_crisis(crisis["id"])["severity"])
 
     assert levels[0] == "medium", "مهار متوسط باید شدت را یک پله پایین بیاورد"
@@ -1643,6 +1665,9 @@ def _one_cycle_news(database, ids):
         cycle = ia.run_daily_cycle(database.get_country_by_id(cid), None, now_dt=now)
         if cycle:
             batch.extend(ia.collect_news(database.get_country_by_id(cid), cycle))
+        slot_events = ia.run_crisis_slot_cycle(database.get_country_by_id(cid), now)
+        if slot_events:
+            batch.extend(ia.collect_slot_news(database.get_country_by_id(cid), slot_events))
     return batch
 
 
@@ -1656,7 +1681,7 @@ def test_default_news_mode_only_reports_severity_changes(monkeypatch, tmp_path):
 
     published = [i for i in batch if i["event"] in ia.SEVERITY_EVENTS]
     assert published, "تغییر سطح باید منتشر شود"
-    assert all(i["event"] in ("escalated", "deescalated", "contained") for i in published)
+    assert all(i["event"] in ia.SEVERITY_EVENTS for i in published)
     # رویدادهای پرحجم مثل impact و damage به کانال نمی‌روند
     assert any(i["event"] == "impact" for i in batch)
     assert not any(i["event"] == "impact" for i in published)

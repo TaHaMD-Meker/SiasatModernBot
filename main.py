@@ -242,6 +242,20 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         if med_payment > 0:
             db.adjust_medical_isotopes(c["id"], med_payment)
 
+        # ── چرخه‌ی ۶ ساعته‌ی شدت بحران، هم‌ضرب با همین نوبت پرداخت
+        # فقط بحران‌هایی که کل سطحشان بالا/پایین شده خبر می‌سازند؛ تغییر درصد مهار
+        # به‌تنهایی ساکت است.
+        try:
+            slot_events = internal_affairs.run_crisis_slot_cycle(db.get_country_by_id(c["id"]) or c, now)
+            if slot_events:
+                fresh_slot = db.get_country_by_id(c["id"]) or c
+                slot_news = internal_affairs.collect_slot_news(fresh_slot, slot_events)
+                if slot_news:
+                    crisis_news_batch.extend(slot_news)
+                    await _notify_crisis_owner(context, fresh_slot, slot_news)
+        except Exception:
+            logger.exception("Crisis slot cycle failed for country %s", c["id"])
+
         app_res = None
         if first_of_day:
             app_res = approval_system.process_daily_approval_and_emigration(c)

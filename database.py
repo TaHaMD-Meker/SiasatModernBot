@@ -936,6 +936,8 @@ def init_db():
         mitigation REAL NOT NULL DEFAULT 0,
         escalations INTEGER NOT NULL DEFAULT 0,
         last_escalation_date TEXT,
+        last_severity_slot TEXT,
+        light_since TEXT,
         contained_days INTEGER NOT NULL DEFAULT 0,
         outcome TEXT,
         damage_json TEXT NOT NULL DEFAULT '{}',
@@ -1076,6 +1078,12 @@ def init_db():
             pass
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_country_crises_active ON country_crises(country_id, stage)")
+    for _col, _decl in (("last_severity_slot", "TEXT"), ("light_since", "TEXT")):
+        try:
+            cur.execute(f"ALTER TABLE country_crises ADD COLUMN {_col} {_decl}")
+        except Exception:
+            pass
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_internal_daily_log_lookup ON internal_daily_log(country_id, log_date DESC)")
 
     conn.commit()

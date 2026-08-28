@@ -58,7 +58,7 @@ HOUSEHOLD_POWER_BASE = 100  # پوشش پایه‌ی شبکه‌ی خانگی
 #   all      → همه‌ی رویدادها (پرسروصدا)
 #   off      → هیچ‌چیز؛ فقط اطلاع خصوصی به خود بازیکن
 NEWS_MODES = ("severity", "all", "off")
-SEVERITY_EVENTS = ("escalated", "deescalated", "contained")
+SEVERITY_EVENTS = ("escalated", "deescalated", "contained", "faded")
 # اگر تعداد خبرهای یک چرخه از این بیشتر شد، به‌جای اسپم، یک گزارش تجمیعی می‌رود
 NEWS_DIGEST_THRESHOLD = 4
 
@@ -765,6 +765,13 @@ def hazard_weights(country: dict, now_dt: datetime.datetime | None = None) -> di
     return weights
 
 
+try:
+    from zoneinfo import ZoneInfo
+    IRAN_TZ = ZoneInfo("Asia/Tehran")
+except Exception:  # محیط بدون tzdata
+    IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
+
+
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
@@ -775,6 +782,11 @@ def _iso(dt: datetime.datetime | None = None) -> str:
 
 def _today(dt: datetime.datetime | None = None) -> str:
     return (dt or _now()).date().isoformat()
+
+
+def _iran_date(dt: datetime.datetime | None = None) -> str:
+    """تاریخ تقویمی تهران — همان مبنایی که نوبت‌های درآمد با آن حساب می‌شوند."""
+    return (dt or _now()).astimezone(IRAN_TZ).date().isoformat()
 
 
 def _parse_dt(raw):
@@ -935,7 +947,7 @@ def collect_news(country: dict, cycle: dict) -> list[dict]:
             add(crisis, event, flag=f"escalated_{crisis.get('severity')}", damage=item.get("damage"))
         elif event == "deescalated":
             add(crisis, event, flag=f"deescalated_{crisis.get('severity')}")
-        elif event == "contained":
+        elif event in ("contained", "faded"):
             add(crisis, event)
         elif event == "spread":
             source = item.get("from_country") or {}
@@ -956,11 +968,18 @@ def collect_news(country: dict, cycle: dict) -> list[dict]:
     return items
 
 
+def collect_slot_news(country: dict, events: list[dict]) -> list[dict]:
+    """خبرهای چرخه‌ی ۶ ساعته — همان مسیر ساخت خبر چرخه‌ی روزانه."""
+    if not events:
+        return []
+    return collect_news(country, {"crisis_events": events})
+
+
 def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
     """گزارش تجمیعی یک چرخه — به‌جای ده‌ها پیام جداگانه، یک پیام."""
     if not items:
         return None
-    groups = {"escalated": [], "deescalated": [], "contained": [], "spread": []}
+    groups = {"escalated": [], "deescalated": [], "contained": [], "faded": [], "spread": []}
     for item in items:
         if item["event"] in groups:
             spec = CRISIS_CATALOG.get(item["crisis"]["crisis_key"], {})
@@ -975,6 +994,7 @@ def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
         ("escalated", "🔺 تشدید شد"),
         ("deescalated", "🔻 مهار شد"),
         ("contained", "✅ پایان یافت"),
+        ("faded", "🌤 فروکش کرد"),
         ("spread", "🦠 سرایت کرد"),
     ):
         if groups[key]:
@@ -1445,13 +1465,16 @@ def change_severity(crisis_id: int, direction: int, admin_id: int | None = None,
     conn = db.get_connection()
     try:
         with conn:
+            # ساعت شروع «خفیف‌ماندن»: با رسیدن به خفیف ست می‌شود، با بالا رفتن پاک
+            light_since = _iso() if new_severity == SEVERITY_ORDER[0] else None
             conn.execute(
                 """
                 UPDATE country_crises
-                SET severity = ?, escalations = escalations + ?, last_escalation_date = ?
+                SET severity = ?, escalations = escalations + ?, last_escalation_date = ?,
+                    light_since = ?
                 WHERE id = ?
                 """,
-                (new_severity, 1 if direction > 0 else 0, _today(), crisis_id),
+                (new_severity, 1 if direction > 0 else 0, _iran_date(), light_since, crisis_id),
             )
     finally:
         conn.close()
@@ -1950,7 +1973,6 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
         # ── مهار خوب: بحران پایین می‌آید و در نهایت خاتمه می‌یابد
         if crisis["stage"] in ("warning", "impact", "recovery"):
             mitigation = float(crisis.get("mitigation") or 0)
-            already_today = crisis.get("last_escalation_date") == _today(now_dt)
 
             if mitigation >= CONTAINMENT_THRESHOLD:
                 contained = int(crisis.get("contained_days") or 0) + 1
@@ -1979,23 +2001,8 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
                     finally:
                         conn.close()
 
-                if not already_today and mitigation >= DEESCALATION_MITIGATION_THRESHOLD:
-                    if crisis["severity"] != SEVERITY_ORDER[0]:
-                        ok, _msg, eased, _x = change_severity(crisis["id"], -1, reason="auto")
-                        if ok:
-                            crisis = eased
-                            events.append({"crisis": eased, "event": "deescalated"})
-
-        # ── تشدید شبانه‌ی بحران رسیدگی‌نشده
-        if crisis["stage"] in ("warning", "impact"):
-            mitigated = float(crisis.get("mitigation") or 0) >= ESCALATION_MITIGATION_THRESHOLD
-            already_today = crisis.get("last_escalation_date") == _today(now_dt)
-            at_max = crisis["severity"] == SEVERITY_ORDER[-1]
-            if not mitigated and not already_today and not at_max:
-                ok, _msg, escalated, extra = change_severity(crisis["id"], +1, reason="auto")
-                if ok:
-                    crisis = escalated
-                    events.append({"crisis": escalated, "event": "escalated", "damage": extra})
+                # تشدید و تخفیف اینجا انجام نمی‌شود؛ کار چرخه‌ی ۶ ساعته است
+                # (run_crisis_slot_cycle) تا بازیکن نتیجه‌ی مهارش را همان روز ببیند.
 
         # ── سرایت به کشورهای هم‌مرز (فقط بحران‌های واگیردار و مهارنشده)
         if crisis["stage"] in ("impact", "recovery"):
@@ -2026,6 +2033,100 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
             events.append({"crisis": get_crisis(crisis["id"]), "event": "ended"})
     return events
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# چرخه‌ی ۶ ساعته‌ی شدت بحران — هم‌ضرب با نوبت‌های پرداخت درآمد
+# ─────────────────────────────────────────────────────────────────────────────
+
+SLOT_OFFSET_HOURS = 3          # گرید تهران: ۰۳، ۰۹، ۱۵، ۲۱
+SLOT_HOURS = 6
+LIGHT_FADE_HOURS = 24          # بحرانی که یک شبانه‌روز خفیف بماند، خودش تمام می‌شود
+# هر بحران در هر روز تقویمی تهران حداکثر یک پله بالا یا پایین می‌رود؛ ولی این پله
+# در هر کدام از چهار نوبت ۶ ساعته می‌تواند بیفتد. یعنی بازیکنی که ظهر بحران را مهار
+# می‌کند، نتیجه را ساعت ۱۵ می‌بیند نه نیمه‌شب — بدون اینکه سرعت بازی چهار برابر شود.
+SEVERITY_STEP_ONCE_PER_DAY = True
+
+
+def slot_key(now_dt: datetime.datetime | None = None) -> str:
+    """شناسه‌ی بازه‌ی ۶ ساعته به وقت تهران — همان گریدی که درآمد با آن واریز می‌شود."""
+    now_dt = now_dt or _now()
+    local = now_dt.astimezone(IRAN_TZ)
+    shifted = (local.hour - SLOT_OFFSET_HOURS) % 24
+    return f"{local.date().isoformat()}_{shifted // SLOT_HOURS}"
+
+
+def _set_crisis_slot(crisis_id: int, key: str):
+    conn = db.get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE country_crises SET last_severity_slot = ? WHERE id = ?", (key, crisis_id))
+    finally:
+        conn.close()
+
+
+def _mark_light_since(crisis_id: int, value: str | None):
+    conn = db.get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE country_crises SET light_since = ? WHERE id = ?", (value, crisis_id))
+    finally:
+        conn.close()
+
+
+def run_crisis_slot_cycle(country: dict, now_dt: datetime.datetime | None = None) -> list[dict]:
+    """هر ۶ ساعت یک‌بار: سطح بحران‌ها بالا/پایین می‌رود و خفیف‌های کهنه محو می‌شوند.
+
+    فقط بحران‌هایی که **کل سطحشان** عوض شده در خروجی می‌آیند؛ تغییر درصد مهار
+    به‌تنهایی خبر نمی‌سازد. هر بحران در هر بازه حداکثر یک‌بار بررسی می‌شود، پس
+    اجرای چندباره‌ی job در یک بازه چیزی را دوباره تکان نمی‌دهد.
+    """
+    if not is_enabled():
+        return []
+    now_dt = now_dt or _now()
+    key = slot_key(now_dt)
+    events = []
+
+    for crisis in get_active_crises(country["id"]):
+        if crisis.get("last_severity_slot") == key:
+            continue
+        if crisis["stage"] not in ("warning", "impact", "recovery"):
+            continue
+
+        _set_crisis_slot(crisis["id"], key)
+        mitigation = float(crisis.get("mitigation") or 0)
+        severity = crisis["severity"]
+        stepped_today = (
+            SEVERITY_STEP_ONCE_PER_DAY
+            and crisis.get("last_escalation_date") == _iran_date(now_dt)
+        )
+
+        # ۱) مهار خوب → یک سطح پایین
+        if not stepped_today and mitigation >= DEESCALATION_MITIGATION_THRESHOLD and severity != SEVERITY_ORDER[0]:
+            ok, _msg, eased, _x = change_severity(crisis["id"], -1, reason="auto_slot")
+            if ok:
+                events.append({"crisis": eased, "event": "deescalated"})
+                continue
+
+        # ۲) رهاشده → یک سطح بالا (به‌عمد حداکثر روزی یک‌بار، تا خواب شبانه‌ی
+        #    بازیکن کشورش را نابود نکند)
+        if not stepped_today and crisis["stage"] in ("warning", "impact") and severity != SEVERITY_ORDER[-1]:
+            if mitigation < ESCALATION_MITIGATION_THRESHOLD:
+                ok, _msg, worse, extra = change_severity(crisis["id"], +1, reason="auto_slot")
+                if ok:
+                    events.append({"crisis": worse, "event": "escalated", "damage": extra})
+                    continue
+
+        # ۳) خفیفِ ماندگار → محو شدن
+        if severity == SEVERITY_ORDER[0]:
+            since = _parse_dt(crisis.get("light_since"))
+            if since is None:
+                _mark_light_since(crisis["id"], _iso(now_dt))
+            elif (now_dt - since).total_seconds() >= LIGHT_FADE_HOURS * 3600:
+                end_crisis(crisis["id"], outcome="faded")
+                events.append({"crisis": get_crisis(crisis["id"]), "event": "faded"})
+
+    return events
 
 
 def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: datetime.datetime | None = None) -> dict | None:
@@ -2370,6 +2471,11 @@ def build_news(country: dict, crisis: dict, event: str, damage: dict | None = No
         return (
             f"مهار {spec['label']} — {flag} {name}",
             f"با اقدامات دولت، شدت {spec['label']} به سطح {severity} کاهش یافت و اوضاع رو به بهبود است.",
+        )
+    if event == "faded":
+        return (
+            f"پایان {spec['label']} — {flag} {name}",
+            f"{spec['label']} پس از یک شبانه‌روز ماندن در سطح خفیف فروکش کرد و پرونده‌اش بسته شد.",
         )
     if event == "contained":
         return (
