@@ -261,3 +261,15 @@ def test_crisis_digest_is_also_free_of_html(monkeypatch, tmp_path):
     digest = ia.build_news_digest(items)
     assert digest is not None
     assert "<b>" not in digest[1]
+
+
+def test_manual_crisis_region_picker_wiring():
+    """بحران دستی: انتخاب قاره + کشورهای همان قاره + برگشت هوشمند."""
+    import inspect
+    source = inspect.getsource(internal_admin)
+    for key in ("admin:dom_new_rgn:", "admin:dom_new_all:", "_region_picker", "_region_of_country"):
+        assert key in source
+    # ایران باید در خاورمیانه باشد
+    assert internal_admin._region_of_country("iran") == "mideast"
+    assert internal_admin._region_of_country("france") == "europe"
+    assert internal_admin._region_of_country("un") is None or internal_admin._region_of_country("un") != "europe"

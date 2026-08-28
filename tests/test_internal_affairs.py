@@ -1874,3 +1874,38 @@ def test_ui_never_hardcodes_the_batch_size():
     for module in (domestic, guide):
         source = inspect.getsource(module)
         assert "۵۰ هزار دُز" not in source, f"{module.__name__} اندازه‌ی واحد را دستی نوشته"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# هزینه‌ی سری دوم واکسن — تحقیق و توسعه فقط در سری اول
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_vaccine_first_run_charges_full_research_cost(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    need = ia.vaccine_requirements(1, country_id=cid)
+    assert need["first_run"] is True
+    assert need["cost"] == ia.VACCINE_COST_PER_BATCH == 55_000_000
+
+
+def test_vaccine_second_run_skips_research_cost(monkeypatch, tmp_path):
+    database = _fresh_db(monkeypatch, tmp_path)
+    cid = _country(database)
+    database.update_country_field(cid, "tech_level", 3)
+    database.update_country_field(cid, "treasury", 200_000_000)
+    database.update_country_field(cid, "microchips", 5_000)
+
+    ok, _msg, _p = ia.start_vaccine_project(cid, 1, actor_id=1)
+    assert ok, _msg
+    assert ia.has_vaccine_projects(cid)
+
+    need = ia.vaccine_requirements(1, country_id=cid)
+    assert need["first_run"] is False
+    assert need["cost"] == ia.VACCINE_RUN_COST_PER_BATCH == 35_000_000
+    assert need["microchips"] == ia.VACCINE_CHIPS_PER_BATCH, "میکروچیپ هر سری لازم است"
+    assert need["days"] >= ia.VACCINE_BASE_DAYS
+
+
+def test_vaccine_run_cost_is_full_cost_minus_research():
+    assert ia.VACCINE_RUN_COST_PER_BATCH == ia.VACCINE_COST_PER_BATCH - ia.VACCINE_RESEARCH_COST
+    assert ia.VACCINE_RESEARCH_COST == ia.VACCINE_COST_BREAKDOWN["🔬 تحقیق و توسعه و کارآزمایی"]

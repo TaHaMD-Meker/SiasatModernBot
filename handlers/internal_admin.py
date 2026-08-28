@@ -8,6 +8,7 @@ import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+import config
 import database as db
 import internal_affairs as ia
 from utils import format_money, format_number
@@ -298,8 +299,61 @@ async def _crisis_panel(query, crisis_id: int, notice: str = ""):
 
 
 
-async def _country_picker(query, page: int):
-    countries = [c for c in db.get_all_countries() if (c.get("player_id") or 0) > 0]
+def _region_of_country(country_key: str) -> str | None:
+    """قاره‌ای که این کشور به آن تعلق دارد (از جدول قاره‌های بازی)."""
+    if not country_key:
+        return None
+    for key, spec in getattr(config, "CONTINENTS", {}).items():
+        if country_key in spec.get("keys", []):
+            return key
+    return None
+
+
+def _region_label(region_key: str) -> str:
+    spec = getattr(config, "CONTINENTS", {}).get(region_key, {})
+    return spec.get("name") or region_key
+
+
+async def _region_picker(query):
+    """اولین گام بحران دستی: انتخاب قاره — تا ادمین بین ۱۰۰ کشور اسلاید نزند."""
+    rows = []
+    for key, spec in getattr(config, "CONTINENTS", {}).items():
+        count = sum(
+            1 for c in db.get_all_countries()
+            if (c.get("player_id") or 0) > 0 and (c.get("country_key") or "") in spec.get("keys", [])
+        )
+        label = f"{spec.get('name', key)} ({count})"
+        rows.append([InlineKeyboardButton(label, callback_data=f"admin:dom_new_rgn:{key}:0")])
+    rows.append([InlineKeyboardButton("🌍 همه‌ی کشورها", callback_data="admin:dom_new_all:0")])
+    rows.append(_home_row())
+    await query.edit_message_text(
+        "➕ <b>ایجاد بحران دستی</b>\n━━━━━━━━━━━━━━━━━━\n"
+        "ابتدا قاره را انتخاب کنید تا فقط کشورهای همان قاره دیده شوند:",
+        reply_markup=_kb(rows), parse_mode="HTML",
+    )
+
+
+async def _country_picker(query, page: int, region: str | None = None):
+    all_countries = [c for c in db.get_all_countries() if (c.get("player_id") or 0) > 0]
+    if region:
+        keys = set(getattr(config, "CONTINENTS", {}).get(region, {}).get("keys", []))
+        countries = [c for c in all_countries if (c.get("country_key") or "") in keys]
+    else:
+        countries = all_countries
+
+    title = (
+        f"➕ <b>ایجاد بحران دستی — {_region_label(region)}</b>"
+        if region else "➕ <b>ایجاد بحران دستی</b>"
+    )
+    if not countries:
+        await query.edit_message_text(
+            f"{title}\n━━━━━━━━━━━━━━━━━━\n"
+            "در این قاره هنوز کشوری با بازیکن ثبت نشده است.",
+            reply_markup=_kb([[InlineKeyboardButton("🔙 انتخاب قاره", callback_data="admin:dom_new:0")]]),
+            parse_mode="HTML",
+        )
+        return
+
     total_pages = max(1, (len(countries) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))
     chunk = countries[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
@@ -308,13 +362,19 @@ async def _country_picker(query, page: int):
     )] for c in chunk]
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:dom_new:{page - 1}"))
+        target = f"admin:dom_new_rgn:{region}:{page - 1}" if region else f"admin:dom_new_all:{page - 1}"
+        nav.append(InlineKeyboardButton("◀️", callback_data=target))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="ignore"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:dom_new:{page + 1}"))
-    rows.extend([nav, _home_row()])
+        target = f"admin:dom_new_rgn:{region}:{page + 1}" if region else f"admin:dom_new_all:{page + 1}"
+        nav.append(InlineKeyboardButton("▶️", callback_data=target))
+    rows.extend([nav])
+    if region:
+        rows.append([InlineKeyboardButton("🌍 همه‌ی کشورها", callback_data="admin:dom_new_all:0")])
+    rows.append([InlineKeyboardButton("🔙 انتخاب قاره", callback_data="admin:dom_new:0")])
+    rows.append(_home_row())
     await query.edit_message_text(
-        "➕ <b>ایجاد بحران دستی</b>\n━━━━━━━━━━━━━━━━━━\nکشور هدف را انتخاب کنید:",
+        f"{title}\n━━━━━━━━━━━━━━━━━━\nکشور هدف را انتخاب کنید:",
         reply_markup=_kb(rows), parse_mode="HTML",
     )
 
@@ -326,7 +386,10 @@ async def _crisis_type_picker(query, country_id: int):
         return
     rows = [[InlineKeyboardButton(spec["label"], callback_data=f"admin:dom_type:{country_id}:{key}")]
             for key, spec in ia.CRISIS_CATALOG.items()]
-    rows.append([InlineKeyboardButton("🔙 انتخاب کشور", callback_data="admin:dom_new:0")])
+    # برگشت هوشمند: به قاره‌ی همین کشور، نه از اول
+    region = _region_of_country(country.get("country_key") or "")
+    back_data = f"admin:dom_new_rgn:{region}:0" if region else "admin:dom_new_all:0"
+    rows.append([InlineKeyboardButton("🔙 انتخاب کشور", callback_data=back_data)])
     await query.edit_message_text(
         f"➕ <b>ایجاد بحران برای {country.get('flag', '🏳️')} {html.escape(country.get('name', ''))}</b>\n"
         "━━━━━━━━━━━━━━━━━━\nنوع بحران را انتخاب کنید:",
@@ -599,8 +662,15 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         await _active_crises(query, page)
     elif data.startswith("admin:dom_crisis:"):
         await _crisis_panel(query, int(data.split(":")[2]))
-    elif data.startswith("admin:dom_new:"):
-        await _country_picker(query, int(data.split(":")[2]))
+    elif data == "admin:dom_new" or data.startswith("admin:dom_new:"):
+        # «ایجاد بحران دستی» حالا با انتخاب قاره شروع می‌شود تا اسلاید نشود
+        await _region_picker(query)
+    elif data.startswith("admin:dom_new_all:"):
+        await _country_picker(query, int(data.split(":")[2]), region=None)
+    elif data.startswith("admin:dom_new_rgn:"):
+        _, _, region, page = data.split(":", 3)
+        page = int(page) if page.isdigit() else 0
+        await _country_picker(query, page, region=region)
     elif data.startswith("admin:dom_pick:"):
         await _crisis_type_picker(query, int(data.split(":")[2]))
     elif data.startswith("admin:dom_type:"):

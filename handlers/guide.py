@@ -180,7 +180,10 @@ async def guide_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"🧾 <b>۳. تفکیک هزینه‌ی هر واحد ({format_number(ia.VACCINE_BATCH_DOSES)} دُز)</b>\n"
             + "".join(f"• {part}: {format_money(amount)}\n" for part, amount in ia.VACCINE_COST_BREAKDOWN.items())
             + f"• 💻 میکروچیپ: ≈ {format_money(ia.VACCINE_CHIPS_PER_BATCH * 15_000)}\n"
-            + f"<b>جمع کل: ≈ {format_money(ia.VACCINE_COST_PER_BATCH + ia.VACCINE_CHIPS_PER_BATCH * 15_000)}</b>\n\n"
+            + f"<b>سری اول: ≈ {format_money(ia.VACCINE_COST_PER_BATCH + ia.VACCINE_CHIPS_PER_BATCH * 15_000)}</b>\n"
+            + f"<b>سری دوم به بعد: ≈ {format_money(ia.VACCINE_RUN_COST_PER_BATCH + ia.VACCINE_CHIPS_PER_BATCH * 15_000)}</b>\n"
+            + "تحقیق و توسعه فقط در سری اول پرداخت می‌شود؛ کشوری که فرمول را دارد، "
+            + "سری‌های بعدی را با هزینه‌ی تولید می‌سازد.\n\n"
             "⏳ <b>۴. زمان می‌برد</b>\n"
             f"کوچک‌ترین پروژه <b>{format_number(one['doses'])} دُز</b> در <b>{one['days']} روز</b> — "
             f"معادل <b>{one['doses'] // ia.VACCINE_DOSES_PER_USE} بار</b> تزریق سراسری.\n"

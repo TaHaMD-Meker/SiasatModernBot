@@ -601,8 +601,9 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
         ])
     else:
         lines.extend(["", "<b>شروع تولید جدید</b>"])
+        first_run = not ia.has_vaccine_projects(country["id"])
         for batches in (1, 3, 6):
-            need = ia.vaccine_requirements(batches)
+            need = ia.vaccine_requirements(batches, country_id=country["id"])
             ok, reason, _n = ia.can_start_vaccine(country, batches)
             body = (
                 f"\n{'✅' if ok else '🔒'} <b>{format_number(need['doses'])} دُز</b> "
@@ -623,7 +624,15 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
         for part, amount in ia.VACCINE_COST_BREAKDOWN.items():
             lines.append(f"• {part}: {format_money(amount)}")
         lines.append(f"• 💻 میکروچیپ ({format_number(ia.VACCINE_CHIPS_PER_BATCH)} عدد): ≈ {format_money(chip_value)}")
-        lines.append(f"<b>جمع کل: ≈ {format_money(ia.VACCINE_COST_PER_BATCH + chip_value)}</b>")
+        if first_run:
+            lines.append(f"<b>جمع سری اول: ≈ {format_money(ia.VACCINE_COST_PER_BATCH + chip_value)}</b>")
+            lines.append(
+                f"\n<i>🔬 تحقیق و توسعه فقط در <b>سری اول</b> محاسبه می‌شود؛ از سری دوم "
+                f"هزینه‌ی تولید {format_money(ia.VACCINE_RUN_COST_PER_BATCH)} نقدی (بدون تحقیق و توسعه) است.</i>"
+            )
+        else:
+            lines.append(f"<b>جمع هر سری بعدی: ≈ {format_money(ia.VACCINE_RUN_COST_PER_BATCH + chip_value)}</b>")
+            lines.append("\n<i>✅ فرمول واکسن از قبل به‌دست آمده؛ هزینه‌ی تحقیق و توسعه دیگر تکرار نمی‌شود.</i>")
         lines.append(f"\n<b>پیش‌نیاز:</b> سطح فناوری {ia.VACCINE_MIN_TECH_LEVEL} و صنعت نیمه‌هادی")
 
     history = [p for p in ia.get_vaccine_history(country["id"], 5) if p["status"] == "delivered"]

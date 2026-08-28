@@ -171,6 +171,10 @@ VACCINE_COST_BREAKDOWN = {
     "🚚 توزیع و زنجیره سرد": 5_000_000,
 }
 VACCINE_COST_PER_BATCH = sum(VACCINE_COST_BREAKDOWN.values())   # ۵۵ میلیون نقدی
+# تحقیق و توسعه فقط یک‌بار (در سری اول) هزینه می‌شود؛ کشوری که فرمول را دارد
+# سری‌های بعدی را فقط با هزینه‌ی تولید (خط تولید + کیفیت + توزیع) می‌سازد.
+VACCINE_RESEARCH_COST = VACCINE_COST_BREAKDOWN["🔬 تحقیق و توسعه و کارآزمایی"]
+VACCINE_RUN_COST_PER_BATCH = VACCINE_COST_PER_BATCH - VACCINE_RESEARCH_COST   # ۳۵ میلیون
 VACCINE_CHIPS_PER_BATCH = 2_000                                  # ≈ ۳۰ میلیون ارزش بازار
 VACCINE_ISOTOPES_PER_BATCH = 0                                   # فعلاً لازم نیست
 VACCINE_DOSES_PER_USE = 50_000        # مصرف هر بار تزریق در بحران
@@ -2217,22 +2221,33 @@ def _random_crisis_candidate(country: dict, state: dict) -> tuple[str, str] | No
 # ─────────────────────────────────────────────────────────────────────────────
 # تولید واکسن
 # ─────────────────────────────────────────────────────────────────────────────
-def vaccine_requirements(batches: int = 1) -> dict:
+def has_vaccine_projects(country_id: int) -> bool:
+    """آیا این کشور حداقل یک بار پروژه‌ی واکسن شروع کرده؟ (تحقیق و توسعه انجام شده)"""
+    if not country_id:
+        return False
+    return bool(get_vaccine_history(country_id, 1))
+
+
+def vaccine_requirements(batches: int = 1, country_id: int | None = None) -> dict:
     batches = max(1, min(VACCINE_MAX_BATCHES, int(batches)))
+    # تحقیق و توسعه فقط در سری اول می‌آید؛ از سری دوم، فقط هزینه‌ی تولید.
+    first_run = country_id is None or not has_vaccine_projects(country_id)
+    cost_per = VACCINE_COST_PER_BATCH if first_run else VACCINE_RUN_COST_PER_BATCH
     return {
         "batches": batches,
         "doses": batches * VACCINE_BATCH_DOSES,
-        "cost": batches * VACCINE_COST_PER_BATCH,
+        "cost": batches * cost_per,
         "microchips": batches * VACCINE_CHIPS_PER_BATCH,
         "medical_isotopes": batches * VACCINE_ISOTOPES_PER_BATCH,
         "days": VACCINE_BASE_DAYS + (batches - 1) * VACCINE_DAYS_PER_EXTRA_BATCH,
         "tech_level": VACCINE_MIN_TECH_LEVEL,
+        "first_run": first_run,
     }
 
 
 def can_start_vaccine(country: dict, batches: int = 1) -> tuple[bool, str, dict]:
     """آیا این کشور می‌تواند پروژه‌ی واکسن شروع کند؟"""
-    need = vaccine_requirements(batches)
+    need = vaccine_requirements(batches, country_id=country.get("id"))
     if int(country.get("tech_level") or 1) < need["tech_level"]:
         return False, f"نیازمند سطح فناوری {need['tech_level']} (سطح فعلی: {int(country.get('tech_level') or 1)})", need
     if int(country.get("treasury") or 0) < need["cost"]:
@@ -2309,8 +2324,9 @@ def start_vaccine_project(country_id: int, batches: int = 1, actor_id: int | Non
         conn.close()
 
     db.add_log(f"player:{actor_id}", "vaccine_project_start", f"country={country_id} doses={need['doses']}")
+    note = "" if need.get("first_run") else " (هزینه‌ی سری دوم — بدون تحقیق و توسعه)"
     return True, (
-        f"تولید {need['doses']:,} دُز واکسن آغاز شد. "
+        f"تولید {need['doses']:,} دُز واکسن آغاز شد{note}. "
         f"زمان تحویل: {need['days']} روز دیگر."
     ), get_active_vaccine_project(country_id)
 
