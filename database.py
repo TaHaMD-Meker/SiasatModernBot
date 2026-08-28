@@ -6223,6 +6223,12 @@ def get_payment_request_by_id(req_id: int):
 
 
 def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", faction_key: str = None, username: str = None) -> int:
+    """ساخت گروه غیردولتی.
+
+    نکته: مجوز گروه، اشتراک VIP نمی‌دهد. قبلاً هر گروه با is_vip = 1 ساخته می‌شد و
+    خریدار با یک پرداخت ۱۰۰ هزار تومانی، برای همیشه تخفیف نگهداری ارتش و سقف
+    مانور بالاتر می‌گرفت؛ این مزیت حذف شد. اشتراک VIP فقط از مسیر خودش خریداری می‌شود.
+    """
     c_key = f"faction_{faction_key}" if faction_key and faction_key in getattr(config, "PREDEFINED_MILITIA_FACTIONS", {}) else f"faction_{player_id}"
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -6232,7 +6238,7 @@ def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = 
          gold, gold_daily, oil_reserves, oil_production, grain, electricity,
          active_personnel, reserve_personnel, last_income_date, created_at, country_key,
          approval_rating, grain_daily, username, tech_level, combat_readiness, microchips, microchips_daily, is_vip)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     """, (
         player_id, name, flag or "🏴‍☠️",
         2_500_000,   # population
