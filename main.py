@@ -21,7 +21,7 @@ import config
 import database as db
 import approval_system
 import news_engine
-from input_modes import ExclusiveInputUserData
+from input_modes import ExclusiveInputUserData, drop_stale_input_modes
 from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
 from handlers.intel import intel_main_menu, intel_callback_handler
@@ -885,6 +885,9 @@ def main():
 
     # دریافت ورودی‌های متنی و تصویری (تایپی) ادمین، دیپلماسی، بورس، سازمان ملل، رول‌ها، بیانیه‌ها و فیش‌های VIP
     async def combined_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # حالت ورودی نیمه‌کاره‌ای که نیم‌ساعت پیش باز شده، نباید پیام تازه را ببلعد
+        drop_stale_input_modes(context.user_data)
+
         if context.user_data.get("start_country_search"):
             handled = await start_country_search_input_handler(update, context)
             if handled:

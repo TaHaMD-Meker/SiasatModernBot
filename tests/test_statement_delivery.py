@@ -203,3 +203,39 @@ def test_statement_without_photo_tells_the_player_why(monkeypatch, tmp_path):
     asyncio.run(statements.statements_text_input_handler(FakeUpdate(message), context))
     assert message.replies and "الزامی" in message.replies[0]
     assert not context.bot.photos
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ۴. حالت ورودی کهنه (ویزارد نیمه‌کاره‌ی گروهک که توییت را می‌خورد)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_input_mode_expires_after_half_an_hour():
+    ud = input_modes.ExclusiveInputUserData()
+    ud["militia_wiz"] = {"step": "hq"}
+    ud[input_modes.OPENED_AT_KEY] = 0  # خیلی وقت پیش باز شده
+    assert input_modes.drop_stale_input_modes(ud) is True
+    assert "militia_wiz" not in ud
+
+
+def test_a_fresh_input_mode_is_not_dropped():
+    ud = input_modes.ExclusiveInputUserData()
+    ud["militia_wiz"] = {"step": "hq"}
+    assert input_modes.drop_stale_input_modes(ud) is False
+    assert "militia_wiz" in ud
+
+
+def test_stale_militia_wizard_no_longer_eats_a_tweet(monkeypatch, tmp_path):
+    """سناریوی دقیق بازیکن تایلند: ویزارد گروهک باز مانده بود و متن توییت را برد گام ۴."""
+    _fresh(monkeypatch, tmp_path, "tweet_wizard.db")
+    _country()
+    context = FakeContext(FakeBot())
+    context.user_data["militia_wiz"] = {"step": "hq"}
+    context.user_data["statement_input"] = {"type": "official_tweet"}
+
+    assert "militia_wiz" not in context.user_data, "ویزارد گروهک هنوز باز است"
+
+    message = FakeMessage(text="دولت تایلند شیوع ویروس را تحت کنترل دارد.")
+    asyncio.run(statements.statements_text_input_handler(FakeUpdate(message), context))
+
+    published = [m for m in context.bot.messages if m["chat_id"] == "@TestChannel"]
+    assert published, "توییت به کانال نرفت"

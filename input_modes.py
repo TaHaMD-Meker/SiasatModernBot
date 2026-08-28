@@ -14,6 +14,8 @@
 """
 from __future__ import annotations
 
+import time
+
 # هر گروه، مجموعه کلیدهایی است که با هم و در یک جریان کار می‌کنند.
 INPUT_MODE_GROUPS: dict[str, tuple[str, ...]] = {
     "statement": ("statement_input",),
@@ -35,6 +37,11 @@ KEY_TO_GROUP: dict[str, str] = {
 
 ALL_INPUT_KEYS: tuple[str, ...] = tuple(KEY_TO_GROUP)
 
+# کلید داخلی زمان باز شدن حالت، و عمر مجاز آن.
+# ویزارد نیمه‌کاره‌ی دیروز نباید پیام امروز را بخورد.
+OPENED_AT_KEY = "_input_mode_opened_at"
+INPUT_MODE_MAX_AGE_SECONDS = 30 * 60
+
 
 def clear_input_modes(user_data, keep_group: str | None = None) -> list[str]:
     """پاک‌کردن همه‌ی حالت‌های ورودی به‌جز گروهی که باید بماند. فهرست پاک‌شده‌ها را برمی‌گرداند."""
@@ -51,6 +58,21 @@ def clear_input_modes(user_data, keep_group: str | None = None) -> list[str]:
     return removed
 
 
+def drop_stale_input_modes(user_data, max_age: int = INPUT_MODE_MAX_AGE_SECONDS) -> bool:
+    """حالت ورودی کهنه را می‌بندد. True یعنی چیزی بسته شد."""
+    opened_at = user_data.get(OPENED_AT_KEY)
+    if opened_at is None:
+        return False
+    if time.time() - float(opened_at) <= max_age:
+        return False
+    removed = clear_input_modes(user_data)
+    try:
+        dict.__delitem__(user_data, OPENED_AT_KEY)
+    except KeyError:
+        pass
+    return bool(removed)
+
+
 class ExclusiveInputUserData(dict):
     """`user_data` که اجازه نمی‌دهد دو حالت ورودی هم‌زمان باز بماند."""
 
@@ -58,6 +80,7 @@ class ExclusiveInputUserData(dict):
         group = KEY_TO_GROUP.get(key)
         if group is not None and value not in (None, False):
             clear_input_modes(self, keep_group=group)
+            dict.__setitem__(self, OPENED_AT_KEY, time.time())
         dict.__setitem__(self, key, value)
 
     def active_input_group(self) -> str | None:
