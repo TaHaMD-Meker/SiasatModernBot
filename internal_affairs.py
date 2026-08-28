@@ -1039,39 +1039,130 @@ def _jalali_date_line(now_dt: datetime.datetime | None = None) -> str:
     return f"{_WEEKDAY_NAMES[local.weekday()]} {_fa(jd)} {_JALALI_MONTHS[jm - 1]} {_fa(jy)}"
 
 
-def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
-    """گزارش تجمیعی یک چرخه — به سبک صفحه‌ی بحران‌های یک روزنامه.
+_DIGEST_VERBS = {
+    "escalated": "تشدید شد",
+    "deescalated": "مهار شد",
+    "contained": "پایان یافت",
+    "faded": "فروکش کرد",
+    "spread": "سرایت کرد",
+}
 
-    به‌جای ده‌ها پیام جداگانه، یک گزارش تمیز با تیتر، تاریخ شمسی، شمارنده‌ی
-    هر بخش و ردیف‌های کوتاه می‌سازد.
+
+def _join_names(names: list[str], limit: int = 4) -> str:
+    """فهرست فارسی: «الف، ب و ج». فهرست بلند: «الف، ب، ج و ۴ کشور دیگر»."""
+    names = [str(n) for n in names if n]
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) <= limit:
+        return "، ".join(names[:-1]) + " و " + names[-1]
+    shown = names[:limit]
+    return "، ".join(shown) + f" و {_fa(len(names) - limit)} کشور دیگر"
+
+
+def _prose_for_event(event: str, entries: list[dict]) -> str:
+    """یک پاراگراف خبریِ روان برای یک بخش از گزارش — نه جدول و نه ردیف.
+
+    مثال: «اپیدمی در اتریش، نروژ و بلاروس به «شدید» و در اردن به «متوسط» رسید.»
+    """
+    if not entries:
+        return ""
+
+    def _label(crisis_key: str) -> str:
+        return (CRISIS_CATALOG.get(crisis_key) or {}).get("label", "بحران")
+
+    # ── بخش‌های بدون سطح: پایان / فروکش / سرایت ──
+    if event in ("contained", "faded", "spread"):
+        if event == "contained":
+            parts = []
+            for e in entries:
+                verb = "ریشه‌کن شد" if e["crisis_key"] == EPIDEMIC_CRISIS_KEY else "پایان یافت"
+                parts.append(f"{_label(e['crisis_key'])} {e['name']} {verb}.")
+            return " ".join(parts)
+        if event == "faded":
+            parts = [f"{_label(e['crisis_key'])} {e['name']} فروکش کرد و پرونده‌اش بسته شد."
+                     for e in entries]
+            return " ".join(parts)
+        parts = [f"{_label(e['crisis_key'])} به {e['name']} سرایت کرد." for e in entries]
+        return " ".join(parts)
+
+    # ── تشدید / مهار: گروه‌بندی بر اساس نوع بحران، بزرگ‌ترین خبر اول ──
+    by_key: dict[str, list] = {}
+    for entry in entries:
+        by_key.setdefault(entry["crisis_key"], []).append(entry)
+    sentences = []
+    for crisis_key, rows in sorted(by_key.items(), key=lambda kv: -len(kv[1])):
+        buckets: dict[str, list[str]] = {}
+        for entry in rows:
+            severity = entry.get("severity") or ""
+            buckets.setdefault(severity, []).append(entry["name"])
+        order = sorted(buckets, key=lambda s: SEVERITY_ORDER.index(s) if s in SEVERITY_ORDER else 99, reverse=True)
+        verb = "رسید" if event == "escalated" else "کاهش یافت"
+        sentence = _label(crisis_key)
+        for index, severity in enumerate(order):
+            names = _join_names(buckets[severity])
+            sev_label = SEVERITY_LABELS.get(severity, severity)
+            sentence += (" در " if index == 0 else " و در ") + f"{names} به «{sev_label}»"
+        sentence += f" {verb}."
+        sentences.append(sentence)
+    return " ".join(sentences)
+
+
+def _build_digest_lead(counts: dict[str, int]) -> str:
+    """لید خبر — جمع‌بندی یک‌خطی مثل سردر خبر روزنامه."""
+    parts = [f"{_fa(counts[key])} بحران {_DIGEST_VERBS[key]}"
+             for key, _ in DIGEST_SECTION_TITLES if counts.get(key)]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return f"در تازه‌ترین نوبت، {parts[0]}."
+    return "در تازه‌ترین نوبت، " + "، ".join(parts[:-1]) + " و " + parts[-1] + "."
+
+
+def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
+    """گزارش تجمیعی یک چرخه — مثل صفحه‌ی بحران‌های یک روزنامه‌ی واقعی.
+
+    تیتر، خط تاریخ، لید (سردر) و پاراگراف‌های روانِ خبری به‌جای فهرست/جدول.
     """
     if not items:
         return None
-    groups = {key: [] for key, _ in DIGEST_SECTION_TITLES}
+    groups: dict[str, list] = {key: [] for key, _ in DIGEST_SECTION_TITLES}
     for item in items:
-        event = item["event"]
+        event = item.get("event")
         if event not in groups:
             continue
-        spec = CRISIS_CATALOG.get(item["crisis"].get("crisis_key") or "", {})
-        country = item["country"] or {}
-        label = f"{country.get('flag', '🏳️')} {country.get('name', '')} — {spec.get('label', '')}"
-        if event in ("escalated", "deescalated"):
-            label += f" → {SEVERITY_LABELS.get(item['crisis'].get('severity'), '')}"
-        groups[event].append(label)
-
-    lines = [f"🗓 {_jalali_date_line()}", "━━━━━━━━━━━━━━━━━━━━━━"]
-    total = 0
-    for key, title in DIGEST_SECTION_TITLES:
-        entries = groups[key]
-        if not entries:
+        country = item.get("country") or {}
+        name = country.get("name") or ""
+        if not name:
             continue
-        total += len(entries)
-        lines.append("")
-        lines.append(f"{title} — {len(entries)}")
-        lines.append("──────────────")
-        lines.extend(f"▫️ {entry}" for entry in entries)
-    if total == 0:
+        crisis = item.get("crisis") or {}
+        groups[event].append({
+            "name": name,
+            "crisis_key": crisis.get("crisis_key") or "",
+            "severity": crisis.get("severity") or "",
+        })
+
+    counts = {key: len(groups[key]) for key, _ in DIGEST_SECTION_TITLES}
+    if sum(counts.values()) == 0:
         return None
+
+    lines = [f"🗓 {_jalali_date_line()}", "━━━━━━━━━━━━━━━━━━━━━━", ""]
+    lead = _build_digest_lead(counts)
+    if lead:
+        lines.append(lead)
+        lines.append("")
+
+    for key, heading in DIGEST_SECTION_TITLES:
+        if not groups[key]:
+            continue
+        paragraph = _prose_for_event(key, groups[key])
+        if not paragraph:
+            continue
+        lines.append(heading)
+        lines.append(paragraph)
+        lines.append("")
+
     return "روزنامه بحران‌های جهان", "\n".join(lines).strip()
 
 

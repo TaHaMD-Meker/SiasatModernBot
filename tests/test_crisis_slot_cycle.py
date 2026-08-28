@@ -376,18 +376,26 @@ def test_digest_has_newspaper_layout():
          "crisis": {"crisis_key": "epidemic", "severity": "medium"},
          "event": "deescalated", "flag": "x", "title": "t", "body": "b"},
         {"crisis_id": 3, "country": {"flag": "🇫🇮", "name": "فنلاند"},
+         "crisis": {"crisis_key": "epidemic", "severity": "light"},
+         "event": "contained", "flag": "x", "title": "t", "body": "b"},
+        {"crisis_id": 4, "country": {"flag": "🇸🇪", "name": "سوئد"},
          "crisis": {"crisis_key": "flood", "severity": "light"},
-         "event": "faded", "flag": "x", "title": "t", "body": "b"},
-        {"crisis_id": 4, "country": {"flag": "🇮🇷", "name": "ایران"},
-         "crisis": {"crisis_key": "earthquake", "severity": "medium"},
          "event": "contained", "flag": "x", "title": "t", "body": "b"},
     ]
     title, body = ia.build_news_digest(items)
     assert "روزنامه" in title and "بحران" in title
     assert "🗓" in body and "━━━" in body
-    assert "تشدید شد — 1" in body
-    assert "مهار شد — 1" in body
-    assert "پایان یافت — 1" in body
-    assert "فروکش کرد — 1" in body
-    assert "▫️ 🇦🇹 اتریش — 🦠 اپیدمی → شدید" in body
-    assert "▫️ 🇨🇦 کانادا — 🦠 اپیدمی → متوسط" in body
+    assert "🔺 تشدید شد" in body
+    assert "🔻 مهار شد" in body
+    assert "✅ پایان یافت" in body
+    # لید خبر با شمارنده
+    assert "تشدید شد" in body
+    assert "۱" in body
+    # متن روان، نه جدول
+    assert "▫️" not in body
+    assert "—" not in body
+    assert "رسید" in body
+    assert "اتریش" in body
+    # ریشه‌کنی اپیدمی در برابر پایان سیل
+    assert "ریشه‌کن شد" in body
+    assert "پایان یافت" in body
