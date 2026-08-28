@@ -367,6 +367,11 @@ def test_jalali_date_line_known_values():
     assert "جمعه" in line and "شهریور" in line and "۱۴۰۵" in line
 
 
+def _norm(s: str) -> str:
+    """نیم‌فاصله را حذف می‌کند تا مقایسه‌ی متون فارسی ساده شود."""
+    return s.replace("\u200c", "")
+
+
 def test_digest_has_newspaper_layout():
     items = [
         {"crisis_id": 1, "country": {"flag": "🇦🇹", "name": "اتریش"},
@@ -386,23 +391,24 @@ def test_digest_has_newspaper_layout():
     assert "روزنامه" in title and "بحران" in title
     assert "🗓" in body and "━━━" in body
     # هر نوع بحران تیتر خودش را دارد و قاطی نشده
-    assert "\n🦠 اپیدمی\n" in body
-    assert "\n🌊 سیل\n" in body
+    nbody = _norm(body)
+    assert "\n🦠 اپیدمی\n" in nbody
+    assert "\n🌊 سیل\n" in nbody
     # لید خبر با شمارنده
-    assert "تشدید شد" in body
+    assert "تشدید شد" in nbody
     # متن روان، نه جدول
-    assert "▫️" not in body
-    assert "—" not in body
-    assert "رسید" in body
-    assert "اتریش" in body
+    assert "▫️" not in nbody
+    assert "—" not in nbody
+    assert "رسید" in nbody
+    assert "اتریش" in nbody
     # ریشه‌کنی اپیدمی در برابر پایان سیل
-    assert "ریشه‌کن شد" in body
-    assert "پایان یافت" in body
+    assert "ریشهکن" in nbody
+    assert "پایان یافت" in nbody
     # مقاله‌ی اپیدمی، تشدید و مهار و پایانِ همان نوع را یک‌جا دارد
-    epidemic_article = body.split("\n🦠 اپیدمی\n")[1].split("\n🌊 سیل\n")[0]
+    epidemic_article = _norm(body.split("\n🦠 اپیدمی\n")[1].split("\n🌊 سیل\n")[0])
     assert "به «شدید» رسید" in epidemic_article
     assert "کاهش یافت" in epidemic_article
-    assert "ریشه‌کن شد" in epidemic_article
+    assert "ریشهکنی کامل" in epidemic_article
 
 
 def test_war_summary_dedupes_crisis_countries():
@@ -433,8 +439,11 @@ def test_war_only_digest():
     title, body = ia.build_news_digest([], war)
     assert title == "گزارش میدان جنگ"
     assert "میدان جنگ" in body
-    assert "مجموع کشته‌شدگان ۳۳۰ نفر و مجروحان ۷۲۰ نفر برآورد شده است" in body
-    assert "عربستان در عملیات «وعده صادق» ۲۴۰ نظامی و ۹۰ غیرنظامی را از دست داد؛ ۷۲۰ نفر نیز مجروح شدند" in body
+    nbody = _norm(body)
+    assert "مجموع کشتهشدگان ۳۳۰ نفر و مجروحان ۷۲۰ نفر برآورد شده است" in nbody
+    assert "عربستان در عملیات «وعده صادق» هدف درگیری قرار گرفت" in nbody
+    assert "۲۴۰ نظامی و ۹۰ غیرنظامی کشته شدند" in nbody
+    assert "۷۲۰ نفر مجروح شدند" in nbody
 
 
 def test_war_section_is_per_country_paragraphs():
@@ -449,15 +458,35 @@ def test_war_section_is_per_country_paragraphs():
     ]
     title, body = ia.build_news_digest([], war)
     # لید با مجموع تلفات
-    assert "درگیری‌های امروز در ۳ کشور تلفات انسانی بر جای گذاشت" in body
-    assert "مجموع کشته‌شدگان ۳۸۲ نفر و مجروحان ۷۵۵ نفر برآورد شده است" in body
+    nbody = _norm(body)
+    assert "درگیریهای امروز در ۳ کشور تلفات انسانی بر جای گذاشت" in nbody
+    assert "مجموع کشتهشدگان ۳۸۲ نفر و مجروحان ۷۵۵ نفر برآورد شده است" in nbody
     # هر کشور پاراگراف خودش — افغانستان (سنگین‌ترین) اول
-    assert body.index("🇦🇫 افغانستان") < body.index("🇨🇳 چین")
-    assert "🇦🇫 افغانستان در عملیات «تحدیدزدایی» ۱۸۵ نظامی و ۴۵ غیرنظامی را از دست داد؛ ۵۲۰ نفر نیز مجروح شدند." in body
-    assert "🇨🇳 چین در عملیات «دیوار تاریکی اژدها» ۳۴ نظامی و ۲۸ غیرنظامی را از دست داد؛ ۱۱۵ نفر نیز مجروح شدند." in body
-    assert "🇾🇪 انصارالله یمن در عملیات «آرامکو» و «الله مدینه» ۳۵ نظامی و ۵۵ غیرنظامی را از دست داد؛ ۱۲۰ نفر نیز مجروح شدند." in body
+    assert nbody.index("🇦🇫 افغانستان") < nbody.index("🇨🇳 چین")
+    assert "🇦🇫 افغانستان در عملیات «تحدیدزدایی» هدف درگیری قرار گرفت" in nbody
+    assert "🇨🇳 چین در عملیات «دیوار تاریکی اژدها» هدف درگیری قرار گرفت" in nbody
+    assert "🇾🇪 انصارالله یمن در عملیات «آرامکو» و «الله مدینه» هدف درگیری قرار گرفت" in nbody
     # بین پاراگراف‌ها فاصله‌ی واقعی هست
     assert "\n\n" in body
+
+
+def test_war_paragraph_describes_the_attack():
+    """میدان جنگ باید بگوید چه جور حمله‌ای بوده و چه چیزی آسیب دیده."""
+    war = [
+        {"name": "افغانستان", "flag": "🇦🇫", "mil_kia": 185, "wounded": 520, "civ_kia": 45,
+         "ops": ["تحدیدزدایی"], "equip_items": 29,
+         "subcats": ["پدافند هوایی", "جنگنده‌ها و هوانوردی", "نیروی زمینی"],
+         "strategic": ["شبکه برق", "ذخایر سوخت"], "buildings": 2},
+        {"name": "ونزوئلا", "flag": "🇻🇪", "mil_kia": 10, "wounded": 40, "civ_kia": 0,
+         "ops": [], "equip_items": 0,
+         "subcats": ["نیروی دریایی"], "strategic": [], "buildings": 0},
+    ]
+    title, body = ia.build_news_digest([], war)
+    nbody = _norm(body)
+    assert "افغانستان در عملیات «تحدیدزدایی» هدف حملات هوایی و موشکی قرار گرفت" in nbody
+    assert "پایگاههای هوایی، شبکه پدافند هوایی، یگانهای زمینی، شبکه برق، ذخایر سوخت و تأسیسات صنعتی آسیب دید" in nbody
+    assert "ونزوئلا هدف عملیات دریایی قرار گرفت" in nbody
+    assert "نیروی دریایی آسیب دید" in nbody
 
 
 # ─────────────────────────────────────────────────────────────────────────────

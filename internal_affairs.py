@@ -1053,6 +1053,13 @@ _DIGEST_VERBS = {
 # ─────────────────────────────────────────────────────────────────────────────
 WAR_DIGEST_MARKER_KEY = "crisis_war_digest_marker"
 WAR_HUMAN_SPECIALS = ("mil_kia", "wounded", "civ_kia")
+# نام فارسیِ منابع راهبردی آسیب‌دیده، برای توصیف «چه جور حمله‌ای بود»
+STRATEGIC_FA_NAMES = {
+    "electricity": "شبکه برق",
+    "oil_reserves": "ذخایر سوخت",
+    "grain": "ذخایر غذایی",
+    "vaccine_doses": "ذخایر واکسن",
+}
 # رویدادهای بحرانی که در روزنامه گروه‌بندی می‌شوند
 _DIGEST_EVENTS = {key for key, _ in DIGEST_SECTION_TITLES}
 
@@ -1063,6 +1070,10 @@ def collect_new_war_summary(now_dt: datetime.datetime | None = None) -> tuple[li
     خروجی: (خلاصه‌ها, آخرین شناسه‌ی دیده‌شده). فقط کشورهایی که تلفات انسانی
     دارند وارد خلاصه می‌شوند — چون طبق دستور کارفرما، کشوری که تلفات انسانی
     دارد فقط در «گزارش جنگ» می‌آید و از بخش بحران حذف می‌شود.
+
+    برای هر کشور علاوه بر تلفات، «چه چیزهایی هدف قرار گرفته» هم جمع می‌شود
+    (زیردسته‌ی تجهیزات منهدم‌شده + منابع راهبردی آسیب‌دیده + ساختمان‌ها) تا
+    روزنامه بتواند ماهیت حمله را توصیف کند.
     """
     today = _iran_date(now_dt)
     try:
@@ -1095,6 +1106,7 @@ def collect_new_war_summary(now_dt: datetime.datetime | None = None) -> tuple[li
             "flag": row["country_flag"] or "🏳️",
             "mil_kia": 0, "wounded": 0, "civ_kia": 0,
             "ops": [], "equip_items": 0,
+            "subcats": [], "strategic": [], "buildings": 0,
         })
         op = (row["operation_name"] or "").strip()
         if op and op not in bucket["ops"]:
@@ -1108,11 +1120,27 @@ def collect_new_war_summary(now_dt: datetime.datetime | None = None) -> tuple[li
             qty = int(item.get("qty", 0) or 0)
             if special in WAR_HUMAN_SPECIALS:
                 bucket[special] = bucket.get(special, 0) + qty
-            elif special not in (None, "money", "oil", "building", "commander"):
-                bucket["equip_items"] += qty
+            elif special == "building":
+                bucket["buildings"] += qty
+            elif special in STRATEGIC_FA_NAMES:
+                fa_name = STRATEGIC_FA_NAMES[special]
+                if fa_name not in bucket["strategic"]:
+                    bucket["strategic"].append(fa_name)
+            elif special in (None, "", "money", "oil", "commander", "warheads",
+                             "uranium_ore", "nuclear_fuel", "medical_isotopes",
+                             "enriched_60", "weapons_grade_90", "microchips", "gold"):
+                # تجهیزات منهدم‌شده → زیردسته‌ی نمایشی
+                subcat = item.get("subcat")
+                if subcat and subcat not in bucket["subcats"]:
+                    bucket["subcats"].append(subcat)
+                if special not in (None, ""):
+                    pass  # منابع راهبردیِ شناخته‌شده در بالا پوشش داده شدند
+                else:
+                    bucket["equip_items"] += qty
 
     summaries = [
-        {k: bucket[k] for k in ("name", "flag", "mil_kia", "wounded", "civ_kia", "ops", "equip_items")}
+        {k: bucket[k] for k in ("name", "flag", "mil_kia", "wounded", "civ_kia",
+                                "ops", "equip_items", "subcats", "strategic", "buildings")}
         for bucket in by_country.values()
         if (bucket.get("mil_kia") or bucket.get("wounded") or bucket.get("civ_kia")) > 0
     ]
@@ -1132,20 +1160,56 @@ def _join_phrases(phrases: list[str]) -> str:
     return "، ".join(phrases[:-1]) + " و " + phrases[-1]
 
 
+def _war_targets(w: dict) -> list[str]:
+    """اهداف آسیب‌دیده، از زیردسته‌ی تجهیزات منهدم‌شده و منابع راهبردی."""
+    subcats = set(w.get("subcats") or [])
+    targets = []
+    if "جنگنده‌ها و هوانوردی" in subcats:
+        targets.append("پایگاه‌های هوایی")
+    if "پدافند هوایی" in subcats:
+        targets.append("شبکه پدافند هوایی")
+    if "نیروی دریایی" in subcats:
+        targets.append("نیروی دریایی")
+    if {"نیروی زمینی", "توپخانه و راکت‌انداز"} & subcats:
+        targets.append("یگان‌های زمینی")
+    for name in (w.get("strategic") or []):
+        targets.append(name)
+    if int(w.get("buildings") or 0) > 0:
+        targets.append("تأسیسات صنعتی")
+    return targets
+
+
+def _attack_kind(targets: list[str]) -> str:
+    """توصیف کلیِ نوع حمله، از روی اهدافی که آسیب دیده‌اند."""
+    air = any("پایگاه" in t or "پدافند" in t for t in targets)
+    infra = any(("برق" in t) or ("سوخت" in t) or ("صنعتی" in t)
+                or ("غذایی" in t) or ("واکسن" in t) for t in targets)
+    naval = any("دریایی" in t for t in targets)
+    ground = any("زمینی" in t for t in targets)
+    if air and (infra or ground or naval):
+        return "حملات هوایی و موشکی"
+    if air:
+        return "حملات هوایی و موشکی"
+    if infra:
+        return "حملات موشکی و پهپادی"
+    if naval:
+        return "عملیات دریایی"
+    if ground:
+        return "درگیری زمینی"
+    return "درگیری"
+
+
 def _prose_war_summary(summaries: list[dict]) -> str:
     """بخش میدان جنگ — مثل گزارش رسمیِ صفحه‌ی جنگ یک روزنامه.
 
-    یک لید با مجموع تلفات، سپس یک پاراگراف مستقل به‌ازای هر کشور. کشورها
-    پشت‌سرهم در یک جمله قاطی نمی‌شوند و هر پاراگراف با پرچم و نام کشور شروع
-    می‌شود؛ سنگین‌ترین تلفات اول می‌آید.
+    یک لید با مجموع تلفات، سپس برای هر کشور یک پاراگراف مستقل که نوع حمله
+    و اهداف آسیب‌دیده را هم توضیح می‌دهد. سنگین‌ترین تلفات اول می‌آید.
     """
-    shown = []
-    for w in summaries:
-        if (w.get("mil_kia") or 0) or (w.get("civ_kia") or 0):
-            shown.append(w)
+    shown = [w for w in summaries
+             if (w.get("mil_kia") or 0) or (w.get("civ_kia") or 0) or (w.get("wounded") or 0)]
     if not shown:
         return ""
-    shown.sort(key=lambda w: -((int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0))))
+    shown.sort(key=lambda w: -(int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0)))
 
     total_kia = sum(int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0) for w in shown)
     total_wounded = sum(int(w.get("wounded") or 0) for w in shown)
@@ -1159,20 +1223,31 @@ def _prose_war_summary(summaries: list[dict]) -> str:
         civ = int(w.get("civ_kia") or 0)
         wounded = int(w.get("wounded") or 0)
 
-        losses = []
-        if mil:
-            losses.append(f"{_fa(mil)} نظامی")
-        if civ:
-            losses.append(f"{_fa(civ)} غیرنظامی")
+        targets = _war_targets(w)
+        kind = _attack_kind(targets)
 
         sentence = f"{flag} {name}"
         if ops:
             ops_txt = f"«{ops[0]}»" if len(ops) == 1 else "«" + "» و «".join(ops) + "»"
             sentence += f" در عملیات {ops_txt}"
-        sentence += f" {_join_phrases(losses)} را از دست داد"
-        if wounded:
-            sentence += f"؛ {_fa(wounded)} نفر نیز مجروح شدند"
+        sentence += f" هدف {kind} قرار گرفت"
+
+        if targets:
+            target_txt = "، ".join(targets[:-1]) + " و " + targets[-1] if len(targets) > 1 else targets[0]
+            sentence += f"؛ {target_txt} آسیب دید"
         sentence += "."
+
+        casualties = []
+        if mil and civ:
+            casualties.append(f"{_fa(mil)} نظامی و {_fa(civ)} غیرنظامی کشته شدند")
+        elif mil:
+            casualties.append(f"{_fa(mil)} نظامی کشته شدند")
+        elif civ:
+            casualties.append(f"{_fa(civ)} غیرنظامی کشته شدند")
+        if wounded:
+            casualties.append(f"{_fa(wounded)} نفر مجروح شدند")
+        if casualties:
+            sentence += " در این حملات " + " و ".join(casualties) + "."
         parts.append(sentence)
 
     lead = f"درگیری‌های امروز در {_fa(len(shown))} کشور تلفات انسانی بر جای گذاشت"
@@ -1197,9 +1272,15 @@ def _join_names(names: list[str], limit: int = 4) -> str:
     return "، ".join(shown) + f" و {_fa(len(names) - limit)} کشور دیگر"
 
 
-def _severity_sentence(crisis_key: str, rows: list[dict], verb: str) -> str:
-    """«اپیدمی در اتریش، نروژ و بلاروس به «شدید» و در اردن به «متوسط» رسید.»"""
-    label = (CRISIS_CATALOG.get(crisis_key) or {}).get("label", "بحران")
+def _crisis_name(crisis_key: str) -> str:
+    """نام بحران بدون ایموجی — «اپیدمی»، «بحران انرژی»، «سیل»..."""
+    label = (CRISIS_CATALOG.get(crisis_key) or {}).get("label", crisis_key)
+    parts = str(label).split(" ", 1)
+    return parts[1] if len(parts) == 2 and parts[0] else str(label)
+
+
+def _severity_txt(rows: list[dict], verb: str) -> str:
+    """«در اتریش، نروژ و ۵ کشور دیگر به «شدید» و در اردن به «متوسط» رسید.»"""
     buckets: dict[str, list[str]] = {}
     for row in rows:
         severity = row.get("severity") or ""
@@ -1210,40 +1291,77 @@ def _severity_sentence(crisis_key: str, rows: list[dict], verb: str) -> str:
                    reverse=(verb == "رسید"))
     if not order:
         return ""
-    sentence = label
-    for index, severity in enumerate(order):
+    clauses = []
+    for severity in order:
         names = _join_names(buckets[severity])
         sev_label = SEVERITY_LABELS.get(severity, severity)
-        sentence += (" در " if index == 0 else " و در ") + f"{names} به «{sev_label}»"
-    sentence += f" {verb}."
-    return sentence
+        clauses.append(f"در {names} به «{sev_label}»")
+    return " و ".join(clauses) + f" {verb}."
+
+
+def _fa_count(n: int) -> str:
+    return "یک" if n == 1 else _fa(n)
+
+
+def _crisis_openers(crisis_name: str, esc_count: int, deesc_count: int, seed: int) -> list[str]:
+    """چند جمله‌ی آغازین متفاوت تا گزارش هر روز مثل نسخه‌ی تکراری به نظر نرسد."""
+    pool = []
+    if esc_count and deesc_count:
+        pool = [
+            f"وضعیت {crisis_name} در جهان در نوسان است؛ در حالی که در برخی کشورها تشدید شده، در برخی دیگر رو به بهبود است.",
+            f"{crisis_name} این روزها دو چهره دارد؛ در بخشی از جهان شعله‌ور شده و در بخشی دیگر عقب‌نشینی کرده است.",
+            f"تازه‌ترین تحولات {crisis_name} روندی دوگانه دارد؛ گسترش در یک سو و مهار در سوی دیگر.",
+        ]
+    elif esc_count and not deesc_count:
+        pool = [
+            f"{crisis_name} در {_fa_count(esc_count)} کشور تشدید شد.",
+            f"موج تازه‌ای از {crisis_name} {_fa_count(esc_count)} کشور را درگیر کرده است.",
+            f"گسترش {crisis_name} ادامه دارد و {_fa_count(esc_count)} کشور به مراحل سخت‌تر رسیدند.",
+        ]
+    elif deesc_count and not esc_count:
+        pool = [
+            f"{crisis_name} در {_fa_count(deesc_count)} کشور رو به بهبود است.",
+            f"{crisis_name} در حال عقب‌نشینی از {_fa_count(deesc_count)} کشور است.",
+            f"اقدامات دولت‌ها نتیجه داده و {crisis_name} در {_fa_count(deesc_count)} کشور مهار شده است.",
+        ]
+    if not pool:
+        return []
+    return [pool[seed % len(pool)]]
 
 
 def _prose_crisis_article(crisis_key: str, entries: list[dict]) -> str:
-    """یک مقاله برای یک نوع بحران — تشدید و مهار و پایانِ همان نوع با هم،
-    بدون قاطی‌کردن انواع مختلف. هر نوع تیتر خودش را دارد."""
-    label = (CRISIS_CATALOG.get(crisis_key) or {}).get("label", "بحران")
-    sentences = []
+    """مقاله‌ی یک نوع بحران — مثل یک خبر کامل روزنامه.
 
+    یک پاراگراف روان: جمله‌ی آغازین، جزئیات تشدید، جزئیات کاهش و پایان‌ها؛
+    بدون تکرارِ تکراریِ اسم در هر جمله و بدون قاطی‌کردن انواع بحران.
+    """
+    crisis_name = _crisis_name(crisis_key)
     escalated = [e for e in entries if e["event"] == "escalated"]
-    if escalated:
-        sentences.append(_severity_sentence(crisis_key, escalated, "رسید"))
-
     deescalated = [e for e in entries if e["event"] == "deescalated"]
-    if deescalated:
-        sentences.append(_severity_sentence(crisis_key, deescalated, "کاهش یافت"))
+    endings = [e for e in entries if e["event"] in ("contained", "faded", "spread")]
 
-    for e in entries:
+    seed = zlib.crc32(f"{_jalali_date_line()}::{crisis_key}".encode("utf-8"))
+    openers = _crisis_openers(crisis_name, len(escalated), len(deescalated), seed)
+
+    sentences = []
+    if openers:
+        sentences.append(openers[0])
+    if escalated:
+        sentences.append(_severity_txt(escalated, "رسید"))
+    if deescalated:
+        sentences.append(_severity_txt(deescalated, "کاهش یافت"))
+
+    for e in endings:
+        cname = e.get("name") or ""
         if e["event"] == "contained":
-            name = e.get("name") or ""
-            verb = "ریشه‌کن شد" if crisis_key == EPIDEMIC_CRISIS_KEY else "پایان یافت"
-            sentences.append(f"{label} {name} {verb}.")
+            if crisis_key == EPIDEMIC_CRISIS_KEY:
+                sentences.append(f"{cname} ریشه‌کنی کامل {crisis_name} را اعلام کرد.")
+            else:
+                sentences.append(f"{crisis_name} در {cname} مهار شد و پرونده‌اش بسته شد.")
         elif e["event"] == "faded":
-            name = e.get("name") or ""
-            sentences.append(f"{label} {name} فروکش کرد و پرونده‌اش بسته شد.")
+            sentences.append(f"{crisis_name} در {cname} فروکش کرد.")
         elif e["event"] == "spread":
-            name = e.get("name") or ""
-            sentences.append(f"{label} به {name} سرایت کرد.")
+            sentences.append(f"{crisis_name} به {cname} سرایت کرد.")
 
     return " ".join(sentences)
 
