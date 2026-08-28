@@ -273,3 +273,15 @@ def test_manual_crisis_region_picker_wiring():
     assert internal_admin._region_of_country("iran") == "mideast"
     assert internal_admin._region_of_country("france") == "europe"
     assert internal_admin._region_of_country("un") is None or internal_admin._region_of_country("un") != "europe"
+
+
+def test_no_duplicate_region_picker_definitions():
+    """رگرسیون: دو تابع همنام «_region_picker» باعث می‌شد بحران دستی به صفحه‌ی
+    بحران منطقه‌ای برود. فقط یک تعریف باید وجود داشته باشد."""
+    import inspect
+    source = inspect.getsource(internal_admin)
+    assert source.count("async def _region_picker(") == 1
+    assert source.count("async def _country_picker(") == 1
+    # «ایجاد بحران دستی» مستقیم لیست کشورها را باز می‌کند
+    assert "admin:dom_new\" or data.startswith(\"admin:dom_new:\")" in source
+    assert "_country_picker(query, 0, region=None)" in source
