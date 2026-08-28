@@ -198,6 +198,18 @@ CONTAINMENT_THRESHOLD = 0.80
 CONTAINMENT_DAYS_TO_RESOLVE = 2
 
 # ─────────────────────────────────────────────────────────────────────────────
+# اپیدمی — قواعد جدا از بقیه‌ی بحران‌ها
+# ─────────────────────────────────────────────────────────────────────────────
+# اپیدمی واگیردار است و مثل بقیه «در خفیف محو» نمی‌شود: کف سطحش «خفیف» است و تا
+# وقتی مهار به ۹۰٪ نرسد هرگز تمام‌شده اعلام نمی‌شود. چون سقف مهار عادی ۸۰٪ است و
+# فقط اقدام راهبردیِ سخت‌به‌دست (واکسن) سقف را به ۹۵٪ می‌برد، ریشه‌کن کردن اپیدمی
+# واقعاً به واکسن وابسته می‌شود — وگرنه کسی واکسن نمی‌ساخت و بحران خودبه‌خود
+# تمام می‌شد.
+EPIDEMIC_CRISIS_KEY = "epidemic"
+EPIDEMIC_DEESCALATION_MITIGATION = 0.80   # مهار ≥ ۸۰٪ → اپیدمی یک پله پایین می‌آید
+EPIDEMIC_ERADICATION_THRESHOLD = 0.90    # مهار ≥ ۹۰٪ → اپیدمی ریشه‌کن می‌شود
+
+# ─────────────────────────────────────────────────────────────────────────────
 # کاتالوگ بحران‌ها
 #   pop:   نسبت جمعیت از دست رفته
 #   elec:  واحد برق
@@ -799,6 +811,12 @@ def _parse_dt(raw):
         return None
 
 
+def _is_epidemic(crisis) -> bool:
+    """آیا این بحران از نوع اپیدمی است؟ اپیدمی قواعد ویژه دارد (محو نمی‌شود،
+    فقط با مهار ۹۰٪ ریشه‌کن می‌شود)."""
+    return bool(crisis) and crisis.get("crisis_key") == EPIDEMIC_CRISIS_KEY
+
+
 def _json_load(raw, default):
     try:
         value = json.loads(raw or "")
@@ -975,35 +993,86 @@ def collect_slot_news(country: dict, events: list[dict]) -> list[dict]:
     return collect_news(country, {"crisis_events": events})
 
 
+# بخش‌های گزارش روزنامه، به همان ترتیبی که در پیام می‌آیند.
+DIGEST_SECTION_TITLES = (
+    ("escalated",   "🔺 تشدید شد"),
+    ("deescalated", "🔻 مهار شد"),
+    ("contained",   "✅ پایان یافت"),
+    ("faded",       "🌤 فروکش کرد"),
+    ("spread",      "🦠 سرایت کرد"),
+)
+
+_JALALI_MONTHS = ("فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+                  "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند")
+_WEEKDAY_NAMES = ("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه")
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def _fa(num) -> str:
+    return str(num).translate(_FA_DIGITS)
+
+
+def _gregorian_to_jalali(gy: int, gm: int, gd: int) -> tuple[int, int, int]:
+    """تبدیل تاریخ میلادی به جلالی (الگوریتم استاندارد jalaali)."""
+    g_d_m = (0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+    jy = 979
+    gy -= 1600
+    gy2 = gy + 1 if gm > 2 else gy
+    days = (365 * gy + (gy2 + 3) // 4 - (gy2 + 99) // 100 + (gy2 + 399) // 400
+            - 80 + gd + g_d_m[gm - 1])
+    jy += 33 * (days // 12053)
+    days %= 12053
+    jy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        jy += (days - 1) // 365
+        days = (days - 1) % 365
+    jm = 1 + days // 31 if days < 186 else 7 + (days - 186) // 30
+    jd = 1 + (days % 31 if days < 186 else (days - 186) % 30)
+    return jy, jm, jd
+
+
+def _jalali_date_line(now_dt: datetime.datetime | None = None) -> str:
+    """تاریخ روزنامه به وقت تهران: «پنجشنبه ۶ شهریور ۱۴۰۵» (با ارقام فارسی)."""
+    local = (now_dt or _now()).astimezone(IRAN_TZ)
+    jy, jm, jd = _gregorian_to_jalali(local.year, local.month, local.day)
+    return f"{_WEEKDAY_NAMES[local.weekday()]} {_fa(jd)} {_JALALI_MONTHS[jm - 1]} {_fa(jy)}"
+
+
 def build_news_digest(items: list[dict]) -> tuple[str, str] | None:
-    """گزارش تجمیعی یک چرخه — به‌جای ده‌ها پیام جداگانه، یک پیام."""
+    """گزارش تجمیعی یک چرخه — به سبک صفحه‌ی بحران‌های یک روزنامه.
+
+    به‌جای ده‌ها پیام جداگانه، یک گزارش تمیز با تیتر، تاریخ شمسی، شمارنده‌ی
+    هر بخش و ردیف‌های کوتاه می‌سازد.
+    """
     if not items:
         return None
-    groups = {"escalated": [], "deescalated": [], "contained": [], "faded": [], "spread": []}
+    groups = {key: [] for key, _ in DIGEST_SECTION_TITLES}
     for item in items:
-        if item["event"] in groups:
-            spec = CRISIS_CATALOG.get(item["crisis"]["crisis_key"], {})
-            country = item["country"] or {}
-            label = f"{country.get('flag', '🏳️')} {country.get('name', '')} — {spec.get('label', '')}"
-            if item["event"] in ("escalated", "deescalated"):
-                label += f" → {SEVERITY_LABELS.get(item['crisis']['severity'], '')}"
-            groups[item["event"]].append(label)
+        event = item["event"]
+        if event not in groups:
+            continue
+        spec = CRISIS_CATALOG.get(item["crisis"].get("crisis_key") or "", {})
+        country = item["country"] or {}
+        label = f"{country.get('flag', '🏳️')} {country.get('name', '')} — {spec.get('label', '')}"
+        if event in ("escalated", "deescalated"):
+            label += f" → {SEVERITY_LABELS.get(item['crisis'].get('severity'), '')}"
+        groups[event].append(label)
 
-    lines = []
-    for key, title in (
-        ("escalated", "🔺 تشدید شد"),
-        ("deescalated", "🔻 مهار شد"),
-        ("contained", "✅ پایان یافت"),
-        ("faded", "🌤 فروکش کرد"),
-        ("spread", "🦠 سرایت کرد"),
-    ):
-        if groups[key]:
-            lines.append(title)
-            lines.extend(f"• {entry}" for entry in groups[key])
-            lines.append("")
-    if not lines:
+    lines = [f"🗓 {_jalali_date_line()}", "━━━━━━━━━━━━━━━━━━━━━━"]
+    total = 0
+    for key, title in DIGEST_SECTION_TITLES:
+        entries = groups[key]
+        if not entries:
+            continue
+        total += len(entries)
+        lines.append("")
+        lines.append(f"{title} — {len(entries)}")
+        lines.append("──────────────")
+        lines.extend(f"▫️ {entry}" for entry in entries)
+    if total == 0:
         return None
-    return "گزارش وضعیت بحران‌ها", "\n".join(lines).strip()
+    return "روزنامه بحران‌های جهان", "\n".join(lines).strip()
 
 
 def tax_policy_label(key: str) -> str:
@@ -1974,7 +2043,13 @@ def _advance_crises(country_id: int, now_dt: datetime.datetime) -> list[dict]:
         if crisis["stage"] in ("warning", "impact", "recovery"):
             mitigation = float(crisis.get("mitigation") or 0)
 
-            if mitigation >= CONTAINMENT_THRESHOLD:
+            # اپیدمی فقط با مهار ۹۰٪ ریشه‌کن می‌شود (و چون سقف عادی ۸۰٪ است،
+            # این یعنی حتماً واکسن/اقدام راهبردی مصرف شده است)؛ بقیه از ۸۰٪.
+            contain_thr = (
+                EPIDEMIC_ERADICATION_THRESHOLD if _is_epidemic(crisis)
+                else CONTAINMENT_THRESHOLD
+            )
+            if mitigation >= contain_thr:
                 contained = int(crisis.get("contained_days") or 0) + 1
                 conn = db.get_connection()
                 try:
@@ -2237,13 +2312,20 @@ def run_crisis_slot_cycle(country: dict, now_dt: datetime.datetime | None = None
         _set_crisis_slot(crisis["id"], key)
         mitigation = float(crisis.get("mitigation") or 0)
         severity = crisis["severity"]
+        epidemic = _is_epidemic(crisis)
         stepped_today = (
             SEVERITY_STEP_ONCE_PER_DAY
             and crisis.get("last_escalation_date") == _iran_date(now_dt)
         )
 
         # ۱) مهار خوب → یک سطح پایین
-        if not stepped_today and mitigation >= DEESCALATION_MITIGATION_THRESHOLD and severity != SEVERITY_ORDER[0]:
+        #    اپیدمی فقط وقتی مهارش ≥ ۸۰٪ باشد پایین می‌آید (و کفش «خفیف» است)؛
+        #    بقیه‌ی بحران‌ها از ۵۰٪ شروع به پایین آمدن می‌کنند.
+        deesc_thr = (
+            EPIDEMIC_DEESCALATION_MITIGATION if epidemic
+            else DEESCALATION_MITIGATION_THRESHOLD
+        )
+        if not stepped_today and mitigation >= deesc_thr and severity != SEVERITY_ORDER[0]:
             ok, _msg, eased, _x = change_severity(crisis["id"], -1, reason="auto_slot")
             if ok:
                 events.append({"crisis": eased, "event": "deescalated"})
@@ -2258,8 +2340,10 @@ def run_crisis_slot_cycle(country: dict, now_dt: datetime.datetime | None = None
                     events.append({"crisis": worse, "event": "escalated", "damage": extra})
                     continue
 
-        # ۳) خفیفِ ماندگار → محو شدن
-        if severity == SEVERITY_ORDER[0]:
+        # ۳) خفیفِ ماندگار → محو شدن (فقط بحران‌های غیراپیدمی)
+        #    اپیدمی هرگز «فروکش» نمی‌کند؛ در خفیف می‌ماند تا مهارش به ۹۰٪ برسد
+        #    و ریشه‌کن شود — وگرنه برنامه‌ی واکسن بی‌معنا می‌شد.
+        if not epidemic and severity == SEVERITY_ORDER[0]:
             since = _parse_dt(crisis.get("light_since"))
             if since is None:
                 _mark_light_since(crisis["id"], _iso(now_dt))
@@ -2619,6 +2703,12 @@ def build_news(country: dict, crisis: dict, event: str, damage: dict | None = No
             f"{spec['label']} پس از یک شبانه‌روز ماندن در سطح خفیف فروکش کرد و پرونده‌اش بسته شد.",
         )
     if event == "contained":
+        if _is_epidemic(crisis):
+            return (
+                f"ریشه‌کنی {spec['label']} — {flag} {name}",
+                f"{spec['label']} پس از دو روز مهار بالای {int(EPIDEMIC_ERADICATION_THRESHOLD * 100)}٪ "
+                f"ریشه‌کن شد و هیچ مورد جدیدی گزارش نشده است. محدودیت‌ها به‌تدریج برداشته می‌شود.",
+            )
         return (
             f"پایان {spec['label']} — {flag} {name}",
             f"{spec['label']} پس از دو روز مهار کامل، رسماً پایان‌یافته اعلام شد. "

@@ -4,7 +4,9 @@
 خواسته‌ی کارفرما:
 ۱. تغییر سطح بحران (بالا/پایین) و خبرش با همان نوبت‌های ۶ ساعته‌ی درآمد بیاید،
    نه یک‌بار در شب — و فقط برای بحران‌هایی که **کل سطحشان** عوض شده، نه درصد مهار.
-۲. بحرانی که یک شبانه‌روز روی «خفیف» بماند، خودش از بین برود.
+۲. بحرانی که یک شبانه‌روز روی «خفیف» بماند، خودش از بین برود — به‌جز اپیدمی که
+   در خفیف محو نمی‌شود، فقط از مهار ۸۰٪ پایین می‌آید و تنها با مهار ۹۰٪
+   (که بدون واکسن ممکن نیست) ریشه‌کن می‌شود.
 """
 
 import datetime
@@ -79,7 +81,7 @@ def test_a_crisis_is_touched_once_per_slot(monkeypatch, tmp_path):
 def test_good_mitigation_steps_the_level_down_in_the_next_slot(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_down.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "severe")
+    crisis = _new_crisis(cid, "flood", "severe")
     _set(crisis["id"], mitigation=ia.DEESCALATION_MITIGATION_THRESHOLD + 0.05, stage="impact")
 
     events = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), ia._now())
@@ -136,8 +138,8 @@ def test_only_changed_crises_appear_in_the_batch(monkeypatch, tmp_path):
     """سه بحران، فقط یکی سطحش عوض می‌شود؛ خروجی باید فقط همان یکی باشد."""
     _fresh(monkeypatch, tmp_path, "slot_subset.db")
     cid = _country()
-    moving = _new_crisis(cid, "epidemic", "severe")
-    calm_a = _new_crisis(cid, "flood", "light")
+    moving = _new_crisis(cid, "flood", "severe")
+    calm_a = _new_crisis(cid, "earthquake", "light")
     calm_b = _new_crisis(cid, "drought", "light")
 
     _set(moving["id"], mitigation=0.60, stage="impact")
@@ -157,7 +159,7 @@ def test_only_changed_crises_appear_in_the_batch(monkeypatch, tmp_path):
 def test_a_light_crisis_fades_after_one_day(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_fade.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "light")
+    crisis = _new_crisis(cid, "flood", "light")
     # مهار متوسط: نه آن‌قدر که تشدید شود، نه آن‌قدر که مهار کامل حساب شود
     _set(crisis["id"], mitigation=0.30, stage="impact",
          light_since=ia._iso(ia._now() - datetime.timedelta(hours=25)))
@@ -171,7 +173,7 @@ def test_a_light_crisis_fades_after_one_day(monkeypatch, tmp_path):
 def test_a_light_crisis_survives_the_first_hours(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_nofade.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "light")
+    crisis = _new_crisis(cid, "flood", "light")
     _set(crisis["id"], mitigation=0.30, stage="impact")
 
     base = ia._now()
@@ -184,7 +186,7 @@ def test_a_light_crisis_survives_the_first_hours(monkeypatch, tmp_path):
 def test_stepping_down_to_light_starts_the_fade_clock(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_clock.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "medium")
+    crisis = _new_crisis(cid, "flood", "medium")
     _set(crisis["id"], mitigation=0.60, stage="impact")
 
     ia.run_crisis_slot_cycle(db.get_country_by_id(cid), ia._now())
@@ -208,7 +210,7 @@ def test_escalating_clears_the_fade_clock(monkeypatch, tmp_path):
 def test_fade_produces_a_news_item(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_fadenews.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "light")
+    crisis = _new_crisis(cid, "flood", "light")
     _set(crisis["id"], mitigation=0.30, stage="impact",
          light_since=ia._iso(ia._now() - datetime.timedelta(hours=25)))
 
@@ -235,10 +237,10 @@ def test_daily_cycle_no_longer_changes_severity(monkeypatch, tmp_path):
 
 
 def test_containment_still_ends_a_crisis_daily(monkeypatch, tmp_path):
-    """مهار کامل دو روزه دست‌نخورده باقی مانده است."""
+    """مهار کامل دو روزه برای بحران‌های عادی دست‌نخورده باقی مانده است."""
     _fresh(monkeypatch, tmp_path, "slot_contain.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "medium")
+    crisis = _new_crisis(cid, "flood", "medium")
     _set(crisis["id"], mitigation=ia.CONTAINMENT_THRESHOLD + 0.05, stage="impact")
 
     base = ia._now()
@@ -251,7 +253,7 @@ def test_only_one_level_step_per_day_even_across_four_slots(monkeypatch, tmp_pat
     """چهار نوبت در روز یعنی «زودتر دیده می‌شود»، نه «چهار برابر سریع‌تر»."""
     _fresh(monkeypatch, tmp_path, "slot_pace.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "severe")
+    crisis = _new_crisis(cid, "flood", "severe")
     _set(crisis["id"], mitigation=0.70, stage="impact")
 
     base = datetime.datetime(2026, 8, 28, 4, 0, tzinfo=datetime.timezone.utc)  # ۰۷:۳۰ تهران
@@ -273,7 +275,7 @@ def test_only_one_level_step_per_day_even_across_four_slots(monkeypatch, tmp_pat
 def test_the_step_lands_in_the_slot_right_after_the_player_acts(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_timing.db")
     cid = _country()
-    crisis = _new_crisis(cid, "epidemic", "severe")
+    crisis = _new_crisis(cid, "flood", "severe")
     base = datetime.datetime(2026, 8, 28, 4, 0, tzinfo=datetime.timezone.utc)
 
     quiet = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), base)
@@ -282,3 +284,110 @@ def test_the_step_lands_in_the_slot_right_after_the_player_acts(monkeypatch, tmp
     _set(crisis["id"], mitigation=0.70)  # بازیکن وسط روز اقدام می‌کند
     later = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), base + datetime.timedelta(hours=6))
     assert [e["event"] for e in later] == ["deescalated"], "نتیجه باید همان نوبت بعدی دیده شود"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# قواعد ویژه‌ی اپیدمی
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_an_epidemic_only_steps_down_above_eighty_percent(monkeypatch, tmp_path):
+    """اپیدمی مثل بقیه از ۵۰٪ پایین نمی‌آید؛ فقط از مهار ۸۰٪ به پایین می‌رود."""
+    _fresh(monkeypatch, tmp_path, "epid_down.db")
+    cid = _country()
+    crisis = _new_crisis(cid, "epidemic", "severe")
+    _set(crisis["id"], mitigation=0.60, stage="impact")  # بالای آستانه‌ی عادی، زیر آستانه‌ی اپیدمی
+
+    moment = ia._now()
+    events = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), moment)
+    assert [e["event"] for e in events] == [], "۶۰٪ برای اپیدمی کافی نیست"
+    assert ia.get_crisis(crisis["id"])["severity"] == "severe"
+
+    _set(crisis["id"], mitigation=ia.EPIDEMIC_DEESCALATION_MITIGATION + 0.02)
+    later = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), moment + datetime.timedelta(hours=6))
+    assert [e["event"] for e in later] == ["deescalated"]
+    assert ia.get_crisis(crisis["id"])["severity"] == "medium"
+
+
+def test_an_epidemic_never_fades_while_light(monkeypatch, tmp_path):
+    """اپیدمی در خفیف محو نمی‌شود؛ یک شبانه‌روز خفیف ماندن پرونده‌اش را نمی‌بندد."""
+    _fresh(monkeypatch, tmp_path, "epid_nofade.db")
+    cid = _country()
+    crisis = _new_crisis(cid, "epidemic", "light")
+    _set(crisis["id"], mitigation=0.30, stage="impact",
+         light_since=ia._iso(ia._now() - datetime.timedelta(hours=30)))
+
+    events = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), ia._now())
+    assert [e["event"] for e in events] == []
+    fresh = ia.get_crisis(crisis["id"])
+    assert fresh["stage"] != "ended", "اپیدمی نباید خودبه‌خود تمام شود"
+
+
+def test_an_epidemic_ends_only_above_ninety_percent(monkeypatch, tmp_path):
+    """۸۵٪ مهار برای پایان اپیدمی کافی نیست؛ فقط مهار بالای ۹۰٪ (با واکسن) آن را ریشه‌کن می‌کند."""
+    _fresh(monkeypatch, tmp_path, "epid_90.db")
+    cid = _country()
+    crisis = _new_crisis(cid, "epidemic", "medium")
+    _set(crisis["id"], mitigation=0.85, stage="impact")
+
+    base = ia._now()
+    for day in range(ia.CONTAINMENT_DAYS_TO_RESOLVE):
+        ia.run_daily_cycle(db.get_country_by_id(cid), None, now_dt=base + datetime.timedelta(days=day))
+    assert ia.get_crisis(crisis["id"])["stage"] != "ended", "۸۵٪ یعنی بدون واکسن؛ نباید تمام شود"
+
+    _set(crisis["id"], mitigation=ia.EPIDEMIC_ERADICATION_THRESHOLD + 0.02)
+    start = ia._now() + datetime.timedelta(days=3)
+    for day in range(ia.CONTAINMENT_DAYS_TO_RESOLVE):
+        ia.run_daily_cycle(db.get_country_by_id(cid), None, now_dt=start + datetime.timedelta(days=day))
+    final = ia.get_crisis(crisis["id"])
+    assert final["stage"] == "ended"
+    assert final["outcome"] == "contained"
+
+
+def test_epidemic_contained_news_says_eradicated(monkeypatch, tmp_path):
+    """خبر پایان اپیدمی از واژه‌ی «ریشه‌کن» استفاده می‌کند تا با بقیه فرق داشته باشد."""
+    _fresh(monkeypatch, tmp_path, "epid_news.db")
+    cid = _country()
+    _ok, _m, crisis = ia.create_crisis(cid, "epidemic", severity="medium", admin_id=1, force=True)
+    ia.end_crisis(crisis["id"], outcome="contained")
+    title, body = ia.build_news(db.get_country_by_id(cid), ia.get_crisis(crisis["id"]), "contained")
+    assert "ریشه‌کن" in title or "ریشه‌کن" in body
+
+    _ok, _m, flood = ia.create_crisis(cid, "flood", severity="medium", admin_id=1, force=True)
+    ia.end_crisis(flood["id"], outcome="contained")
+    ftitle, fbody = ia.build_news(db.get_country_by_id(cid), ia.get_crisis(flood["id"]), "contained")
+    assert "ریشه‌کن" not in ftitle and "ریشه‌کن" not in fbody
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# گزارش روزنامه‌ای بحران‌ها
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_jalali_date_line_known_values():
+    line = ia._jalali_date_line(datetime.datetime(2026, 8, 28, 12, 0, tzinfo=datetime.timezone.utc))
+    assert "جمعه" in line and "شهریور" in line and "۱۴۰۵" in line
+
+
+def test_digest_has_newspaper_layout():
+    items = [
+        {"crisis_id": 1, "country": {"flag": "🇦🇹", "name": "اتریش"},
+         "crisis": {"crisis_key": "epidemic", "severity": "severe"},
+         "event": "escalated", "flag": "x", "title": "t", "body": "b"},
+        {"crisis_id": 2, "country": {"flag": "🇨🇦", "name": "کانادا"},
+         "crisis": {"crisis_key": "epidemic", "severity": "medium"},
+         "event": "deescalated", "flag": "x", "title": "t", "body": "b"},
+        {"crisis_id": 3, "country": {"flag": "🇫🇮", "name": "فنلاند"},
+         "crisis": {"crisis_key": "flood", "severity": "light"},
+         "event": "faded", "flag": "x", "title": "t", "body": "b"},
+        {"crisis_id": 4, "country": {"flag": "🇮🇷", "name": "ایران"},
+         "crisis": {"crisis_key": "earthquake", "severity": "medium"},
+         "event": "contained", "flag": "x", "title": "t", "body": "b"},
+    ]
+    title, body = ia.build_news_digest(items)
+    assert "روزنامه" in title and "بحران" in title
+    assert "🗓" in body and "━━━" in body
+    assert "تشدید شد — 1" in body
+    assert "مهار شد — 1" in body
+    assert "پایان یافت — 1" in body
+    assert "فروکش کرد — 1" in body
+    assert "▫️ 🇦🇹 اتریش — 🦠 اپیدمی → شدید" in body
+    assert "▫️ 🇨🇦 کانادا — 🦠 اپیدمی → متوسط" in body
