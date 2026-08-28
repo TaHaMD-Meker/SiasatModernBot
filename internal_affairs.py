@@ -1133,23 +1133,55 @@ def _join_phrases(phrases: list[str]) -> str:
 
 
 def _prose_war_summary(summaries: list[dict]) -> str:
-    """پاراگراف‌های میدان جنگ — یک جمله‌ی روان به‌ازای هر کشورِ درگیر."""
-    sentences = []
+    """بخش میدان جنگ — مثل گزارش رسمیِ صفحه‌ی جنگ یک روزنامه.
+
+    یک لید با مجموع تلفات، سپس یک پاراگراف مستقل به‌ازای هر کشور. کشورها
+    پشت‌سرهم در یک جمله قاطی نمی‌شوند و هر پاراگراف با پرچم و نام کشور شروع
+    می‌شود؛ سنگین‌ترین تلفات اول می‌آید.
+    """
+    shown = []
     for w in summaries:
-        name = f"{w.get('flag', '🏳️')} {w.get('name', '؟')}".strip()
-        ops = w.get("ops") or []
-        op_txt = (" در عملیات «" + "» و «".join(ops) + "»") if ops else ""
-        pieces = []
-        if w.get("mil_kia"):
-            pieces.append(f"{_fa(w['mil_kia'])} نظامی کشته")
-        if w.get("civ_kia"):
-            pieces.append(f"{_fa(w['civ_kia'])} غیرنظامی کشته")
-        if w.get("wounded"):
-            pieces.append(f"{_fa(w['wounded'])} مجروح")
-        if not pieces:
-            continue
-        sentences.append(f"{name}{op_txt} {_join_phrases(pieces)} داد.")
-    return " ".join(sentences)
+        if (w.get("mil_kia") or 0) or (w.get("civ_kia") or 0):
+            shown.append(w)
+    if not shown:
+        return ""
+    shown.sort(key=lambda w: -((int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0))))
+
+    total_kia = sum(int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0) for w in shown)
+    total_wounded = sum(int(w.get("wounded") or 0) for w in shown)
+
+    parts = []
+    for w in shown:
+        flag = w.get("flag") or "🏳️"
+        name = w.get("name") or "؟"
+        ops = [str(o) for o in (w.get("ops") or []) if o]
+        mil = int(w.get("mil_kia") or 0)
+        civ = int(w.get("civ_kia") or 0)
+        wounded = int(w.get("wounded") or 0)
+
+        losses = []
+        if mil:
+            losses.append(f"{_fa(mil)} نظامی")
+        if civ:
+            losses.append(f"{_fa(civ)} غیرنظامی")
+
+        sentence = f"{flag} {name}"
+        if ops:
+            ops_txt = f"«{ops[0]}»" if len(ops) == 1 else "«" + "» و «".join(ops) + "»"
+            sentence += f" در عملیات {ops_txt}"
+        sentence += f" {_join_phrases(losses)} را از دست داد"
+        if wounded:
+            sentence += f"؛ {_fa(wounded)} نفر نیز مجروح شدند"
+        sentence += "."
+        parts.append(sentence)
+
+    lead = f"درگیری‌های امروز در {_fa(len(shown))} کشور تلفات انسانی بر جای گذاشت"
+    if total_kia:
+        lead += f"؛ مجموع کشته‌شدگان {_fa(total_kia)} نفر"
+        if total_wounded:
+            lead += f" و مجروحان {_fa(total_wounded)} نفر"
+    lead += " برآورد شده است."
+    return lead + "\n\n" + "\n\n".join(parts)
 
 
 def _join_names(names: list[str], limit: int = 4) -> str:
