@@ -154,7 +154,10 @@ SEVERITY_ORDER = ("light", "medium", "severe")
 # قابل فروش، اهدا یا انتقال نیستند.
 # ─────────────────────────────────────────────────────────────────────────────
 VACCINE_MIN_TECH_LEVEL = 3
-VACCINE_BATCH_DOSES = 50_000          # واحد پایه‌ی تولید
+# هر واحد تولید باید حداقل چهار بار تزریق سراسری را پوشش بدهد، وگرنه نسبت به
+# هزینه‌ی ۸۵ میلیونی‌اش بی‌صرفه است.
+VACCINE_USES_PER_BATCH = 4
+VACCINE_BATCH_DOSES = 200_000         # واحد پایه‌ی تولید = ۴ بار تزریق
 VACCINE_MAX_BATCHES = 6               # سقف هر پروژه
 VACCINE_BASE_DAYS = 3                 # حداقل زمان تولید
 VACCINE_DAYS_PER_EXTRA_BATCH = 1      # هر واحد اضافه، یک روز بیشتر

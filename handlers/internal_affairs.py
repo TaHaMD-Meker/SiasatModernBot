@@ -581,7 +581,8 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
     lines = [
         (f"✅ {html.escape(notice)}\n" if notice else "") + "💉 <b>برنامه واکسن</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📦 دُز آماده در انبار: <b>{format_number(doses)}</b>",
+        f"📦 دُز آماده در انبار: <b>{format_number(doses)}</b>"
+        + (f"  ({doses // ia.VACCINE_DOSES_PER_USE} بار تزریق سراسری)" if doses >= ia.VACCINE_DOSES_PER_USE else ""),
         "",
         "<i>تولید داخلی چند روز طول می‌کشد، اما دُز واکسن در بورس کالا</i>",
         "<i>قابل خرید و فروش است — می‌توانید بخرید یا مازادتان را بفروشید.</i>",
@@ -604,7 +605,8 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
             need = ia.vaccine_requirements(batches)
             ok, reason, _n = ia.can_start_vaccine(country, batches)
             body = (
-                f"\n{'✅' if ok else '🔒'} <b>{format_number(need['doses'])} دُز</b> — {need['days']} روز\n"
+                f"\n{'✅' if ok else '🔒'} <b>{format_number(need['doses'])} دُز</b> "
+                f"= {need['doses'] // ia.VACCINE_DOSES_PER_USE} بار تزریق — {need['days']} روز\n"
                 f"   {format_money(need['cost'])} نقدی + {format_number(need['microchips'])} میکروچیپ"
             )
             if not ok:
@@ -617,7 +619,7 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
                 )])
 
         chip_value = ia.VACCINE_CHIPS_PER_BATCH * 15_000
-        lines.extend(["", "<b>🧾 تفکیک هزینه‌ی هر واحد (۵۰ هزار دُز)</b>"])
+        lines.extend(["", f"<b>🧾 تفکیک هزینه‌ی هر واحد ({format_number(ia.VACCINE_BATCH_DOSES)} دُز)</b>"])
         for part, amount in ia.VACCINE_COST_BREAKDOWN.items():
             lines.append(f"• {part}: {format_money(amount)}")
         lines.append(f"• 💻 میکروچیپ ({format_number(ia.VACCINE_CHIPS_PER_BATCH)} عدد): ≈ {format_money(chip_value)}")
@@ -632,7 +634,9 @@ async def _vaccine_page(query, country: dict, notice: str = ""):
 
     lines.append(
         f"\n💡 هر بار تزریق سراسری <b>{format_number(ia.VACCINE_DOSES_PER_USE)}</b> دُز مصرف می‌کند "
-        f"و سقف مهار بحران را به <b>۹۵٪</b> می‌رساند."
+        f"و سقف مهار بحران را به <b>۹۵٪</b> می‌رساند.\n"
+        f"کوچک‌ترین پروژه <b>{ia.VACCINE_USES_PER_BATCH} بار</b> تزریق می‌دهد — "
+        f"مازادش را می‌توانید در بورس بفروشید."
     )
     rows.append(_back_row())
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")

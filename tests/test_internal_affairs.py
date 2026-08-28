@@ -1817,3 +1817,35 @@ def test_payout_uses_the_power_penalty_without_touching_stored_income():
     # هیچ نوشتنی روی ستون daily_income در این مسیر نباشد
     segment = source[source.index("power_note = \"\""):source.index("gross_income = daily_income")]
     assert "update_country_field" not in segment
+
+
+def test_one_batch_covers_at_least_four_vaccination_campaigns():
+    """نسبت به هزینه‌ی ۸۵ میلیونی، یک واحد باید چند بار به کار بیاید."""
+    need = ia.vaccine_requirements(1)
+    uses = need["doses"] // ia.VACCINE_DOSES_PER_USE
+    assert uses >= 4, f"کوچک‌ترین پروژه فقط {uses} بار تزریق می‌دهد"
+    assert uses == ia.VACCINE_USES_PER_BATCH
+    assert ia.VACCINE_BATCH_DOSES == ia.VACCINE_USES_PER_BATCH * ia.VACCINE_DOSES_PER_USE
+
+    chip_value = need["microchips"] * 15_000
+    per_use = (need["cost"] + chip_value) / uses
+    assert per_use <= 25_000_000, f"هزینه‌ی هر تزریق هنوز زیاد است: {int(per_use):,}"
+
+
+def test_bigger_projects_scale_uses_linearly():
+    small = ia.vaccine_requirements(1)
+    big = ia.vaccine_requirements(ia.VACCINE_MAX_BATCHES)
+    assert big["doses"] == small["doses"] * ia.VACCINE_MAX_BATCHES
+    per_use_small = (small["cost"] + small["microchips"] * 15_000) / (small["doses"] // ia.VACCINE_DOSES_PER_USE)
+    per_use_big = (big["cost"] + big["microchips"] * 15_000) / (big["doses"] // ia.VACCINE_DOSES_PER_USE)
+    assert abs(per_use_small - per_use_big) < 1, "هزینه‌ی هر تزریق باید مستقل از اندازه‌ی پروژه باشد"
+
+
+def test_ui_never_hardcodes_the_batch_size():
+    """رگرسیون: عنوان «۵۰ هزار دُز» بعد از تغییر اندازه‌ی واحد، غلط مانده بود."""
+    import inspect
+    from handlers import internal_affairs as domestic, guide
+
+    for module in (domestic, guide):
+        source = inspect.getsource(module)
+        assert "۵۰ هزار دُز" not in source, f"{module.__name__} اندازه‌ی واحد را دستی نوشته"
