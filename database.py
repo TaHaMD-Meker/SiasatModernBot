@@ -1403,6 +1403,8 @@ LOSS_SPECIAL_COLUMNS = {
     # کسر ذخایر از کشور مدافع (متمایز از "oil" که هزینه‌ی سوخت مهاجم است)
     "oil_reserves": "oil_reserves",
     "grain": "grain",
+    "electricity": "electricity",
+    "vaccine_doses": "vaccine_doses",
 }
 
 # اقلامی که فقط ثبت گزارشی می‌شوند و روی هیچ موجودی اثر ندارند
@@ -1420,6 +1422,8 @@ _LOSS_SPECIAL_LABELS = {
     "gold": "تلفات طلا",
     "oil_reserves": "تلفات ذخایر نفت",
     "grain": "تلفات ذخایر غلات",
+    "electricity": "خسارت شبکه برق",
+    "vaccine_doses": "تلفات ذخایر واکسن",
 }
 
 _BUILDING_EFFECT_COLUMNS = {

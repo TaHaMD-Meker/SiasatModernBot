@@ -277,6 +277,18 @@ def match_strategic_resource(name: str):
     if re.search(r"پالایشگاه|سیلو|کارخانه|مجتمع|نیروگاه|معدن|بندر|مزرعه|پتروشیمی|ترمینال|اسکله", q):
         return None
 
+    # شبکه برق و پست‌های انتقال (نیروگاه ساختمان است و بالاتر رد شده)
+    if any(w in q for w in ("شبکه برق", "شبکه سراسری برق", "پوشش برق", "ظرفیت برق",
+                            "پست برق", "پست انتقال", "سوییچ یارد", "سوئیچ یارد",
+                            "switchyard", "زیرساخت برق", "شبکه انتقال برق")):
+        return {"key": "__electricity__", "name": "شبکه برق و پست‌های انتقال", "special": "electricity",
+                "category": "Strategic", "subcat": "زیرساخت راهبردی", "emoji": "⚡", "unit": "واحد"}
+
+    # ذخایر واکسن
+    if any(w in q for w in ("دز واکسن", "دوز واکسن", "ذخایر واکسن", "ذخیره واکسن", "واکسن")):
+        return {"key": "__vaccine_doses__", "name": "ذخایر واکسن", "special": "vaccine_doses",
+                "category": "Strategic", "subcat": "منابع راهبردی", "emoji": "💉", "unit": "دُز"}
+
     # ذخایر نفت خام و سوخت (شامل نفتکش و مخازن)
     if any(w in q for w in ("ذخایر نفت", "ذخیره نفت", "ذخائر نفت", "نفت خام", "مخازن نفت",
                             "مخزن نفت", "نفتکش", "انبار سوخت", "مخازن سوخت", "بشکه نفت")):
@@ -536,7 +548,7 @@ def parse_loss_report_text(text: str):
 # ---------- ساخت گزارش استاندارد ----------
 # دسته‌بندی اقلام ویژه برای بخش‌بندی صحیح گزارش رسمی
 STRATEGIC_SPECIALS = ("warheads", "uranium_ore", "nuclear_fuel", "microchips", "gold",
-                      "oil_reserves", "grain")
+                      "oil_reserves", "grain", "electricity", "vaccine_doses")
 HUMAN_SPECIALS = ("mil_kia", "wounded", "civ_kia")
 COST_SPECIALS = ("money", "oil")
 

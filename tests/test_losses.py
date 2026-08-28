@@ -679,3 +679,38 @@ def test_long_statement_is_split_instead_of_failing_as_caption():
     assert "CAPTION_LIMIT = 1024" in source
     assert "long_statement" in source
     assert "send_message" in source, "متن کامل باید به‌صورت پیام جداگانه برود"
+
+
+def test_power_grid_and_vaccine_are_deductible_and_reversible(db, country):
+    """حمله به شبکه برق و مرکز واکسن باید اثر واقعی داشته باشد."""
+    from handlers.losses import match_strategic_resource
+
+    for name in ("شبکه برق و پست‌های انتقال", "سوئیچ یارد", "پست انتقال"):
+        match = match_strategic_resource(name)
+        assert match and match["special"] == "electricity", name
+    for name in ("ذخایر واکسن", "دز واکسن"):
+        match = match_strategic_resource(name)
+        assert match and match["special"] == "vaccine_doses", name
+
+    # نیروگاه همچنان ساختمان است، نه شبکه برق
+    for name in ("نیروگاه فسیلی", "نیروگاه هسته‌ای", "نیروگاه خورشیدی"):
+        assert match_strategic_resource(name) is None, name
+
+    cid = country["id"]
+    db.update_country_field(cid, "electricity", 170)
+    db.update_country_field(cid, "vaccine_doses", 250_000)
+
+    ok, report_id, _err = db.create_loss_report(cid, [
+        {"key": "__electricity__", "name": "شبکه برق", "special": "electricity", "unit": "واحد", "qty": 38},
+        {"key": "__vaccine_doses__", "name": "ذخایر واکسن", "special": "vaccine_doses", "unit": "دُز", "qty": 60_000},
+    ], operation_name="آزمون زیرساخت")
+    assert ok
+
+    after = db.get_country_by_id(cid)
+    assert after["electricity"] == 132
+    assert after["vaccine_doses"] == 190_000
+
+    assert db.revert_loss_report(report_id)[0]
+    restored = db.get_country_by_id(cid)
+    assert restored["electricity"] == 170
+    assert restored["vaccine_doses"] == 250_000
