@@ -9,6 +9,7 @@
 import config
 import database as db
 import handlers.vip as vip
+from handlers.admin import admin_panel, _players_submenu
 
 
 def _fresh(monkeypatch, tmp_path, name="vipdisc.db"):
@@ -121,3 +122,44 @@ def test_discount_survives_restart(monkeypatch, tmp_path):
     # شبیه‌سازی اتصال جدید — خواندن دوباره از دیتابیس
     assert vip.effective_price("vip_bronze") == 71_100
     assert db.get_all_vip_discounts().get("vip_bronze") == 10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# پنل ادمین هاب + زیرمنو
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_admin_panel_is_a_hub_with_submenus():
+    """منوی ادمین باید هاب با دسته‌ها باشد، نه دیوار ۲۵ دکمه."""
+    import inspect
+    source = inspect.getsource(admin_panel) + inspect.getsource(_players_submenu)
+    for key in ("admin:menu_players", "admin:menu_war", "admin:menu_world",
+                "admin:menu_economy", "admin:menu_settings", "admin:menu_danger"):
+        assert key in source, f"{key} باید در هاب باشد"
+    # خلاصه وضعیت بالای هاب
+    assert "_admin_summary_line" in source
+    # دسته‌های تخت قدیمی نباید مستقیم در هاب باشند
+    assert "admin:season_reset_prompt" not in inspect.getsource(admin_panel)
+    assert "admin:market_reset_prompt" not in inspect.getsource(admin_panel)
+
+
+def test_dangerous_actions_are_isolated():
+    """عملیات حساس فقط در زیرمنوی جدا هستند."""
+    import inspect
+    from handlers import admin as admin_module
+    hub = inspect.getsource(admin_module.admin_panel)
+    danger = inspect.getsource(admin_module._danger_submenu)
+    assert "admin:season_reset_prompt" in danger
+    assert "admin:market_reset_prompt" in danger
+    # در هاب اصلی نباشند (فقط دسته‌ی ⚠️)
+    assert "admin:season_reset_prompt" not in hub
+    assert "admin:market_reset_prompt" not in hub
+
+
+def test_submenu_routes_registered():
+    import inspect
+    from handlers import admin as admin_module
+    source = inspect.getsource(admin_module.admin_callback_handler)
+    for key in ("admin:menu_players", "admin:menu_war", "admin:menu_world",
+                "admin:menu_economy", "admin:menu_settings", "admin:menu_danger"):
+        assert key in source
+    assert "admin:menu" in source  # دکمه‌ی برگشت به هاب حفظ شده

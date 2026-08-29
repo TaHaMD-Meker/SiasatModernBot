@@ -116,6 +116,45 @@ async def safe_edit_or_reply(query, text: str, reply_markup=None, parse_mode="HT
 
 # ==================== منوی اصلی ادمین ====================
 
+def _admin_pending_counts() -> dict:
+    """شمارنده‌های خلاصه‌ی وضعیت برای هدر پنل ادمین."""
+    counts = {"countries": 0, "payments": 0, "roles": 0, "quarantined": 0}
+    try:
+        counts["countries"] = len(db.get_all_pending_country_requests())
+    except Exception:
+        pass
+    try:
+        counts["payments"] = len(db.get_pending_payment_requests())
+    except Exception:
+        pass
+    try:
+        counts["roles"] = len(db.get_pending_roleplays())
+    except Exception:
+        pass
+    try:
+        import country_queue as cq
+        counts["quarantined"] = cq.queue_stats().get("quarantined", 0)
+    except Exception:
+        pass
+    return counts
+
+
+def _admin_summary_line(counts: dict) -> str:
+    """یک خط خلاصه که قبل از ورود به زیرمنوها، کجا کار داری را نشان می‌دهد."""
+    bits = []
+    if counts["countries"]:
+        bits.append(f"📥 {counts['countries']} درخواست")
+    if counts["payments"]:
+        bits.append(f"💳 {counts['payments']} فیش")
+    if counts["roles"]:
+        bits.append(f"🎮 {counts['roles']} رول")
+    if counts["quarantined"]:
+        bits.append(f"⏳ {counts['quarantined']} قرنطینه")
+    if not bits:
+        bits.append("✅ همه‌چیز روبه‌راه است")
+    return " | ".join(bits)
+
+
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -125,38 +164,22 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_c = db.get_country_by_player(user_id)
     un_btn = [InlineKeyboardButton("🇺🇳 اتاق ویژه دبیرکل سازمان ملل متحد", callback_data="un:menu")] if (admin_c and admin_c.get("country_key") == "un") else [InlineKeyboardButton("🇺🇳 فعال‌سازی کشور / نقش سازمان ملل", callback_data="admin:claim_un")]
 
-    pending_reqs = db.get_all_pending_country_requests()
-    pending_count = len(pending_reqs)
-    pending_payments = db.get_pending_payment_requests()
-    pay_count = len(pending_payments)
+    counts = _admin_pending_counts()
 
-    text = "👑 *پنل مدیریت بازی «سیاست مدرن»*\n\nلطفاً یک گزینه را انتخاب کنید:"
+    text = (
+        "👑 *پنل مدیریت بازی «سیاست مدرن»*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📊 {_admin_summary_line(counts)}\n\n"
+        "یک دسته را انتخاب کنید:"
+    )
     keyboard = [
         un_btn,
-        [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({pending_count})", callback_data="admin:pending_countries")],
-        [InlineKeyboardButton(f"💳 فیش‌های پرداخت تومانی ({pay_count})", callback_data="admin:toman_requests")],
-        [InlineKeyboardButton("🛒 قیمت و تخفیف فروشگاه ویژه", callback_data="admin:vip_price")],
-        [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
-        [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
-        [InlineKeyboardButton("🚨 رادار ضدتقلب و تراکنش‌های مشکوک", callback_data="admin:anti_cheat_radar")],
-        [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
-        [InlineKeyboardButton("📥 رول‌های دریافتی (مدیریت عملیات‌ها)", callback_data="admin:roleplays_hub")],
-        [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
-        [InlineKeyboardButton("💾 پشتیبان‌گیری فوری از دیتابیس (Backup)", callback_data="admin:backup_db")],
-        [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
-        [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
-        [InlineKeyboardButton("🏆 مدیریت تورنومنت فصلی", callback_data="admin:tournament")],
-        [InlineKeyboardButton("🚨 مدیریت بحران و سیاست داخلی", callback_data="admin:dom")],
-        [InlineKeyboardButton("⏳ صف انتظار و کشورهای قرنطینه", callback_data="admin:queue")],
-        [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
-        [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
-        [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
-        [InlineKeyboardButton("🎁 سامانه جبران و بازیابی درآمد بازیکنان", callback_data="admin:income_recovery_hub")],
-        [InlineKeyboardButton("🧹 سلب مالکیت تمام کشورها و شروع رسمی فصل جدید", callback_data="admin:season_reset_prompt")],
-        [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
-        [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
-        [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
-        [InlineKeyboardButton("📢 ارسال پیام همگانی (Broadcast)", callback_data="admin:broadcast_prompt")],
+        [InlineKeyboardButton("🧑‍💼 بازیکنان و کشورها", callback_data="admin:menu_players")],
+        [InlineKeyboardButton("⚔️ جنگ و عملیات", callback_data="admin:menu_war")],
+        [InlineKeyboardButton("🌍 سیاست داخلی و جهان", callback_data="admin:menu_world")],
+        [InlineKeyboardButton("💰 اقتصاد، بازار و فروشگاه", callback_data="admin:menu_economy")],
+        [InlineKeyboardButton("⚙️ تنظیمات و ابزار", callback_data="admin:menu_settings")],
+        [InlineKeyboardButton("⚠️ عملیات حساس", callback_data="admin:menu_danger")],
         [InlineKeyboardButton("❌ بستن پنل", callback_data="admin:close")],
     ]
 
@@ -164,6 +187,106 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
         await safe_edit_or_reply(update.callback_query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+# ==================== زیرمنوهای پنل ادمین ====================
+
+async def _admin_submenu(query, title: str, rows: list, back: str = "admin:menu"):
+    keyboard = rows + [[InlineKeyboardButton("🔙 پنل مدیریت", callback_data=back)]]
+    await safe_edit_or_reply(query, title, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def _players_submenu(query):
+    counts = _admin_pending_counts()
+    rows = [
+        [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({counts['countries']})", callback_data="admin:pending_countries")],
+        [InlineKeyboardButton(f"💳 فیش‌های پرداخت تومانی ({counts['payments']})", callback_data="admin:toman_requests")],
+        [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
+        [InlineKeyboardButton(f"⏳ صف انتظار و کشورهای قرنطینه ({counts['quarantined']})", callback_data="admin:queue")],
+        [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
+        [InlineKeyboardButton("🚨 رادار ضدتقلب و تراکنش‌های مشکوک", callback_data="admin:anti_cheat_radar")],
+    ]
+    await _admin_submenu(
+        query,
+        "🧑‍💼 *بازیکنان و کشورها*\n━━━━━━━━━━━━━━━━━━\n"
+        "تأیید درخواست‌ها و فیش‌ها، مدیریت کشورها، صف انتظار و پایش فعالیت.",
+        rows,
+    )
+
+
+async def _war_submenu(query):
+    counts = _admin_pending_counts()
+    rows = [
+        [InlineKeyboardButton(f"📥 رول‌های دریافتی ({counts['roles']})", callback_data="admin:roleplays_hub")],
+        [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
+    ]
+    await _admin_submenu(
+        query,
+        "⚔️ *جنگ و عملیات*\n━━━━━━━━━━━━━━━━━━\n"
+        "بررسی رول‌های دریافتی بازیکنان و ثبت تلفات تجهیزات.",
+        rows,
+    )
+
+
+async def _world_submenu(query):
+    rows = [
+        [InlineKeyboardButton("🚨 مدیریت بحران و سیاست داخلی", callback_data="admin:dom")],
+        [InlineKeyboardButton("🏆 مدیریت تورنومنت فصلی", callback_data="admin:tournament")],
+        [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
+        [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
+    ]
+    await _admin_submenu(
+        query,
+        "🌍 *سیاست داخلی و جهان*\n━━━━━━━━━━━━━━━━━━\n"
+        "بحران‌ها و سیاست داخلی، تورنومنت فصلی، رتبه‌بندی و آمار.",
+        rows,
+    )
+
+
+async def _economy_submenu(query):
+    rows = [
+        [InlineKeyboardButton("🛒 قیمت و تخفیف فروشگاه ویژه", callback_data="admin:vip_price")],
+        [InlineKeyboardButton("🎁 جبران و بازیابی درآمد بازیکنان", callback_data="admin:income_recovery_hub")],
+        [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
+        [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
+    ]
+    await _admin_submenu(
+        query,
+        "💰 *اقتصاد، بازار و فروشگاه*\n━━━━━━━━━━━━━━━━━━\n"
+        "تخفیف فروشگاه ویژه، جبران درآمد بازیکنان و توزیع‌های اقتصادی.",
+        rows,
+    )
+
+
+async def _settings_submenu(query):
+    rows = [
+        [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
+        [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
+        [InlineKeyboardButton("💾 پشتیبان‌گیری فوری از دیتابیس (Backup)", callback_data="admin:backup_db")],
+        [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
+        [InlineKeyboardButton("🔄 رفرش و همگام‌سازی کیبورد تمام بازیکنان", callback_data="admin:sync_all_keyboards")],
+        [InlineKeyboardButton("📢 ارسال پیام همگانی (Broadcast)", callback_data="admin:broadcast_prompt")],
+    ]
+    await _admin_submenu(
+        query,
+        "⚙️ *تنظیمات و ابزار*\n━━━━━━━━━━━━━━━━━━\n"
+        "قفل‌ها، کانال، پشتیبان‌گیری، همگام‌سازی و پیام همگانی.",
+        rows,
+    )
+
+
+async def _danger_submenu(query):
+    rows = [
+        [InlineKeyboardButton("🧹 سلب مالکیت تمام کشورها و شروع فصل جدید", callback_data="admin:season_reset_prompt")],
+        [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
+    ]
+    await _admin_submenu(
+        query,
+        "⚠️ *عملیات حساس*\n━━━━━━━━━━━━━━━━━━\n"
+        "این عملیات روی داده‌های همه‌ی بازیکنان اثر می‌گذارند و قابل بازگشت نیستند. "
+        "قبل از هر اقدام، از پشتیبان‌گیری مطمئن شوید.",
+        rows,
+    )
 
 
 async def admin_locks_menu(query, context):
@@ -618,6 +741,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     if data == "admin:menu":
         await admin_panel(update, context)
+
+    elif data == "admin:menu_players":
+        await _players_submenu(query)
+
+    elif data == "admin:menu_war":
+        await _war_submenu(query)
+
+    elif data == "admin:menu_world":
+        await _world_submenu(query)
+
+    elif data == "admin:menu_economy":
+        await _economy_submenu(query)
+
+    elif data == "admin:menu_settings":
+        await _settings_submenu(query)
+
+    elif data == "admin:menu_danger":
+        await _danger_submenu(query)
 
     elif data == "admin:close":
         await query.delete_message()

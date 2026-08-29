@@ -483,9 +483,10 @@ def test_admin_panel_exposes_crisis_management():
     import inspect
     from handlers import admin as admin_handlers
 
-    source = inspect.getsource(admin_handlers.admin_panel)
-    assert "admin:dom" in source
-    assert "مدیریت بحران و سیاست داخلی" in source
+    # «مدیریت بحران» حالا در زیرمنوی «سیاست داخلی و جهان» است
+    world = inspect.getsource(admin_handlers._world_submenu)
+    assert "admin:dom" in world
+    assert "مدیریت بحران و سیاست داخلی" in world
 
 
 def test_every_crisis_has_actions_and_news():

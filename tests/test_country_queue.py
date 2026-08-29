@@ -238,8 +238,9 @@ def test_admin_panel_exposes_quick_approve_and_queue():
     import inspect
     from handlers import admin as admin_handlers
 
-    panel = inspect.getsource(admin_handlers.admin_panel)
-    assert "admin:queue" in panel
+    # «صف انتظار» حالا در زیرمنوی «بازیکنان و کشورها» است
+    players = inspect.getsource(admin_handlers._players_submenu)
+    assert "admin:queue" in players
     handler = inspect.getsource(admin_handlers.admin_callback_handler)
     assert "admin:quick_approve" in handler
     assert "admin:queue_run" in handler
