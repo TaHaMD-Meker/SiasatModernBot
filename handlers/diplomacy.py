@@ -746,24 +746,28 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             return
 
         # موازنه قدرت نبرد دریایی: ناوگان مدافع + موشک‌های ضدکشتی در برابر ناوگان مهاجم
-        defender_navy = db.calculate_naval_power(country["id"])
+        defender_navy, antiship_power, defender_power = db.calculate_blockade_break_power(country["id"])
         blockader_power = db.calculate_naval_power(blockader_c["id"])
-        defender_power = defender_navy + antiship_stock * 10
+        required_power = max(blockader_power, 1)
 
-        if defender_power < int(blockader_power * 0.4):
-            spent = db.consume_antiship_missiles(country["id"], max(1, antiship_stock // 10))
+        if defender_power < required_power:
+            spent = db.consume_antiship_missiles(country["id"], max(1, min(antiship_stock, max(1, int(antiship_stock * 0.15)))))
             await query.edit_message_text(
                 f"💥 **شکستن محاصره ناموفق بود!**\n━━━━━━━━━━━━━━━━━━\n\n"
-                f"• قدرت ناوگان مدافع شما: {defender_power:,} امتیاز\n"
-                f"• قدرت ناوگان محاصره‌کننده ({blockader_c['flag']} {blockader_c['name']}): {blockader_power:,} امتیاز\n"
-                f"• مهمات ضدکشتی مصرف‌شده در درگیری: {spent:,} فروند\n\n"
-                f"⚠️ برای درهم شکستن این محاصره، قدرت دریایی شما باید حداقل ۴۰٪ ناوگان مهاجم باشد.",
+                f"📊 **تراز عملیات رزمی نبرد دریایی:**\n"
+                f"• ⚓ **قدرت یگان‌های سطحی/زیرسطحی مدافع:** {defender_navy:,} امتیاز\n"
+                f"• 🛡️ **قدرت آتش موشک‌های ضدکشتی مدافع ({antiship_stock:,} فروند):** {antiship_power:,} امتیاز\n"
+                f"• ⚔️ **مجموع توان رزمی مدافع:** {defender_power:,} امتیاز\n"
+                f"• 🛑 **قدرت ناوگان محاصره‌کننده ({blockader_c['flag']} {blockader_c['name']}):** {blockader_power:,} امتیاز\n"
+                f"• 🎯 **حداقل توان لازم جهت درهم شکستن خطوط محاصره (۱۰۰٪):** {required_power:,} امتیاز\n"
+                f"• 💥 **مهمات مصرف‌شده در آتشباری ناموفق:** {spent:,} فروند\n\n"
+                f"⚠️ ناوگان محاصره‌کننده با تکیه بر سامانه‌های پدافند لایه‌ای ایجیس و برتری تناژ دریایی، آتش موشکی شما را دفع کرده و خطوط محاصره بنادر را حفظ نمود.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
                 parse_mode="Markdown"
             )
             return
 
-        spent = db.consume_antiship_missiles(country["id"], max(1, antiship_stock // 10))
+        spent = db.consume_antiship_missiles(country["id"], max(1, min(antiship_stock, max(1, int(antiship_stock * 0.30)))))
         db.break_naval_blockade(country["id"])
 
         # بازیابی رضایت عمومی ازدست‌رفته در اثر محاصره
@@ -774,7 +778,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             try:
                 await context.bot.send_message(
                     chat_id=blockader_c["player_id"],
-                    text=f"💥 **محاصره دریایی شما درهم شکسته شد!**\n\nنیروهای مدافع کشور {country['flag']} {country['name']} با شلیک موشک‌های ضدکشتی و یگان‌های دریایی، ناوگان محاصره‌گر شما را عقب راندند.",
+                    text=f"💥 **محاصره دریایی شما درهم شکسته شد!**\n\nنیروهای مدافع کشور {country['flag']} {country['name']} با شلیک متراکم موشک‌های ضدکشتی و یگان‌های دریایی، ناوگان محاصره‌گر شما را عقب راندند.",
                     parse_mode="Markdown"
                 )
             except Exception:
@@ -783,8 +787,10 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         await news_engine.trigger_unblockade_news(context.bot, blockader_c, country, is_broken=True)
 
         await query.edit_message_text(
-            f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n\n"
-            f"• مهمات ضدکشتی مصرف‌شده: {spent:,} فروند\n"
+            f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"• ⚓ **قدرت ناوگان مدافع:** {defender_navy:,} امتیاز\n"
+            f"• 🛡️ **آتش موشکی مصرف‌شده:** {spent:,} فروند\n"
+            f"• 🛑 **ناوگان عقب‌رانده‌شده:** {blockader_c['flag']} {blockader_c['name']} ({blockader_power:,} امتیاز)\n\n"
             f"📈 شاخص رضایت عمومی به سطح پیش از محاصره بازگشت (بازیابی ۱۵٪).",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
             parse_mode="Markdown"

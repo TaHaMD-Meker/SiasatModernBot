@@ -4937,8 +4937,13 @@ def break_naval_blockade(target_id: int):
 
 
 ANTISHIP_TOKENS = (
-    "antiship", "noor", "qader", "qadir", "harpoon", "exocet", "yakhont",
-    "cruise", "khalij", "mandab", "almandab", "bahr", "onslow", "neptune",
+    "antiship", "anti-ship", "anti_ship", "ضدکشتی", "noor", "qader", "qadir", "harpoon", "exocet",
+    "yakhont", "cruise", "کروز", "khalij", "mandab", "almandab", "bahr", "onslow", "neptune",
+    "zircon", "brahmos", "c802", "c-802", "nsm", "otomat", "rbs15", "rbs-15", "yj12", "yj18",
+    "yj-12", "yj-18", "lrasm", "cstar", "haeseong", "penguin", "gabriel", "kh35", "kh-35",
+    "kh32", "kh-32", "oniks", "bastion", "kalibr", "tomahawk", "scalp", "taurus", "paveh",
+    "soumar", "hoveyzeh", "asm3", "hf3", "hsiung", "marte", "martlet", "tankil", "babur",
+    "raad", "delilah", "popeye", "kumsong", "termit", "seaskua", "abu_mahdi", "zolfaghar_nav",
 )
 
 
@@ -4955,6 +4960,16 @@ def get_antiship_missile_stock(country_id: int) -> int:
         if _is_antiship_key(a.get("equipment_key")) or _is_antiship_key(a.get("equipment_name")):
             total += a.get("amount") or 0
     return total
+
+
+def calculate_blockade_break_power(country_id: int) -> tuple[int, int, int]:
+    """محاسبه تفکیکی قدرت شکستن محاصره دریایی: (قدرت ناوگان, قدرت موشک‌های ضدکشتی, مجموع توان رزمی)."""
+    navy_power = calculate_naval_power(country_id)
+    antiship_stock = get_antiship_missile_stock(country_id)
+    # هر موشک ضدکشتی/کروز ۱ امتیاز قدرت پشتیبانی آتش ساحلی/دریایی دارد
+    antiship_power = antiship_stock * 1
+    total_power = navy_power + antiship_power
+    return navy_power, antiship_power, total_power
 
 
 def consume_antiship_missiles(country_id: int, qty: int) -> int:
