@@ -131,11 +131,15 @@ def test_rollback_skips_missing_recipient(monkeypatch, tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_equipment_weight_points_by_category():
-    assert db.equipment_weight_points("Air Defense", 1) == 1.0
-    assert db.equipment_weight_points("Air Defense", 200) == 200.0
-    assert db.equipment_weight_points("UAV", 5) == 1.0
-    assert db.equipment_weight_points("Missiles", 2) == 1.0
-    assert db.equipment_weight_points("", 3) == 3.0  # ناشناس → ۱ به ازای هر قلم
+    # وزن واقعی به تن — هر دسته متفاوت
+    assert db.equipment_weight_points("Air Defense", 1) == 15.0
+    assert db.equipment_weight_points("Air Defense", 200) == 3000.0
+    assert db.equipment_weight_points("Aircraft", 1) == 20.0
+    assert db.equipment_weight_points("Ground Forces", 1) == 30.0
+    assert db.equipment_weight_points("UAV", 5) == 2.0
+    assert db.equipment_weight_points("Missiles", 2) == 4.0
+    assert db.equipment_weight_points("Navy", 1) == 3000.0
+    assert db.equipment_weight_points("", 3) == 3.0  # ناشناس → ۱ تن به ازای هر قلم
 
 
 def test_daily_shipment_cap_blocks_extra_transfers(monkeypatch, tmp_path):
@@ -170,20 +174,20 @@ def _country_with_ad(pid, key, amount):
 
 
 def test_heavy_equipment_shipment_is_rejected_by_sea(monkeypatch, tmp_path):
-    """۲۰۰ پدافند با کشتی رد می‌شود (سقف دریایی ۱۵۰)؛ ۱۰۰ تا قبول است."""
+    """پدافند ۱۵ تن: کشتی (۱۰۰۰ تن) حداکثر ۶۶ تا؛ ۱۰۰ تا رد و ۶۰ تا قبول است."""
     _fresh(monkeypatch, tmp_path)
     a = _country_with_ad(3003, "alpha", 500)
-    b = _country(3004, "beta", treasury=200_000_000)
+    b = _country(3004, "beta", treasury=300_000_000)
 
-    contract = db.create_trade_contract(a, b, "military_asset", 200, "treasury", 10_000_000,
+    contract = db.create_trade_contract(a, b, "military_asset", 100, "treasury", 10_000_000,
                                         transport_payer="buyer", transport_cost=0,
                                         offered_key="test_ad", transport_mode="sea")
     ok, msg = db.execute_trade_contract_transaction(contract, b)
     assert not ok
     assert "مازاد بر ظرفیت حمل" in msg
-    assert "حداکثر" in msg and "150" in msg, "پیام باید سقف دریایی را دقیق بگوید"
+    assert "حداکثر" in msg and "66" in msg, "پیام باید سقف دریایی را دقیق بگوید"
 
-    contract2 = db.create_trade_contract(a, b, "military_asset", 100, "treasury", 5_000_000,
+    contract2 = db.create_trade_contract(a, b, "military_asset", 60, "treasury", 5_000_000,
                                          transport_payer="buyer", transport_cost=0,
                                          offered_key="test_ad", transport_mode="sea")
     ok2, msg2 = db.execute_trade_contract_transaction(contract2, b)
@@ -191,38 +195,61 @@ def test_heavy_equipment_shipment_is_rejected_by_sea(monkeypatch, tmp_path):
 
 
 def test_transport_modes_have_different_weight_caps(monkeypatch, tmp_path):
-    """همان محموله با هواپیما رد می‌شود ولی با کشتی قبول — فرق روش‌ها."""
+    """پدافند ۱۵ تن: هواپیما (۴۰ تن) فقط ۲ تا؛ ۳۰ تا با هواپیما رد و با قطار قبول."""
     _fresh(monkeypatch, tmp_path)
     a = _country_with_ad(3005, "alpha", 100)
     b = _country(3006, "beta", treasury=300_000_000)
 
-    # ۶۰ پدافند: با هواپیما (سقف ۳۰) رد، با قطار (سقف ۸۰) قبول
-    c_air = db.create_trade_contract(a, b, "military_asset", 60, "treasury", 5_000_000,
+    # ۳۰ پدافند = ۴۵۰ تن: با هواپیما (۴۰ تن) رد
+    c_air = db.create_trade_contract(a, b, "military_asset", 30, "treasury", 5_000_000,
                                      transport_payer="buyer", transport_cost=0,
                                      offered_key="test_ad", transport_mode="air")
     ok_air, msg_air = db.execute_trade_contract_transaction(c_air, b)
     assert not ok_air
     assert "مازاد بر ظرفیت حمل" in msg_air
-    assert "حداکثر" in msg_air and "30" in msg_air
+    assert "حداکثر" in msg_air and "2" in msg_air
 
-    c_land = db.create_trade_contract(a, b, "military_asset", 60, "treasury", 5_000_000,
+    # با قطار (۲۰۰ تن) هم رد — ۳۰ پدافند = ۴۵۰ تن > ۲۰۰
+    c_land = db.create_trade_contract(a, b, "military_asset", 30, "treasury", 5_000_000,
                                       transport_payer="buyer", transport_cost=0,
                                       offered_key="test_ad", transport_mode="land")
     ok_land, msg_land = db.execute_trade_contract_transaction(c_land, b)
-    assert ok_land, msg_land
+    assert not ok_land
+
+    # ۱۰ پدافند = ۱۵۰ تن: با قطار (۲۰۰ تن) قبول، با هواپیما (۴۰ تن) رد
+    c_land2 = db.create_trade_contract(a, b, "military_asset", 10, "treasury", 2_000_000,
+                                       transport_payer="buyer", transport_cost=0,
+                                       offered_key="test_ad", transport_mode="land")
+    ok_land2, msg_land2 = db.execute_trade_contract_transaction(c_land2, b)
+    assert ok_land2, msg_land2
+    c_air2 = db.create_trade_contract(a, b, "military_asset", 10, "treasury", 2_000_000,
+                                      transport_payer="buyer", transport_cost=0,
+                                      offered_key="test_ad", transport_mode="air")
+    ok_air2, _ = db.execute_trade_contract_transaction(c_air2, b)
+    assert not ok_air2
 
 
 def test_max_equipment_per_shipment_helper():
-    # جنگنده/پدافند (۱ نقطه): کشتی ۱۵۰، قطار ۸۰، هواپیما ۳۰
-    assert db.max_equipment_per_shipment("Air Defense", "sea") == 150
-    assert db.max_equipment_per_shipment("Air Defense", "land") == 80
-    assert db.max_equipment_per_shipment("Air Defense", "air") == 30
-    # موشک (۰.۵ نقطه): کشتی ۳۰۰
-    assert db.max_equipment_per_shipment("Missiles", "sea") == 300
-    # پهپاد (۰.۲ نقطه): هواپیما ۱۵۰
-    assert db.max_equipment_per_shipment("UAV", "air") == 150
-    assert db.transfer_weight_capacity("sea") == 150
-    assert db.transfer_weight_capacity("air") == 30
+    # وزن‌ها به تن — ظرفیت‌ها: کشتی ۱۰۰۰، قطار ۲۰۰، هواپیما ۴۰
+    assert db.transfer_weight_capacity("sea") == 1000
+    assert db.transfer_weight_capacity("land") == 200
+    assert db.transfer_weight_capacity("air") == 40
+    # پدافند (۱۵ تن): کشتی ۶۶، قطار ۱۳، هواپیما ۲
+    assert db.max_equipment_per_shipment("Air Defense", "sea") == 66
+    assert db.max_equipment_per_shipment("Air Defense", "land") == 13
+    assert db.max_equipment_per_shipment("Air Defense", "air") == 2
+    # جنگنده (۲۰ تن): کشتی ۵۰، هواپیما ۲
+    assert db.max_equipment_per_shipment("Aircraft", "sea") == 50
+    assert db.max_equipment_per_shipment("Aircraft", "air") == 2
+    # تانک (۳۰ تن): قطار ۶
+    assert db.max_equipment_per_shipment("Ground Forces", "land") == 6
+    # موشک (۲ تن): کشتی ۵۰۰، هواپیما ۲۰
+    assert db.max_equipment_per_shipment("Missiles", "sea") == 500
+    assert db.max_equipment_per_shipment("Missiles", "air") == 20
+    # پهپاد (۰.۴ تن): هواپیما ۱۰۰
+    assert db.max_equipment_per_shipment("UAV", "air") == 100
+    # شناور (۳۰۰۰ تن): در هیچ روشی جا نمی‌شود
+    assert db.max_equipment_per_shipment("Navy", "sea") == 0
 
 
 def test_weight_system_can_be_toggled(monkeypatch, tmp_path):

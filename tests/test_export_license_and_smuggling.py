@@ -164,12 +164,12 @@ def test_smuggling_light_weapon_and_interception_mechanics():
     conn.commit()
     conn.close()
 
-    # ارسال ۱۰ تیم کورنت به صورت قاچاق
+    # ارسال ۶ تیم کورنت (هر کدام ۳۰ تن = ۱۸۰ تن، زیر سقف زمینی ۲۰۰ تن) به صورت قاچاق
     cid = db.create_trade_contract(
         proposer_id=301,
         recipient_id=302,
         offered_type="military_asset",
-        offered_amount=10,
+        offered_amount=6,
         requested_type="treasury",
         requested_amount=2_000_000,
         transport_payer="seller",
@@ -188,4 +188,4 @@ def test_smuggling_light_weapon_and_interception_mechanics():
 
     # موجودی سلاح در انبار یمن کاهش یافته است
     y_kornet = db.get_asset_by_key(301, "kornet_team")
-    assert y_kornet["amount"] == 10
+    assert y_kornet["amount"] == 14

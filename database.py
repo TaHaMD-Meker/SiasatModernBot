@@ -4696,7 +4696,8 @@ def max_equipment_per_shipment(category: str, mode: str) -> int:
     per = getattr(config, "EQUIPMENT_WEIGHT_POINTS", {}).get(category or "", 1.0)
     if per <= 0:
         return cap
-    return int(round(cap / per))
+    # floor با تلورانس اعشاری: ۱۰۰۰/۱۵ = ۶۶، و ۴۰/۰.۴ = ۱۰۰ (نه ۹۹)
+    return int((cap + 1e-9) / per)
 
 
 def get_transfer_day_count(country_id: int, day: str | None = None) -> int:
