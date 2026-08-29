@@ -116,6 +116,12 @@ async def battlepass_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.sync_and_check_all_challenges(c_id)
 
     bp = db.get_or_create_battle_pass(c_id)
+    if bp is None:  # کشور حذف‌شده — نباید UI کرش کند
+        await query.edit_message_text(
+            "🚫 کشور شما حذف شده است. برای شروع دوباره /start بزنید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="country:back_profile")]]),
+        )
+        return
     curr_tier = bp["current_tier"]
     curr_xp = bp["current_xp"]
     is_premium = bp["is_premium"]
@@ -214,6 +220,9 @@ async def battlepass_claim_all(query, context, country_id: int):
 
 async def battlepass_view_tiers(query, context, country_id: int, page: int = 1):
     bp = db.get_or_create_battle_pass(country_id)
+    if bp is None:
+        await query.edit_message_text("🚫 کشور یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="bp:menu")]]))
+        return
     curr_tier = bp["current_tier"]
     is_premium = bp["is_premium"]
     claimed_free = set(bp["claimed_free_tiers"])
@@ -273,6 +282,9 @@ async def battlepass_challenges_menu(query, context, country_id: int):
     db.sync_and_check_all_challenges(country_id)
 
     bp = db.get_or_create_battle_pass(country_id)
+    if bp is None:
+        await query.edit_message_text("🚫 کشور یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="bp:menu")]]))
+        return
     completed = set(bp.get("completed_challenges", []))
     prog_map = bp.get("challenge_progress", {})
 

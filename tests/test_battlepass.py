@@ -294,3 +294,27 @@ def test_battle_pass_ui_navigation_and_views(db_temp):
         assert "طاها محمدی" in query_buy.last_text
 
     asyncio.run(_test())
+
+
+def test_battle_pass_survives_deleted_country():
+    """باگ FOREIGN KEY: وقتی کشور حذف شده، بتل پس نباید INSERT نامعتبر بزند."""
+    import config as cfg
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    old_db = cfg.DB_PATH
+    cfg.DB_PATH = os.path.join(tmp, "bp_fk.db")
+    db.init_db()
+    try:
+        cid = db.create_country(999001, "کشور موقت", "🏳️", country_key="tmpbp")
+        # بتل پس ساخته می‌شود
+        bp = db.get_or_create_battle_pass(cid)
+        assert bp is not None
+        db.delete_country_by_id(cid)
+        # بعد از حذف، نباید INSERT نامعتبر بزند → None برمی‌گردد
+        bp2 = db.get_or_create_battle_pass(cid)
+        assert bp2 is None, "کشور حذف‌شده نباید بتل پس بسازد"
+        # add_battle_pass_xp هم امن است
+        xp, tier, up = db.add_battle_pass_xp(cid, 100)
+        assert (xp, tier, up) == (0, 0, False)
+    finally:
+        cfg.DB_PATH = old_db

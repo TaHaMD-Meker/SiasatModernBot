@@ -7217,28 +7217,41 @@ def admin_delete_commander(country_id: int, commander_key: str) -> tuple[bool, s
 # ==================== سیستم بتل‌پس فصلی و کمپین‌های استراتژیک (Battle Pass) ====================
 
 def get_or_create_battle_pass(country_id: int) -> dict:
-    """دریافت یا ساخت وضعیت بتل‌پس فصلی برای یک کشور."""
+    """دریافت یا ساخت وضعیت بتل‌پس فصلی برای یک کشور.
+
+    اگر کشور وجود نداشته باشد (حذف‌شده/خیالی)، None برمی‌گرداند تا INSERT با
+    کلید خارجی نامعتبر انجام نشود (باگ FOREIGN KEY constraint failed).
+    """
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM battle_pass WHERE country_id = ?", (country_id,))
-    row = cur.fetchone()
-    if row:
-        d = dict(row)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM countries WHERE id = ?", (country_id,))
+        if not cur.fetchone():
+            return None
+        cur.execute("SELECT * FROM battle_pass WHERE country_id = ?", (country_id,))
+        row = cur.fetchone()
+        if row:
+            d = dict(row)
+            d["claimed_free_tiers"] = json.loads(d.get("claimed_free_tiers") or "[]")
+            d["claimed_premium_tiers"] = json.loads(d.get("claimed_premium_tiers") or "[]")
+            d["completed_challenges"] = json.loads(d.get("completed_challenges") or "[]")
+            d["challenge_progress"] = json.loads(d.get("challenge_progress") or "{}")
+            return d
+    finally:
         conn.close()
-        d["claimed_free_tiers"] = json.loads(d.get("claimed_free_tiers") or "[]")
-        d["claimed_premium_tiers"] = json.loads(d.get("claimed_premium_tiers") or "[]")
-        d["completed_challenges"] = json.loads(d.get("completed_challenges") or "[]")
-        d["challenge_progress"] = json.loads(d.get("challenge_progress") or "{}")
-        return d
 
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    cur.execute("""
-        INSERT INTO battle_pass
-        (country_id, season, is_premium, current_xp, current_tier, claimed_free_tiers, claimed_premium_tiers, completed_challenges, challenge_progress, created_at, updated_at)
-        VALUES (?, ?, 0, 0, 1, '[]', '[]', '[]', '{}', ?, ?)
-    """, (country_id, getattr(config, "BATTLE_PASS_SEASON", 1), now_str, now_str))
-    conn.commit()
-    conn.close()
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO battle_pass
+                (country_id, season, is_premium, current_xp, current_tier, claimed_free_tiers, claimed_premium_tiers, completed_challenges, challenge_progress, created_at, updated_at)
+                VALUES (?, ?, 0, 0, 1, '[]', '[]', '[]', '{}', ?, ?)
+            """, (country_id, getattr(config, "BATTLE_PASS_SEASON", 1), now_str, now_str))
+    finally:
+        conn.close()
     return {
         "country_id": country_id,
         "season": getattr(config, "BATTLE_PASS_SEASON", 1),
@@ -7255,8 +7268,13 @@ def get_or_create_battle_pass(country_id: int) -> dict:
 
 
 def add_battle_pass_xp(country_id: int, xp_amount: int) -> tuple[int, int, bool]:
-    """افزودن XP به بتل‌پس کشور، محاسبه لول‌آپ و ارتقای پله‌ها."""
+    """افزودن XP به بتل‌پس کشور، محاسبه لول‌آپ و ارتقای پله‌ها.
+
+    اگر کشور وجود نداشته باشد (حذف‌شده)، بی‌سروصدا رد می‌شود تا خطای FK ندهد.
+    """
     bp = get_or_create_battle_pass(country_id)
+    if bp is None:
+        return 0, 0, False
     multiplier = 1.25 if bp.get("is_premium") else 1.0
     # بوستر بتل‌پس مصرفی ۲x
     try:
