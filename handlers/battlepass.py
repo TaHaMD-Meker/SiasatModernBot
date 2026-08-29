@@ -15,6 +15,48 @@ import config
 from utils import format_money, format_number, format_oil, get_main_keyboard
 
 
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def _fa(num) -> str:
+    return str(num).translate(_FA_DIGITS)
+
+
+def _fa_toman(num: int) -> str:
+    """۳۰۰۰۰۰ → «۳۰۰٬۰۰۰» با ارقام و جداکننده‌ی فارسی."""
+    return _fa(f"{int(num or 0):,}".replace(",", "٬"))
+
+
+def _bp_price():
+    """قیمت بتل‌پس با تخفیف جاری فروشگاه ویژه. برمی‌گرداند: (قیمت نهایی, درصد تخفیف)."""
+    base = int(getattr(config, "BATTLE_PASS_PRICE_TOMAN", 300_000) or 0)
+    try:
+        pct = db.get_vip_discount("battle_pass")
+    except Exception:
+        pct = 0
+    if pct <= 0:
+        return base, 0
+    return int(round(base * (100 - pct) / 100)), int(pct)
+
+
+def _bp_price_text() -> str:
+    """برچسب قیمت بتل‌پس با تخفیف؛ مثلاً «۲۴۰ هزار تومان (۲۰٪-)»."""
+    eff, pct = _bp_price()
+    txt = f"{_fa_toman(eff)} هزار تومان" if eff >= 1000 else f"{_fa_toman(eff)} تومان"
+    if pct > 0:
+        txt += f" ({_fa(pct)}٪-)"
+    return txt
+
+
+def _bp_price_note() -> str:
+    """خط توضیح تخفیف برای فاکتور بتل‌پس؛ خالی اگر تخفیفی نیست."""
+    eff, pct = _bp_price()
+    if pct <= 0:
+        return ""
+    base = int(getattr(config, "BATTLE_PASS_PRICE_TOMAN", 300_000) or 0)
+    return f"\n🎉 <b>{_fa(pct)}٪ تخفیف اعمال شد</b> — قیمت قبلی: {_fa_toman(base)} تومان"
+
+
 def _build_progress_bar(current_xp: int, xp_per_tier: int = 1000, total_blocks: int = 10) -> str:
     """ساخت نوار پیشرفت گرافیکی XP."""
     prog = min(1.0, max(0.0, (current_xp % xp_per_tier) / float(xp_per_tier)))
@@ -126,7 +168,7 @@ async def battlepass_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     if not is_premium:
-        keyboard.append([InlineKeyboardButton("⭐️ خرید بتل‌پس پرمیوم (۳۰۰ هزار تومان)", callback_data="bp:buy_pass")])
+        keyboard.append([InlineKeyboardButton(f"⭐️ خرید بتل‌پس پرمیوم ({_bp_price_text()})", callback_data="bp:buy_pass")])
 
     keyboard.append([
         InlineKeyboardButton("🔙 بازگشت به فروشگاه ویژه", callback_data="vip:menu"),
@@ -210,7 +252,7 @@ async def battlepass_view_tiers(query, context, country_id: int, page: int = 1):
     keyboard.append(nav_row)
 
     if not is_premium:
-        keyboard.append([InlineKeyboardButton("⭐️ ارتقا به بتل‌پس پرمیوم (۳۰۰ هزار تومان)", callback_data="bp:buy_pass")])
+        keyboard.append([InlineKeyboardButton(f"⭐️ ارتقا به بتل‌پس پرمیوم ({_bp_price_text()})", callback_data="bp:buy_pass")])
 
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به بتل‌پس", callback_data="bp:menu")])
 
@@ -264,7 +306,7 @@ async def battlepass_challenges_menu(query, context, country_id: int):
     await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 
-# ==================== صفحه خرید بتل‌پس پرمیوم (۳۰۰ هزار تومان) ====================
+# ==================== صفحه خرید بتل‌پس پرمیوم (قیمت پویا) ====================
 
 async def battlepass_buy_pass_prompt(query, context, user_id: int):
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
@@ -290,7 +332,7 @@ async def battlepass_buy_pass_prompt(query, context, user_id: int):
         f"• <b>شماره کارت:</b> <code>{card_info['card_number']}</code>\n"
         f"• <b>به نام:</b> <b>{card_info['card_holder']}</b>\n"
         f"• <b>بانک:</b> <b>{card_info['bank_name']}</b>\n"
-        f"• <b>مبلغ قابل پرداخت:</b> <b>۳۰۰,۰۰۰ تومان</b>\n\n"
+        f"• <b>مبلغ قابل پرداخت:</b> <b>{_fa_toman(_bp_price()[0])} تومان</b>{_bp_price_note()}\n\n"
         "📸 <b>نحوه ثبت:</b> پس از واریز، <b>تصویر فیش واریزی</b> یا <b>کد پیگیری</b> را همینجا در ربات ارسال فرمایید تا بلافاصله بررسی و فعال گردد."
     )
 

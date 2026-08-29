@@ -242,3 +242,61 @@ def test_bulk_callbacks_are_routed():
     assert "admin:vip_cat_all:" in source
     assert "admin:vip_cat_set:" in source
     assert "admin:vip_cat_clear:" in source
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# تخفیف بتل پس و گروهک — فایل‌های جدا از PLANS_METADATA
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_battlepass_menu_uses_dynamic_price(monkeypatch, tmp_path):
+    """بتل پس نباید ۳۰۰,۰۰۰ hardcode باشد؛ تخفیف روی دکمه و فاکتور اعمال شود."""
+    import inspect
+    from handlers import battlepass as bp
+    source = inspect.getsource(bp)
+    assert "۳۰۰,۰۰۰ تومان" not in source, "قیمت بتل پس hardcode مانده"
+    assert "خرید بتل‌پس پرمیوم (۳۰۰" not in source
+    assert "ارتقا به بتل‌پس پرمیوم (۳۰۰" not in source
+    assert "_bp_price" in source and "_bp_price_text" in source
+    # با تخفیف ۲۰٪ → ۲۴۰٬۰۰۰
+    _fresh(monkeypatch, tmp_path)
+    db.set_vip_discount("battle_pass", 20)
+    assert bp._bp_price() == (240_000, 20)
+    assert "۲۰٪" in bp._bp_price_text()
+    assert "۲۴۰" in bp._bp_price_text()
+
+
+def test_battlepass_invoice_uses_discounted_amount(monkeypatch, tmp_path):
+    """فاکتور خرید بتل پس باید مبلغ تخفیف‌خورده را نشان دهد."""
+    import inspect
+    from handlers import battlepass as bp
+    source = inspect.getsource(bp.battlepass_buy_pass_prompt)
+    assert "_bp_price_note" in source
+    assert "_fa_toman(_bp_price()[0])" in source
+    _fresh(monkeypatch, tmp_path)
+    db.set_vip_discount("battle_pass", 25)
+    assert "۲۵٪" in bp._bp_price_note()
+    assert bp._bp_price()[0] == 225_000
+
+
+def test_militia_menu_uses_dynamic_price(monkeypatch, tmp_path):
+    """قیمت مجوز گروهک باید تخفیف «militia» را اعمال کند."""
+    import inspect
+    source = inspect.getsource(vip.show_predefined_factions_menu)
+    assert "militia_price_label" in source
+    _fresh(monkeypatch, tmp_path)
+    db.set_vip_discount("militia", 10)
+    assert vip.militia_price() == (90_000, 10)
+    assert "۹۰٬۰۰۰" in vip.militia_price_label()
+    assert "۱۰٪" in vip.militia_price_label()
+    assert "۱۰۰٬۰۰۰" in vip.militia_price_note()
+
+
+def test_militia_checkouts_use_dynamic_price(monkeypatch, tmp_path):
+    import inspect
+    src_preview = inspect.getsource(vip.preview_predefined_faction_checkout)
+    src_custom = inspect.getsource(vip.custom_militia_checkout)
+    assert "militia_price_note" in src_preview
+    assert "militia_price_note" in src_custom
+    # هیچ قیمت hardcode مجوزی نمانده
+    assert 'MILITIA_LICENSE_PRICE_TOMAN"' not in src_preview
+    assert 'MILITIA_LICENSE_PRICE_TOMAN"' not in src_custom

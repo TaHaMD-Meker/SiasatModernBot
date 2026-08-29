@@ -288,7 +288,8 @@ def test_battle_pass_ui_navigation_and_views(db_temp):
         upd_buy = MockUpdate(callback_query=query_buy)
         query_buy.data = "bp:buy_pass"
         await battlepass_callback_handler(upd_buy, context)
-        assert "۳۰۰,۰۰۰ تومان" in query_buy.last_text
+        assert "۳۰۰٬۰۰۰" in query_buy.last_text  # قیمت پایه با جداکننده‌ی فارسی
+        assert "مبلغ قابل پرداخت" in query_buy.last_text
         assert "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵" in query_buy.last_text
 
     asyncio.run(_test())

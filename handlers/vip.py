@@ -216,7 +216,7 @@ async def show_predefined_factions_menu(query, context, user_id: int):
     country = db.get_country_by_player(user_id)
     c_key = country.get("country_key") if country else None
 
-    price = getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 100_000)
+    price, _militia_pct = militia_price()
 
     if country and not (c_key or "").startswith("faction_"):
         header_text = (
@@ -226,7 +226,7 @@ async def show_predefined_factions_menu(query, context, user_id: int):
             "• 💰 **۲۵ میلیون دلار** بودجه و خزانه اولیه سازمانی\n"
             "• 🪖 **۶۰,۰۰۰ رزمنده** آماده‌باش\n"
             "• 🎖️ **تسلیحات و ادوات تخصصی بومی**\n"
-            f"• 💵 **تعرفه صدور مجوز:** {price:,} تومان (یک‌بار پرداخت)\n\n"
+            f"• 💵 **تعرفه صدور مجوز:** {militia_price_label()} (یک‌بار پرداخت)\n\n"
             "*(یگان‌های ناسازگار با دکترین سیاسی کشور شما قفل هستند؛ ساخت گروه سفارشی برای همه آزاد است)*"
         )
     else:
@@ -237,7 +237,7 @@ async def show_predefined_factions_menu(query, context, user_id: int):
             "• 💰 **۲۵ میلیون دلار** خزانه و بودجه اولیه\n"
             "• 🪖 **۶۰,۰۰۰ رزمنده** آماده‌باش\n"
             "• 🎖️ **تسلیحات و تجهیزات واقعی و تخصصی**\n"
-            f"• 💵 **تعرفه صدور مجوز:** {price:,} تومان (یک‌بار پرداخت)\n"
+            f"• 💵 **تعرفه صدور مجوز:** {militia_price_label()} (یک‌بار پرداخت)\n"
         )
 
     keyboard = []
@@ -303,7 +303,7 @@ async def preview_predefined_faction_checkout(query, context, faction_key: str):
     card_holder = card_info.get("card_holder", "زینب فیاضی")
     bank_name = card_info.get("bank_name", "بانک سپه")
 
-    price = getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 50_000)
+    price, _militia_pct = militia_price()
 
     text = (
         f"🏴‍☠️ **پرونده و فاکتور هدایت {f_info['flag']} {f_info['name']}**\n"
@@ -316,7 +316,7 @@ async def preview_predefined_faction_checkout(query, context, faction_key: str):
         "• 🪖 رزمندگان آماده‌باش: **۶۰,۰۰۰ نفر**\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
-        f"💵 **مبلغ مجوز:** **{price:,} تومان**\n\n"
+        f"💵 **مبلغ مجوز:** **{price:,} تومان**{militia_price_note()}\n\n"
         "💳 **مشخصات حساب جهت کارت به کارت:**\n"
         f"• **شماره کارت:** `{card_num}`\n"
         f"• **به نام:** **{card_holder}**\n"
@@ -411,7 +411,7 @@ async def custom_militia_checkout(query, context, doctrine_key: str):
     card_holder = card_info.get("card_holder", "زینب فیاضی")
     bank_name = card_info.get("bank_name", "بانک سپه")
 
-    price = getattr(config, "MILITIA_LICENSE_PRICE_TOMAN", 50_000)
+    price, _militia_pct = militia_price()
 
     text = (
         "🏴‍☠️ **پیش‌نمایش پرونده و فاکتور گروه غیردولتی سفارشی**\n"
@@ -426,7 +426,7 @@ async def custom_militia_checkout(query, context, doctrine_key: str):
         "• 🎖️ کاتالوگ تسلیحات: ۶۰۰ تویوتا دوشکا، ۱۸۰ BTR، ۸۰ راکت‌انداز گراد، ۲۰۰ پهپاد ابابیل، پدافند زو-۲۳ و قایق‌های تندرو\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
-        f"💵 **مبلغ قابل پرداخت:** **{price:,} تومان**\n\n"
+        f"💵 **مبلغ قابل پرداخت:** **{price:,} تومان**{militia_price_note()}\n\n"
         "💳 **مشخصات حساب جهت کارت به کارت:**\n"
         f"• **شماره کارت:** `{card_num}`\n"
         f"• **به نام:** **{card_holder}**\n"
@@ -579,6 +579,33 @@ def price_note(plan_key: str) -> str:
     if pct <= 0:
         return ""
     base = int((PLANS_METADATA.get(plan_key) or {}).get("price") or 0)
+    return f"\n🎉 **{_toman(pct)}٪ تخفیف اعمال شد** — قیمت قبلی: {_toman(base)} تومان"
+
+
+def militia_price() -> tuple[int, int]:
+    """قیمت مجوز گروهک با تخفیف جاری. برمی‌گرداند: (قیمت نهایی, درصد تخفیف)."""
+    base = int((PLANS_METADATA.get("militia") or {}).get("price") or 100_000)
+    pct = db.get_vip_discount("militia")
+    if pct <= 0:
+        return base, 0
+    return int(round(base * (100 - pct) / 100)), int(pct)
+
+
+def militia_price_label() -> str:
+    """برچسب قیمت گروهک؛ «۱۰۰٬۰۰۰ تومان» یا «۸۰٬۰۰۰ تومان (۲۰٪ تخفیف از ۱۰۰٬۰۰۰)»."""
+    eff, pct = militia_price()
+    if pct <= 0:
+        return f"{_toman(eff)} تومان"
+    base = int((PLANS_METADATA.get("militia") or {}).get("price") or 100_000)
+    return f"{_toman(eff)} تومان ({_toman(pct)}٪ تخفیف از {_toman(base)})"
+
+
+def militia_price_note() -> str:
+    """خط توضیح تخفیف مجوز گروهک؛ خالی اگر تخفیفی نیست."""
+    _eff, pct = militia_price()
+    if pct <= 0:
+        return ""
+    base = int((PLANS_METADATA.get("militia") or {}).get("price") or 100_000)
     return f"\n🎉 **{_toman(pct)}٪ تخفیف اعمال شد** — قیمت قبلی: {_toman(base)} تومان"
 
 
