@@ -57,9 +57,9 @@ REQUIRED_DAILY_STATEMENTS = 2  # حداقل تعداد بیانیه یا توی�
 
 # ===== تنظیمات فروشگاه تومانی و پرداخت کارت به کارت =====
 PAYMENT_CARD_INFO = {
-    "card_number": os.environ.get("PAYMENT_CARD_NUMBER", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵"),
-    "card_holder": os.environ.get("PAYMENT_CARD_HOLDER", "زینب فیاضی"),
-    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک سپه"),
+    "card_number": os.environ.get("PAYMENT_CARD_NUMBER", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹"),
+    "card_holder": os.environ.get("PAYMENT_CARD_HOLDER", "طاها محمدی"),
+    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک ملت"),
 }
 
 # ===== تعرفه‌های اشتراک ۴ سطحی VIP (ماهانه) =====

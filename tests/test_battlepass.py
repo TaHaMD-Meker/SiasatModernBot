@@ -290,6 +290,7 @@ def test_battle_pass_ui_navigation_and_views(db_temp):
         await battlepass_callback_handler(upd_buy, context)
         assert "۳۰۰٬۰۰۰" in query_buy.last_text  # قیمت پایه با جداکننده‌ی فارسی
         assert "مبلغ قابل پرداخت" in query_buy.last_text
-        assert "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵" in query_buy.last_text
+        assert "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹" in query_buy.last_text
+        assert "طاها محمدی" in query_buy.last_text
 
     asyncio.run(_test())

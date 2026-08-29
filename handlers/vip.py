@@ -295,13 +295,13 @@ async def preview_predefined_faction_checkout(query, context, faction_key: str):
     }
 
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
-        "card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵",
-        "card_holder": "زینب فیاضی",
-        "bank_name": "بانک سپه"
+        "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
+        "card_holder": "طاها محمدی",
+        "bank_name": "بانک ملت"
     })
-    card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
-    card_holder = card_info.get("card_holder", "زینب فیاضی")
-    bank_name = card_info.get("bank_name", "بانک سپه")
+    card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
+    card_holder = card_info.get("card_holder", "طاها محمدی")
+    bank_name = card_info.get("bank_name", "بانک ملت")
 
     price, _militia_pct = militia_price()
 
@@ -403,13 +403,13 @@ async def custom_militia_checkout(query, context, doctrine_key: str):
     wiz["doctrine"] = doc_labels.get(doctrine_key, "نظامی نامتقارن")
 
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
-        "card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵",
-        "card_holder": "زینب فیاضی",
-        "bank_name": "بانک سپه"
+        "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
+        "card_holder": "طاها محمدی",
+        "bank_name": "بانک ملت"
     })
-    card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
-    card_holder = card_info.get("card_holder", "زینب فیاضی")
-    bank_name = card_info.get("bank_name", "بانک سپه")
+    card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
+    card_holder = card_info.get("card_holder", "طاها محمدی")
+    bank_name = card_info.get("bank_name", "بانک ملت")
 
     price, _militia_pct = militia_price()
 
@@ -630,14 +630,14 @@ async def vip_checkout_screen(query, context, plan_key: str, country: dict = Non
         return
 
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
-        "card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵",
-        "card_holder": "زینب فیاضی",
-        "bank_name": "بانک سپه"
+        "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
+        "card_holder": "طاها محمدی",
+        "bank_name": "بانک ملت"
     })
 
-    card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
-    card_holder = card_info.get("card_holder", "زینب فیاضی")
-    bank_name = card_info.get("bank_name", "بانک سپه")
+    card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
+    card_holder = card_info.get("card_holder", "طاها محمدی")
+    bank_name = card_info.get("bank_name", "بانک ملت")
 
     text = (
         f"💳 **فاکتور پرداخت و اطلاعات واریز وجه**\n"
@@ -797,10 +797,10 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             # ساخت یک query ساختگی برای نمایش فاکتور - از vip_checkout_screen استفاده می‌کنیم via message
             # برای سادگی، مستقیم فاکتور رو به صورت پیام می‌فرستیم
             plan = PLANS_METADATA.get(plan_key)
-            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵", "card_holder": "زینب فیاضی", "bank_name": "بانک سپه"})
-            card_num = card_info.get("card_number", "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵")
-            card_holder = card_info.get("card_holder", "زینب فیاضی")
-            bank_name = card_info.get("bank_name", "بانک سپه")
+            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹", "card_holder": "طاها محمدی", "bank_name": "بانک ملت"})
+            card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
+            card_holder = card_info.get("card_holder", "طاها محمدی")
+            bank_name = card_info.get("bank_name", "بانک ملت")
             text = (
                 f"💳 **فاکتور پرداخت - {plan['title']}**\n"
                 f"🏷️ عنوان انتخابی: **{txt_in}**\n"

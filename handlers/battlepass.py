@@ -317,9 +317,9 @@ async def battlepass_challenges_menu(query, context, country_id: int):
 
 async def battlepass_buy_pass_prompt(query, context, user_id: int):
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
-        "card_number": "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵",
-        "card_holder": "زینب فیاضی",
-        "bank_name": "بانک سپه",
+        "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
+        "card_holder": "طاها محمدی",
+        "bank_name": "بانک ملت",
     })
 
     context.user_data["vip_input"] = {"plan_key": "battle_pass"}
