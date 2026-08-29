@@ -10,6 +10,7 @@ import config
 import database as db
 import handlers.vip as vip
 from handlers.admin import admin_panel, _players_submenu
+from handlers.vip_admin import vip_category_menu
 
 
 def _fresh(monkeypatch, tmp_path, name="vipdisc.db"):
@@ -194,3 +195,50 @@ def test_every_item_belongs_to_exactly_one_category():
     assert _GROUP_OF_KEY["survival_small"] == "special"
     assert _GROUP_OF_KEY["golden_stmt_1"] == "visibility"
     assert _GROUP_OF_KEY["militia"] == "militia"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# تخفیف سراسری یک دسته
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_category_has_bulk_buttons():
+    """صفحه‌ی هر دسته باید دکمه‌های «تخفیف همه» و «حذف تخفیف همه» داشته باشد."""
+    import inspect
+    source = inspect.getsource(vip_category_menu)
+    assert "🎯 تخفیف همه‌ی دسته" in source
+    assert "❌ حذف تخفیف همه‌ی دسته" in source
+    assert "admin:vip_cat_all:" in source
+    assert "admin:vip_cat_clear:" in source
+
+
+def test_bulk_set_applies_to_all_items_in_category(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    # شبیه‌سازی اعمال ۲۰٪ روی دسته‌ی بتل پس
+    for key in ("battle_pass", "bp_booster_3d", "bp_booster_7d", "bp_booster_30d"):
+        db.set_vip_discount(key, 20)
+    for key in ("battle_pass", "bp_booster_3d", "bp_booster_7d", "bp_booster_30d"):
+        assert vip.discount_of(key) == 20
+        assert vip.effective_price(key) == int(vip.PLANS_METADATA[key]["price"] * 0.8)
+
+
+def test_bulk_clear_removes_all_discounts_in_category(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    db.set_vip_discount("vip_bronze", 30)   # دسته‌ی دیگر — نباید دست بخورد
+    for key in ("battle_pass", "bp_booster_3d", "bp_booster_7d", "bp_booster_30d"):
+        db.set_vip_discount(key, 15)
+    # پاک کردن فقط دسته‌ی بتل پس
+    from handlers.vip_admin import _category_items
+    for key, _p in _category_items("battlepass"):
+        db.set_vip_discount(key, 0)
+    for key in ("battle_pass", "bp_booster_3d", "bp_booster_7d", "bp_booster_30d"):
+        assert vip.discount_of(key) == 0
+    assert vip.discount_of("vip_bronze") == 30, "دسته‌ی دیگر نباید دست بخورد"
+
+
+def test_bulk_callbacks_are_routed():
+    import inspect
+    from handlers.vip_admin import vip_admin_callback
+    source = inspect.getsource(vip_admin_callback)
+    assert "admin:vip_cat_all:" in source
+    assert "admin:vip_cat_set:" in source
+    assert "admin:vip_cat_clear:" in source

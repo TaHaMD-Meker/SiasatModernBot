@@ -100,7 +100,8 @@ async def vip_price_menu(query, page: int = 0):
 
 
 async def vip_category_menu(query, cat_key: str, page: int = 0):
-    """آیتم‌های یک دسته، با صفحه‌بندی و دکمه‌ی تخفیف برای هر آیتم."""
+    """آیتم‌های یک دسته، با صفحه‌بندی، دکمه‌ی تخفیف برای هر آیتم و
+    دکمه‌های سراسری «تخفیف همه» / «حذف تخفیف همه» برای کل دسته."""
     items = _category_items(cat_key)
     if not items:
         await query.answer("دسته‌ی خالی است.", show_alert=True)
@@ -136,10 +137,48 @@ async def vip_category_menu(query, cat_key: str, page: int = 0):
         nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:vip_cat:{cat_key}:{page + 1}"))
     if total_pages > 1:
         rows.append(nav)
+
+    # دکمه‌های سراسری دسته
+    rows.append([
+        InlineKeyboardButton("🎯 تخفیف همه‌ی دسته", callback_data=f"admin:vip_cat_all:{cat_key}"),
+    ])
+    rows.append([
+        InlineKeyboardButton("❌ حذف تخفیف همه‌ی دسته", callback_data=f"admin:vip_cat_clear:{cat_key}"),
+    ])
+
     rows.append([InlineKeyboardButton("🔙 دسته‌ها", callback_data="admin:vip_price")])
     rows.append([InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")])
 
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
+
+
+async def vip_category_discount_picker(query, cat_key: str):
+    """انتخاب درصد برای کل دسته — روی همه‌ی آیتم‌های دسته اعمال می‌شود."""
+    items = _category_items(cat_key)
+    label = _category_label(cat_key)
+    discounted = sum(1 for k, _p in items if discount_of(k) > 0)
+
+    text = (
+        f"🎯 <b>تخفیف همه‌ی دسته: {label}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"{_fa(len(items))} آیتم در این دسته است؛ "
+        f"{_fa(discounted)} مورد تخفیف دارند.\n\n"
+        "درصدی که انتخاب کنی روی <b>همه‌ی آیتم‌های این دسته</b> اعمال می‌شود:"
+    )
+    rows = []
+    row = []
+    for choice in DISCOUNT_CHOICES:
+        row.append(InlineKeyboardButton(
+            f"{_fa(choice)}٪", callback_data=f"admin:vip_cat_set:{cat_key}:{choice}",
+        ))
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("❌ حذف تخفیف همه‌ی دسته", callback_data=f"admin:vip_cat_clear:{cat_key}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin:vip_cat:{cat_key}:0")])
+    await query.edit_message_text(text, reply_markup=_kb(rows), parse_mode="HTML")
 
 
 async def vip_discount_picker(query, plan_key: str):
@@ -185,6 +224,47 @@ async def vip_admin_callback(query, context, data: str) -> bool:
         cat_key = parts[2]
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
         await vip_category_menu(query, cat_key, page)
+        return True
+
+    # تخفیف سراسری یک دسته
+    if data.startswith("admin:vip_cat_all:"):
+        cat_key = data.split(":", 2)[2]
+        await vip_category_discount_picker(query, cat_key)
+        return True
+
+    if data.startswith("admin:vip_cat_set:"):
+        _, _, cat_key, pct_raw = data.split(":", 3)
+        try:
+            pct = int(pct_raw)
+        except (TypeError, ValueError):
+            pct = 0
+        pct = max(0, min(90, pct))
+        keys = [k for k, _p in _category_items(cat_key)]
+        for key in keys:
+            db.set_vip_discount(key, pct)
+        label = _category_label(cat_key)
+        if pct > 0:
+            await query.answer(
+                f"✅ تخفیف {_fa(pct)}٪ روی {_fa(len(keys))} آیتم «{label}» اعمال شد.",
+                show_alert=True,
+            )
+            db.add_log(f"admin:{query.from_user.id}", "vip_discount_category",
+                       f"{cat_key} {pct}% x{len(keys)}")
+        else:
+            await query.answer(f"✅ تخفیف «{label}» حذف شد.", show_alert=True)
+            db.add_log(f"admin:{query.from_user.id}", "vip_discount_category_clear", cat_key)
+        await vip_category_menu(query, cat_key, 0)
+        return True
+
+    if data.startswith("admin:vip_cat_clear:"):
+        cat_key = data.split(":", 2)[2]
+        keys = [k for k, _p in _category_items(cat_key)]
+        for key in keys:
+            db.set_vip_discount(key, 0)
+        label = _category_label(cat_key)
+        await query.answer(f"✅ تخفیف همه‌ی آیتم‌های «{label}» حذف شد.", show_alert=True)
+        db.add_log(f"admin:{query.from_user.id}", "vip_discount_category_clear", cat_key)
+        await vip_category_menu(query, cat_key, 0)
         return True
 
     if data.startswith("admin:vip_disc_set:"):
