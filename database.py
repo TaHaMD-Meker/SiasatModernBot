@@ -4303,16 +4303,19 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
 
                 asset_dict = dict(asset_row)
 
-                # ضدتقلب: سقف وزن تجهیزات در هر محموله
+                # ضدتقلب: سقف وزن تجهیزات در هر محموله، وابسته به روش ترابری
                 if transfer_weight_enabled():
                     weight = equipment_weight_points(asset_dict.get("category", ""), off_amt)
-                    max_w = int(getattr(config, "TRANSFER_MAX_WEIGHT_POINTS", 150) or 0)
+                    max_w = transfer_weight_capacity(t_mode)
                     if weight > max_w:
                         unit = getattr(config, "ASSET_CATEGORIES", {}).get(
                             asset_dict.get("category", ""), ("", "واحد"))[1]
+                        max_units = max_equipment_per_shipment(asset_dict.get("category", ""), t_mode)
+                        mode_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("name", t_mode)
                         return False, (
-                            f"⛔ **مازاد بر ظرفیت حمل:** وزن {off_amt:,} {unit} از این تجهیز "
-                            f"({weight:.0f} نقطه) از سقف هر محموله ({max_w} نقطه) بیشتر است. "
+                            f"⛔ **مازاد بر ظرفیت حمل ({mode_name}):** این محموله {off_amt:,} {unit} "
+                            f"({weight:.0f} نقطه) از سقف {max_w} نقطه‌ی هر محموله بیشتر است. "
+                            f"با این روش ترابری حداکثر {max_units:,} {unit} در یک محموله می‌فرستید؛ "
                             f"محموله را کوچک‌تر کنید."
                         )
 
@@ -4679,6 +4682,21 @@ def equipment_weight_points(category: str, qty: int) -> float:
     """نقطه وزن یک محموله تجهیزات بر اساس دسته (مدل سبک)."""
     per = getattr(config, "EQUIPMENT_WEIGHT_POINTS", {}).get(category or "", 1.0)
     return float(per) * max(0, int(qty or 0))
+
+
+def transfer_weight_capacity(mode: str) -> int:
+    """سقف نقطه‌ی وزن هر محموله برای یک روش ترابری (sea/land/air)."""
+    caps = getattr(config, "TRANSFER_WEIGHT_CAPACITY", {})
+    return int(caps.get(mode, caps.get("sea", 150)) or 0)
+
+
+def max_equipment_per_shipment(category: str, mode: str) -> int:
+    """حداکثر تعداد قابل ارسال از یک تجهیز در یک محموله با این روش ترابری."""
+    cap = transfer_weight_capacity(mode)
+    per = getattr(config, "EQUIPMENT_WEIGHT_POINTS", {}).get(category or "", 1.0)
+    if per <= 0:
+        return cap
+    return int(round(cap / per))
 
 
 def get_transfer_day_count(country_id: int, day: str | None = None) -> int:

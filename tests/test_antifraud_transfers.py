@@ -156,33 +156,73 @@ def test_daily_shipment_cap_blocks_extra_transfers(monkeypatch, tmp_path):
     assert db.get_transfer_day_count(a) == cap
 
 
-def test_heavy_equipment_shipment_is_rejected(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path)
-    a = _country(3003, "alpha")
-    b = _country(3004, "beta", treasury=200_000_000)
+def _country_with_ad(pid, key, amount):
+    cid = _country(pid, key)
     conn = db.get_connection()
     with conn:
         conn.execute(
             "INSERT INTO country_assets (country_id, country_key, category, equipment_name, equipment_key, "
-            "amount, buy_price, maintenance_cost, producible) VALUES (?, 'alpha', 'Air Defense', 'پدافند آزمون', 'test_ad', 500, 5_000_000, 1000, 0)",
-            (a,),
+            "amount, buy_price, maintenance_cost, producible) VALUES (?, ?, 'Air Defense', 'پدافند آزمون', 'test_ad', ?, 5_000_000, 1000, 0)",
+            (cid, key, amount),
         )
     conn.close()
+    return cid
 
-    max_w = int(getattr(config, "TRANSFER_MAX_WEIGHT_POINTS", 150))
-    # ۲۰۰ پدافند = ۲۰۰ نقطه > سقف
+
+def test_heavy_equipment_shipment_is_rejected_by_sea(monkeypatch, tmp_path):
+    """۲۰۰ پدافند با کشتی رد می‌شود (سقف دریایی ۱۵۰)؛ ۱۰۰ تا قبول است."""
+    _fresh(monkeypatch, tmp_path)
+    a = _country_with_ad(3003, "alpha", 500)
+    b = _country(3004, "beta", treasury=200_000_000)
+
     contract = db.create_trade_contract(a, b, "military_asset", 200, "treasury", 10_000_000,
                                         transport_payer="buyer", transport_cost=0,
                                         offered_key="test_ad", transport_mode="sea")
     ok, msg = db.execute_trade_contract_transaction(contract, b)
     assert not ok
     assert "مازاد بر ظرفیت حمل" in msg
-    # محموله‌ی کوچک (۱۰۰ پدافند = ۱۰۰ نقطه) قبول
+    assert "حداکثر" in msg and "150" in msg, "پیام باید سقف دریایی را دقیق بگوید"
+
     contract2 = db.create_trade_contract(a, b, "military_asset", 100, "treasury", 5_000_000,
                                          transport_payer="buyer", transport_cost=0,
                                          offered_key="test_ad", transport_mode="sea")
     ok2, msg2 = db.execute_trade_contract_transaction(contract2, b)
     assert ok2, msg2
+
+
+def test_transport_modes_have_different_weight_caps(monkeypatch, tmp_path):
+    """همان محموله با هواپیما رد می‌شود ولی با کشتی قبول — فرق روش‌ها."""
+    _fresh(monkeypatch, tmp_path)
+    a = _country_with_ad(3005, "alpha", 100)
+    b = _country(3006, "beta", treasury=300_000_000)
+
+    # ۶۰ پدافند: با هواپیما (سقف ۳۰) رد، با قطار (سقف ۸۰) قبول
+    c_air = db.create_trade_contract(a, b, "military_asset", 60, "treasury", 5_000_000,
+                                     transport_payer="buyer", transport_cost=0,
+                                     offered_key="test_ad", transport_mode="air")
+    ok_air, msg_air = db.execute_trade_contract_transaction(c_air, b)
+    assert not ok_air
+    assert "مازاد بر ظرفیت حمل" in msg_air
+    assert "حداکثر" in msg_air and "30" in msg_air
+
+    c_land = db.create_trade_contract(a, b, "military_asset", 60, "treasury", 5_000_000,
+                                      transport_payer="buyer", transport_cost=0,
+                                      offered_key="test_ad", transport_mode="land")
+    ok_land, msg_land = db.execute_trade_contract_transaction(c_land, b)
+    assert ok_land, msg_land
+
+
+def test_max_equipment_per_shipment_helper():
+    # جنگنده/پدافند (۱ نقطه): کشتی ۱۵۰، قطار ۸۰، هواپیما ۳۰
+    assert db.max_equipment_per_shipment("Air Defense", "sea") == 150
+    assert db.max_equipment_per_shipment("Air Defense", "land") == 80
+    assert db.max_equipment_per_shipment("Air Defense", "air") == 30
+    # موشک (۰.۵ نقطه): کشتی ۳۰۰
+    assert db.max_equipment_per_shipment("Missiles", "sea") == 300
+    # پهپاد (۰.۲ نقطه): هواپیما ۱۵۰
+    assert db.max_equipment_per_shipment("UAV", "air") == 150
+    assert db.transfer_weight_capacity("sea") == 150
+    assert db.transfer_weight_capacity("air") == 30
 
 
 def test_weight_system_can_be_toggled(monkeypatch, tmp_path):
