@@ -21,6 +21,7 @@ from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.losses import handle_losses_input
 from handlers.tournament_admin import tournament_admin_callback, handle_tournament_admin_input
 from handlers.internal_admin import internal_admin_callback, handle_internal_admin_input
+from handlers.vip_admin import vip_admin_callback
 from handlers.admin_dossier import (
     show_country_dashboard,
     show_country_trades_menu,
@@ -134,6 +135,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         un_btn,
         [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({pending_count})", callback_data="admin:pending_countries")],
         [InlineKeyboardButton(f"💳 فیش‌های پرداخت تومانی ({pay_count})", callback_data="admin:toman_requests")],
+        [InlineKeyboardButton("🛒 قیمت و تخفیف فروشگاه ویژه", callback_data="admin:vip_price")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
         [InlineKeyboardButton("🚨 رادار ضدتقلب و تراکنش‌های مشکوک", callback_data="admin:anti_cheat_radar")],
@@ -602,6 +604,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     if data.startswith("admin:dom"):
         if await internal_admin_callback(query, context, data):
+            return
+
+    if data.startswith("admin:vip_price") or data.startswith("admin:vip_disc"):
+        if await vip_admin_callback(query, context, data):
             return
 
     if data == "ignore":

@@ -106,8 +106,8 @@ def test_neglected_crisis_escalates_but_only_once_a_day(monkeypatch, tmp_path):
     crisis = _new_crisis(cid, "epidemic", "light")
     _set(crisis["id"], mitigation=0.0, stage="impact")
 
-    # ساعت ۰۴:۰۰ UTC یعنی ۰۷:۳۰ تهران؛ سه نوبت بعدی در همان روز تهران می‌مانند
-    base = datetime.datetime(2026, 8, 28, 4, 0, tzinfo=datetime.timezone.utc)
+    # ۰۴:۰۰ UTC یعنی ۰۷:۳۰ تهران؛ سه نوبت بعدی در همان روز تهران می‌مانند
+    base = ia._now().replace(hour=4, minute=0, second=0, microsecond=0)
     first, second, third = _slots(base, 3)
 
     e1 = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), first)
@@ -126,7 +126,7 @@ def test_escalation_resumes_the_next_day(monkeypatch, tmp_path):
     crisis = _new_crisis(cid, "epidemic", "light")
     _set(crisis["id"], mitigation=0.0, stage="impact")
 
-    base = datetime.datetime(2026, 8, 28, 4, 0, tzinfo=datetime.timezone.utc)
+    base = ia._now().replace(hour=4, minute=0, second=0, microsecond=0)
     ia.run_crisis_slot_cycle(db.get_country_by_id(cid), base)
     tomorrow = base + datetime.timedelta(days=1)
     events = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), tomorrow)
@@ -256,7 +256,7 @@ def test_only_one_level_step_per_day_even_across_four_slots(monkeypatch, tmp_pat
     crisis = _new_crisis(cid, "flood", "severe")
     _set(crisis["id"], mitigation=0.70, stage="impact")
 
-    base = datetime.datetime(2026, 8, 28, 4, 0, tzinfo=datetime.timezone.utc)  # ۰۷:۳۰ تهران
+    base = ia._now().replace(hour=4, minute=0, second=0, microsecond=0)  # ۰۷:۳۰ تهران
     changes = []
     for index in range(3):  # ۰۷:۳۰، ۱۳:۳۰ و ۱۹:۳۰ تهران — یک روز تقویمی
         instant = base + datetime.timedelta(hours=6 * index)

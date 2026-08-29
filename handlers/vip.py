@@ -90,24 +90,24 @@ async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "👑 **اشتراک‌های ۴ سطحی رهبری ویژه (VIP Leader Passes)**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "🥉 **۱. اشتراک برنز (۷۹,۰۰۰ ت):**\n"
+        f"🥉 **۱. اشتراک برنز ({price_label('vip_bronze')}):**\n"
         "• 📉 تخفیف ۵٪ در هزینه نگهداری ارتش\n"
         "• 🎯 +۱ رزمایش نظامی اضافه روزانه\n"
         "• 📜 ۴ اسلات قرارداد تجاری همزمان\n\n"
-        "🥈 **۲. اشتراک نقره (۱۷۹,۰۰۰ ت):**\n"
+        f"🥈 **۲. اشتراک نقره ({price_label('vip_silver')}):**\n"
         "• 📉 تخفیف ۱۰٪ در هزینه نگهداری ارتش\n"
         "• ⚡ اولویت رده ۲ در صف بررسی رول‌ها\n"
         "• 🎯 +۲ رزمایش نظامی اضافه روزانه\n"
         "• 🛡️ رادار پایش امنیتی تحرکات مرزی\n"
         "• 📜 ۶ اسلات قرارداد تجاری\n\n"
-        "🥇 **۳. اشتراک طلا (۳۴۹,۰۰۰ ت):**\n"
+        f"🥇 **۳. اشتراک طلا ({price_label('vip_gold')}):**\n"
         "• 📉 تخفیف ۱۵٪ در هزینه نگهداری ارتش\n"
         "• 🚀 اولویت فوری VIP در بررسی رول‌ها و جنگ‌ها\n"
         "• 🎯 +۳ رزمایش نظامی اضافه روزانه\n"
         "• 🚢 ۱۵٪ تخفیف ترانزیت لجستیک معاهدات\n"
         "• 🛡️ تقویت ضداطلاعات و امنیت سایبری\n"
         "• 📜 ۸ اسلات قرارداد تجاری\n\n"
-        "💎 **۴. اشتراک الماس (۶۵۰,۰۰۰ ت):**\n"
+        f"💎 **۴. اشتراک الماس ({price_label('vip_diamond')}):**\n"
         "• 📉 تخفیف ۲۵٪ در کل هزینه نگهداری ارتش و زرادخانه‌ها\n"
         "• ⚡⚡ بررسی آنی و اختصاصی رول‌ها (اولویت صفر)\n"
         "• 🎯 رزمایش نامحدود روزانه (آمادگی رزمی ۱۰۰٪ همیشگی)\n"
@@ -119,10 +119,10 @@ async def vip_passes_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     keyboard = [
-        [InlineKeyboardButton("🥉 اشتراک برنز — ۷۹,۰۰۰ تومان", callback_data="vip:plan:vip_bronze")],
-        [InlineKeyboardButton("🥈 اشتراک نقره — ۱۷۹,۰۰۰ تومان", callback_data="vip:plan:vip_silver")],
-        [InlineKeyboardButton("🥇 اشتراک طلا — ۳۴۹,۰۰۰ تومان", callback_data="vip:plan:vip_gold")],
-        [InlineKeyboardButton("💎 اشتراک الماس — ۶۵۰,۰۰۰ تومان", callback_data="vip:plan:vip_diamond")],
+        [InlineKeyboardButton(f"🥉 اشتراک برنز — {price_label('vip_bronze')}", callback_data="vip:plan:vip_bronze")],
+        [InlineKeyboardButton(f"🥈 اشتراک نقره — {price_label('vip_silver')}", callback_data="vip:plan:vip_silver")],
+        [InlineKeyboardButton(f"🥇 اشتراک طلا — {price_label('vip_gold')}", callback_data="vip:plan:vip_gold")],
+        [InlineKeyboardButton(f"💎 اشتراک الماس — {price_label('vip_diamond')}", callback_data="vip:plan:vip_diamond")],
         [InlineKeyboardButton("🔙 بازگشت به فروشگاه ویژه", callback_data="vip:menu")],
     ]
 
@@ -141,22 +141,22 @@ async def survival_packs_menu(query, context):
         "📦 **بسته‌های بقا و لجستیک - مصرفی (چند بار خرید)**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "با بحران نفت اروپا (ذخایر ۱-۳ روزه) و نیاز آهن برای تولید تانک/ناو، این بسته‌ها همیشه نیاز میشن. هر بسته مصرفیه و روزی تا ۳ بار قابل خریده. هر کدوم رو بزنی توضیح کاملش تو فاکتور میاد:\n\n"
-        "🟤 **بسته کوچک - ۱۴۹,۰۰۰ ت:**\n"
+        f"🟤 **بسته کوچک ({price_label('survival_small')}):**\n"
         "• 🛢️ ۴۰۰,۰۰۰ بشکه نفت (سوخت ۴ روز ارتش) + 🌾 ۱۵,۰۰۰ تن غلات (جلوگیری از قحطی و افت رضایت) + 💵 ۳M دلار نقد\n\n"
-        "🟠 **بسته متوسط - ۲۴۹,۰۰۰ ت (محبوب - به‌صرفه):**\n"
+        f"🟠 **بسته متوسط ({price_label('survival_medium')}):**\n"
         "• 🛢️ ۹۰۰,۰۰۰ بشکه نفت + 🌾 ۳۰,۰۰۰ تن غلات + ⛏️ ۸,۰۰۰ تن آهن (ساخت ۳۲۰ تانک) + 💻 ۳۰۰ چیپ (پهپاد و موشک) + 💵 ۶M دلار\n\n"
-        "🔴 **بسته بزرگ - ۳۸۹,۰۰۰ ت:**\n"
+        f"🔴 **بسته بزرگ ({price_label('survival_large')}):**\n"
         "• 🛢️ ۱.۸M بشکه نفت (سوخت پایگاه‌ها و ناوگان) + 🌾 ۶۰,۰۰۰ تن غلات + ⛏️ ۱۵,۰۰۰ تن آهن + 💻 ۸۰۰ چیپ + 💵 ۱۰M دلار\n\n"
-        "💎 **بسته فوق‌سنگین - ۵۹۰,۰۰۰ ت:**\n"
+        f"💎 **بسته فوق‌سنگین ({price_label('survival_ultra')}):**\n"
         "• 🛢️ ۳M بشکه نفت + 🌾 ۱۰۰,۰۰۰ تن غلات + ⛏️ ۳۰,۰۰۰ تن آهن + 💻 ۱,۵۰۰ چیپ + 🪙 ۵۰ طلا + 💵 ۱۸M دلار → وقتی تحت محاصره‌ای و بورس بسته‌ست\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "بسته مورد نظر رو انتخاب کن:"
     )
     kb = [
-        [InlineKeyboardButton("🟤 بقا کوچک - ۱۴۹,۰۰۰ ت", callback_data="vip:plan:survival_small")],
-        [InlineKeyboardButton("🟠 بقا متوسط - ۲۴۹,۰۰۰ ت", callback_data="vip:plan:survival_medium")],
-        [InlineKeyboardButton("🔴 بقا بزرگ - ۳۸۹,۰۰۰ ت", callback_data="vip:plan:survival_large")],
-        [InlineKeyboardButton("💎 بقا فوق‌سنگین - ۵۹۰,۰۰۰ ت", callback_data="vip:plan:survival_ultra")],
+        [InlineKeyboardButton(f"🟤 بقا کوچک - {price_label('survival_small', short=True)}", callback_data="vip:plan:survival_small")],
+        [InlineKeyboardButton(f"🟠 بقا متوسط - {price_label('survival_medium', short=True)}", callback_data="vip:plan:survival_medium")],
+        [InlineKeyboardButton(f"🔴 بقا بزرگ - {price_label('survival_large', short=True)}", callback_data="vip:plan:survival_large")],
+        [InlineKeyboardButton(f"💎 بقا فوق‌سنگین - {price_label('survival_ultra', short=True)}", callback_data="vip:plan:survival_ultra")],
         [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="vip:menu")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -168,40 +168,40 @@ async def visibility_services_menu(query, context):
         "━━━━━━━━━━━━━━━━━━\n\n"
         "این بخش فقط کمی P2W ـه و بیشتر برای دیده شدن و فعالیت بیشتره (مصرفی/موقتی). هر چی می‌زنی روش توضیحش تو فاکتور میاد که به چه دردی میخوره:\n\n"
         "⭐️ **بوستر بتل‌پس (سرعت لول‌آپ):**\n"
-        "• ۳ روزه ۲x XP - ۱۲۹,۰۰۰ ت → تمام XP (بیانیه، تجارت، مانور، بورس) دو برابر میشه، پله‌های بتل‌پس سریع‌تر باز میشه\n"
-        "• ۷ روزه ۲x XP - ۲۲۹,۰۰۰ ت → یه هفته کامل XP دو برابر، برای رسوندن از پله ۱۰ به ۲۰\n"
-        "• ۳۰ روزه ۲x XP - ۵۹۰,۰۰۰ ت → کل فصل بوست، برای هاردکورها\n\n"
+        f"• ۳ روزه ۲x XP - {price_label('bp_booster_3d')} → تمام XP (بیانیه، تجارت، مانور، بورس) دو برابر میشه، پله‌های بتل‌پس سریع‌تر باز میشه\n"
+        f"• ۷ روزه ۲x XP - {price_label('bp_booster_7d')} → یه هفته کامل XP دو برابر، برای رسوندن از پله ۱۰ به ۲۰\n"
+        f"• ۳۰ روزه ۲x XP - {price_label('bp_booster_30d')} → کل فصل بوست، برای هاردکورها\n\n"
         "🎫 **بلیط اقدام فوری (جلوگیری از توقف):**\n"
-        "• ۱ مانور اضافه - ۷۹,۰۰۰ ت → وقتی سقف روزانه مانورت پر شده و میخوای آمادگی رو به ۸۵٪+ برسونی\n"
-        "• پک ۳ مانور - ۱۸۹,۰۰۰ ت → ۳ مانور ذخیره، خودکار مصرف میشه\n"
-        "• ۱ بیانیه اضافه - ۴۹,۰۰۰ ت → اگه امروز وقت نداری بیانیه بدی، جلوی سلب مالکیت ۰۰:۰۰ رو میگیره\n"
-        "• پک ۵ بیانیه - ۱۸۹,۰۰۰ ت → ۵ روز مصونیت خودکار از سلب مالکیت\n"
-        "• بوست اسلات قرارداد ۳ روزه - ۹۹,۰۰۰ ت → ۳ روز قرارداد نامحدود به جای ۴/۶/۸ تایی VIP\n"
-        "• بوست اسلات قرارداد ۷ روزه - ۱۷۹,۰۰۰ ت → هفته کامل تجارت نامحدود، برای بحران نفت\n\n"
+        f"• ۱ مانور اضافه - {price_label('ticket_drill')} → وقتی سقف روزانه مانورت پر شده و میخوای آمادگی رو به ۸۵٪+ برسونی\n"
+        f"• پک ۳ مانور - {price_label('ticket_drill_3')} → ۳ مانور ذخیره، خودکار مصرف میشه\n"
+        f"• ۱ بیانیه اضافه - {price_label('ticket_statement')} → اگه امروز وقت نداری بیانیه بدی، جلوی سلب مالکیت ۰۰:۰۰ رو میگیره\n"
+        f"• پک ۵ بیانیه - {price_label('ticket_statement_5')} → ۵ روز مصونیت خودکار از سلب مالکیت\n"
+        f"• بوست اسلات قرارداد ۳ روزه - {price_label('ticket_contract_3d')} → ۳ روز قرارداد نامحدود به جای ۴/۶/۸ تایی VIP\n"
+        f"• بوست اسلات قرارداد ۷ روزه - {price_label('ticket_contract_7d')} → هفته کامل تجارت نامحدود، برای بحران نفت\n\n"
         "🎨 **دیده شدن و تشریفاتی (غیر P2W):**\n"
-        "• بیانیه طلایی ۱ عدد - ۵۹,۰۰۰ ت → بیانیه‌ت با کادر طلایی 👑 تو کانال @SiasatModern میره، همه می‌بینن\n"
-        "• بیانیه طلایی ۳ عدد - ۱۴۹,۰۰۰ ت → ۳ روز خبر اول کانال میشی\n"
-        "• بیانیه طلایی ۱۰ عدد - ۳۹۹,۰۰۰ ت → بسته رسانه‌ای ماهانه\n"
-        "• پین گروه ۱ عدد (۱۲ ساعت) - ۷۹,۰۰۰ ت → پیامت ۱۲ ساعت بالای گروه پین میمونه\n"
-        "• پین گروه ۳ عدد - ۱۸۹,۰۰۰ ت → ۳۶ ساعت پین تضمینی\n"
-        "• عنوان تشریفاتی ۷ روزه - ۹۹,۰۰۰ ت → لقب دلخواه (سلطان نفت) کنار اسم کشورت تو رنکینگ و اخبار\n"
-        "• عنوان تشریفاتی ۳۰ روزه - ۲۸۹,۰۰۰ ت → یه ماه لقب میمونه\n"
-        "• قاب طلایی ۷ روزه - ۷۹,۰۰۰ ت → پروفایل کشورت تو /country با قاب طلایی\n"
-        "• قاب طلایی ۳۰ روزه - ۲۴۹,۰۰۰ ت → یه ماه قاب طلایی\n\n"
+        f"• بیانیه طلایی ۱ عدد - {price_label('golden_stmt_1')} → بیانیه‌ت با کادر طلایی 👑 تو کانال @SiasatModern میره، همه می‌بینن\n"
+        f"• بیانیه طلایی ۳ عدد - {price_label('golden_stmt_3')} → ۳ روز خبر اول کانال میشی\n"
+        f"• بیانیه طلایی ۱۰ عدد - {price_label('golden_stmt_10')} → بسته رسانه‌ای ماهانه\n"
+        f"• پین گروه ۱ عدد (۱۲ ساعت) - {price_label('pin_1')} → پیامت ۱۲ ساعت بالای گروه پین میمونه\n"
+        f"• پین گروه ۳ عدد - {price_label('pin_3')} → ۳۶ ساعت پین تضمینی\n"
+        f"• عنوان تشریفاتی ۷ روزه - {price_label('title_7d')} → لقب دلخواه (سلطان نفت) کنار اسم کشورت تو رنکینگ و اخبار\n"
+        f"• عنوان تشریفاتی ۳۰ روزه - {price_label('title_30d')} → یه ماه لقب میمونه\n"
+        f"• قاب طلایی ۷ روزه - {price_label('frame_7d')} → پروفایل کشورت تو /country با قاب طلایی\n"
+        f"• قاب طلایی ۳۰ روزه - {price_label('frame_30d')} → یه ماه قاب طلایی\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "سرویس مورد نظر رو انتخاب کن:"
     )
     kb = [
-        [InlineKeyboardButton("⭐️ بوستر ۳ روزه - ۱۲۹k", callback_data="vip:plan:bp_booster_3d"), InlineKeyboardButton("⭐️ بوستر ۷ روزه - ۲۲۹k", callback_data="vip:plan:bp_booster_7d")],
-        [InlineKeyboardButton("⭐️ بوستر ماهانه - ۵۹۰k", callback_data="vip:plan:bp_booster_30d")],
-        [InlineKeyboardButton("🎫 ۱ مانور - ۷۹k", callback_data="vip:plan:ticket_drill"), InlineKeyboardButton("🎫 پک ۳ مانور - ۱۸۹k", callback_data="vip:plan:ticket_drill_3")],
-        [InlineKeyboardButton("📝 ۱ بیانیه - ۴۹k", callback_data="vip:plan:ticket_statement"), InlineKeyboardButton("📝 پک ۵ بیانیه - ۱۸۹k", callback_data="vip:plan:ticket_statement_5")],
-        [InlineKeyboardButton("📜 اسلات قرارداد ۳ روزه - ۹۹k", callback_data="vip:plan:ticket_contract_3d"), InlineKeyboardButton("📜 اسلات ۷ روزه - ۱۷۹k", callback_data="vip:plan:ticket_contract_7d")],
-        [InlineKeyboardButton("📢 بیانیه طلایی ۱ - ۵۹k", callback_data="vip:plan:golden_stmt_1"), InlineKeyboardButton("📢 طلایی ۳ - ۱۴۹k", callback_data="vip:plan:golden_stmt_3")],
-        [InlineKeyboardButton("📢 طلایی ۱۰ - ۳۹۹k", callback_data="vip:plan:golden_stmt_10")],
-        [InlineKeyboardButton("📌 پین ۱ - ۷۹k", callback_data="vip:plan:pin_1"), InlineKeyboardButton("📌 پین ۳ - ۱۸۹k", callback_data="vip:plan:pin_3")],
-        [InlineKeyboardButton("🏷️ عنوان ۷ روزه - ۹۹k", callback_data="vip:plan:title_7d"), InlineKeyboardButton("🏷️ عنوان ۳۰ روزه - ۲۸۹k", callback_data="vip:plan:title_30d")],
-        [InlineKeyboardButton("🖼️ قاب ۷ روزه - ۷۹k", callback_data="vip:plan:frame_7d"), InlineKeyboardButton("🖼️ قاب ۳۰ روزه - ۲۴۹k", callback_data="vip:plan:frame_30d")],
+        [InlineKeyboardButton(f"⭐️ بوستر ۳ روزه - {price_short_k('bp_booster_3d')}", callback_data="vip:plan:bp_booster_3d"), InlineKeyboardButton(f"⭐️ بوستر ۷ روزه - {price_short_k('bp_booster_7d')}", callback_data="vip:plan:bp_booster_7d")],
+        [InlineKeyboardButton(f"⭐️ بوستر ماهانه - {price_short_k('bp_booster_30d')}", callback_data="vip:plan:bp_booster_30d")],
+        [InlineKeyboardButton(f"🎫 ۱ مانور - {price_short_k('ticket_drill')}", callback_data="vip:plan:ticket_drill"), InlineKeyboardButton(f"🎫 پک ۳ مانور - {price_short_k('ticket_drill_3')}", callback_data="vip:plan:ticket_drill_3")],
+        [InlineKeyboardButton(f"📝 ۱ بیانیه - {price_short_k('ticket_statement')}", callback_data="vip:plan:ticket_statement"), InlineKeyboardButton(f"📝 پک ۵ بیانیه - {price_short_k('ticket_statement_5')}", callback_data="vip:plan:ticket_statement_5")],
+        [InlineKeyboardButton(f"📜 اسلات قرارداد ۳ روزه - {price_short_k('ticket_contract_3d')}", callback_data="vip:plan:ticket_contract_3d"), InlineKeyboardButton(f"📜 اسلات ۷ روزه - {price_short_k('ticket_contract_7d')}", callback_data="vip:plan:ticket_contract_7d")],
+        [InlineKeyboardButton(f"📢 بیانیه طلایی ۱ - {price_short_k('golden_stmt_1')}", callback_data="vip:plan:golden_stmt_1"), InlineKeyboardButton(f"📢 طلایی ۳ - {price_short_k('golden_stmt_3')}", callback_data="vip:plan:golden_stmt_3")],
+        [InlineKeyboardButton(f"📢 طلایی ۱۰ - {price_short_k('golden_stmt_10')}", callback_data="vip:plan:golden_stmt_10")],
+        [InlineKeyboardButton(f"📌 پین ۱ - {price_short_k('pin_1')}", callback_data="vip:plan:pin_1"), InlineKeyboardButton(f"📌 پین ۳ - {price_short_k('pin_3')}", callback_data="vip:plan:pin_3")],
+        [InlineKeyboardButton(f"🏷️ عنوان ۷ روزه - {price_short_k('title_7d')}", callback_data="vip:plan:title_7d"), InlineKeyboardButton(f"🏷️ عنوان ۳۰ روزه - {price_short_k('title_30d')}", callback_data="vip:plan:title_30d")],
+        [InlineKeyboardButton(f"🖼️ قاب ۷ روزه - {price_short_k('frame_7d')}", callback_data="vip:plan:frame_7d"), InlineKeyboardButton(f"🖼️ قاب ۳۰ روزه - {price_short_k('frame_30d')}", callback_data="vip:plan:frame_30d")],
         [InlineKeyboardButton("🔙 بازگشت به فروشگاه", callback_data="vip:menu")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -520,6 +520,68 @@ PLANS_METADATA = {
 }
 
 
+# ==================== قیمت پویا و تخفیف فروشگاه ویژه ====================
+# ادمین از پنل مدیریت، درصد تخفیف هر آیتم را تعیین می‌کند؛ این توابع همه‌ی
+# منوها و فاکتورها را با همان تخفیف هماهنگ می‌کنند (بدون تغییر قیمت پایه در کد).
+
+
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def _toman(num: int) -> str:
+    """۷۹۰۰۰ → «۷۹٬۰۰۰» با ارقام فارسی و جداکننده‌ی هزارگان فارسی."""
+    s = f"{int(num or 0):,}".replace(",", "٬")
+    return s.translate(_FA_DIGITS)
+
+
+def effective_price(plan_key: str) -> int:
+    """قیمت نهایی آیتم با اعمال تخفیف جاری (تومان)."""
+    plan = PLANS_METADATA.get(plan_key)
+    base = int((plan or {}).get("price") or 0)
+    pct = db.get_vip_discount(plan_key)
+    if pct <= 0:
+        return base
+    return int(round(base * (100 - pct) / 100))
+
+
+def discount_of(plan_key: str) -> int:
+    """درصد تخفیف جاری آیتم (۰ = بدون تخفیف)."""
+    return db.get_vip_discount(plan_key)
+
+
+def price_label(plan_key: str, short: bool = False) -> str:
+    """برچسب قیمت برای دکمه/متن؛ اگر تخفیف دارد درصدش را هم نشان می‌دهد."""
+    base = int((PLANS_METADATA.get(plan_key) or {}).get("price") or 0)
+    eff = effective_price(plan_key)
+    pct = discount_of(plan_key)
+    if short:
+        if pct > 0:
+            return f"{_toman(eff)} ت ({_toman(pct)}٪-)"
+        return f"{_toman(eff)} ت"
+    if pct > 0:
+        return f"{_toman(eff)} تومان ({_toman(pct)}٪ تخفیف از {_toman(base)})"
+    return f"{_toman(eff)} تومان"
+
+
+def price_short_k(plan_key: str) -> str:
+    """برچسب کوتاه برای دکمه‌ها: «۱۲۹k» و با تخفیف «۱۰۳k (۱۰٪-)»."""
+    eff = effective_price(plan_key)
+    pct = discount_of(plan_key)
+    txt = f"{_toman(eff // 1000)}k" if eff >= 1000 else f"{_toman(eff)} ت"
+    if pct > 0:
+        txt += f" ({_toman(pct)}٪-)"
+    return txt
+
+
+def price_note(plan_key: str) -> str:
+    """خط توضیح تخفیف برای فاکتور؛ خالی اگر تخفیفی نیست."""
+    pct = discount_of(plan_key)
+    if pct <= 0:
+        return ""
+    base = int((PLANS_METADATA.get(plan_key) or {}).get("price") or 0)
+    return f"\n🎉 **{_toman(pct)}٪ تخفیف اعمال شد** — قیمت قبلی: {_toman(base)} تومان"
+
+
 async def vip_checkout_screen(query, context, plan_key: str, country: dict = None):
     """نمایش فاکتور و اطلاعات کارت بانکی جهت واریز VIP."""
     if plan_key == "militia":
@@ -545,7 +607,7 @@ async def vip_checkout_screen(query, context, plan_key: str, country: dict = Non
         f"💳 **فاکتور پرداخت و اطلاعات واریز وجه**\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"📌 **سفارش شما:** {plan['title']}\n"
-        f"💵 **مبلغ قابل پرداخت:** **{plan['price']:,} تومان**\n"
+        f"💵 **مبلغ قابل پرداخت:** **{effective_price(plan_key):,} تومان**{price_note(plan_key)}\n"
         f"📝 **توضیحات:** {plan['desc']}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "💳 **مشخصات حساب بانکی جهت کارت به کارت:**\n\n"
@@ -706,7 +768,7 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             text = (
                 f"💳 **فاکتور پرداخت - {plan['title']}**\n"
                 f"🏷️ عنوان انتخابی: **{txt_in}**\n"
-                f"💵 مبلغ: **{plan['price']:,} تومان**\n\n"
+                f"💵 مبلغ: **{effective_price(plan_key):,} تومان**{price_note(plan_key)}\n\n"
                 f"💳 کارت: `{card_num}` به نام {card_holder} ({bank_name})\n\n"
                 "بعد از واریز، فیش رو بفرست:"
             )
@@ -769,7 +831,7 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         country_id=c_id,
         item_type=plan_key,
         plan_title=plan["title"],
-        amount_toman=plan["price"],
+        amount_toman=effective_price(plan_key),
         receipt_photo_id=photo_id,
         tracking_code=tracking_code,
         custom_payload=custom_payload
@@ -779,7 +841,7 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     conf_user = (
         f"✅ **فیش واریزی شما با موفقیت ثبت شد! (شماره درخواست: #{req_id})**\n\n"
         f"📌 **سفارش:** {plan['title']}\n"
-        f"💵 **مبلغ:** {plan['price']:,} تومان\n\n"
+        f"💵 **مبلغ:** {effective_price(plan_key):,} تومان{price_note(plan_key)}\n\n"
         "⏳ پرونده شما برای مدیریت ارسال گردید. به محض تایید حسابداری، گروه/خدمت شما فعال و پیام تایید برایتان ارسال خواهد شد."
     )
     await update.message.reply_text(conf_user, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
@@ -817,7 +879,7 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"🌐 <b>وضعیت کشور:</b> {c_name}\n"
         f"{militia_extra}\n"
         f"📌 <b>پلن:</b> {plan['title']}\n"
-        f"💵 <b>مبلغ:</b> <b>{plan['price']:,} تومان</b>\n"
+        f"💵 <b>مبلغ:</b> <b>{effective_price(plan_key):,} تومان</b>{price_note(plan_key)}\n"
         f"📝 <b>کد پیگیری:</b> <code>{html.escape(tracking_code)}</code>\n"
     )
 

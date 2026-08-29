@@ -695,6 +695,15 @@ def init_db():
         )
     """)
 
+    # تخفیف‌های فروشگاه ویژه (VIP) — ادمین درصد تخفیف هر آیتم را تنظیم می‌کند
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS vip_discounts (
+        item_key TEXT PRIMARY KEY,
+        discount_pct INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT
+        )
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS war_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4510,6 +4519,54 @@ def set_setting(key: str, value: str):
     """, (key, str(value)))
     conn.commit()
     conn.close()
+
+
+# ---------- تخفیف فروشگاه ویژه (VIP) ----------
+
+def get_vip_discount(item_key: str) -> int:
+    """درصد تخفیف جاری یک آیتم فروشگاه ویژه؛ ۰ یعنی بدون تخفیف."""
+    if not item_key:
+        return 0
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT discount_pct FROM vip_discounts WHERE item_key = ?", (item_key,)
+        ).fetchone()
+        return int(row["discount_pct"] or 0) if row else 0
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def set_vip_discount(item_key: str, discount_pct: int):
+    """تنظیم درصد تخفیف یک آیتم؛ ۰ یعنی حذف تخفیف."""
+    if not item_key:
+        return
+    discount_pct = max(0, min(90, int(discount_pct or 0)))
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO vip_discounts (item_key, discount_pct, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(item_key) DO UPDATE SET discount_pct = excluded.discount_pct, "
+                "updated_at = excluded.updated_at",
+                (item_key, discount_pct, datetime.datetime.now(datetime.timezone.utc).isoformat()),
+            )
+    finally:
+        conn.close()
+
+
+def get_all_vip_discounts() -> dict[str, int]:
+    """همه‌ی تخفیف‌ها: {item_key: percent}. فقط آیتم‌های دارای تخفیف."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT item_key, discount_pct FROM vip_discounts").fetchall()
+        return {row["item_key"]: int(row["discount_pct"] or 0) for row in rows}
+    except Exception:
+        return {}
+    finally:
+        conn.close()
 
 
 # ---------- سیستم محاصره دریایی بین‌المللی ----------
