@@ -544,3 +544,80 @@ def test_war_summary_only_uses_todays_reports(monkeypatch, tmp_path):
     # ولی مارکر جلو می‌رود تا دفعه‌ی بعد دوباره خوانده نشود
     again, marker2 = ia.collect_new_war_summary()
     assert marker == marker2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# تلفات بحران‌ها در روزنامه
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _crisis_with_impact(cid, crisis_key, severity="severe"):
+    ok, _msg, crisis = ia.create_crisis(cid, crisis_key, severity=severity, origin="admin", force=True)
+    assert ok
+    ia.force_impact(crisis["id"], admin_id=1)
+    return crisis
+
+
+def test_crisis_casualties_summary_aggregates_by_type(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "cas_sum.db")
+    c1 = _country(71_001, key="cas_a")
+    c2 = _country(71_002, key="cas_b")
+    c3 = _country(71_003, key="cas_c")
+    db.update_country_field(c1, "population", 50_000_000)
+    db.update_country_field(c2, "population", 40_000_000)
+    db.update_country_field(c3, "population", 60_000_000)
+    _crisis_with_impact(c1, "epidemic", "severe")
+    _crisis_with_impact(c2, "epidemic", "severe")
+    _crisis_with_impact(c3, "flood", "medium")
+
+    cas = ia.crisis_casualties_summary()
+    assert cas["epidemic"]["count"] == 2
+    assert cas["epidemic"]["casualties"] > 0
+    assert cas["flood"]["count"] == 1
+    assert cas["flood"]["casualties"] > 0
+    # مجموع تلفات اپیدمی باید مجموع دو کشور باشد
+    epi = cas["epidemic"]["casualties"]
+    single_epidemic = None
+    for cid in (c1, c2):
+        crisis = [c for c in ia.get_active_crises(cid) if c["crisis_key"] == "epidemic"][0]
+        dmg = ia._json_load(crisis.get("damage_json") or "{}", {})
+        single_epidemic = (single_epidemic or 0) + int(dmg.get("population") or 0)
+    assert epi == single_epidemic
+
+
+def test_digest_includes_casualties_section(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "cas_digest.db")
+    c1 = _country(71_011, key="cas_d")
+    db.update_country_field(c1, "population", 50_000_000)
+    _crisis_with_impact(c1, "epidemic", "severe")
+    cas = ia.crisis_casualties_summary()
+
+    title, body = ia.build_news_digest([], [], cas)
+    assert title == "گزارش تلفات بحران‌ها"
+    assert "💀 تلفات بحران‌ها" in body
+    assert "اپیدمی" in body and "تلفات" in body
+
+
+def test_casualties_section_shows_totals_for_multi_country_crises(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "cas_multi.db")
+    c1 = _country(71_021, key="cas_e")
+    c2 = _country(71_022, key="cas_f")
+    db.update_country_field(c1, "population", 50_000_000)
+    db.update_country_field(c2, "population", 40_000_000)
+    _crisis_with_impact(c1, "epidemic", "severe")
+    _crisis_with_impact(c2, "epidemic", "severe")
+
+    cas = ia.crisis_casualties_summary()
+    title, body = ia.build_news_digest([], [], cas)
+    # وقتی در چند کشور فعال است، مجموع کل نوشته می‌شود
+    assert "در ۲ کشور فعال است" in body
+    assert "مجموع تلفات آن به" in body
+
+
+def test_warning_stage_crises_have_no_casualties(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "cas_warn.db")
+    c1 = _country(71_031, key="cas_g")
+    db.update_country_field(c1, "population", 50_000_000)
+    _ok, _m, crisis = ia.create_crisis(c1, "epidemic", severity="severe", origin="admin", force=True)
+    # در مرحله‌ی هشدار بماند (impact نزنیم)
+    cas = ia.crisis_casualties_summary()
+    assert cas == {}, "بحران هشدار که خسارت نداده نباید تلفات داشته باشد"

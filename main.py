@@ -141,7 +141,8 @@ async def _publish_crisis_news(context, items: list):
         items = [i for i in items if i["event"] in internal_affairs.SEVERITY_EVENTS]
 
     war_summary, war_marker = internal_affairs.collect_new_war_summary()
-    if not items and not war_summary:
+    casualties = internal_affairs.crisis_casualties_summary()
+    if not items and not war_summary and not casualties:
         return
 
     async def _send(title, body, category="بحران داخلی"):
@@ -152,11 +153,15 @@ async def _publish_crisis_news(context, items: list):
             logger.exception("Could not publish crisis news")
             return False
 
-    use_digest = len(items) > internal_affairs.NEWS_DIGEST_THRESHOLD or bool(war_summary)
+    use_digest = len(items) > internal_affairs.NEWS_DIGEST_THRESHOLD or bool(war_summary) or bool(casualties)
     if use_digest:
-        digest = internal_affairs.build_news_digest(items, war_summary)
+        digest = internal_affairs.build_news_digest(items, war_summary, casualties)
         if digest:
-            category = "میدان جنگ" if (war_summary and not items) else "بحران داخلی"
+            category = "بحران داخلی"
+            if war_summary and not items and not casualties:
+                category = "میدان جنگ"
+            elif casualties and not items and not war_summary:
+                category = "تلفات بحران"
             if await _send(digest[0], digest[1], category):
                 for item in items:
                     internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])

@@ -1395,7 +1395,68 @@ def _build_digest_lead(by_type: dict[str, list[dict]]) -> str:
     return f"تازه‌ترین گزارش بحران‌های جهان: {joined}."
 
 
-def build_news_digest(items: list[dict], war_summary: list[dict] | None = None) -> tuple[str, str] | None:
+def crisis_casualties_summary() -> dict:
+    """مجموع تلفات جمعیتیِ هر نوع بحرانِ فعال در همه‌ی کشورها.
+
+    خروجی: {crisis_key: {"label", "count": تعداد کشورهای درگیر, "casualties": مجموع تلفات}}
+    فقط بحران‌هایی که تلفات (population در damage_json) داشته‌اند می‌آیند؛
+    بحران‌های در مرحله‌ی هشدار که هنوز خسارت نداده‌اند رد می‌شوند.
+    """
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT c.*, co.country_key AS country_key "
+            "FROM country_crises c JOIN countries co ON co.id = c.country_id "
+            "WHERE c.stage != 'ended'"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    out: dict[str, dict] = {}
+    for row in rows:
+        crisis = dict(row)
+        if crisis.get("stage") == "warning":
+            continue
+        damage = _json_load(crisis.get("damage_json"), {})
+        pop_lost = int(damage.get("population") or 0)
+        if pop_lost <= 0:
+            continue
+        key = crisis.get("crisis_key") or ""
+        if not key:
+            continue
+        bucket = out.setdefault(key, {
+            "label": (CRISIS_CATALOG.get(key) or {}).get("label", "بحران"),
+            "count": 0,
+            "casualties": 0,
+        })
+        bucket["count"] += 1
+        bucket["casualties"] += pop_lost
+    return out
+
+
+def _prose_casualties(casualties: dict) -> str:
+    """یک پاراگراف روزنامه‌ای برای تلفات بحران‌ها — مجموع تلفات هر نوع بحران
+    و اگر در چند کشور فعال است همان مجموع، کلِ تلفات آن بحران است."""
+    if not casualties:
+        return ""
+    sentences = []
+    for key, bucket in casualties.items():
+        label = bucket.get("label") or key
+        count = bucket.get("count") or 0
+        casualties_n = bucket.get("casualties") or 0
+        if count <= 1:
+            sentences.append(
+                f"{label} در {_fa(count)} کشور {_fa(casualties_n)} نفر تلفات بر جای گذاشته است."
+            )
+        else:
+            sentences.append(
+                f"{label} در {_fa(count)} کشور فعال است و مجموع تلفات آن به {_fa(casualties_n)} نفر رسیده است."
+            )
+    return " ".join(sentences)
+
+
+def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
+                      casualties: dict | None = None) -> tuple[str, str] | None:
     """روزنامه‌ی تجمیعی: گزارش میدان جنگ + بحران‌ها، مثل صفحه‌ی یک روزنامه‌ی واقعی.
 
     قوانین:
@@ -1426,7 +1487,7 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None) 
             "severity": crisis.get("severity") or "",
         })
 
-    if not by_type and not war_summary:
+    if not by_type and not war_summary and not casualties:
         return None
 
     # ترتیب مقاله‌ها: خبرهای تشدیدیِ پرجمعیت‌تر اول — مثل صفحه‌ی اول روزنامه
@@ -1447,6 +1508,12 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None) 
         lines.append(_prose_war_summary(war_summary))
         lines.append("")
 
+    # تلفات بحران‌ها — مجموع تلفات هر نوع بحران در همه‌ی کشورها
+    if casualties:
+        lines.append("💀 تلفات بحران‌ها")
+        lines.append(_prose_casualties(casualties))
+        lines.append("")
+
     for crisis_key in ordered_keys:
         entries = by_type[crisis_key]
         heading = (CRISIS_CATALOG.get(crisis_key) or {}).get("label") or crisis_key
@@ -1460,7 +1527,9 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None) 
     body = "\n".join(lines).strip()
     if by_type:
         return "روزنامه بحران‌های جهان", body
-    return "گزارش میدان جنگ", body
+    if war_summary:
+        return "گزارش میدان جنگ", body
+    return "گزارش تلفات بحران‌ها", body
 
 
 def tax_policy_label(key: str) -> str:
