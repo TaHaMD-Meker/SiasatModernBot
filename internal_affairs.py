@@ -1396,23 +1396,28 @@ def _build_digest_lead(by_type: dict[str, list[dict]]) -> str:
 
 
 def crisis_casualties_summary() -> dict:
-    """مجموع تلفات جمعیتیِ هر نوع بحرانِ فعال در همه‌ی کشورها.
+    """مجموع تلفات جمعیتیِ بحران‌های فعال.
 
-    خروجی: {crisis_key: {"label", "count": تعداد کشورهای درگیر, "casualties": مجموع تلفات}}
+    خروجی: {
+      "by_type": {crisis_key: {"label", "count", "casualties"}},
+      "by_country": {country_key: {"name", "flag", "casualties", "label": نوع بحران}},
+      "total": مجموع کل تلفات,
+    }
     فقط بحران‌هایی که تلفات (population در damage_json) داشته‌اند می‌آیند؛
     بحران‌های در مرحله‌ی هشدار که هنوز خسارت نداده‌اند رد می‌شوند.
     """
     conn = db.get_connection()
     try:
         rows = conn.execute(
-            "SELECT c.*, co.country_key AS country_key "
+            "SELECT c.*, co.country_key AS country_key, co.name AS country_name, co.flag AS country_flag "
             "FROM country_crises c JOIN countries co ON co.id = c.country_id "
             "WHERE c.stage != 'ended'"
         ).fetchall()
     finally:
         conn.close()
 
-    out: dict[str, dict] = {}
+    by_type: dict[str, dict] = {}
+    by_country: dict[str, dict] = {}
     for row in rows:
         crisis = dict(row)
         if crisis.get("stage") == "warning":
@@ -1422,36 +1427,99 @@ def crisis_casualties_summary() -> dict:
         if pop_lost <= 0:
             continue
         key = crisis.get("crisis_key") or ""
+        ckey = crisis.get("country_key") or ""
         if not key:
             continue
-        bucket = out.setdefault(key, {
-            "label": (CRISIS_CATALOG.get(key) or {}).get("label", "بحران"),
-            "count": 0,
-            "casualties": 0,
-        })
+        label = (CRISIS_CATALOG.get(key) or {}).get("label", "بحران")
+        bucket = by_type.setdefault(key, {"label": label, "count": 0, "casualties": 0})
         bucket["count"] += 1
         bucket["casualties"] += pop_lost
-    return out
+
+        if ckey:
+            cb = by_country.setdefault(ckey, {
+                "name": crisis.get("country_name") or ckey,
+                "flag": crisis.get("country_flag") or "🏳️",
+                "casualties": 0,
+                "label": label,
+            })
+            cb["casualties"] += pop_lost
+            if int(pop_lost) > int(cb.get("_max") or 0):
+                cb["_max"] = pop_lost
+
+    total = sum(int(b["casualties"]) for b in by_type.values())
+    return {"by_type": by_type, "by_country": by_country, "total": total}
+
+
+def _fa_ordinal(index: int) -> str:
+    """«اولین»، «دومین»، «سومین»... برای توصیف رتبه در روزنامه."""
+    names = ("اولین", "دومین", "سومین", "چهارمین", "پنجمین", "ششمین",
+             "هفتمین", "هشتمین", "نهمین", "دهمین")
+    if index < len(names):
+        return names[index]
+    return f"{_fa(index + 1)}-اُم"
 
 
 def _prose_casualties(casualties: dict) -> str:
-    """یک پاراگراف روزنامه‌ای برای تلفات بحران‌ها — مجموع تلفات هر نوع بحران
-    و اگر در چند کشور فعال است همان مجموع، کلِ تلفات آن بحران است."""
-    if not casualties:
+    """جمع‌بندی تحلیلیِ پایان روزنامه — مثل یک تحلیلگر واقعی.
+
+    مواردی که می‌سازد (تا وقتی داده باشد):
+    * مجموع کل تلفات بحران‌های فعال.
+    * سنگین‌ترین بحران (بیشترین تلفات).
+    * کشورهایی که بیشترین تلفات را داشته‌اند (۱ تا ۳ کشور، به‌ترتیب).
+    * کم‌تلفات‌ترین / بحرانی که کمترین گسترش را داشته.
+    همه در یک پاراگرافِ خبریِ پیوسته، بدون لیست و جدول.
+    """
+    by_type = casualties.get("by_type") or {}
+    by_country = casualties.get("by_country") or {}
+    total = int(casualties.get("total") or 0)
+    if total <= 0 or (not by_type and not by_country):
         return ""
-    sentences = []
-    for key, bucket in casualties.items():
-        label = bucket.get("label") or key
-        count = bucket.get("count") or 0
-        casualties_n = bucket.get("casualties") or 0
-        if count <= 1:
+
+    sentences = [f"مجموع تلفات بحران‌های فعال در جهان به {_fa(total)} نفر رسیده است."]
+
+    # سنگین‌ترین نوع بحران
+    if by_type:
+        heaviest = max(by_type.items(), key=lambda kv: int(kv[1]["casualties"] or 0))
+        h_label = heaviest[1].get("label") or heaviest[0]
+        h_cas = int(heaviest[1]["casualties"] or 0)
+        h_count = int(heaviest[1]["count"] or 0)
+        if h_cas > 0:
+            if h_count > 1:
+                sentences.append(
+                    f"بیشترین سهم از این تلفات متعلق به {h_label} است که در {_fa(h_count)} کشور "
+                    f"جاری بوده و {_fa(h_cas)} نفر قربانی گرفته است."
+                )
+            else:
+                sentences.append(
+                    f"بیشترین سهم از این تلفات متعلق به {h_label} با {_fa(h_cas)} نفر قربانی است."
+                )
+
+    # کشورهای با بیشترین تلفات (۱ تا ۳ کشور)
+    if by_country:
+        ranked = sorted(by_country.values(), key=lambda c: -int(c.get("casualties") or 0))
+        top = [c for c in ranked if int(c.get("casualties") or 0) > 0][:3]
+        if top:
+            parts = []
+            for index, c in enumerate(top):
+                parts.append(
+                    f"{_fa_ordinal(index)} {c.get('flag', '')} {c.get('name', '')} "
+                    f"با {_fa(int(c.get('casualties') or 0))} قربانی"
+                )
+            if len(parts) == 1:
+                sentences.append(f"بیشترین تلفات متعلق به {parts[0]} است.")
+            else:
+                sentences.append("کشورهای آسیب‌دیده به‌ترتیب: " + "، ".join(parts) + ".")
+
+    # کم‌تلفات‌ترین بحران (برای توازن خبری)
+    if len(by_type) > 1:
+        lightest = min(by_type.items(), key=lambda kv: int(kv[1]["casualties"] or 0))
+        l_cas = int(lightest[1]["casualties"] or 0)
+        l_label = lightest[1].get("label") or lightest[0]
+        if l_cas > 0:
             sentences.append(
-                f"{label} در {_fa(count)} کشور {_fa(casualties_n)} نفر تلفات بر جای گذاشته است."
+                f"در سوی دیگر، {l_label} با {_fa(l_cas)} قربانی کمترین تلفات را داشته است."
             )
-        else:
-            sentences.append(
-                f"{label} در {_fa(count)} کشور فعال است و مجموع تلفات آن به {_fa(casualties_n)} نفر رسیده است."
-            )
+
     return " ".join(sentences)
 
 
@@ -1518,20 +1586,11 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
         lines.append(paragraph)
         lines.append("")
 
-    # جمع‌بندی پایانی: تلفات کل بحران‌ها (بدون جایگزینی مقالات کشورها)
-    if casualties:
-        total = sum(int(b.get("casualties") or 0) for b in casualties.values())
+    # جمع‌بندی پایانی: تحلیل تلفات مثل یک روزنامه‌ی واقعی
+    if casualties and int(casualties.get("total") or 0) > 0:
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-        if total > 0:
-            lines.append(f"📊 جمع‌بندی: مجموع تلفات بحران‌های فعال به {_fa(total)} نفر رسید.")
-        parts = []
-        for key, bucket in casualties.items():
-            label = bucket.get("label") or key
-            count = bucket.get("count") or 0
-            parts.append(f"{label} ({_fa(count)} کشور — {_fa(bucket.get('casualties') or 0)} نفر)")
-        if parts:
-            lines.append(" ".join(parts) + ".")
+        lines.append(_prose_casualties(casualties))
         lines.append("")
 
     body = "\n".join(lines).strip()

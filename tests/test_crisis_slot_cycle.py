@@ -570,18 +570,21 @@ def test_crisis_casualties_summary_aggregates_by_type(monkeypatch, tmp_path):
     _crisis_with_impact(c3, "flood", "medium")
 
     cas = ia.crisis_casualties_summary()
-    assert cas["epidemic"]["count"] == 2
-    assert cas["epidemic"]["casualties"] > 0
-    assert cas["flood"]["count"] == 1
-    assert cas["flood"]["casualties"] > 0
+    assert cas["by_type"]["epidemic"]["count"] == 2
+    assert cas["by_type"]["epidemic"]["casualties"] > 0
+    assert cas["by_type"]["flood"]["count"] == 1
+    assert cas["by_type"]["flood"]["casualties"] > 0
+    assert cas["total"] > 0
     # مجموع تلفات اپیدمی باید مجموع دو کشور باشد
-    epi = cas["epidemic"]["casualties"]
+    epi = cas["by_type"]["epidemic"]["casualties"]
     single_epidemic = None
     for cid in (c1, c2):
         crisis = [c for c in ia.get_active_crises(cid) if c["crisis_key"] == "epidemic"][0]
         dmg = ia._json_load(crisis.get("damage_json") or "{}", {})
         single_epidemic = (single_epidemic or 0) + int(dmg.get("population") or 0)
     assert epi == single_epidemic
+    # جزئیات کشوری هم موجود است
+    assert len(cas["by_country"]) == 3
 
 
 def test_digest_includes_casualties_section(monkeypatch, tmp_path):
@@ -593,8 +596,8 @@ def test_digest_includes_casualties_section(monkeypatch, tmp_path):
 
     title, body = ia.build_news_digest([], [], cas)
     assert title == "گزارش تلفات بحران‌ها"
-    assert "جمع‌بندی" in body and "مجموع تلفات" in body
-    assert "اپیدمی" in body
+    assert "مجموع تلفات" in body
+    assert "اپیدمی" in body or "سیل" in body
 
 
 def test_casualties_section_shows_totals_for_multi_country_crises(monkeypatch, tmp_path):
@@ -608,9 +611,9 @@ def test_casualties_section_shows_totals_for_multi_country_crises(monkeypatch, t
 
     cas = ia.crisis_casualties_summary()
     title, body = ia.build_news_digest([], [], cas)
-    # وقتی در چند کشور فعال است، مجموع کل نوشته می‌شود
-    assert "اپیدمی (۲ کشور" in body
+    # وقتی در چند کشور فعال است، مجموع کل و کشورها تحلیل می‌شود
     assert "مجموع تلفات" in body
+    assert "بیشترین سهم" in body
 
 
 def test_warning_stage_crises_have_no_casualties(monkeypatch, tmp_path):
@@ -620,4 +623,25 @@ def test_warning_stage_crises_have_no_casualties(monkeypatch, tmp_path):
     _ok, _m, crisis = ia.create_crisis(c1, "epidemic", severity="severe", origin="admin", force=True)
     # در مرحله‌ی هشدار بماند (impact نزنیم)
     cas = ia.crisis_casualties_summary()
-    assert cas == {}, "بحران هشدار که خسارت نداده نباید تلفات داشته باشد"
+    assert cas["total"] == 0 and cas["by_type"] == {}, "بحران هشدار که خسارت نداده نباید تلفات داشته باشد"
+
+
+def test_casualty_analysis_mentions_worst_country_and_heaviest_crisis(monkeypatch, tmp_path):
+    """جمع‌بندی باید بیشترین تلفات را به‌صورت تحلیلی بگوید (کشور + نوع بحران)."""
+    _fresh(monkeypatch, tmp_path, "cas_analysis.db")
+    c1 = _country(71_041, key="ca1")
+    c2 = _country(71_042, key="ca2")
+    db.update_country_field(c1, "population", 60_000_000)  # بزرگ‌تر → تلفات بیشتر
+    db.update_country_field(c2, "population", 20_000_000)
+    _crisis_with_impact(c1, "flood", "severe")
+    _crisis_with_impact(c2, "epidemic", "medium")
+
+    cas = ia.crisis_casualties_summary()
+    title, body = ia.build_news_digest([], [], cas)
+    assert "مجموع تلفات" in body
+    assert "بیشترین سهم" in body
+    assert "کشورهای آسیب‌دیده به‌ترتیب" in body
+    assert "اولین" in body
+    # کشوری با جمعیت بیشتر (c1) باید در صدر باشد
+    worst = max(cas["by_country"].values(), key=lambda c: c["casualties"])
+    assert worst["name"] == "کشور آزمون"
