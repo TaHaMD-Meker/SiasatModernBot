@@ -302,3 +302,34 @@ def test_regional_news_reads_like_a_newspaper(monkeypatch, tmp_path):
     assert "سطح اعلام‌شده برای موج جدید: متوسط" in body
     # هیچ اثری از لیست/جدول نباشد
     assert "• " not in body and "▫️" not in body and "— " not in body
+
+
+def test_active_crises_filter_wiring():
+    """بحران‌های فعال باید با فیلتر قاره و شدت قابل دسته‌بندی باشد."""
+    import inspect
+    source = inspect.getsource(internal_admin)
+    assert "_active_filter_rows" in source
+    assert "_filter_crises" in source
+    assert "sev:severe" in source and "rgn:europe" in source
+    # نام‌های جدید نباید با فیلتر قاره‌ی بحران دستی تداخل کنند
+    assert "_ACTIVE_CONTINENT_FILTERS" in source
+    assert "_ACTIVE_SEVERITY_FILTERS" in source
+    # بحران دستی هنوز کلیدهای ساده دارد
+    assert any(k[0] == "mideast" for k in internal_admin._CONTINENT_FILTERS)
+
+
+def test_filter_crises_by_severity_and_region(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "active_filter.db")
+    ids = _build_europe(3)  # اروپا
+    iran = db.create_country(70_100, "ایران", "🇮🇷", country_key="iran")
+    for cid in list(ids.values())[:2]:
+        ia.create_crisis(cid, "epidemic", severity="severe", origin="admin", force=True)
+    ia.create_crisis(iran, "flood", severity="light", origin="admin", force=True)
+
+    crises = [c for c in ia.get_crisis_history(limit=300) if c["stage"] != "ended"]
+    assert len(crises) == 3
+    assert len(internal_admin._filter_crises(crises, "sev:severe")) == 2
+    assert len(internal_admin._filter_crises(crises, "sev:light")) == 1
+    assert len(internal_admin._filter_crises(crises, "rgn:europe")) == 2
+    assert len(internal_admin._filter_crises(crises, "rgn:mideast")) == 1
+    assert len(internal_admin._filter_crises(crises, "all")) == 3

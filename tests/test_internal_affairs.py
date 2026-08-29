@@ -996,7 +996,7 @@ def test_active_crisis_list_is_paginated_and_loses_nothing(monkeypatch, tmp_path
 
     first = FakeQuery()
     asyncio.run(adm._active_crises(first, 0))
-    assert "مجموع: <b>25</b>" in first.text
+    assert "نمایش 25 از 25" in first.text
     header_end = first.text.index("#")
     assert "شدید" in first.text[header_end:header_end + 200], "شدیدترها باید اول فهرست بیایند"
 

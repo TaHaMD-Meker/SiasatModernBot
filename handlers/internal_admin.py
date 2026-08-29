@@ -138,14 +138,82 @@ async def _overview(query, page: int):
     await query.edit_message_text("\n".join(lines), reply_markup=_kb([nav, _home_row()]), parse_mode="HTML")
 
 
-async def _active_crises(query, page: int = 0):
-    """فهرست بحران‌های فعال، صفحه‌بندی‌شده.
+_ACTIVE_SEVERITY_FILTERS = (
+    ("sev:severe", "🔴 شدید"),
+    ("sev:medium", "🟠 متوسط"),
+    ("sev:light",  "🟡 خفیف"),
+)
+_ACTIVE_CONTINENT_FILTERS = (
+    ("rgn:mideast",  "🌍 خاورمیانه"),
+    ("rgn:europe",   "🇪🇺 اروپا"),
+    ("rgn:asia",     "🌏 آسیا"),
+    ("rgn:americas", "🌎 آمریکا"),
+    ("rgn:africa",   "🌍 آفریقا"),
+    ("rgn:oceania",  "🌊 اقیانوسیه"),
+)
 
-    قبلاً همه در یک پیام می‌آمدند؛ با بیش از ۲۰ بحران، بقیه از فهرست جا می‌ماندند
-    و پیام هم به سقف طول تلگرام نزدیک می‌شد.
-    """
-    crises = [c for c in ia.get_crisis_history(limit=300) if c["stage"] != "ended"]
-    if not crises:
+
+def _filter_crises(crises: list[dict], fkey: str) -> list[dict]:
+    """اعمال فیلتر شدت/قاره روی لیست بحران‌ها."""
+    if not fkey or fkey == "all":
+        return crises
+    if fkey.startswith("sev:"):
+        sev = fkey.split(":", 1)[1]
+        return [c for c in crises if c.get("severity") == sev]
+    if fkey.startswith("rgn:"):
+        rgn = fkey.split(":", 1)[1]
+        keys = set(getattr(config, "CONTINENTS", {}).get(rgn, {}).get("keys", []))
+        return [c for c in crises if (c.get("country_key") or "") in keys]
+    return crises
+
+
+def _filter_label(fkey: str) -> str:
+    if not fkey or fkey == "all":
+        return "همه"
+    if fkey.startswith("sev:"):
+        return ia.SEVERITY_LABELS.get(fkey.split(":", 1)[1], "همه")
+    if fkey.startswith("rgn:"):
+        rgn = fkey.split(":", 1)[1]
+        return getattr(config, "CONTINENTS", {}).get(rgn, {}).get("name", "همه")
+    return "همه"
+
+
+def _active_filter_rows(crises: list[dict], fkey: str) -> list:
+    """دکمه‌های فیلتر (شدت + قاره) با شمارنده؛ فیلتر فعال ✅ می‌گیرد."""
+    def _count(cand_fkey: str) -> int:
+        return len(_filter_crises(crises, cand_fkey))
+
+    rows = []
+    # ردیف شدت
+    sev_row = []
+    for key, label in _ACTIVE_SEVERITY_FILTERS:
+        mark = " ✅" if fkey == key else ""
+        sev_row.append(InlineKeyboardButton(
+            f"{label} ({_count(key)}){mark}", callback_data=f"admin:dom_active:{key}:0",
+        ))
+    mark = " ✅" if (not fkey or fkey == "all") else ""
+    sev_row.append(InlineKeyboardButton(f"🌐 همه ({len(crises)}){mark}", callback_data="admin:dom_active:all:0"))
+    rows.append(sev_row)
+
+    # ردیف‌های قاره
+    row1 = []
+    for key, label in _ACTIVE_CONTINENT_FILTERS[:3]:
+        mark = " ✅" if fkey == key else ""
+        row1.append(InlineKeyboardButton(f"{label} ({_count(key)}){mark}", callback_data=f"admin:dom_active:{key}:0"))
+    rows.append(row1)
+    row2 = []
+    for key, label in _ACTIVE_CONTINENT_FILTERS[3:]:
+        mark = " ✅" if fkey == key else ""
+        row2.append(InlineKeyboardButton(f"{label} ({_count(key)}){mark}", callback_data=f"admin:dom_active:{key}:0"))
+    rows.append(row2)
+    return rows
+
+
+async def _active_crises(query, page: int = 0, fkey: str = "all"):
+    """فهرست بحران‌های فعال، فیلترپذیر (همه/شدت/قاره) و صفحه‌بندی‌شده."""
+    all_crises = [c for c in ia.get_crisis_history(limit=300) if c["stage"] != "ended"]
+    crises = _filter_crises(all_crises, fkey)
+    if not all_crises:
         await query.edit_message_text(
             "🚨 <b>بحران‌های فعال</b>\n━━━━━━━━━━━━━━━━━━\nهیچ بحرانی در جریان نیست. 🟢",
             reply_markup=_kb([_home_row()]), parse_mode="HTML",
@@ -171,10 +239,12 @@ async def _active_crises(query, page: int = 0):
         and float(c.get("mitigation") or 0) < ia.ESCALATION_MITIGATION_THRESHOLD
         and c["severity"] != ia.SEVERITY_ORDER[-1]
     )
+    ftext = f" (فیلتر: {_filter_label(fkey)})" if fkey and fkey != "all" else ""
     lines = [
-        "🚨 <b>بحران‌های فعال</b>",
+        f"🚨 <b>بحران‌های فعال{ftext}</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"مجموع: <b>{total}</b>" + (f" | ⚠️ امشب تشدید می‌شوند: <b>{unattended}</b>" if unattended else ""),
+        f"نمایش {total} از {len(all_crises)}"
+        + (f" | ⚠️ امشب تشدید می‌شوند: <b>{unattended}</b>" if unattended else ""),
     ]
     rows = []
     for crisis in chunk:
@@ -193,12 +263,16 @@ async def _active_crises(query, page: int = 0):
             callback_data=f"admin:dom_crisis:{crisis['id']}",
         )])
 
+    # دکمه‌های فیلتر
+    rows.extend(_active_filter_rows(all_crises, fkey))
+
+    # صفحه‌بندی (فیلتر را حفظ می‌کند)
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:dom_active:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:dom_active:{fkey}:{page - 1}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="ignore"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:dom_active:{page + 1}"))
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:dom_active:{fkey}:{page + 1}"))
     rows.append(nav)
     rows.append(_home_row())
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
@@ -667,8 +741,19 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         await _overview(query, int(data.split(":")[2]))
     elif data == "admin:dom_active" or data.startswith("admin:dom_active:"):
         parts = data.split(":")
-        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-        await _active_crises(query, page)
+        if len(parts) <= 2:
+            fkey, page = "all", 0
+        elif len(parts) == 3:
+            # فرمت قدیمی admin:dom_active:{page} یا فرمت جدید admin:dom_active:{fkey}
+            if parts[2].isdigit():
+                fkey, page = "all", int(parts[2])
+            else:
+                fkey, page = parts[2], 0
+        else:
+            # admin:dom_active:{fkey}:{page} — fkey مثل sev:severe یا rgn:europe
+            fkey = parts[2] + ":" + parts[3]
+            page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+        await _active_crises(query, page, fkey)
     elif data.startswith("admin:dom_crisis:"):
         await _crisis_panel(query, int(data.split(":")[2]))
     elif data == "admin:dom_new" or data.startswith("admin:dom_new:"):

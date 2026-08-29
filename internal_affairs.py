@@ -1614,7 +1614,8 @@ def get_crisis_history(country_id: int | None = None, limit: int = 15) -> list[d
         limit = max(1, min(100, int(limit)))
         if country_id is None:
             rows = conn.execute(
-                "SELECT c.*, co.name AS country_name, co.flag AS country_flag "
+                "SELECT c.*, co.name AS country_name, co.flag AS country_flag, "
+                "co.country_key AS country_key "
                 "FROM country_crises c JOIN countries co ON co.id = c.country_id "
                 "ORDER BY c.id DESC LIMIT ?",
                 (limit,),
