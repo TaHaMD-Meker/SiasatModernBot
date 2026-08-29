@@ -297,11 +297,11 @@ async def preview_predefined_faction_checkout(query, context, faction_key: str):
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
         "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
         "card_holder": "طاها محمدی",
-        "bank_name": "بانک ملت"
+        "bank_name": "بانک کشاورزی"
     })
     card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
     card_holder = card_info.get("card_holder", "طاها محمدی")
-    bank_name = card_info.get("bank_name", "بانک ملت")
+    bank_name = card_info.get("bank_name", "بانک کشاورزی")
 
     price, _militia_pct = militia_price()
 
@@ -405,11 +405,11 @@ async def custom_militia_checkout(query, context, doctrine_key: str):
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
         "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
         "card_holder": "طاها محمدی",
-        "bank_name": "بانک ملت"
+        "bank_name": "بانک کشاورزی"
     })
     card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
     card_holder = card_info.get("card_holder", "طاها محمدی")
-    bank_name = card_info.get("bank_name", "بانک ملت")
+    bank_name = card_info.get("bank_name", "بانک کشاورزی")
 
     price, _militia_pct = militia_price()
 
@@ -632,12 +632,12 @@ async def vip_checkout_screen(query, context, plan_key: str, country: dict = Non
     card_info = getattr(config, "PAYMENT_CARD_INFO", {
         "card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹",
         "card_holder": "طاها محمدی",
-        "bank_name": "بانک ملت"
+        "bank_name": "بانک کشاورزی"
     })
 
     card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
     card_holder = card_info.get("card_holder", "طاها محمدی")
-    bank_name = card_info.get("bank_name", "بانک ملت")
+    bank_name = card_info.get("bank_name", "بانک کشاورزی")
 
     text = (
         f"💳 **فاکتور پرداخت و اطلاعات واریز وجه**\n"
@@ -797,10 +797,10 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             # ساخت یک query ساختگی برای نمایش فاکتور - از vip_checkout_screen استفاده می‌کنیم via message
             # برای سادگی، مستقیم فاکتور رو به صورت پیام می‌فرستیم
             plan = PLANS_METADATA.get(plan_key)
-            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹", "card_holder": "طاها محمدی", "bank_name": "بانک ملت"})
+            card_info = getattr(config, "PAYMENT_CARD_INFO", {"card_number": "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹", "card_holder": "طاها محمدی", "bank_name": "بانک کشاورزی"})
             card_num = card_info.get("card_number", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹")
             card_holder = card_info.get("card_holder", "طاها محمدی")
-            bank_name = card_info.get("bank_name", "بانک ملت")
+            bank_name = card_info.get("bank_name", "بانک کشاورزی")
             text = (
                 f"💳 **فاکتور پرداخت - {plan['title']}**\n"
                 f"🏷️ عنوان انتخابی: **{txt_in}**\n"

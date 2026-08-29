@@ -59,7 +59,7 @@ REQUIRED_DAILY_STATEMENTS = 2  # حداقل تعداد بیانیه یا توی�
 PAYMENT_CARD_INFO = {
     "card_number": os.environ.get("PAYMENT_CARD_NUMBER", "۶۰۳۷-۷۰۱۲-۱۵۳۲-۵۹۵۹"),
     "card_holder": os.environ.get("PAYMENT_CARD_HOLDER", "طاها محمدی"),
-    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک ملت"),
+    "bank_name": os.environ.get("PAYMENT_BANK_NAME", "بانک کشاورزی"),
 }
 
 # ===== تعرفه‌های اشتراک ۴ سطحی VIP (ماهانه) =====
