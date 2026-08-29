@@ -27,6 +27,13 @@ def _fa_toman(num: int) -> str:
     return _fa(f"{int(num or 0):,}".replace(",", "٬"))
 
 
+def _fa_card(num: str) -> str:
+    """شماره کارت را طوری برمی‌گرداند که در متن RTL بلوک‌ها برعکس نشوند."""
+    if not num:
+        return num
+    return f"\u200e{num}\u200e"
+
+
 def _bp_price():
     """قیمت بتل‌پس با تخفیف جاری فروشگاه ویژه. برمی‌گرداند: (قیمت نهایی, درصد تخفیف)."""
     base = int(getattr(config, "BATTLE_PASS_PRICE_TOMAN", 300_000) or 0)
@@ -329,7 +336,7 @@ async def battlepass_buy_pass_prompt(query, context, user_id: int):
         "• 👑 <b>تندیس طلایی و نشان اختصاصی «Warzone Economic Titan»</b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "💳 <b>اطلاعات پرداخت کارت به کارت:</b>\n"
-        f"• <b>شماره کارت:</b> <code>{card_info['card_number']}</code>\n"
+        f"• <b>شماره کارت:</b> <code>{_fa_card(card_info['card_number'])}</code>\n"
         f"• <b>به نام:</b> <b>{card_info['card_holder']}</b>\n"
         f"• <b>بانک:</b> <b>{card_info['bank_name']}</b>\n"
         f"• <b>مبلغ قابل پرداخت:</b> <b>{_fa_toman(_bp_price()[0])} تومان</b>{_bp_price_note()}\n\n"

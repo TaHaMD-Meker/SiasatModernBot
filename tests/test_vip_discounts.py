@@ -300,3 +300,30 @@ def test_militia_checkouts_use_dynamic_price(monkeypatch, tmp_path):
     # هیچ قیمت hardcode مجوزی نمانده
     assert 'MILITIA_LICENSE_PRICE_TOMAN"' not in src_preview
     assert 'MILITIA_LICENSE_PRICE_TOMAN"' not in src_custom
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# شماره کارت در متن RTL برعکس نمی‌شود
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_card_number_is_not_reversed_in_rtl():
+    """باگ bidi: در متن فارسی، بلوک‌های شماره‌ی کارت برعکس می‌شد (۷۲۲۵ اول).
+    LRM قبل/بعد شماره، ترتیب بلوک‌ها را حفظ می‌کند."""
+    card = "۵۸۹۲-۱۰۱۴-۶۷۲۲-۷۲۲۵"
+    wrapped = vip.fa_card(card)
+    # کاراکتر LRM باید قبل و بعد شماره باشد
+    assert wrapped.startswith("\u200e") and wrapped.endswith("\u200e")
+    assert wrapped.strip("\u200e") == card
+    # ترتیب بلوک‌ها در رشته حفظ شده
+    blocks = wrapped.strip("\u200e").split("-")
+    assert blocks == ["۵۸۹۲", "۱۰۱۴", "۶۷۲۲", "۷۲۲۵"]
+
+
+def test_card_lrm_applied_in_all_invoice_sources():
+    """همه‌ی فاکتورها باید شماره را با LRM بپیچند."""
+    import inspect
+    v_src = inspect.getsource(vip)
+    assert v_src.count("fa_card(card_num)") >= 4, "همه‌ی فاکتورهای vip باید شماره را ایزوله کنند"
+    from handlers import battlepass as bp
+    bp_src = inspect.getsource(bp)
+    assert "_fa_card(card_info['card_number'])" in bp_src

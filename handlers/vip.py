@@ -318,7 +318,7 @@ async def preview_predefined_faction_checkout(query, context, faction_key: str):
         "━━━━━━━━━━━━━━━━━━\n"
         f"💵 **مبلغ مجوز:** **{price:,} تومان**{militia_price_note()}\n\n"
         "💳 **مشخصات حساب جهت کارت به کارت:**\n"
-        f"• **شماره کارت:** `{card_num}`\n"
+        f"• **شماره کارت:** `{fa_card(card_num)}`\n"
         f"• **به نام:** **{card_holder}**\n"
         f"• **بانک:** {bank_name}\n\n"
         "⚠️ پس از واریز، روی دکمه زیر کلیک کرده و تصویر فیش یا کد پیگیری را ارسال فرمایید:"
@@ -428,7 +428,7 @@ async def custom_militia_checkout(query, context, doctrine_key: str):
         "━━━━━━━━━━━━━━━━━━\n"
         f"💵 **مبلغ قابل پرداخت:** **{price:,} تومان**{militia_price_note()}\n\n"
         "💳 **مشخصات حساب جهت کارت به کارت:**\n"
-        f"• **شماره کارت:** `{card_num}`\n"
+        f"• **شماره کارت:** `{fa_card(card_num)}`\n"
         f"• **به نام:** **{card_holder}**\n"
         f"• **بانک:** {bank_name}\n\n"
         "⚠️ پس از واریز، روی دکمه زیر کلیک کرده و تصویر فیش یا کد پیگیری را ارسال فرمایید:"
@@ -526,12 +526,21 @@ PLANS_METADATA = {
 
 
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+_LRM = "\u200e"  # Left-to-Right Mark — جلوی برعکس‌شدن بلوک‌های شماره در متن RTL
 
 
 def _toman(num: int) -> str:
     """۷۹۰۰۰ → «۷۹٬۰۰۰» با ارقام فارسی و جداکننده‌ی هزارگان فارسی."""
     s = f"{int(num or 0):,}".replace(",", "٬")
     return s.translate(_FA_DIGITS)
+
+
+def fa_card(num: str) -> str:
+    """شماره‌ی کارت را طوری برمی‌گرداند که در متن فارسی راست‌به‌چپ،
+    بلوک‌ها برعکس نمایش داده نشوند (باگ bidi با جداکننده‌ی «-»)."""
+    if not num:
+        return num
+    return f"{_LRM}{num}{_LRM}"
 
 
 def effective_price(plan_key: str) -> int:
@@ -638,7 +647,7 @@ async def vip_checkout_screen(query, context, plan_key: str, country: dict = Non
         f"📝 **توضیحات:** {plan['desc']}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "💳 **مشخصات حساب بانکی جهت کارت به کارت:**\n\n"
-        f"• **شماره کارت:** `{card_num}`\n"
+        f"• **شماره کارت:** `{fa_card(card_num)}`\n"
         f"• **به نام:** **{card_holder}**\n"
         f"• **بانک:** {bank_name}\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
@@ -796,7 +805,7 @@ async def vip_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 f"💳 **فاکتور پرداخت - {plan['title']}**\n"
                 f"🏷️ عنوان انتخابی: **{txt_in}**\n"
                 f"💵 مبلغ: **{effective_price(plan_key):,} تومان**{price_note(plan_key)}\n\n"
-                f"💳 کارت: `{card_num}` به نام {card_holder} ({bank_name})\n\n"
+                f"💳 کارت: `{fa_card(card_num)}` به نام {card_holder} ({bank_name})\n\n"
                 "بعد از واریز، فیش رو بفرست:"
             )
             kb = [
