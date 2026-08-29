@@ -142,6 +142,13 @@ async def _publish_crisis_news(context, items: list):
 
     war_summary, war_marker = internal_affairs.collect_new_war_summary()
     casualties = internal_affairs.crisis_casualties_summary()
+
+    # گزارش تلفاتِ تنها (بدون رویداد بحرانی و بدون جنگ) نباید هر ۱۵ دقیقه بیاید؛
+    # فقط هر ۶ ساعت (هم‌ضرب با نوبت‌های درآمد) و وقتی چیزی برای گفتن باشد.
+    if not items and not war_summary:
+        if not casualties or not internal_affairs.casualties_due():
+            return
+
     if not items and not war_summary and not casualties:
         return
 
@@ -167,6 +174,8 @@ async def _publish_crisis_news(context, items: list):
                     internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])
                 if war_summary:
                     internal_affairs.mark_war_summary_published(war_marker)
+                if casualties:
+                    internal_affairs.mark_casualties_posted()
         return
 
     for item in items:

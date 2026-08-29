@@ -1396,22 +1396,24 @@ def _build_digest_lead(by_type: dict[str, list[dict]]) -> str:
 
 
 def crisis_casualties_summary() -> dict:
-    """مجموع تلفات جمعیتیِ بحران‌های فعال.
+    """مجموع تلفات جمعیتیِ بحران‌ها — تجمعی (هیچ‌وقت کم نمی‌شود).
 
     خروجی: {
       "by_type": {crisis_key: {"label", "count", "casualties"}},
       "by_country": {country_key: {"name", "flag", "casualties", "label": نوع بحران}},
       "total": مجموع کل تلفات,
     }
-    فقط بحران‌هایی که تلفات (population در damage_json) داشته‌اند می‌آیند؛
-    بحران‌های در مرحله‌ی هشدار که هنوز خسارت نداده‌اند رد می‌شوند.
+
+    نکته‌ی مهم: تلفات از **همه‌ی** بحران‌ها (حتی پایان‌یافته) جمع می‌شود تا عدد بین
+    دو گزارش کم نشود؛ «count» فقط بحران‌های هنوز فعال را می‌شمارد. بحران‌های در
+    مرحله‌ی هشدار که هنوز خسارت نداده‌اند در تلفات نقشی ندارند.
     """
     conn = db.get_connection()
     try:
         rows = conn.execute(
             "SELECT c.*, co.country_key AS country_key, co.name AS country_name, co.flag AS country_flag "
             "FROM country_crises c JOIN countries co ON co.id = c.country_id "
-            "WHERE c.stage != 'ended'"
+            "WHERE c.damage_json IS NOT NULL AND c.damage_json != ''"
         ).fetchall()
     finally:
         conn.close()
@@ -1420,8 +1422,6 @@ def crisis_casualties_summary() -> dict:
     by_country: dict[str, dict] = {}
     for row in rows:
         crisis = dict(row)
-        if crisis.get("stage") == "warning":
-            continue
         damage = _json_load(crisis.get("damage_json"), {})
         pop_lost = int(damage.get("population") or 0)
         if pop_lost <= 0:
@@ -1430,9 +1430,11 @@ def crisis_casualties_summary() -> dict:
         ckey = crisis.get("country_key") or ""
         if not key:
             continue
+        active = crisis.get("stage") != "ended"
         label = (CRISIS_CATALOG.get(key) or {}).get("label", "بحران")
         bucket = by_type.setdefault(key, {"label": label, "count": 0, "casualties": 0})
-        bucket["count"] += 1
+        if active:
+            bucket["count"] += 1
         bucket["casualties"] += pop_lost
 
         if ckey:
@@ -1443,8 +1445,6 @@ def crisis_casualties_summary() -> dict:
                 "label": label,
             })
             cb["casualties"] += pop_lost
-            if int(pop_lost) > int(cb.get("_max") or 0):
-                cb["_max"] = pop_lost
 
     total = sum(int(b["casualties"]) for b in by_type.values())
     return {"by_type": by_type, "by_country": by_country, "total": total}
@@ -1457,6 +1457,26 @@ def _fa_ordinal(index: int) -> str:
     if index < len(names):
         return names[index]
     return f"{_fa(index + 1)}-اُم"
+
+
+CASUALTIES_LAST_POST_KEY = "crisis_casualties_last_post"
+CASUALTIES_MIN_INTERVAL_HOURS = 6  # گزارش تلفات حداکثر هر ۶ ساعت (هم‌ضرب با نوبت‌های درآمد)
+
+
+def casualties_due(now_dt: datetime.datetime | None = None) -> bool:
+    """آیا الان نوبت انتشار گزارش تلفات است؟ (حداقل ۶ ساعت از آخرین بار گذشته)"""
+    now_dt = now_dt or _now()
+    last_raw = db.get_setting(CASUALTIES_LAST_POST_KEY)
+    if not last_raw:
+        return True
+    last = _parse_dt(last_raw)
+    if last is None:
+        return True
+    return (now_dt - last).total_seconds() >= CASUALTIES_MIN_INTERVAL_HOURS * 3600
+
+
+def mark_casualties_posted(now_dt: datetime.datetime | None = None):
+    db.set_setting(CASUALTIES_LAST_POST_KEY, _iso(now_dt or _now()))
 
 
 def _prose_casualties(casualties: dict) -> str:

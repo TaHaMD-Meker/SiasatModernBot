@@ -645,3 +645,55 @@ def test_casualty_analysis_mentions_worst_country_and_heaviest_crisis(monkeypatc
     # کشوری با جمعیت بیشتر (c1) باید در صدر باشد
     worst = max(cas["by_country"].values(), key=lambda c: c["casualties"])
     assert worst["name"] == "کشور آزمون"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# باگ: تلفات نباید کم شود + گزارش نباید هر ۱۵ دقیقه بیاید
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_casualties_never_decrease_after_crisis_ends(monkeypatch, tmp_path):
+    """وقتی بحرانی تمام می‌شود، تلفاتش نباید از مجموع کل حذف شود."""
+    _fresh(monkeypatch, tmp_path, "cas_no_decrease.db")
+    c1 = _country(71_051, key="nd1")
+    db.update_country_field(c1, "population", 50_000_000)
+    _crisis_with_impact(c1, "epidemic", "severe")
+
+    before = ia.crisis_casualties_summary()
+    assert before["total"] > 0
+
+    # بحران را تمام کن
+    crisis = ia.get_active_crises(c1)[0]
+    ia.end_crisis(crisis["id"], outcome="contained")
+
+    after = ia.crisis_casualties_summary()
+    assert after["total"] == before["total"], "تلفات نباید بعد از پایان بحران کم شود"
+    # تعداد کشورهای «جاری» کم می‌شود ولی تلفات نمی‌کاهد
+    assert after["by_type"]["epidemic"]["count"] == 0
+    assert after["by_type"]["epidemic"]["casualties"] == before["by_type"]["epidemic"]["casualties"]
+
+
+def test_casualties_report_is_throttled_to_six_hours(monkeypatch, tmp_path):
+    """گزارش تلفاتِ تنها نباید زودتر از ۶ ساعت دوباره منتشر شود."""
+    _fresh(monkeypatch, tmp_path, "cas_throttle.db")
+    c1 = _country(71_052, key="th1")
+    db.update_country_field(c1, "population", 50_000_000)
+    _crisis_with_impact(c1, "epidemic", "severe")
+
+    now = ia._now()
+    assert ia.casualties_due(now) is True, "اولین بار باید مجاز باشد"
+    ia.mark_casualties_posted(now)
+
+    # ۱ دقیقه بعد → نباید مجاز باشد
+    assert ia.casualties_due(now + datetime.timedelta(minutes=1)) is False
+    # ۶ ساعت بعد → مجاز
+    assert ia.casualties_due(now + datetime.timedelta(hours=6, minutes=1)) is True
+
+
+def test_publisher_only_posts_casualties_when_due():
+    """پابلیشر باید گیت زمانی را برای گزارش تلفاتِ تنها چک کند."""
+    import inspect
+    import main as main_module
+    source = inspect.getsource(main_module._publish_crisis_news)
+    assert "casualties_due" in source
+    assert "mark_casualties_posted" in source
+    assert "not items and not war_summary" in source
