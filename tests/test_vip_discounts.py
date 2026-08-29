@@ -163,3 +163,34 @@ def test_submenu_routes_registered():
                 "admin:menu_economy", "admin:menu_settings", "admin:menu_danger"):
         assert key in source
     assert "admin:menu" in source  # دکمه‌ی برگشت به هاب حفظ شده
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# دسته‌بندی پنل تخفیف
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_discount_panel_is_grouped_by_category():
+    """پنل تخفیف باید دسته‌بندی باشد، نه ۲۸ آیتم تخت."""
+    from handlers.vip_admin import VIP_CATEGORIES, MANAGEABLE_KEYS
+    assert len(VIP_CATEGORIES) == 5
+    labels = [label for _c, label, _k in VIP_CATEGORIES]
+    assert "اشتراک" in " ".join(labels)
+    assert "بتل پس" in " ".join(labels)
+    assert "ویژه" in " ".join(labels)
+    assert "دیده شدن و بلیط" in " ".join(labels)
+    assert "گروهک" in " ".join(labels)
+    # همه‌ی آیتم‌ها در دسته‌ها پوشش داده شده‌اند
+    assert len(MANAGEABLE_KEYS) == 28
+
+
+def test_every_item_belongs_to_exactly_one_category():
+    from handlers.vip_admin import VIP_CATEGORIES, _GROUP_OF_KEY
+    keys = [k for _c, _l, kk in VIP_CATEGORIES for k in kk]
+    assert len(keys) == len(set(keys)), "کلید تکراری بین دسته‌ها"
+    for k in keys:
+        assert _GROUP_OF_KEY.get(k) is not None
+    assert _GROUP_OF_KEY["vip_bronze"] == "passes"
+    assert _GROUP_OF_KEY["battle_pass"] == "battlepass"
+    assert _GROUP_OF_KEY["survival_small"] == "special"
+    assert _GROUP_OF_KEY["golden_stmt_1"] == "visibility"
+    assert _GROUP_OF_KEY["militia"] == "militia"

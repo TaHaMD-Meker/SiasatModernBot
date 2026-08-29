@@ -4,6 +4,9 @@
 ادمین برای هر آیتم فروشگاه ویژه، درصد تخفیف تعیین می‌کند (۱۰٪، ۲۰٪، ...)؛
 قیمت تخفیف‌خورده خودکار در همه‌ی منوها، دکمه‌ها و فاکتورهای فروشگاه اعمال
 می‌شود — بدون دست‌زدن به قیمت پایه در کد.
+
+پنل دسته‌بندی شده است (مثل خود فروشگاه): اشتراک‌ها، بتل پس، ویژه/بقا،
+دیده شدن و بلیط، گروهک — تا ادمین بین ۲۸ آیتم سردرگم نشود.
 """
 
 from __future__ import annotations
@@ -15,27 +18,45 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import database as db
 from handlers.vip import PLANS_METADATA, effective_price, discount_of
 
-PAGE_SIZE = 8
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 
 def _fa(num) -> str:
     return str(num).translate(_FA_DIGITS)
 
-# کلیدهای قابل مدیریت — بدون نام‌های مستعار تکراری (bronze/silver/... aliases)
-MANAGEABLE_KEYS = [
-    "vip_bronze", "vip_silver", "vip_gold", "vip_diamond",
-    "battle_pass", "militia",
-    "survival_small", "survival_medium", "survival_large", "survival_ultra",
-    "ticket_drill", "ticket_drill_3", "ticket_statement", "ticket_statement_5",
-    "ticket_contract_3d", "ticket_contract_7d",
-    "bp_booster_3d", "bp_booster_7d", "bp_booster_30d",
-    "golden_stmt_1", "golden_stmt_3", "golden_stmt_10",
-    "pin_1", "pin_3",
-    "title_7d", "title_30d",
-    "frame_7d", "frame_30d",
-]
 
+# دسته‌های پنل تخفیف — همان ساختار منوی خود فروشگاه
+VIP_CATEGORIES = (
+    ("passes", "👑 اشتراک‌های رهبری", (
+        "vip_bronze", "vip_silver", "vip_gold", "vip_diamond",
+    )),
+    ("battlepass", "⭐️ بتل پس", (
+        "battle_pass", "bp_booster_3d", "bp_booster_7d", "bp_booster_30d",
+    )),
+    ("special", "📦 ویژه (بقا و لجستیک)", (
+        "survival_small", "survival_medium", "survival_large", "survival_ultra",
+    )),
+    ("visibility", "🎨 دیده شدن و بلیط", (
+        "golden_stmt_1", "golden_stmt_3", "golden_stmt_10",
+        "pin_1", "pin_3",
+        "title_7d", "title_30d",
+        "frame_7d", "frame_30d",
+        "ticket_drill", "ticket_drill_3",
+        "ticket_statement", "ticket_statement_5",
+        "ticket_contract_3d", "ticket_contract_7d",
+    )),
+    ("militia", "🏴 گروهک", (
+        "militia",
+    )),
+)
+
+# کلیدهای قابل مدیریت (بدون نام‌های مستعار تکراری bronze/silver/...)
+MANAGEABLE_KEYS = [key for _cat, _label, keys in VIP_CATEGORIES for key in keys]
+
+# نقشه‌ی معکوس: آیتم → دسته
+_GROUP_OF_KEY = {key: cat for cat, _label, keys in VIP_CATEGORIES for key in keys}
+
+PAGE_SIZE = 8
 DISCOUNT_CHOICES = (10, 20, 30, 40, 50)
 
 
@@ -43,16 +64,53 @@ def _kb(rows):
     return InlineKeyboardMarkup(rows)
 
 
+def _category_label(cat_key: str) -> str:
+    for key, label, _keys in VIP_CATEGORIES:
+        if key == cat_key:
+            return label
+    return cat_key
+
+
+def _category_items(cat_key: str) -> list[tuple[str, dict]]:
+    for key, _label, keys in VIP_CATEGORIES:
+        if key == cat_key:
+            return [(k, PLANS_METADATA[k]) for k in keys if k in PLANS_METADATA]
+    return []
+
+
 async def vip_price_menu(query, page: int = 0):
-    items = [(key, PLANS_METADATA[key]) for key in MANAGEABLE_KEYS if key in PLANS_METADATA]
+    """صفحه‌ی اول: انتخاب دسته — نه ۲۸ آیتم پشت‌سرهم."""
+    lines = [
+        "🛒 <b>قیمت و تخفیف فروشگاه ویژه</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "یک دسته را انتخاب کنید؛ قیمت تخفیف‌خورده خودکار در فروشگاه و فاکتورها اعمال می‌شود.",
+        "",
+    ]
+    rows = []
+    for cat_key, label, keys in VIP_CATEGORIES:
+        items = [k for k in keys if k in PLANS_METADATA]
+        discounted = sum(1 for k in items if discount_of(k) > 0)
+        suffix = f" 🔥{_fa(discounted)}" if discounted else ""
+        rows.append([InlineKeyboardButton(
+            f"{label} ({_fa(len(items))}){suffix}",
+            callback_data=f"admin:vip_cat:{cat_key}:0",
+        )])
+    rows.append([InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")])
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
+
+
+async def vip_category_menu(query, cat_key: str, page: int = 0):
+    """آیتم‌های یک دسته، با صفحه‌بندی و دکمه‌ی تخفیف برای هر آیتم."""
+    items = _category_items(cat_key)
+    if not items:
+        await query.answer("دسته‌ی خالی است.", show_alert=True)
+        await vip_price_menu(query, 0)
+        return
     total_pages = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))
     chunk = items[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
 
-    lines = ["🛒 <b>قیمت و تخفیف فروشگاه ویژه</b>", "━━━━━━━━━━━━━━━━━━"]
-    lines.append("روی <b>تخفیف</b> بزنید تا درصد انتخاب کنید؛ قیمت تخفیف‌خورده "
-                 "خودکار در فروشگاه و فاکتورها اعمال می‌شود.")
-    lines.append("")
+    lines = [f"{_category_label(cat_key)}", "━━━━━━━━━━━━━━━━━━"]
     for key, plan in chunk:
         pct = discount_of(key)
         base = int(plan.get("price") or 0)
@@ -60,9 +118,9 @@ async def vip_price_menu(query, page: int = 0):
         title = html.escape(plan.get("title") or key)
         if pct > 0:
             lines.append(f"• {title}\n"
-                         f"   <s>قیمت پایه:</s> {base:,} تومان → <b>{eff:,} تومان</b> 🔥<b>{_fa(pct)}٪</b>")
+                         f"   <s>{base:,}</s> → <b>{eff:,} ت</b> 🔥<b>{_fa(pct)}٪</b>")
         else:
-            lines.append(f"• {title}\n   قیمت: {base:,} تومان")
+            lines.append(f"• {title}\n   {base:,} تومان")
 
     rows = []
     for key, _plan in chunk:
@@ -72,11 +130,13 @@ async def vip_price_menu(query, page: int = 0):
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:vip_price:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"admin:vip_cat:{cat_key}:{page - 1}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="ignore"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:vip_price:{page + 1}"))
-    rows.append(nav)
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"admin:vip_cat:{cat_key}:{page + 1}"))
+    if total_pages > 1:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 دسته‌ها", callback_data="admin:vip_price")])
     rows.append([InlineKeyboardButton("🔙 پنل ادمین", callback_data="admin:menu")])
 
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(rows), parse_mode="HTML")
@@ -108,18 +168,23 @@ async def vip_discount_picker(query, plan_key: str):
     if row:
         rows.append(row)
     rows.append([InlineKeyboardButton("❌ حذف تخفیف", callback_data=f"admin:vip_disc_set:{plan_key}:0")])
-    rows.append([InlineKeyboardButton("🔙 قیمت و تخفیف", callback_data="admin:vip_price:0")])
+    # برگشت به دسته‌ی همان آیتم
+    cat_key = _GROUP_OF_KEY.get(plan_key, "passes")
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin:vip_cat:{cat_key}:0")])
     await query.edit_message_text(text, reply_markup=_kb(rows), parse_mode="HTML")
 
 
 async def vip_admin_callback(query, context, data: str) -> bool:
     """روت تخفیف فروشگاه ویژه؛ True یعنی هندل شد."""
-    if data == "admin:vip_price" or data.startswith("admin:vip_price:"):
-        try:
-            page = int(data.split(":")[2])
-        except (IndexError, ValueError):
-            page = 0
-        await vip_price_menu(query, page)
+    if data == "admin:vip_price":
+        await vip_price_menu(query, 0)
+        return True
+
+    if data.startswith("admin:vip_cat:"):
+        parts = data.split(":")
+        cat_key = parts[2]
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        await vip_category_menu(query, cat_key, page)
         return True
 
     if data.startswith("admin:vip_disc_set:"):

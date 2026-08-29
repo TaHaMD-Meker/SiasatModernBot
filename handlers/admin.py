@@ -729,7 +729,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if await internal_admin_callback(query, context, data):
             return
 
-    if data.startswith("admin:vip_price") or data.startswith("admin:vip_disc"):
+    if data.startswith("admin:vip_price") or data.startswith("admin:vip_disc") or data.startswith("admin:vip_cat"):
         if await vip_admin_callback(query, context, data):
             return
 
