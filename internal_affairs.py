@@ -1508,12 +1508,6 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
         lines.append(_prose_war_summary(war_summary))
         lines.append("")
 
-    # تلفات بحران‌ها — مجموع تلفات هر نوع بحران در همه‌ی کشورها
-    if casualties:
-        lines.append("💀 تلفات بحران‌ها")
-        lines.append(_prose_casualties(casualties))
-        lines.append("")
-
     for crisis_key in ordered_keys:
         entries = by_type[crisis_key]
         heading = (CRISIS_CATALOG.get(crisis_key) or {}).get("label") or crisis_key
@@ -1522,6 +1516,22 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
             continue
         lines.append(heading)
         lines.append(paragraph)
+        lines.append("")
+
+    # جمع‌بندی پایانی: تلفات کل بحران‌ها (بدون جایگزینی مقالات کشورها)
+    if casualties:
+        total = sum(int(b.get("casualties") or 0) for b in casualties.values())
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+        if total > 0:
+            lines.append(f"📊 جمع‌بندی: مجموع تلفات بحران‌های فعال به {_fa(total)} نفر رسید.")
+        parts = []
+        for key, bucket in casualties.items():
+            label = bucket.get("label") or key
+            count = bucket.get("count") or 0
+            parts.append(f"{label} ({_fa(count)} کشور — {_fa(bucket.get('casualties') or 0)} نفر)")
+        if parts:
+            lines.append(" ".join(parts) + ".")
         lines.append("")
 
     body = "\n".join(lines).strip()

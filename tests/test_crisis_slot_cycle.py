@@ -593,8 +593,8 @@ def test_digest_includes_casualties_section(monkeypatch, tmp_path):
 
     title, body = ia.build_news_digest([], [], cas)
     assert title == "گزارش تلفات بحران‌ها"
-    assert "💀 تلفات بحران‌ها" in body
-    assert "اپیدمی" in body and "تلفات" in body
+    assert "جمع‌بندی" in body and "مجموع تلفات" in body
+    assert "اپیدمی" in body
 
 
 def test_casualties_section_shows_totals_for_multi_country_crises(monkeypatch, tmp_path):
@@ -609,8 +609,8 @@ def test_casualties_section_shows_totals_for_multi_country_crises(monkeypatch, t
     cas = ia.crisis_casualties_summary()
     title, body = ia.build_news_digest([], [], cas)
     # وقتی در چند کشور فعال است، مجموع کل نوشته می‌شود
-    assert "در ۲ کشور فعال است" in body
-    assert "مجموع تلفات آن به" in body
+    assert "اپیدمی (۲ کشور" in body
+    assert "مجموع تلفات" in body
 
 
 def test_warning_stage_crises_have_no_casualties(monkeypatch, tmp_path):
