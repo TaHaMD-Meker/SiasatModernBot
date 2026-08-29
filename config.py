@@ -17,6 +17,24 @@ ASSET_CATEGORIES = {
     "Air Defense":   ("🛡️ پدافند هوایی", "آتشبار"),
 }
 
+# ⚖️ وزن و ظرفیت حمل — ضدتقلب (مدل سبک)
+# هر تجهیز بر اساس دسته‌اش «نقطه وزن» دارد؛ هر محموله سقف وزن دارد و هر کشور
+# سقف ارسال روزانه. جلوی جابه‌جایی یک‌شبه‌ی ده‌ها پدافند/جنگنده را می‌گیرد.
+TRANSFER_WEIGHT_SETTING_KEY = "transfer_weight_enabled"
+TRANSFER_MAX_WEIGHT_POINTS = 150      # سقف وزن تجهیزات در هر محموله
+TRANSFER_DAILY_SHIPMENTS = 3          # سقف محموله‌ی خروجی هر کشور در روز
+EQUIPMENT_WEIGHT_POINTS = {
+    "Aircraft":      1.0,   # هر جنگنده/بالگرد = ۱ نقطه
+    "Air Defense":   1.0,   # هر آتشبار پدافند = ۱ نقطه
+    "Navy":          1.0,   # هر شناور = ۱ نقطه
+    "Ground Forces": 1.0,   # هر تانک/خودرو زرهی = ۱ نقطه
+    "Artillery":     0.5,   # هر دو قبضه = ۱ نقطه
+    "Missiles":      0.5,   # هر دو موشک = ۱ نقطه
+    "UAV":           0.2,   # هر ۵ پهپاد = ۱ نقطه
+}
+# پنجره‌ی برگشت انتقال‌ها هنگام حذف کشور (ساعت) — ضد پارک دارایی
+TRANSFER_ROLLBACK_WINDOW_HOURS = 72
+
 STARTING_VALUES = {
     "population":       50_000_000,
     "treasury":         30_000_000,

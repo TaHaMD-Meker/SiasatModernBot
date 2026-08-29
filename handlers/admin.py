@@ -259,8 +259,13 @@ async def _economy_submenu(query):
 
 
 async def _settings_submenu(query):
+    weight_on = db.transfer_weight_enabled()
     rows = [
         [InlineKeyboardButton("🔐 سیستم قفل‌ها و محدودیت‌ها", callback_data="admin:locks_menu")],
+        [InlineKeyboardButton(
+            f"⚖️ سقف وزن و ارسال روزانه انتقال: {'🟢 فعال' if weight_on else '🔴 غیرفعال'}",
+            callback_data="admin:transfer_weight_toggle",
+        )],
         [InlineKeyboardButton("📢 تنظیم آیدی کانال تلگرام", callback_data="admin:set_channel_prompt")],
         [InlineKeyboardButton("💾 پشتیبان‌گیری فوری از دیتابیس (Backup)", callback_data="admin:backup_db")],
         [InlineKeyboardButton("🔄 همگام‌سازی کاتالوگ تمام کشورها", callback_data="admin:sync_catalog")],
@@ -755,6 +760,12 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await _economy_submenu(query)
 
     elif data == "admin:menu_settings":
+        await _settings_submenu(query)
+
+    elif data == "admin:transfer_weight_toggle":
+        db.set_transfer_weight_enabled(not db.transfer_weight_enabled())
+        db.add_log(f"admin:{user_id}", "transfer_weight_toggle",
+                   f"enabled={db.transfer_weight_enabled()}")
         await _settings_submenu(query)
 
     elif data == "admin:menu_danger":
@@ -2756,11 +2767,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("admin:delconfirm:"):
         c_id = int(data.split(":")[2])
         c = db.get_country_by_id(c_id)
+        pending = db.get_active_transfers_from(c_id, getattr(config, "TRANSFER_ROLLBACK_WINDOW_HOURS", 72))
+        rollback_line = (
+            f"\n♻️ *{len(pending)} انتقال اخیر* این کشور (در {getattr(config, 'TRANSFER_ROLLBACK_WINDOW_HOURS', 72)} ساعت گذشته) "
+            "از کشور مقصد بازگردانده خواهد شد."
+            if pending else "\nℹ️ انتقالِ قابل‌برگشتی در ۷۲ ساعت اخیر ندارد."
+        )
         text = (
             f"⚠️ *آیا از حذف کامل کشور {c['flag']} {c['name']} مطمئن هستید؟*\n\n"
             f"• شناسه بازیکن: `{c['player_id']}`\n"
             f"• تمام ثروت، طلا، نفت و تجهیزات این کشور حذف خواهد شد و بازیکن می‌تواند دوباره /start بزند.\n"
-            f"این عمل غیرقابل بازگشت است!"
+            f"این عمل غیرقابل بازگشت است!\n"
+            f"{rollback_line}"
         )
         keyboard = [
             [InlineKeyboardButton("🔥 بله، حذف کن!", callback_data=f"admin:delfinal:{c_id}")],
@@ -2773,9 +2791,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         c = db.get_country_by_id(c_id)
         if c:
             name = c["name"]
+            # ضدتقلب: برگشت انتقال‌های اخیر از کشور مقصد، قبل از حذف
+            rollback_result = db.rollback_transfers_from(
+                c_id, getattr(config, "TRANSFER_ROLLBACK_WINDOW_HOURS", 72)
+            )
             db.delete_country_by_id(c_id)
+            summary = db.format_transfer_rollback_summary(rollback_result)
             await query.edit_message_text(
-                f"✅ کشور *{name}* با موفقیت و به‌طور کامل حذف شد.",
+                f"✅ کشور *{name}* با موفقیت و به‌طور کامل حذف شد.\n\n{summary}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📋 بازگشت به لیست کشورها", callback_data="admin:list:0")]])
             )
 

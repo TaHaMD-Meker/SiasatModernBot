@@ -704,6 +704,35 @@ def init_db():
         )
     """)
 
+    # دفترچه‌ی انتقالات بین‌کشوری — ضدتقلب: وقتی کشوری حذف می‌شود، انتقال‌های
+    # اخیرش از کشور مقصد بازگردانده می‌شود (جلوگیری از «پارک دارایی»).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS transfer_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_country_id INTEGER NOT NULL,
+        to_country_id INTEGER NOT NULL,
+        kind TEXT NOT NULL,               -- aid | trade_asset | trade_resource
+        item_key TEXT,
+        item_name TEXT,
+        qty INTEGER DEFAULT 0,            -- تعداد تجهیز
+        resource_type TEXT,               -- oil/grain/treasury/...
+        amount INTEGER DEFAULT 0,         -- مقدار منبع
+        money_paid INTEGER DEFAULT 0,     -- در معامله: پولی که خریدار داده
+        created_at TEXT NOT NULL,
+        status TEXT DEFAULT 'active'      -- active | rolled_back
+        )
+    """)
+
+    # شمارنده‌ی محموله‌های خروجی روزانه هر کشور (سقف ضدتقلب)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS transfer_daily (
+        country_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        count INTEGER DEFAULT 0,
+        PRIMARY KEY (country_id, day)
+        )
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS war_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4250,6 +4279,15 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                 t_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("name", t_mode)
                 return False, f"⛔ **مازاد ظرفیت بارگیری ناوگان ({t_name}):** حداکثر ظرفیت قابل انتقال در هر محموله برابر با **{t_limits[off_type]:,} واحد** است."
 
+            # ضدتقلب: سقف محموله‌های خروجی روزانه
+            if transfer_weight_enabled():
+                used, cap = transfer_daily_budget(p_id)
+                if used >= cap:
+                    return False, (
+                        f"⛔ **سقف ارسال روزانه پر شده است:** امروز {used}/{cap} محموله ارسال کرده‌اید. "
+                        f"فردا دوباره می‌توانید معاهده صادر کنید."
+                    )
+
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
             strait_toll_total = sum(toll[1] for toll in strait_tolls)
@@ -4264,6 +4302,19 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                     return False, f"کشور پیشنهاددهنده ({p_c['name']}) موجودی کافی از این تجهیز برای انتقال ندارد."
 
                 asset_dict = dict(asset_row)
+
+                # ضدتقلب: سقف وزن تجهیزات در هر محموله
+                if transfer_weight_enabled():
+                    weight = equipment_weight_points(asset_dict.get("category", ""), off_amt)
+                    max_w = int(getattr(config, "TRANSFER_MAX_WEIGHT_POINTS", 150) or 0)
+                    if weight > max_w:
+                        unit = getattr(config, "ASSET_CATEGORIES", {}).get(
+                            asset_dict.get("category", ""), ("", "واحد"))[1]
+                        return False, (
+                            f"⛔ **مازاد بر ظرفیت حمل:** وزن {off_amt:,} {unit} از این تجهیز "
+                            f"({weight:.0f} نقطه) از سقف هر محموله ({max_w} نقطه) بیشتر است. "
+                            f"محموله را کوچک‌تر کنید."
+                        )
 
                 r_total_needed = req_amt + r_extra_cost
                 if (r_c["treasury"] or 0) < r_total_needed:
@@ -4330,6 +4381,18 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                     VALUES (?, 'asset_transfer_in', ?, ?, ?)
                 """, (r_id, f"دریافت تسلیحات نظامی {asset_dict['equipment_name']} x{delivered_amt} از {p_c['name']}", -req_amt, now_str))
 
+                # ثبت در دفترچه‌ی انتقالات + شمارنده‌ی روزانه (ضدتقلب)
+                cur.execute(
+                    "INSERT INTO transfer_log (from_country_id, to_country_id, kind, item_key, item_name, "
+                    "qty, money_paid, created_at, status) VALUES (?, ?, 'trade_asset', ?, ?, ?, ?, ?, 'active')",
+                    (p_id, r_id, off_key, asset_dict["equipment_name"], off_amt, req_amt, now_str),
+                )
+                cur.execute(
+                    "INSERT INTO transfer_daily (country_id, day, count) VALUES (?, ?, 1) "
+                    "ON CONFLICT(country_id, day) DO UPDATE SET count = count + 1",
+                    (p_id, now_str[:10]),
+                )
+
                 if is_intercepted:
                     return True, f"INTERCEPTED:{lost_amt}:{delivered_amt}:{asset_dict['equipment_name']}:{c.get('origin_country_key') or ''}"
                 elif is_smuggled:
@@ -4383,6 +4446,18 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'trade', ?, ?, ?)
             """, (r_id, f"قرارداد تجاری با {p_c['name']}", req_amt if req_type == "treasury" else 0, now_str))
+
+            # ثبت در دفترچه‌ی انتقالات + شمارنده‌ی روزانه (ضدتقلب)
+            cur.execute(
+                "INSERT INTO transfer_log (from_country_id, to_country_id, kind, resource_type, "
+                "amount, money_paid, created_at, status) VALUES (?, ?, 'trade_resource', ?, ?, ?, ?, 'active')",
+                (p_id, r_id, off_type, off_amt, req_amt, now_str),
+            )
+            cur.execute(
+                "INSERT INTO transfer_daily (country_id, day, count) VALUES (?, ?, 1) "
+                "ON CONFLICT(country_id, day) DO UPDATE SET count = count + 1",
+                (p_id, now_str[:10]),
+            )
 
             return True, "قرارداد تجاری با موفقیت اجرا شد."
     except Exception as e:
@@ -4465,6 +4540,15 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                             if st_toll > 0:
                                 t_cost += st_toll
 
+            # ضدتقلب: سقف محموله‌های خروجی روزانه
+            if transfer_weight_enabled():
+                used, cap = transfer_daily_budget(donor_id)
+                if used >= cap:
+                    return False, (
+                        f"⛔ **سقف ارسال روزانه پر شده است:** امروز {used}/{cap} محموله ارسال کرده‌اید. "
+                        f"فردا دوباره می‌توانید کمک ارسال کنید."
+                    )
+
             # بررسی موجودی کالا و هزینه ترانزیت
             col_name = resource_cols[resource_type]
 
@@ -4491,6 +4575,18 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'aid_in', ?, ?, ?)
             """, (recipient_id, f"دریافت کمک خارجی ({transport_mode}) از {d_c['name']}", amount if resource_type == "treasury" else 0, now_str))
+
+            # ثبت در دفترچه‌ی انتقالات (برای برگشت در صورت حذف کشور)
+            cur.execute(
+                "INSERT INTO transfer_log (from_country_id, to_country_id, kind, resource_type, "
+                "amount, money_paid, created_at, status) VALUES (?, ?, 'aid', ?, ?, 0, ?, 'active')",
+                (donor_id, recipient_id, resource_type, amount, now_str),
+            )
+            cur.execute(
+                "INSERT INTO transfer_daily (country_id, day, count) VALUES (?, ?, 1) "
+                "ON CONFLICT(country_id, day) DO UPDATE SET count = count + 1",
+                (donor_id, now_str[:10]),
+            )
 
             return True, "کمک خارجی با موفقیت و پرداخت هزینه ترانزیت ارسال شد."
     except Exception as e:
@@ -4567,6 +4663,191 @@ def get_all_vip_discounts() -> dict[str, int]:
         return {}
     finally:
         conn.close()
+
+
+# ---------- دفترچه‌ی انتقالات و ضدتقلب (وزن/ظرفیت/برگشت) ----------
+
+def transfer_weight_enabled() -> bool:
+    return get_setting(config.TRANSFER_WEIGHT_SETTING_KEY, "1") == "1"
+
+
+def set_transfer_weight_enabled(value: bool):
+    set_setting(config.TRANSFER_WEIGHT_SETTING_KEY, "1" if value else "0")
+
+
+def equipment_weight_points(category: str, qty: int) -> float:
+    """نقطه وزن یک محموله تجهیزات بر اساس دسته (مدل سبک)."""
+    per = getattr(config, "EQUIPMENT_WEIGHT_POINTS", {}).get(category or "", 1.0)
+    return float(per) * max(0, int(qty or 0))
+
+
+def get_transfer_day_count(country_id: int, day: str | None = None) -> int:
+    day = day or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT count FROM transfer_daily WHERE country_id = ? AND day = ?",
+            (country_id, day),
+        ).fetchone()
+        return int(row["count"] or 0) if row else 0
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def bump_transfer_day_count(country_id: int, day: str | None = None):
+    day = day or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO transfer_daily (country_id, day, count) VALUES (?, ?, 1) "
+                "ON CONFLICT(country_id, day) DO UPDATE SET count = count + 1",
+                (country_id, day),
+            )
+    finally:
+        conn.close()
+
+
+def transfer_daily_budget(country_id: int) -> tuple[int, int]:
+    """(استفاده‌شده, سقف) محموله‌های خروجی امروز."""
+    used = get_transfer_day_count(country_id)
+    cap = int(getattr(config, "TRANSFER_DAILY_SHIPMENTS", 3) or 0)
+    return used, cap
+
+
+def log_transfer(
+    from_id: int, to_id: int, kind: str,
+    item_key: str = "", item_name: str = "", qty: int = 0,
+    resource_type: str = "", amount: int = 0, money_paid: int = 0,
+):
+    """ثبت یک انتقال در دفترچه؛ باید داخل تراکنش همان انتقال صدا زده شود."""
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO transfer_log (from_country_id, to_country_id, kind, item_key, item_name, "
+                "qty, resource_type, amount, money_paid, created_at, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')",
+                (from_id, to_id, kind, item_key or "", item_name or "", int(qty or 0),
+                 resource_type or "", int(amount or 0), int(money_paid or 0),
+                 datetime.datetime.now(datetime.timezone.utc).isoformat()),
+            )
+    finally:
+        conn.close()
+
+
+def get_active_transfers_from(country_id: int, window_hours: int = 72) -> list[dict]:
+    """انتقال‌های فعالِ خروجی از یک کشور در بازه‌ی اخیر (برای برگشت/پیش‌نمایش)."""
+    conn = get_connection()
+    try:
+        cutoff = (datetime.datetime.now(datetime.timezone.utc)
+                  - datetime.timedelta(hours=max(1, int(window_hours)))).isoformat()
+        rows = conn.execute(
+            "SELECT * FROM transfer_log WHERE from_country_id = ? AND status = 'active' "
+            "AND created_at >= ? ORDER BY id ASC",
+            (country_id, cutoff),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def rollback_transfers_from(country_id: int, window_hours: int = 72) -> dict:
+    """برگشت انتقال‌های اخیرِ یک کشورِ در حال حذف از کشورهای مقصد.
+
+    قوانین (تصمیم کارفرما):
+    * کمک خارجی رایگان: منابع/اقلام تا سقف موجودیِ مقصد برگردانده می‌شود (برگشت کامل).
+    * معامله‌ی تجاری: جنسِ منتقل‌شده تا سقف موجودیِ مقصد برمی‌گردد و **۵۰٪ پول
+      پرداختیِ خریدار** از خزانه‌ی کشورِ در حال حذف به خریدار بازگردانده می‌شود
+      (تا سقف خزانه‌ی حذف‌شونده — پولِ خلق‌شده از هیچ نمی‌سازیم).
+    خروجی: خلاصه‌ی عملیات برای نمایش به ادمین.
+    """
+    transfers = get_active_transfers_from(country_id, window_hours)
+    if not transfers:
+        return {"total": 0, "items": [], "refunded_total": 0}
+
+    resource_cols = {
+        "treasury": "treasury", "gold": "gold", "oil": "oil_reserves",
+        "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips",
+        "vaccine_doses": "vaccine_doses", "uranium_ore": "uranium_ore",
+        "nuclear_fuel": "nuclear_fuel",
+    }
+    conn = get_connection()
+    summary_items = []
+    refunded_total = 0
+    try:
+        with conn:  # commit خودکار در پایان — بدون آن همه‌چیز با close برگشت می‌خورد
+            # خزانه‌ی کشورِ در حال حذف برای بازپرداخت نیمی از پول معاملات
+            row = conn.execute("SELECT treasury FROM countries WHERE id = ?", (country_id,)).fetchone()
+            deleter_treasury = int(row["treasury"] or 0) if row else 0
+
+            ids = [t["id"] for t in transfers]
+            for t in transfers:
+                to_id = int(t["to_country_id"])
+                exists = conn.execute("SELECT 1 FROM countries WHERE id = ?", (to_id,)).fetchone()
+                if not exists:
+                    continue
+                entry = {"kind": t["kind"], "to_id": to_id}
+                if t["kind"] in ("aid", "trade_resource"):
+                    rtype = t.get("resource_type") or ""
+                    col = resource_cols.get(rtype)
+                    entry["what"] = f"{rtype} {t.get('amount') or 0}"
+                    if col:
+                        conn.execute(
+                            f"UPDATE countries SET {col} = MAX(0, COALESCE({col}, 0) - ?) WHERE id = ?",
+                            (int(t.get("amount") or 0), to_id),
+                        )
+                elif t["kind"] == "trade_asset":
+                    entry["what"] = f"{t.get('item_name') or t.get('item_key')} x{t.get('qty') or 0}"
+                    conn.execute(
+                        "UPDATE country_assets SET amount = MAX(0, amount - ?) "
+                        "WHERE country_id = ? AND equipment_key = ?",
+                        (int(t.get("qty") or 0), to_id, t.get("item_key") or ""),
+                    )
+
+                # بازپرداخت ۵۰٪ پول معامله از خزانه‌ی کشور حذف‌شونده به خریدار
+                if t["kind"] in ("trade_asset", "trade_resource") and int(t.get("money_paid") or 0) > 0:
+                    half = int(t["money_paid"] // 2)
+                    refund = min(half, deleter_treasury)
+                    if refund > 0:
+                        conn.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?",
+                                     (refund, country_id))
+                        conn.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?",
+                                     (refund, to_id))
+                        deleter_treasury -= refund
+                        refunded_total += refund
+                        entry["refund"] = refund
+
+                summary_items.append(entry)
+
+            conn.executemany(
+                "UPDATE transfer_log SET status = 'rolled_back' WHERE id = ?",
+                [(i,) for i in ids],
+            )
+    finally:
+        conn.close()
+    return {"total": len(summary_items), "items": summary_items, "refunded_total": refunded_total}
+
+
+def format_transfer_rollback_summary(result: dict) -> str:
+    """متن فارسی خلاصه‌ی برگشت برای نمایش به ادمین."""
+    if not result or result.get("total", 0) == 0:
+        return "ℹ️ هیچ انتقالِ قابل‌برگشتی در ۷۲ ساعت اخیر یافت نشد."
+    lines = [f"♻️ {result['total']} انتقال اخیر از کشور مقصد بازگردانده شد:"]
+    for item in result.get("items") or []:
+        kind_label = {"aid": "کمک", "trade_asset": "معامله تجهیز", "trade_resource": "معامله منبع"}.get(
+            item.get("kind"), item.get("kind"))
+        line = f"• {kind_label}: {item.get('what')} ← کشور #{item.get('to_id')}"
+        if item.get("refund"):
+            line += f" (بازپرداخت {item['refund']:,} تومان)"
+        lines.append(line)
+    if result.get("refunded_total"):
+        lines.append(f"💰 کل بازپرداخت پول به خریداران: {result['refunded_total']:,} تومان")
+    return "\n".join(lines)
 
 
 # ---------- سیستم محاصره دریایی بین‌المللی ----------
