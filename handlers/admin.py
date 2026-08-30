@@ -201,6 +201,7 @@ async def _players_submenu(query):
     rows = [
         [InlineKeyboardButton(f"📥 درخواست‌های معلق کشورها ({counts['countries']})", callback_data="admin:pending_countries")],
         [InlineKeyboardButton(f"💳 فیش‌های پرداخت تومانی ({counts['payments']})", callback_data="admin:toman_requests")],
+        [InlineKeyboardButton("📢 رصد بیانیه‌ها و توییت‌ها (۲۴ ساعت اخیر)", callback_data="admin:recent_stmts:0:24h")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
         [InlineKeyboardButton(f"⏳ صف انتظار و کشورهای قرنطینه ({counts['quarantined']})", callback_data="admin:queue")],
         [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
@@ -1131,14 +1132,161 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         text = (
             "🔎 **رصد و پایش فعالیت بازیکنان**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "جهت مشاهده آخرین فعالیت‌ها، تراکنش‌ها و پیام‌های دیپلماتیک بازیکنان، بخش مورد نظر را انتخاب بفرمایید:"
+            "جهت مشاهده آخرین فعالیت‌ها، تراکنش‌ها، بیانیه‌ها و پیام‌های دیپلماتیک بازیکنان، بخش مورد نظر را انتخاب بفرمایید:"
         )
         keyboard = [
+            [InlineKeyboardButton("📢 رصد بیانیه‌ها و توییت‌ها (۲۴ ساعت اخیر)", callback_data="admin:recent_stmts:0:24h")],
             [InlineKeyboardButton("✉️ رصد معاهدات و پیام‌های دیپلماتیک", callback_data="admin:dip_logs")],
             [InlineKeyboardButton("📜 رصد فعالیت‌ها و لاگ‌های سیستم", callback_data="admin:activity_logs")],
             [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:recent_stmts"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        mode = parts[3] if len(parts) > 3 else "24h"
+        per_page = 4
+        hours = 24 if mode == "24h" else None
+
+        stmts = db.get_recent_statements(limit=100, hours=hours)
+        total_count = len(stmts)
+        total_pages = max(1, math.ceil(total_count / per_page)) if total_count > 0 else 1
+        page = max(0, min(page, total_pages - 1))
+        start_idx = page * per_page
+        slice_stmts = stmts[start_idx:start_idx + per_page]
+
+        title_mode = "۲۴ ساعت اخیر" if mode == "24h" else "تمام تاریخچه (۱۰۰ مورد اخیر)"
+        lines = [
+            f"📢 <b>رصد بیانیه‌ها و توییت‌های ارسالی ({title_mode})</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"📊 <b>تعداد کل موارد ثبت‌شده:</b> <code>{total_count} مورد</code>" + (f" | <b>صفحه:</b> <code>{page + 1} از {total_pages}</code>" if total_count > 0 else ""),
+            ""
+        ]
+
+        keyboard = []
+        if not slice_stmts:
+            if mode == "24h":
+                lines.append("<i>⚠️ در ۲۴ ساعت گذشته هیچ بیانیه یا توییتی ثبت نشده است.</i>\n")
+            else:
+                lines.append("<i>هیچ بیانیه یا توییتی در دیتابیس ثبت نشده است.</i>\n")
+        else:
+            for s in slice_stmts:
+                s_id = s["id"]
+                c_name = html.escape(s.get("country_name") or "نامشخص")
+                c_flag = s.get("country_flag") or "🏳️"
+                c_key = s.get("country_key") or ""
+                p_id = s.get("player_id")
+                s_type = "📢 بیانیه رسمی" if s.get("statement_type") == "statement" else "🐦 توییت"
+
+                created_raw = str(s.get("created_at") or "")
+                time_display = created_raw[:19].replace("T", " ")
+
+                raw_content = str(s.get("content") or "").strip()
+                preview_content = html.escape(raw_content if len(raw_content) <= 250 else raw_content[:250] + "...")
+
+                lines.append(
+                    f"🔹 <b>{c_flag} {c_name}</b> (<code>{c_key}</code>) | <b>[{s_type}]</b>\n"
+                    f"👤 <b>فرستنده:</b> <a href=\"tg://user?id={p_id}\">{p_id}</a> (ID: <code>{p_id}</code>)\n"
+                    f"🕒 <b>زمان:</b> <code>{time_display}</code>\n"
+                    f"📝 <b>متن:</b>\n<blockquote>{preview_content}</blockquote>\n"
+                )
+
+                btn_row = []
+                if s.get("country_id"):
+                    btn_row.append(InlineKeyboardButton(f"📂 پرونده {c_flag}", callback_data=f"admin:c:{s['country_id']}"))
+                btn_row.append(InlineKeyboardButton(f"🔍 مشاهده کامل / مدیریت #{s_id}", callback_data=f"admin:stmt_view:{s_id}"))
+                keyboard.append(btn_row)
+
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("➡️ قبلی", callback_data=f"admin:recent_stmts:{page - 1}:{mode}"))
+        nav_row.append(InlineKeyboardButton("🔄 بروزرسانی", callback_data=f"admin:recent_stmts:{page}:{mode}"))
+        if (page + 1) < total_pages:
+            nav_row.append(InlineKeyboardButton("بعدی ⬅️", callback_data=f"admin:recent_stmts:{page + 1}:{mode}"))
+        if nav_row:
+            keyboard.append(nav_row)
+
+        if mode == "24h":
+            keyboard.append([InlineKeyboardButton("📜 نمایش تمام تاریخچه بیانیه‌ها (۱۰۰ مورد)", callback_data="admin:recent_stmts:0:all")])
+        else:
+            keyboard.append([InlineKeyboardButton("⏳ فیلتر فقط ۲۴ ساعت اخیر", callback_data="admin:recent_stmts:0:24h")])
+
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به رصد بازیکنان", callback_data="admin:monitor_menu")])
+
+        try:
+            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        except Exception:
+            try:
+                await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+            except Exception:
+                pass
+
+    elif data.startswith("admin:stmt_view:"):
+        stmt_id = int(data.split(":")[2])
+        s = db.get_statement_by_id(stmt_id)
+        if not s:
+            await query.answer("❌ بیانیه مورد نظر یافت نشد.", show_alert=True)
+            return
+
+        c_name = html.escape(s.get("country_name") or "نامشخص")
+        c_flag = s.get("country_flag") or "🏳️"
+        c_key = s.get("country_key") or ""
+        p_id = s.get("player_id")
+        s_type = "📢 بیانیه رسمی" if s.get("statement_type") == "statement" else "🐦 توییت"
+        created_raw = str(s.get("created_at") or "")
+        time_display = created_raw[:19].replace("T", " ")
+        full_content = html.escape(str(s.get("content") or "").strip())
+
+        text = (
+            f"📢 <b>جزئیات کامل بیانیه / توییت #{stmt_id}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🏳️ <b>کشور:</b> {c_flag} {c_name} (<code>{c_key}</code>)\n"
+            f"👤 <b>شناسه تلگرام فرستنده:</b> <code>{p_id}</code> (<a href=\"tg://user?id={p_id}\">مشاهده پروفایل</a>)\n"
+            f"🏷️ <b>نوع محتوا:</b> {s_type}\n"
+            f"🕒 <b>زمان ارسال:</b> <code>{time_display}</code>\n"
+            f"📅 <b>تاریخ ثبت سیستمی:</b> <code>{s.get('statement_date', '')}</code>\n\n"
+            f"📝 <b>متن کامل بیانیه:</b>\n"
+            f"<blockquote>{full_content}</blockquote>"
+        )
+        keyboard = [
+            [InlineKeyboardButton("🗑️ حذف این بیانیه از سیستم", callback_data=f"admin:stmt_del:{stmt_id}")],
+        ]
+        if s.get("country_id"):
+            keyboard.append([InlineKeyboardButton(f"📂 ورود به پرونده کشور {c_flag}", callback_data=f"admin:c:{s['country_id']}")])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت به لیست بیانیه‌ها", callback_data="admin:recent_stmts:0:24h")])
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+    elif data.startswith("admin:stmt_del:"):
+        stmt_id = int(data.split(":")[2])
+        ok = db.delete_statement_by_id(stmt_id)
+        if ok:
+            await query.answer("✅ بیانیه با موفقیت از سیستم حذف شد.", show_alert=True)
+            db.add_log(f"admin:{user_id}", "delete_statement", f"stmt_id={stmt_id}")
+        else:
+            await query.answer("❌ خطا در حذف بیانیه.", show_alert=True)
+
+        # Redirect back to recent statements
+        stmts = db.get_recent_statements(limit=100, hours=24)
+        total_count = len(stmts)
+        lines = [
+            "📢 <b>رصد بیانیه‌ها و توییت‌های ارسالی (۲۴ ساعت اخیر)</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"📊 <b>تعداد کل موارد ثبت‌شده:</b> <code>{total_count} مورد</code>",
+            ""
+        ]
+        if not stmts:
+            lines.append("<i>⚠️ در ۲۴ ساعت گذشته هیچ بیانیه یا توییتی ثبت نشده است.</i>\n")
+        keyboard = [
+            [InlineKeyboardButton("🔄 بروزرسانی لیست", callback_data="admin:recent_stmts:0:24h")],
+            [InlineKeyboardButton("📜 نمایش تمام تاریخچه بیانیه‌ها", callback_data="admin:recent_stmts:0:all")],
+            [InlineKeyboardButton("🔙 بازگشت به رصد بازیکنان", callback_data="admin:monitor_menu")]
+        ]
+        try:
+            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        except Exception:
+            pass
 
     elif data == "admin:activity_logs":
         logs = db.get_recent_logs(20)

@@ -342,6 +342,10 @@ async def process_official_statement_input(update: Update, context: ContextTypes
             print(f"Failed to notify admin of statement channel error: {adm_e}")
 
     db.record_country_statement(country["id"], update.effective_user.id, "statement", caption)
+    try:
+        db.add_log(f"player:{update.effective_user.id}", "statement_submitted", f"country={country.get('country_key')} type=statement len={len(caption or '')}")
+    except Exception:
+        pass
     if is_golden:
         try:
             db.update_country_field(country["id"], "golden_stmt_credits", max(0, (country.get("golden_stmt_credits",0) or 0) - 1))
@@ -563,6 +567,10 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
             print(f"Failed to notify admin of tweet channel error: {adm_e}")
 
     db.record_country_statement(country["id"], update.effective_user.id, "tweet", tweet_text)
+    try:
+        db.add_log(f"player:{update.effective_user.id}", "tweet_submitted", f"country={country.get('country_key')} type=tweet len={len(tweet_text or '')}")
+    except Exception:
+        pass
     today_cnt = db.get_country_statement_count_today(country["id"])
     req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
     conf_msg += f"\n\n📊 *مجموع بیانیه‌ها و توییت‌های امروز شما:* `{today_cnt} از {req_stmts}`"

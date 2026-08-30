@@ -504,27 +504,36 @@ def parse_loss_report_text(text: str):
     # بخش تلفات انسانی
     if human_start < len(lines):
         # خط‌به‌خط پردازش می‌شود تا هر عدد فقط به دسته‌ی خودش نسبت داده شود
-        # و ترتیب «۳۲۰ نفر کشته» هم مثل «کشته: ۳۲۰ نفر» درست خوانده شود.
+        # و ترتیب «۳۲۰ نفر کشته» هم مثل «کشته: ۳۲۰ نفر» یا قالب دوخطی درست خوانده شود.
         def _first_number(s):
             mm = re.search(r"([\d,٬]+(?:\.\d+)?)", s)
             if not mm:
                 return None
             return int(math.ceil(float(mm.group(1).replace(",", "").replace("٬", ""))))
 
-        for ln in lines[human_start:]:
+        for idx in range(human_start, len(lines)):
+            ln = lines[idx]
             if not ln.strip():
                 continue
             num = _first_number(ln)
             if num is None:
                 continue
-            is_civ = re.search(r"غیر\s?نظامی|غیرنظامی|شهروند|مردم", ln)
-            is_wounded = re.search(r"مجروح|زخمی", ln)
-            is_mil = re.search(r"نظامی|سرباز|پرسنل|نیرو", ln)
+            combined = ln
+            for j in range(idx - 1, human_start - 1, -1):
+                prev = lines[j].strip()
+                if prev and not (set(prev) <= {"-", "—", "━", " ", "*"}):
+                    if _first_number(prev) is None:
+                        combined = prev + " " + ln
+                    break
+
+            is_civ = re.search(r"غیر\s?نظامی|غیرنظامی|شهروند|مردم", combined)
+            is_wounded = re.search(r"مجروح|زخمی", combined)
+            is_mil = re.search(r"نظامی|سرباز|پرسنل|نیرو", combined)
             if is_civ:
                 result["human"]["civilians"] = result["human"]["civilians"] or num
             elif is_wounded:
                 result["human"]["wounded"] = result["human"]["wounded"] or num
-            elif is_mil or re.search(r"کشته|شهید|تلفات جانی", ln):
+            elif is_mil or re.search(r"کشته|شهید|تلفات جانی", combined):
                 result["human"]["mil"] = result["human"]["mil"] or num
 
     # هزینه آماده‌سازی: فقط از بخش «هزینه آماده‌سازی عملیات» خوانده می‌شود.

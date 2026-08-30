@@ -246,7 +246,28 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         land_lim = config.TRANSPORT_CAPACITY_LIMITS["land"]["limits"].get(r_type, 50_000)
         air_lim = config.TRANSPORT_CAPACITY_LIMITS["air"]["limits"].get(r_type, 10_000)
 
-        sea_btn_label = "🚢 دریایی (۳۰۰ هزار $)" if qty <= sea_lim else f"🚢 دریایی (مازاد سقف {sea_lim:,})"
+        seller_country = db.get_country_by_id(order["seller_id"])
+        seller_key = seller_country.get("country_key") if seller_country else ""
+        buyer_key = country.get("country_key")
+
+        strait_analysis = db.get_trade_route_strait_analysis(seller_key, buyer_key)
+        is_strait_blocked = strait_analysis["is_blocked"]
+        has_strait_tolls = strait_analysis["has_tolls"]
+        strait_toll_total = strait_analysis["total_toll"]
+
+        if is_strait_blocked:
+            blocked_str = "، ".join([s["name"] for s in strait_analysis["blocked_straits"]])
+            sea_btn_label = f"⛔ دریایی (مسدود: {blocked_str})"
+            sea_desc = f"🚢 <b>دریایی:</b> ⛔ مسدود ({blocked_str})"
+        elif has_strait_tolls:
+            total_sea_cost = 300_000 + strait_toll_total
+            toll_str = "، ".join([f"{s['name']} ({s['toll_amount']:,} $)" for s in strait_analysis["toll_straits"]])
+            sea_btn_label = f"🚢 دریایی ({total_sea_cost:,} $ با عوارض)" if qty <= sea_lim else f"🚢 دریایی (مازاد سقف {sea_lim:,})"
+            sea_desc = f"🚢 <b>دریایی ({total_sea_cost:,} $ با عوارض {toll_str}):</b> حداکثر {sea_lim:,} {unit_names.get(r_type, '')} (کشتی باری/نفتکش فله)"
+        else:
+            sea_btn_label = "🚢 دریایی (۳۰۰ هزار $)" if qty <= sea_lim else f"🚢 دریایی (مازاد سقف {sea_lim:,})"
+            sea_desc = f"🚢 <b>دریایی (۳۰۰ هزار $):</b> حداکثر {sea_lim:,} {unit_names.get(r_type, '')} (کشتی باری/نفتکش فله)"
+
         land_btn_label = "🚛 زمینی (۱ میلیون $)" if qty <= land_lim else f"🚛 زمینی (مازاد سقف {land_lim:,})"
         air_btn_label = "✈️ هوایی (۲ میلیون $)" if qty <= air_lim else f"✈️ هوایی (مازاد سقف {air_lim:,})"
 
@@ -257,7 +278,7 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             f"• <b>ارزش خالص کالا:</b> <b>{format_money(commodity_cost)}</b>\n"
             f"• <b>فروشنده:</b> {order['seller_flag']} <b>{order['seller_name']}</b>\n\n"
             "📦 <b>ظرفیت مجاز ناوگان‌های ترانزیت:</b>\n"
-            f"🚢 <b>دریایی (۳۰۰ هزار $):</b> حداکثر {sea_lim:,} {unit_names.get(r_type, '')} (کشتی باری/نفتکش فله)\n"
+            f"{sea_desc}\n"
             f"🚛 <b>زمینی (۱ میلیون $):</b> حداکثر {land_lim:,} {unit_names.get(r_type, '')} (قطار باری و تریلی)\n"
             f"✈️ <b>هوایی (۲ میلیون $):</b> حداکثر {air_lim:,} {unit_names.get(r_type, '')} (هواپیمای کارگو — های‌تک/سریع)\n\n"
             "لطفاً روش ترابری متناسب با حجم محموله را انتخاب فرمایید:"
@@ -276,11 +297,74 @@ async def market_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="HTML")
 
-    elif data.startswith("market:do_buy:"):
+    elif data.startswith("market:do_buy:") or data.startswith("market:do_buy_confirm:"):
+        is_confirmed = data.startswith("market:do_buy_confirm:")
         parts = data.split(":")
         order_id = int(parts[2])
         qty = int(parts[3])
         t_mode = parts[4]
+
+        order = db.get_market_order_by_id(order_id)
+        if not order:
+            await query.answer("سفارش یافت نشد.", show_alert=True)
+            return
+
+        seller_country = db.get_country_by_id(order["seller_id"])
+        seller_key = seller_country.get("country_key") if seller_country else ""
+        buyer_key = country.get("country_key")
+        strait_analysis = db.get_trade_route_strait_analysis(seller_key, buyer_key)
+
+        if t_mode == "sea":
+            if strait_analysis["is_blocked"]:
+                blocked_str = "، ".join([f"{s['name']} (توسط {s['owner_flag']} {s['owner_name']})" for s in strait_analysis["blocked_straits"]])
+                await query.answer("❌ ترابری دریایی مسدود است!", show_alert=True)
+                keyboard = [
+                    [InlineKeyboardButton("🚛 خرید با ترابری زمینی", callback_data=f"market:do_buy:{order_id}:{qty}:land")],
+                    [InlineKeyboardButton("✈️ خرید با ترابری هوایی", callback_data=f"market:do_buy:{order_id}:{qty}:air")],
+                    [InlineKeyboardButton("🔙 بازگشت به بورس", callback_data="market:menu")]
+                ]
+                await query.edit_message_text(
+                    f"⛔ **امکان ترابری دریایی وجود ندارد:**\n\nمسیر ترانزیت دریایی از **{blocked_str}** مسدود است.\nلطفاً از ترابری زمینی یا هوایی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if strait_analysis["has_tolls"] and not is_confirmed:
+                commodity_cost = qty * order["unit_price"]
+                res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+                unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم", "vaccine_doses": "دُز"}
+                r_type = order["resource_type"]
+
+                toll_lines = "\n".join([f"• 🌊 <b>{s['name']}</b> (تحت کنترل {s['owner_flag']} <b>{s['owner_name']}</b>): <code>{s['toll_amount']:,} $</code>" for s in strait_analysis["toll_straits"]])
+                total_toll = strait_analysis["total_toll"]
+                total_transport = 300_000 + total_toll
+                total_buyer_cost = commodity_cost + total_transport
+
+                text = (
+                    f"🌊 <b>هشدار و تأییدیه عوارض ترانزیت تنگه‌های دریایی (بورس کالا)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n\n"
+                    f"• <b>کالای انتخابی:</b> {qty:,} {unit_names.get(r_type, '')} <b>{res_names.get(r_type, '')}</b>\n"
+                    f"• <b>فروشنده:</b> {order['seller_flag']} <b>{order['seller_name']}</b>\n"
+                    f"• <b>ارزش خالص کالا:</b> <code>{format_money(commodity_cost)}</code>\n\n"
+                    f"🌊 <b>تنگه‌های دارای عوارض عبور در مسیر ترانزیت:</b>\n"
+                    f"{toll_lines}\n\n"
+                    f"💰 <b>تفکیک هزینه ترابری:</b>\n"
+                    f"• کرایه ناوگان دریایی: <code>۳۰۰,۰۰۰ $</code>\n"
+                    f"• مجموع عوارض تنگه‌ها: <code>{total_toll:,} $</code>\n"
+                    f"• <b>مجموع کرایه ترابری:</b> <code>{format_money(total_transport)}</code>\n\n"
+                    f"💳 <b>مجموع پرداختی شما از خزانه:</b> <b><code>{format_money(total_buyer_cost)}</code></b>\n\n"
+                    f"⚠️ <i>مبلغ عوارض مستقیماً به خزانه کشور کنترل‌کننده تنگه واریز خواهد شد.</i>\n\n"
+                    f"آیا با خرید و پرداخت عوارض موافقید؟"
+                )
+                buttons = [
+                    [InlineKeyboardButton(f"✅ تأیید و خرید قطعی ({format_money(total_buyer_cost)})", callback_data=f"market:do_buy_confirm:{order_id}:{qty}:sea")],
+                    [InlineKeyboardButton("🚛 تغییر به ترابری زمینی (۱,۰۰۰,۰۰۰ $)", callback_data=f"market:do_buy:{order_id}:{qty}:land")],
+                    [InlineKeyboardButton("✈️ تغییر به ترابری هوایی (۲,۰۰۰,۰۰۰ $)", callback_data=f"market:do_buy:{order_id}:{qty}:air")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data=f"market:qty:{order_id}:{qty}")],
+                ]
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="HTML")
+                return
 
         success, msg, meta = db.execute_market_buy_transaction(country["id"], order_id, qty, transport_mode=t_mode)
 

@@ -672,6 +672,11 @@ COUNTRY_HAZARD_WEIGHTS = {
     "austria": {"flood": 1.5, "earthquake": 0.5, "storm": 0.6, "wildfire": 0.6},
     "belgium": {"flood": 1.8, "storm": 1.2, "earthquake": 0.2, "wildfire": 0.5},
     "denmark": {"storm": 1.8, "flood": 1.6, "earthquake": 0.1, "wildfire": 0.4},
+    "ireland": {"flood": 1.8, "storm": 2.0, "earthquake": 0.1, "drought": 0.5, "wildfire": 0.4},
+    "lithuania": {"flood": 1.6, "storm": 1.4, "earthquake": 0.1, "drought": 0.8, "wildfire": 0.7},
+    "slovenia": {"flood": 2.0, "earthquake": 1.8, "storm": 1.0, "wildfire": 1.2, "drought": 0.8},
+    "albania": {"earthquake": 2.8, "flood": 1.8, "wildfire": 1.8, "drought": 1.2, "storm": 0.8},
+    "bosnia": {"flood": 2.2, "earthquake": 2.0, "wildfire": 1.6, "drought": 1.2, "storm": 0.6},
 
     # ── آمریکا ──
     "brazil": {"flood": 2.2, "drought": 1.8, "wildfire": 2.0, "earthquake": 0.2, "storm": 0.7},
@@ -1069,90 +1074,25 @@ _DIGEST_EVENTS = {key for key, _ in DIGEST_SECTION_TITLES}
 
 
 def collect_new_war_summary(now_dt: datetime.datetime | None = None) -> tuple[list[dict], int]:
-    """گزارش‌های تلفاتِ جدید (از آخرین روزنامه) به تفکیک کشور، فقط برای امروز.
-
-    خروجی: (خلاصه‌ها, آخرین شناسه‌ی دیده‌شده). فقط کشورهایی که تلفات انسانی
-    دارند وارد خلاصه می‌شوند — چون طبق دستور کارفرما، کشوری که تلفات انسانی
-    دارد فقط در «گزارش جنگ» می‌آید و از بخش بحران حذف می‌شود.
-
-    برای هر کشور علاوه بر تلفات، «چه چیزهایی هدف قرار گرفته» هم جمع می‌شود
-    (زیردسته‌ی تجهیزات منهدم‌شده + منابع راهبردی آسیب‌دیده + ساختمان‌ها) تا
-    روزنامه بتواند ماهیت حمله را توصیف کند.
-    """
-    today = _iran_date(now_dt)
-    try:
-        marker = int(db.get_setting(WAR_DIGEST_MARKER_KEY) or 0)
-    except (TypeError, ValueError):
-        marker = 0
-
-    conn = db.get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT l.id, l.country_id, l.operation_name, l.items_json, l.created_at, "
-            "       c.name AS country_name, c.flag AS country_flag "
-            "FROM loss_reports l LEFT JOIN countries c ON c.id = l.country_id "
-            "WHERE l.status != 'deleted' AND l.id > ? ORDER BY l.id ASC",
-            (marker,),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    by_country: dict[int, dict] = {}
-    max_id = marker
-    for row in rows:
-        rid = int(row["id"])
-        max_id = max(max_id, rid)
-        created = _parse_dt(row["created_at"])
-        if created is None or _iran_date(created) != today:
-            continue  # گزارش‌های روزهای قبل فقط مارکر را جلو می‌برند
-        bucket = by_country.setdefault(int(row["country_id"]), {
-            "name": row["country_name"] or "؟",
-            "flag": row["country_flag"] or "🏳️",
-            "mil_kia": 0, "wounded": 0, "civ_kia": 0,
-            "ops": [], "equip_items": 0,
-            "subcats": [], "strategic": [], "buildings": 0,
-        })
-        op = (row["operation_name"] or "").strip()
-        if op and op not in bucket["ops"]:
-            bucket["ops"].append(op)
-        try:
-            items = json.loads(row["items_json"] or "[]")
-        except Exception:
-            items = []
-        for item in items:
-            special = item.get("special")
-            qty = int(item.get("qty", 0) or 0)
-            if special in WAR_HUMAN_SPECIALS:
-                bucket[special] = bucket.get(special, 0) + qty
-            elif special == "building":
-                bucket["buildings"] += qty
-            elif special in STRATEGIC_FA_NAMES:
-                fa_name = STRATEGIC_FA_NAMES[special]
-                if fa_name not in bucket["strategic"]:
-                    bucket["strategic"].append(fa_name)
-            elif special in (None, "", "money", "oil", "commander", "warheads",
-                             "uranium_ore", "nuclear_fuel", "medical_isotopes",
-                             "enriched_60", "weapons_grade_90", "microchips", "gold"):
-                # تجهیزات منهدم‌شده → زیردسته‌ی نمایشی
-                subcat = item.get("subcat")
-                if subcat and subcat not in bucket["subcats"]:
-                    bucket["subcats"].append(subcat)
-                if special not in (None, ""):
-                    pass  # منابع راهبردیِ شناخته‌شده در بالا پوشش داده شدند
-                else:
-                    bucket["equip_items"] += qty
-
-    summaries = [
-        {k: bucket[k] for k in ("name", "flag", "mil_kia", "wounded", "civ_kia",
-                                "ops", "equip_items", "subcats", "strategic", "buildings")}
-        for bucket in by_country.values()
-        if (bucket.get("mil_kia") or bucket.get("wounded") or bucket.get("civ_kia")) > 0
-    ]
-    return summaries, max_id
+    """سیستم گزارش خودکار میدان جنگ حذف شده است."""
+    return [], 0
 
 
 def mark_war_summary_published(marker: int):
-    db.set_setting(WAR_DIGEST_MARKER_KEY, str(marker))
+    pass
+
+
+def crisis_casualties_summary() -> dict:
+    """سیستم گزارش خودکار تلفات حذف شده است."""
+    return {}
+
+
+def casualties_due(now_dt: datetime.datetime | None = None) -> bool:
+    return False
+
+
+def mark_casualties_posted(now_dt: datetime.datetime | None = None):
+    pass
 
 
 def _join_phrases(phrases: list[str]) -> str:
@@ -1204,63 +1144,7 @@ def _attack_kind(targets: list[str]) -> str:
 
 
 def _prose_war_summary(summaries: list[dict]) -> str:
-    """بخش میدان جنگ — مثل گزارش رسمیِ صفحه‌ی جنگ یک روزنامه.
-
-    یک لید با مجموع تلفات، سپس برای هر کشور یک پاراگراف مستقل که نوع حمله
-    و اهداف آسیب‌دیده را هم توضیح می‌دهد. سنگین‌ترین تلفات اول می‌آید.
-    """
-    shown = [w for w in summaries
-             if (w.get("mil_kia") or 0) or (w.get("civ_kia") or 0) or (w.get("wounded") or 0)]
-    if not shown:
-        return ""
-    shown.sort(key=lambda w: -(int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0)))
-
-    total_kia = sum(int(w.get("mil_kia") or 0) + int(w.get("civ_kia") or 0) for w in shown)
-    total_wounded = sum(int(w.get("wounded") or 0) for w in shown)
-
-    parts = []
-    for w in shown:
-        flag = w.get("flag") or "🏳️"
-        name = w.get("name") or "؟"
-        ops = [str(o) for o in (w.get("ops") or []) if o]
-        mil = int(w.get("mil_kia") or 0)
-        civ = int(w.get("civ_kia") or 0)
-        wounded = int(w.get("wounded") or 0)
-
-        targets = _war_targets(w)
-        kind = _attack_kind(targets)
-
-        sentence = f"{flag} {name}"
-        if ops:
-            ops_txt = f"«{ops[0]}»" if len(ops) == 1 else "«" + "» و «".join(ops) + "»"
-            sentence += f" در عملیات {ops_txt}"
-        sentence += f" هدف {kind} قرار گرفت"
-
-        if targets:
-            target_txt = "، ".join(targets[:-1]) + " و " + targets[-1] if len(targets) > 1 else targets[0]
-            sentence += f"؛ {target_txt} آسیب دید"
-        sentence += "."
-
-        casualties = []
-        if mil and civ:
-            casualties.append(f"{_fa(mil)} نظامی و {_fa(civ)} غیرنظامی کشته شدند")
-        elif mil:
-            casualties.append(f"{_fa(mil)} نظامی کشته شدند")
-        elif civ:
-            casualties.append(f"{_fa(civ)} غیرنظامی کشته شدند")
-        if wounded:
-            casualties.append(f"{_fa(wounded)} نفر مجروح شدند")
-        if casualties:
-            sentence += " در این حملات " + " و ".join(casualties) + "."
-        parts.append(sentence)
-
-    lead = f"درگیری‌های امروز در {_fa(len(shown))} کشور تلفات انسانی بر جای گذاشت"
-    if total_kia:
-        lead += f"؛ مجموع کشته‌شدگان {_fa(total_kia)} نفر"
-        if total_wounded:
-            lead += f" و مجروحان {_fa(total_wounded)} نفر"
-    lead += " برآورد شده است."
-    return lead + "\n\n" + "\n\n".join(parts)
+    return ""
 
 
 def _join_names(names: list[str], limit: int = 4) -> str:
@@ -1543,21 +1427,31 @@ def _prose_casualties(casualties: dict) -> str:
     return " ".join(sentences)
 
 
+def collect_new_war_summary(now_dt: datetime.datetime | None = None) -> tuple[list[dict], int]:
+    """سیستم گزارش خودکار میدان جنگ حذف شده است."""
+    return [], 0
+
+
+def mark_war_summary_published(marker: int):
+    pass
+
+
+def crisis_casualties_summary() -> dict:
+    """سیستم گزارش خودکار تلفات حذف شده است."""
+    return {}
+
+
+def casualties_due(now_dt: datetime.datetime | None = None) -> bool:
+    return False
+
+
+def mark_casualties_posted(now_dt: datetime.datetime | None = None):
+    pass
+
+
 def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
                       casualties: dict | None = None) -> tuple[str, str] | None:
-    """روزنامه‌ی تجمیعی: گزارش میدان جنگ + بحران‌ها، مثل صفحه‌ی یک روزنامه‌ی واقعی.
-
-    قوانین:
-    * هر نوع بحران مقاله و تیتر خودش را دارد — انواع قاطی نمی‌شوند.
-    * کشوری که تلفات انسانی دارد فقط در «میدان جنگ» می‌آید و از بخش بحرانِ
-      همین شماره حذف می‌شود تا تکراری نباشد.
-    * اگر فقط تلفات باشد و رویداد بحرانی نباشد، عنوان «گزارش میدان جنگ» می‌شود.
-    """
-    if war_summary:
-        war_names = {w.get("name") for w in war_summary if w.get("name")}
-        items = [it for it in items
-                 if (it.get("country") or {}).get("name") not in war_names]
-
+    """روزنامه‌ی تجمیعی بحران‌ها، مثل صفحه‌ی یک روزنامه‌ی واقعی."""
     by_type: dict[str, list[dict]] = {}
     for item in items:
         event = item.get("event")
@@ -1575,7 +1469,7 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
             "severity": crisis.get("severity") or "",
         })
 
-    if not by_type and not war_summary and not casualties:
+    if not by_type:
         return None
 
     # ترتیب مقاله‌ها: خبرهای تشدیدیِ پرجمعیت‌تر اول — مثل صفحه‌ی اول روزنامه
@@ -1585,15 +1479,9 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
     )
 
     lines = [f"🗓 {_jalali_date_line()}", "━━━━━━━━━━━━━━━━━━━━━━", ""]
-    if by_type:
-        lead = _build_digest_lead(by_type)
-        if lead:
-            lines.append(lead)
-            lines.append("")
-
-    if war_summary:
-        lines.append("⚔️ میدان جنگ")
-        lines.append(_prose_war_summary(war_summary))
+    lead = _build_digest_lead(by_type)
+    if lead:
+        lines.append(lead)
         lines.append("")
 
     for crisis_key in ordered_keys:
@@ -1606,19 +1494,8 @@ def build_news_digest(items: list[dict], war_summary: list[dict] | None = None,
         lines.append(paragraph)
         lines.append("")
 
-    # جمع‌بندی پایانی: تحلیل تلفات مثل یک روزنامه‌ی واقعی
-    if casualties and int(casualties.get("total") or 0) > 0:
-        lines.append("")
-        lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append(_prose_casualties(casualties))
-        lines.append("")
-
     body = "\n".join(lines).strip()
-    if by_type:
-        return "روزنامه بحران‌های جهان", body
-    if war_summary:
-        return "گزارش میدان جنگ", body
-    return "گزارش تلفات بحران‌ها", body
+    return "روزنامه بحران‌های جهان", body
 
 
 def tax_policy_label(key: str) -> str:

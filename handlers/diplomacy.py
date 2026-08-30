@@ -249,6 +249,25 @@ async def dip_blockade_start(query, context, country):
         t_c = db.get_country_by_id(b["target_id"])
         if t_c:
             keyboard.append([InlineKeyboardButton(f"🔓 لغو محاصره دریایی کشور {t_c['name']}", callback_data=f"dip:lift_blk:{t_c['id']}")])
+            keyboard.append([InlineKeyboardButton(f"🤝 دعوت متحدین به ائتلاف محاصره {t_c['name']}", callback_data=f"dip:blk_invite:{t_c['id']}")])
+
+    # نمایش محاصره‌های فعال متحدین برای امکان پیوستن
+    allied_countries = db.get_allied_countries_for_blockade(country["id"])
+    allied_ids = [a["id"] for a in allied_countries]
+    for b in db.get_all_active_blockades():
+        if b["blockader_id"] in allied_ids and b["target_id"] != country["id"] and b["blockader_id"] != country["id"]:
+            lead_c = db.get_country_by_id(b["blockader_id"])
+            target_c = db.get_country_by_id(b["target_id"])
+            if lead_c and target_c:
+                try:
+                    coalition = json.loads(b.get("coalition_json") or "[]")
+                except Exception:
+                    coalition = []
+                is_in = any(c.get("country_id") == country["id"] for c in coalition)
+                if is_in:
+                    keyboard.append([InlineKeyboardButton(f"🚪 خروج از ائتلاف محاصره {target_c['name']} (به رهبری {lead_c['name']})", callback_data=f"dip:blk_leave:{lead_c['id']}:{target_c['id']}")])
+                else:
+                    keyboard.append([InlineKeyboardButton(f"⚓ پیوستن به محاصره {target_c['name']} (به رهبری {lead_c['name']})", callback_data=f"dip:blk_join:{lead_c['id']}:{target_c['id']}")])
 
     qualified, units, val = db.check_strait_navy_qualification(country["id"])
     if not qualified and not im_blockaded and not my_blockades:
@@ -745,10 +764,13 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
-        # موازنه قدرت نبرد دریایی: ناوگان مدافع + موشک‌های ضدکشتی در برابر ناوگان مهاجم
+        # موازنه قدرت نبرد دریایی: ناوگان مدافع + موشک‌های ضدکشتی در برابر ناوگان مهاجم و متحدین ائتلاف
         defender_navy, antiship_power, defender_power = db.calculate_blockade_break_power(country["id"])
-        blockader_power = db.calculate_naval_power(blockader_c["id"])
+        total_blk_power, coalition_details = db.calculate_blockade_defense_power(country["id"])
+        blockader_power = total_blk_power if total_blk_power > 0 else db.calculate_naval_power(blockader_c["id"])
         required_power = max(blockader_power, 1)
+
+        coalition_names = " + ".join([f"{p['flag']} {p['name']}" for p in coalition_details]) if coalition_details else f"{blockader_c['flag']} {blockader_c['name']}"
 
         if defender_power < required_power:
             spent = db.consume_antiship_missiles(country["id"], max(1, min(antiship_stock, max(1, int(antiship_stock * 0.15)))))
@@ -758,7 +780,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 f"• ⚓ **قدرت یگان‌های سطحی/زیرسطحی مدافع:** {defender_navy:,} امتیاز\n"
                 f"• 🛡️ **قدرت آتش موشک‌های ضدکشتی مدافع ({antiship_stock:,} فروند):** {antiship_power:,} امتیاز\n"
                 f"• ⚔️ **مجموع توان رزمی مدافع:** {defender_power:,} امتیاز\n"
-                f"• 🛑 **قدرت ناوگان محاصره‌کننده ({blockader_c['flag']} {blockader_c['name']}):** {blockader_power:,} امتیاز\n"
+                f"• 🛑 **قدرت ائتلاف محاصره‌کننده ({coalition_names}):** {blockader_power:,} امتیاز\n"
                 f"• 🎯 **حداقل توان لازم جهت درهم شکستن خطوط محاصره (۱۰۰٪):** {required_power:,} امتیاز\n"
                 f"• 💥 **مهمات مصرف‌شده در آتشباری ناموفق:** {spent:,} فروند\n\n"
                 f"⚠️ ناوگان محاصره‌کننده با تکیه بر سامانه‌های پدافند لایه‌ای ایجیس و برتری تناژ دریایی، آتش موشکی شما را دفع کرده و خطوط محاصره بنادر را حفظ نمود.",
@@ -790,7 +812,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"💥 **پیروزی رزمی! محاصره دریایی بنادر کشور {country['name']} با موفقیت شکسته شد.**\n━━━━━━━━━━━━━━━━━━\n\n"
             f"• ⚓ **قدرت ناوگان مدافع:** {defender_navy:,} امتیاز\n"
             f"• 🛡️ **آتش موشکی مصرف‌شده:** {spent:,} فروند\n"
-            f"• 🛑 **ناوگان عقب‌رانده‌شده:** {blockader_c['flag']} {blockader_c['name']} ({blockader_power:,} امتیاز)\n\n"
+            f"• 🛑 **ائتلاف عقب‌رانده‌شده:** {coalition_names} ({blockader_power:,} امتیاز)\n\n"
             f"📈 شاخص رضایت عمومی به سطح پیش از محاصره بازگشت (بازیابی ۱۵٪).",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
             parse_mode="Markdown"
@@ -1070,6 +1092,107 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             parse_mode="Markdown"
         )
 
+    elif data.startswith("dip:blk_invite:"):
+        target_id = int(data.split(":")[2])
+        target_c = db.get_country_by_id(target_id)
+        allies = db.get_allied_countries_for_blockade(country["id"])
+        if not allies:
+            await query.edit_message_text(
+                "🤝 **متحد نظامی واجد شرایطی یافت نشد!**\n\n"
+                "فقط کشورهایی که پیمان اتحاد نظامی رسمی (Allied) با شما دارند و به آب‌های آزاد دسترسی دارند می‌توانند به ائتلاف محاصره دعوت شوند.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        text = (
+            "🤝 **دعوت از متحدین نظامی به ائتلاف محاصره دریایی**\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"کشور هدف محاصره: {target_c['flag'] if target_c else ''} **{target_c['name'] if target_c else ''}**\n\n"
+            "برای ارسال پیام دعوت به ائتلاف محاصره، کشور متحد مورد نظر را انتخاب فرمایید:"
+        )
+        keyboard = []
+        for a in allies:
+            keyboard.append([InlineKeyboardButton(f"{a['flag']} {a['name']}", callback_data=f"dip:blk_send_inv:{target_id}:{a['id']}")])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("dip:blk_send_inv:"):
+        _, _, target_id_s, ally_id_s = data.split(":")
+        target_id = int(target_id_s)
+        ally_id = int(ally_id_s)
+        target_c = db.get_country_by_id(target_id)
+        ally_c = db.get_country_by_id(ally_id)
+
+        if ally_c and ally_c.get("player_id"):
+            inv_msg = (
+                f"⚓ **دعوت‌نامه رسمی پیوستن به ائتلاف محاصره دریایی**\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                f"متحد نظامی شما ({country['flag']} **{country['name']}**) از شما دعوت کرده است تا با اعزام ناوگروه رزمی، به ائتلاف محاصره بنادر کشور {target_c['flag'] if target_c else ''} **{target_c['name'] if target_c else ''}** ملحق شوید.\n\n"
+                "آیا با اعزام ناوگروه و پیوستن به این محاصره مشترک موافقت می‌فرمایید؟"
+            )
+            inv_kb = [
+                [InlineKeyboardButton("⚓ قبول و پیوستن به ائتلاف محاصره", callback_data=f"dip:blk_join:{country['id']}:{target_id}")],
+                [InlineKeyboardButton("❌ رد دعوت", callback_data="dip:blockade_start")],
+            ]
+            try:
+                await context.bot.send_message(chat_id=ally_c["player_id"], text=inv_msg, reply_markup=InlineKeyboardMarkup(inv_kb), parse_mode="Markdown")
+            except Exception:
+                pass
+
+        await query.edit_message_text(
+            f"✅ **دعوت‌نامه پیوستن به ائتلاف محاصره با موفقیت برای رهبر کشور {ally_c['flag'] if ally_c else ''} {ally_c['name'] if ally_c else ''} ارسال شد.**",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:blockade_start")]]),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("dip:blk_join:"):
+        _, _, lead_id_s, target_id_s = data.split(":")
+        lead_id = int(lead_id_s)
+        target_id = int(target_id_s)
+        lead_c = db.get_country_by_id(lead_id)
+        target_c = db.get_country_by_id(target_id)
+
+        ok, msg = db.join_naval_blockade(lead_id, target_id, country["id"])
+        if not ok:
+            await query.edit_message_text(
+                f"❌ **عدم امکان پیوستن:**\n\n{msg}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:blockade_start")]]),
+                parse_mode="Markdown"
+            )
+            return
+
+        if lead_c and lead_c.get("player_id"):
+            try:
+                await context.bot.send_message(
+                    chat_id=lead_c["player_id"],
+                    text=f"🤝 **پیوستن متحد به ائتلاف محاصره!**\n\nکشور {country['flag']} **{country['name']}** با ناوگروه دریایی خود به ائتلاف محاصره شما علیه {target_c['name'] if target_c else 'هدف'} پیوست.",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+        await query.edit_message_text(
+            f"⚓ **پیوستن به ائتلاف محاصره موفقیت‌آمیز بود!**\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"• 👑 **رهبر ائتلاف:** {lead_c['flag'] if lead_c else ''} {lead_c['name'] if lead_c else ''}\n"
+            f"• 🎯 **کشور تحت محاصره:** {target_c['flag'] if target_c else ''} {target_c['name'] if target_c else ''}\n"
+            f"• 🤝 **عضو جدید ائتلاف:** {country['flag']} {country['name']}\n\n"
+            "توان دریایی ناوگروه شما به قدرت بازدارندگی محاصره اضافه گردید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("dip:blk_leave:"):
+        _, _, lead_id_s, target_id_s = data.split(":")
+        lead_id = int(lead_id_s)
+        target_id = int(target_id_s)
+        ok, msg = db.leave_naval_blockade(lead_id, target_id, country["id"])
+        await query.edit_message_text(
+            f"🚪 **خروج از ائتلاف محاصره:**\n\n{msg}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:blockade_start")]]),
+            parse_mode="Markdown"
+        )
+
     elif data.startswith("dip:mil_target:"):
         target_id = int(data.split(":")[2])
         if db.are_sanctioned(country["id"], target_id):
@@ -1317,27 +1440,55 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 t_flag = target_c.get('flag', '') if target_c else ''
                 sea_reason = f"کشور مقصد ({t_flag} {t_name}) محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد."
 
+        strait_analysis = db.get_trade_route_strait_analysis(my_key, t_key)
+        is_strait_blocked = strait_analysis["is_blocked"]
+        has_strait_tolls = strait_analysis["has_tolls"]
+        strait_toll_total = strait_analysis["total_toll"]
+
+        sea_used, sea_cap = db.get_trade_mode_budget(country["id"], "sea")
+        air_used, air_cap = db.get_trade_mode_budget(country["id"], "air")
+        land_used, land_cap = db.get_trade_mode_budget(country["id"], "land")
+
+        if not has_sea:
+            sea_line = f"• 🚫 **ترابری دریایی:** غیرفعال ({sea_reason})"
+            sea_btn = None
+        elif is_strait_blocked:
+            blocked_str = "، ".join([s["name"] for s in strait_analysis["blocked_straits"]])
+            sea_line = f"• ⛔ **ترابری دریایی:** مسدود ({blocked_str})"
+            sea_btn = InlineKeyboardButton(f"⛔ دریایی (مسدود: {blocked_str})", callback_data=f"dip:mil_finish:sea:{payer}")
+        elif has_strait_tolls:
+            toll_str = "، ".join([f"{s['name']} ({s['toll_amount']:,} $)" for s in strait_analysis["toll_straits"]])
+            total_sea_cost = 300_000 + strait_toll_total
+            sea_line = f"• 🚢 **ترابری دریایی:** ۳۰۰,۰۰۰ دلار + {strait_toll_total:,} دلار عوارض تنگه‌ها ({toll_str}) = **{total_sea_cost:,} دلار** (سقف امروز: {sea_used}/{sea_cap})"
+            sea_btn = InlineKeyboardButton(f"🚢 ترابری دریایی ({total_sea_cost:,} $ با عوارض)", callback_data=f"dip:mil_finish:sea:{payer}")
+        else:
+            sea_line = f"• 🚢 **ترابری دریایی:** ۳۰۰,۰۰۰ دلار (سقف امروز: {sea_used}/{sea_cap})"
+            sea_btn = InlineKeyboardButton(f"🚢 ترابری دریایی ({sea_used}/{sea_cap})", callback_data=f"dip:mil_finish:sea:{payer}")
+
         text = (
             "🌐 **انتخاب روش ترابری و ترانزیت محموله نظامی**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "لطفاً روش ارسال تجهیزات را انتخاب بفرمایید:\n\n"
-            f"⚖️ **ظرفیت هر محموله (تن):** کشتی **{db.transfer_weight_capacity('sea'):,}** | قطار/کامیون **{db.transfer_weight_capacity('land'):,}** | هواپیما **{db.transfer_weight_capacity('air'):,}**\\n"
-            "*(جنگنده ≈ ۲۰ تن | تانک ≈ ۳۰ تن | پدافند ≈ ۱۵ تن | موشک ≈ ۲ تن | پهپاد ≈ ۰.۴ تن)*\\n\\n"
-            "• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سریع‌ترین / فعال در زمان محاصره)\n"
-            "• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (ترانزیت زمینی / فعال)\n"
-            + ("• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)" if has_sea else f"• 🚫 **ترابری دریایی:** غیرفعال ({sea_reason})")
+            f"⚖️ **ظرفیت هر محموله (تن):** کشتی **{db.transfer_weight_capacity('sea'):,}** | قطار/کامیون **{db.transfer_weight_capacity('land'):,}** | هواپیما **{db.transfer_weight_capacity('air'):,}**\n"
+            "*(جنگنده ≈ ۲۰ تن | تانک ≈ ۳۰ تن | پدافند ≈ ۱۵ تن | موشک ≈ ۲ تن | پهپاد ≈ ۰.۴ تن)*\n\n"
+            f"• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سقف امروز: {air_used}/{air_cap})\n"
+            f"• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (سقف امروز: {land_used}/{land_cap})\n"
+            f"{sea_line}"
         )
         keyboard = [
-            [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
-            [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+            [InlineKeyboardButton(f"✈️ ترابری هوایی ({air_used}/{air_cap})", callback_data=f"dip:mil_finish:air:{payer}")],
+            [InlineKeyboardButton(f"🚛 ترابری زمینی ({land_used}/{land_cap})", callback_data=f"dip:mil_finish:land:{payer}")],
         ]
-        if has_sea:
-            keyboard.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:sea:{payer}")])
+        if sea_btn:
+            keyboard.append([sea_btn])
         keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    elif data.startswith("dip:mil_finish:"):
-        _, _, mode, payer = data.split(":")
+    elif data.startswith("dip:mil_finish:") or data.startswith("dip:mil_finish_confirm:"):
+        is_confirmed = data.startswith("dip:mil_finish_confirm:")
+        parts = data.split(":")
+        mode = parts[2]
+        payer = parts[3]
         draft = context.user_data.get("mil_draft", {})
         target_c = db.get_country_by_id(draft.get("target_id", 0))
 
@@ -1349,9 +1500,24 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        # بررسی سقف تجارت روزانه برای روش ترابری انتخاب‌شده
+        can_trade, limit_msg = db.check_trade_mode_limit(country["id"], mode)
+        if not can_trade:
+            await query.edit_message_text(
+                limit_msg,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏪 احداث زیرساخت در فروشگاه", callback_data="shopcat:transport")],
+                    [InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
+        p_key = country.get("country_key")
+        t_key = target_c.get("country_key")
+        strait_analysis = db.get_trade_route_strait_analysis(p_key, t_key)
+
         if mode == "sea":
-            p_key = country.get("country_key")
-            t_key = target_c.get("country_key")
             if not db.has_open_sea_access(p_key) or not db.has_open_sea_access(t_key):
                 no_sea_c = country if not db.has_open_sea_access(p_key) else target_c
                 await query.edit_message_text(
@@ -1367,17 +1533,61 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 )
                 return
 
-        if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
-            await query.edit_message_text(
-                "⚓ **ترابری دریایی مسدود است!**\n\nکشور شما یا کشور مقصد در حال حاضر تحت محاصره کامل دریایی است. لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
-                    [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+            if db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"]):
+                await query.edit_message_text(
+                    "⚓ **ترابری دریایی مسدود است!**\n\nکشور شما یا کشور مقصد در حال حاضر تحت محاصره کامل دریایی است. لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if strait_analysis["is_blocked"]:
+                blocked_details = "\n".join([f"• ⛔ **{s['name']}** (تحت مسدودسازی کشور {s['owner_flag']} **{s['owner_name']}**)" for s in strait_analysis["blocked_straits"]])
+                await query.edit_message_text(
+                    f"⚓ **ترابری دریایی مسدود است!**\n\n"
+                    f"مسیر ترانزیت دریایی به دلیل مسدود بودن آبراه‌های استراتژیک قطع می‌باشد:\n\n"
+                    f"{blocked_details}\n\n"
+                    f"💡 لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:land:{payer}")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if strait_analysis["has_tolls"] and not is_confirmed:
+                toll_lines = "\n".join([f"• 🌊 **{s['name']}** (تحت کنترل {s['owner_flag']} **{s['owner_name']}**): `{s['toll_amount']:,} $`" for s in strait_analysis["toll_straits"]])
+                total_toll = strait_analysis["total_toll"]
+                total_transport = 300_000 + total_toll
+                payer_label = "فروشنده (پیشنهاددهنده)" if payer == "seller" else f"خریدار ({target_c['name']})"
+
+                text = (
+                    f"🌊 **هشدار و تأییدیه عوارض ترانزیت تنگه‌های دریایی (معاهده نظامی)**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"کشور محترم، ناوگان ترابری دریایی حامل تسلیحات برای رسیدن به مقصد ({target_c['flag']} **{target_c['name']}**) باید از تنگه‌های دارای **عوارض حق عبور** عبور نماید:\n\n"
+                    f"{toll_lines}\n\n"
+                    f"💰 **تفکیک هزینه‌های ترانزیت دریایی:**\n"
+                    f"• **کرایه پایه ناوگان دریایی:** `۳۰۰,۰۰۰ $`\n"
+                    f"• **مجموع عوارض تنگه‌ها:** `{total_toll:,} $`\n"
+                    f"• **مجموع کل هزینه ترابری:** **`{total_transport:,} $`**\n"
+                    f"• **پرداخت‌کننده هزینه:** **{payer_label}**\n\n"
+                    f"⚠️ *مبلغ عوارض هنگام امضا و اجرای معاهده مستقیماً به خزانه کشورهای کنترل‌کننده تنگه واریز خواهد شد.*\n\n"
+                    f"آیا با صدور و ارسال این معاهده تسلیحاتی موافقید؟"
+                )
+                keyboard = [
+                    [InlineKeyboardButton(f"✅ تأیید و ارسال معاهده ({total_transport:,} $)", callback_data=f"dip:mil_finish_confirm:sea:{payer}")],
+                    [InlineKeyboardButton("✈️ تغییر به ترابری هوایی (۲,۰۰۰,۰۰۰ $)", callback_data=f"dip:mil_finish:air:{payer}")],
+                    [InlineKeyboardButton("🚛 تغییر به ترابری زمینی (۱,۰۰۰,۰۰۰ $)", callback_data=f"dip:mil_finish:land:{payer}")],
                     [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
-                ]),
-                parse_mode="Markdown"
-            )
-            return
+                ]
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                return
 
         is_smuggled = draft.get("is_smuggled", 0)
         orig_key = draft.get("origin_key", country.get("country_key"))
@@ -1439,6 +1649,13 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             license_status=lic_status
         )
 
+        strait_toll_msg = ""
+        if mode == "sea" and strait_analysis["has_tolls"]:
+            toll_names = "، ".join([f"{s['name']} ({s['toll_amount']:,} $)" for s in strait_analysis["toll_straits"]])
+            strait_toll_msg = f"\n• 🌊 **عوارض ترانزیت تنگه‌ها:** {strait_analysis['total_toll']:,} $ ({toll_names})"
+
+        total_trans_cost = t_cost + (strait_analysis["total_toll"] if mode == "sea" else 0)
+
         if lic_status == "pending":
             orig_msg = (
                 f"📜 **درخواست صدور مجوز صادرات تسلیحات (End-User Export License)**\n"
@@ -1447,7 +1664,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 f"• 🎖️ **سلاح:** {draft['equipment_name']}\n"
                 f"• 📦 **تعداد:** {draft['offered_amount']:,} واحد\n"
                 f"• 💰 **مبلغ معامله:** {format_money(draft['requested_amount'])}\n"
-                f"• ✈️ **روش ترابری:** {mode_labels.get(mode, mode)}\n\n"
+                f"• ✈️ **روش ترابری:** {mode_labels.get(mode, mode)}{strait_toll_msg}\n\n"
                 f"⚠️ *طبق حقوق بین‌الملل و قوانین ITAR، انتقال این سلاح مشروط به تأیید شما به عنوان کشور سازنده اصلی است.*\n\n"
                 f"آیا با صدور مجوز صادرات و انتقال این سلاح به مقصد موافقت می‌فرمایید؟"
             )
@@ -1477,8 +1694,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 f"• **جنگ‌افزار:** {draft['equipment_name']} (قاچاق مخفیانه)\n"
                 f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
                 f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
-                f"• **روش ترابری:** {mode_labels.get(mode, mode)} (کاروان مخفی)\n"
-                f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+                f"• **روش ترابری:** {mode_labels.get(mode, mode)} (کاروان مخفی){strait_toll_msg}\n"
+                f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(total_trans_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
                 f"⚠️ *هشدار اطلاعاتی:* این محموله بدون مجوز سازنده ارسال می‌شود و ۲۵٪ ریسک رهگیری و توقیف مرزی دارد.\n\n"
                 "آیا با دریافت و پذیرش این محموله قاچاق موافقید؟"
             )
@@ -1488,8 +1705,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 f"• **سلاح ارسالی:** {draft['equipment_name']}\n"
                 f"• **تعداد تحویلی:** {draft['offered_amount']:,} واحد\n"
                 f"• **مبلغ پرداختی درخواستی از شما:** {format_money(draft['requested_amount'])}\n"
-                f"• **روش ترابری:** {mode_labels.get(mode, mode)}\n"
-                f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+                f"• **روش ترابری:** {mode_labels.get(mode, mode)}{strait_toll_msg}\n"
+                f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(total_trans_cost)}):** {'فروشنده' if payer == 'seller' else 'خریدار (شما)'}\n\n"
                 "آیا با دریافت و امضای این معاهده تسلیحاتی موافقید؟"
             )
 
@@ -1591,27 +1808,55 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 t_flag = target_c.get('flag', '') if target_c else ''
                 sea_reason = f"کشور مقصد ({t_flag} {t_name}) محصور در خشکی است و به آب‌های آزاد دسترسی ساحلی ندارد."
 
+        strait_analysis = db.get_trade_route_strait_analysis(my_key, t_key)
+        is_strait_blocked = strait_analysis["is_blocked"]
+        has_strait_tolls = strait_analysis["has_tolls"]
+        strait_toll_total = strait_analysis["total_toll"]
+
+        sea_used, sea_cap = db.get_trade_mode_budget(country["id"], "sea")
+        air_used, air_cap = db.get_trade_mode_budget(country["id"], "air")
+        land_used, land_cap = db.get_trade_mode_budget(country["id"], "land")
+
+        if not has_sea:
+            sea_line = f"• 🚫 **ترابری دریایی:** غیرفعال ({sea_reason})"
+            sea_btn = None
+        elif is_strait_blocked:
+            blocked_str = "، ".join([s["name"] for s in strait_analysis["blocked_straits"]])
+            sea_line = f"• ⛔ **ترابری دریایی:** مسدود ({blocked_str})"
+            sea_btn = InlineKeyboardButton(f"⛔ دریایی (مسدود: {blocked_str})", callback_data=f"dip:trade_finish:sea:{payer}")
+        elif has_strait_tolls:
+            toll_str = "، ".join([f"{s['name']} ({s['toll_amount']:,} $)" for s in strait_analysis["toll_straits"]])
+            total_sea_cost = 300_000 + strait_toll_total
+            sea_line = f"• 🚢 **ترابری دریایی:** ۳۰۰,۰۰۰ دلار + {strait_toll_total:,} دلار عوارض تنگه‌ها ({toll_str}) = **{total_sea_cost:,} دلار** (سقف امروز: {sea_used}/{sea_cap})"
+            sea_btn = InlineKeyboardButton(f"🚢 ترابری دریایی ({total_sea_cost:,} $ با عوارض)", callback_data=f"dip:trade_finish:sea:{payer}")
+        else:
+            sea_line = f"• 🚢 **ترابری دریایی:** ۳۰۰,۰۰۰ دلار (سقف امروز: {sea_used}/{sea_cap})"
+            sea_btn = InlineKeyboardButton(f"🚢 ترابری دریایی ({sea_used}/{sea_cap})", callback_data=f"dip:trade_finish:sea:{payer}")
+
         text = (
             "🌐 **انتخاب روش ترابری و ترانزیت محموله تجاری**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "لطفاً روش ارسال کالاهای تجاری را انتخاب بفرمایید:\n\n"
-            f"⚖️ **ظرفیت هر محموله (تن):** کشتی **{db.transfer_weight_capacity('sea'):,}** | قطار/کامیون **{db.transfer_weight_capacity('land'):,}** | هواپیما **{db.transfer_weight_capacity('air'):,}**\\n"
-            "*(جنگنده ≈ ۲۰ تن | تانک ≈ ۳۰ تن | پدافند ≈ ۱۵ تن | موشک ≈ ۲ تن | پهپاد ≈ ۰.۴ تن)*\\n\\n"
-            "• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سریع‌ترین / فعال در زمان محاصره)\n"
-            "• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (ترانزیت زمینی / فعال)\n"
-            + ("• **🚢 ترابری دریایی:** ۳۰۰,۰۰۰ دلار (ارزان‌ترین / مسدود در زمان محاصره دریایی)" if has_sea else f"• 🚫 **ترابری دریایی:** غیرفعال ({sea_reason})")
+            f"⚖️ **ظرفیت هر محموله (تن):** کشتی **{db.transfer_weight_capacity('sea'):,}** | قطار/کامیون **{db.transfer_weight_capacity('land'):,}** | هواپیما **{db.transfer_weight_capacity('air'):,}**\n"
+            "*(جنگنده ≈ ۲۰ تن | تانک ≈ ۳۰ تن | پدافند ≈ ۱۵ تن | موشک ≈ ۲ تن | پهپاد ≈ ۰.۴ تن)*\n\n"
+            f"• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سقف امروز: {air_used}/{air_cap})\n"
+            f"• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (سقف امروز: {land_used}/{land_cap})\n"
+            f"{sea_line}"
         )
         keyboard = [
-            [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
-            [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+            [InlineKeyboardButton(f"✈️ ترابری هوایی ({air_used}/{air_cap})", callback_data=f"dip:trade_finish:air:{payer}")],
+            [InlineKeyboardButton(f"🚛 ترابری زمینی ({land_used}/{land_cap})", callback_data=f"dip:trade_finish:land:{payer}")],
         ]
-        if has_sea:
-            keyboard.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:sea:{payer}")])
+        if sea_btn:
+            keyboard.append([sea_btn])
         keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    elif data.startswith("dip:trade_finish:"):
-        _, _, mode, payer = data.split(":")
+    elif data.startswith("dip:trade_finish:") or data.startswith("dip:trade_finish_confirm:"):
+        is_confirmed = data.startswith("dip:trade_finish_confirm:")
+        parts = data.split(":")
+        mode = parts[2]
+        payer = parts[3]
         draft = context.user_data.get("trade_draft", {})
         target_c = db.get_country_by_id(draft.get("target_id", 0))
 
@@ -1623,9 +1868,24 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        # بررسی سقف تجارت روزانه برای روش ترابری انتخاب‌شده
+        can_trade, limit_msg = db.check_trade_mode_limit(country["id"], mode)
+        if not can_trade:
+            await query.edit_message_text(
+                limit_msg,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏪 احداث زیرساخت در فروشگاه", callback_data="shopcat:transport")],
+                    [InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
+        p_key = country.get("country_key")
+        t_key = target_c.get("country_key")
+        strait_analysis = db.get_trade_route_strait_analysis(p_key, t_key)
+
         if mode == "sea":
-            p_key = country.get("country_key")
-            t_key = target_c.get("country_key")
             if not db.has_open_sea_access(p_key) or not db.has_open_sea_access(t_key):
                 no_sea_c = country if not db.has_open_sea_access(p_key) else target_c
                 await query.edit_message_text(
@@ -1641,17 +1901,61 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 )
                 return
 
-        if mode == "sea" and (db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"])):
-            await query.edit_message_text(
-                "⚓ **ترابری دریایی مسدود است!**\n\nکشور شما یا کشور مقصد در حال حاضر تحت محاصره کامل دریایی است. لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
-                    [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+            if db.is_country_blockaded(country["id"]) or db.is_country_blockaded(draft["target_id"]):
+                await query.edit_message_text(
+                    "⚓ **ترابری دریایی مسدود است!**\n\nکشور شما یا کشور مقصد در حال حاضر تحت محاصره کامل دریایی است. لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if strait_analysis["is_blocked"]:
+                blocked_details = "\n".join([f"• ⛔ **{s['name']}** (تحت مسدودسازی کشور {s['owner_flag']} **{s['owner_name']}**)" for s in strait_analysis["blocked_straits"]])
+                await query.edit_message_text(
+                    f"⚓ **ترابری دریایی مسدود است!**\n\n"
+                    f"مسیر ترانزیت دریایی بین دو کشور به دلیل مسدود بودن آبراه‌های استراتژیک قطع می‌باشد:\n\n"
+                    f"{blocked_details}\n\n"
+                    f"💡 لطفاً برای این معاهده از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:land:{payer}")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if strait_analysis["has_tolls"] and not is_confirmed:
+                toll_lines = "\n".join([f"• 🌊 **{s['name']}** (تحت کنترل {s['owner_flag']} **{s['owner_name']}**): `{s['toll_amount']:,} $`" for s in strait_analysis["toll_straits"]])
+                total_toll = strait_analysis["total_toll"]
+                total_transport = 300_000 + total_toll
+                payer_label = "فروشنده (پیشنهاددهنده)" if payer == "seller" else f"خریدار ({target_c['name']})"
+
+                text = (
+                    f"🌊 **هشدار و تأییدیه عوارض ترانزیت تنگه‌های دریایی**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"کشور محترم، ناوگان ترابری دریایی این معاهده برای رسیدن به مقصد ({target_c['flag']} **{target_c['name']}**) باید از تنگه‌های دارای **عوارض حق عبور** عبور نماید:\n\n"
+                    f"{toll_lines}\n\n"
+                    f"💰 **تفکیک هزینه‌های ترانزیت دریایی:**\n"
+                    f"• **کرایه پایه ناوگان دریایی:** `۳۰۰,۰۰۰ $`\n"
+                    f"• **مجموع عوارض تنگه‌ها:** `{total_toll:,} $`\n"
+                    f"• **مجموع کل هزینه ترابری:** **`{total_transport:,} $`**\n"
+                    f"• **پرداخت‌کننده هزینه:** **{payer_label}**\n\n"
+                    f"⚠️ *مبلغ عوارض هنگام تأیید معاهده مستقیماً به خزانه کشورهای کنترل‌کننده تنگه واریز خواهد شد.*\n\n"
+                    f"آیا با صدور و ارسال این معاهده تجاری موافقید؟"
+                )
+                keyboard = [
+                    [InlineKeyboardButton(f"✅ تأیید و ارسال معاهده ({total_transport:,} $)", callback_data=f"dip:trade_finish_confirm:sea:{payer}")],
+                    [InlineKeyboardButton("✈️ تغییر به ترابری هوایی (۲,۰۰۰,۰۰۰ $)", callback_data=f"dip:trade_finish:air:{payer}")],
+                    [InlineKeyboardButton("🚛 تغییر به ترابری زمینی (۱,۰۰۰,۰۰۰ $)", callback_data=f"dip:trade_finish:land:{payer}")],
                     [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
-                ]),
-                parse_mode="Markdown"
-            )
-            return
+                ]
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                return
 
         cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
         mode_labels = {"air": "✈️ ترابری هوایی", "land": "🚛 ترابری زمینی", "sea": "🚢 ترابری دریایی"}
@@ -1671,12 +1975,19 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
 
+        strait_toll_msg = ""
+        if mode == "sea" and strait_analysis["has_tolls"]:
+            toll_names = "، ".join([f"{s['name']} ({s['toll_amount']:,} $)" for s in strait_analysis["toll_straits"]])
+            strait_toll_msg = f"\n• 🌊 **عوارض ترانزیت تنگه‌ها:** {strait_analysis['total_toll']:,} $ ({toll_names})"
+
+        total_trans_cost = t_cost + (strait_analysis["total_toll"] if mode == "sea" else 0)
+
         recip_msg = (
             f"📜 **پیشنهاد قرارداد تجاری رسمی از طرف {country['flag']} {country['name']}**\n\n"
             f"• **کالای تحویلی به شما:** {draft['offered_amount']:,} {type_map.get(draft['offered_type'])}\n"
             f"• **مابه‌ازای درخواستی از شما:** {draft['requested_amount']:,} {type_map.get(draft['requested_type'])}\n"
-            f"• **روش ترابری:** {mode_labels.get(mode, mode)}\n"
-            f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(t_cost)}):** {'فروشنده (پیشنهاددهنده)' if payer == 'seller' else 'خریدار (شما)'}\n\n"
+            f"• **روش ترابری:** {mode_labels.get(mode, mode)}{strait_toll_msg}\n"
+            f"• **پرداخت‌کننده هزینه ترانزیت ({format_money(total_trans_cost)}):** {'فروشنده (پیشنهاددهنده)' if payer == 'seller' else 'خریدار (شما)'}\n\n"
             "آیا با انعقاد و اجرای این معاهده تجاری موافقید؟"
         )
         recip_kb = [
@@ -1979,7 +2290,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             parse_mode="Markdown"
         )
 
-    elif data.startswith("dip:aid_finish:"):
+    elif data.startswith("dip:aid_finish:") or data.startswith("dip:aid_finish_confirm:"):
+        is_confirmed = data.startswith("dip:aid_finish_confirm:")
         mode = data.split(":")[2]
         draft = context.user_data.get("aid_draft")
         if not draft or "target_id" not in draft or "amount" not in draft:
@@ -1989,15 +2301,66 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         target_id = draft["target_id"]
         res_type = draft["resource_type"]
         amt = draft["amount"]
+        target_c = db.get_country_by_id(target_id)
+        if not target_c:
+            await query.edit_message_text("❌ کشور مقصد یافت نشد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
+            return
+
+        my_key = country.get("country_key")
+        t_key = target_c.get("country_key")
+        strait_analysis = db.get_trade_route_strait_analysis(my_key, t_key)
+
+        if mode == "sea":
+            if strait_analysis["is_blocked"]:
+                blocked_details = "\n".join([f"• ⛔ **{s['name']}** (تحت مسدودسازی کشور {s['owner_flag']} **{s['owner_name']}**)" for s in strait_analysis["blocked_straits"]])
+                await query.edit_message_text(
+                    f"⚓ **ترابری دریایی مسدود است!**\n\n"
+                    f"مسیر ترانزیت دریایی بین دو کشور به دلیل مسدود بودن آبراه‌های استراتژیک قطع می‌باشد:\n\n"
+                    f"{blocked_details}\n\n"
+                    f"💡 لطفاً برای ارسال این کمک از ترابری هوایی یا زمینی استفاده فرمایید.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")],
+                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")],
+                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if strait_analysis["has_tolls"] and not is_confirmed:
+                toll_lines = "\n".join([f"• 🌊 **{s['name']}** (تحت کنترل {s['owner_flag']} **{s['owner_name']}**): `{s['toll_amount']:,} $`" for s in strait_analysis["toll_straits"]])
+                total_toll = strait_analysis["total_toll"]
+                total_transport = 300_000 + total_toll
+
+                text = (
+                    f"🌊 **هشدار و تأییدیه عوارض ترانزیت تنگه‌های دریایی (کمک خارجی)**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"کشور محترم، ناوگان حامل محموله انسان‌دوستانه برای رسیدن به مقصد ({target_c['flag']} **{target_c['name']}**) باید از تنگه‌های دارای **عوارض حق عبور** عبور نماید:\n\n"
+                    f"{toll_lines}\n\n"
+                    f"💰 **تفکیک هزینه‌های ترانزیت دریایی:**\n"
+                    f"• **کرایه پایه ناوگان دریایی:** `۳۰۰,۰۰۰ $`\n"
+                    f"• **مجموع عوارض تنگه‌ها:** `{total_toll:,} $`\n"
+                    f"• **مجموع کل هزینه ترابری از خزانه شما:** **`{total_transport:,} $`**\n\n"
+                    f"⚠️ *مبلغ عوارض مستقیماً به خزانه کشورهای کنترل‌کننده تنگه واریز خواهد شد.*\n\n"
+                    f"آیا با ارسال کمک با پرداخت عوارض موافقید؟"
+                )
+                keyboard = [
+                    [InlineKeyboardButton(f"✅ تأیید و ارسال کمک ({total_transport:,} $)", callback_data="dip:aid_finish_confirm:sea")],
+                    [InlineKeyboardButton("✈️ تغییر به ترابری هوایی (۲,۰۰۰,۰۰۰ $)", callback_data="dip:aid_finish:air")],
+                    [InlineKeyboardButton("🚛 تغییر به ترابری زمینی (۱,۰۰۰,۰۰۰ $)", callback_data="dip:aid_finish:land")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                ]
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                return
 
         succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt, transport_mode=mode)
         if not succ:
             await query.edit_message_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
             return
 
-        target_c = db.get_country_by_id(target_id)
         type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
-        mode_labels = {"sea": "🚢 ترابری دریایی (۳۰۰k $)", "land": "🚛 ترابری زمینی (۱M $)", "air": "✈️ ترابری هوایی (۲M $)"}
+        mode_labels = {"sea": "🚢 ترابری دریایی", "land": "🚛 ترابری زمینی (۱M $)", "air": "✈️ ترابری هوایی (۲M $)"}
+        sea_label = f"🚢 ترابری دریایی (۳۰۰k $ + {strait_analysis['total_toll']:,} $ عوارض)" if (mode == "sea" and strait_analysis["has_tolls"]) else "🚢 ترابری دریایی (۳۰۰k $)"
 
         # Trigger Anti-cheat Alert
         if amt >= 5_000_000 or res_type in ["gold", "oil"]:
@@ -2009,7 +2372,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"• **اهداکننده:** {country['flag']} {country['name']}\n"
             f"• **دریافت‌کننده:** {target_c['flag']} {target_c['name']}\n"
             f"• **نوع و مقدار کمک:** {amt:,} {type_labels.get(res_type, res_type)}\n"
-            f"• **روش ترابری ناوگان:** {mode_labels.get(mode, mode)}\n\n"
+            f"• **روش ترابری ناوگان:** {sea_label if mode == 'sea' else mode_labels.get(mode, mode)}\n\n"
             "✅ محموله با موفقیت بارگیری و تحویل کشور مقصد گردید."
         )
 
@@ -2352,25 +2715,35 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             target_c = db.get_country_by_id(target_id)
             type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
 
+            my_key = country.get("country_key")
+            t_key = target_c.get("country_key") if target_c else ""
+            has_sea = db.has_open_sea_access(my_key) and db.has_open_sea_access(t_key)
+            strait_analysis = db.get_trade_route_strait_analysis(my_key, t_key)
+
+            kb = []
+            if has_sea:
+                if strait_analysis["is_blocked"]:
+                    blocked_str = "، ".join([s["name"] for s in strait_analysis["blocked_straits"]])
+                    kb.append([InlineKeyboardButton(f"⛔ ترابری دریایی (مسدود: {blocked_str})", callback_data="dip:aid_finish:sea")])
+                elif strait_analysis["has_tolls"]:
+                    total_sea = 300_000 + strait_analysis["total_toll"]
+                    kb.append([InlineKeyboardButton(f"🚢 ترابری دریایی ({total_sea:,} $ با عوارض)", callback_data="dip:aid_finish:sea")])
+                else:
+                    kb.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:sea")])
+
+            kb.append([InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")])
+            kb.append([InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")])
+            kb.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
+
             text = (
                 f"🕊️ **ارسال کمک‌های انسان‌دوستانه — انتخاب ناوگان و روش ترابری**\n"
                 "━━━━━━━━━━━━━━━━━━\n\n"
                 f"• **کشور مقصد:** {target_c['flag']} {target_c['name']}\n"
                 f"• **محموله ارسالی:** {amt:,} {type_labels.get(res_type, res_type)}\n\n"
                 "لطفاً روش ترابری و لجستیک انتقال این کمک را انتخاب فرمایید:\n"
-                "*(هزینه ترانزیت از خزانه کشور اهداکننده کسر می‌شود)*"
+                "*(هزینه ترانزیت و عوارض احتمالی از خزانه کشور اهداکننده کسر می‌شود)*"
             )
 
-            kb = [
-                [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:sea")],
-                [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")],
-                [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")],
-                [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")],
-            ]
-
             await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-        except ValueError:
-            await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد.", parse_mode="Markdown")
-
         except ValueError:
             await update.message.reply_text("❌ عدد وارد شده نامعتبر بود. عملیات لغو شد.", parse_mode="Markdown")

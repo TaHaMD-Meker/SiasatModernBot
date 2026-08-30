@@ -745,3 +745,89 @@ def test_explicit_strategic_phrases_cover_the_main_stockpiles():
         assert is_explicit_strategic(name), name
     for name in ("موشک بالستیک برکان-۳ (Borkan-3)", "پهپاد انتحاری قاصف-2K (Qasef-2K)", "F-15SA"):
         assert not is_explicit_strategic(name), name
+
+
+def test_civilian_casualties_reduce_population_and_drop_approval_rating_if_50_plus(db, country):
+    """تلفات غیرنظامی از جمعیت کشور کسر می‌شود و اگر ۵۰ نفر یا بیشتر باشد ۵٪ رضایت عمومی کم می‌شود."""
+    cid = country["id"]
+    db.update_country_field(cid, "population", 50_000_000)
+    db.update_country_field(cid, "approval_rating", 80)
+
+    # ۱. تلفات غیرنظامی بالای ۵۰ نفر (مثلاً ۱۲۰ نفر)
+    ok, report_id, err = db.create_loss_report(cid, [
+        {"key": "__personnel_civ__", "name": "غیرنظامیان (کشته)", "special": "civ_kia", "unit": "نفر", "qty": 120},
+    ], operation_name="بمباران شهری")
+    assert ok, err
+
+    after = db.get_country_by_id(cid)
+    assert after["population"] == 50_000_000 - 120
+    assert after["approval_rating"] == 75  # ۵٪ کسر به خاطر ۵۰+ تلفات غیرنظامی
+
+    # بازگردانی گزارش تلفات
+    ok, err = db.revert_loss_report(report_id)
+    assert ok, err
+
+    restored = db.get_country_by_id(cid)
+    assert restored["population"] == 50_000_000
+    assert restored["approval_rating"] == 80
+
+
+def test_civilian_casualties_under_50_reduces_population_without_approval_hit(db, country):
+    """تلفات غیرنظامی زیر ۵۰ نفر از جمعیت کم می‌شود اما جریمه ۵٪ رضایت عمومی ندارد."""
+    cid = country["id"]
+    db.update_country_field(cid, "population", 50_000_000)
+    db.update_country_field(cid, "approval_rating", 80)
+
+    ok, report_id, err = db.create_loss_report(cid, [
+        {"key": "__personnel_civ__", "name": "غیرنظامیان (کشته)", "special": "civ_kia", "unit": "نفر", "qty": 35},
+    ], operation_name="حادثه مرزی")
+    assert ok, err
+
+    after = db.get_country_by_id(cid)
+    assert after["population"] == 50_000_000 - 35
+    assert after["approval_rating"] == 80  # بدون کسر رضایت چون زیر ۵۰ نفر است
+
+
+def test_parse_loss_report_text_human_casualties_both_formats():
+    """راستی‌آزمایی پارس شدن تلفات انسانی در هر دو قالب تک‌خطی و چندخطی."""
+    from handlers.losses import parse_loss_report_text
+
+    t_single = """📄 تلفات تجهیزات 🇨🇳 چین — عملیات «دیوار تاریکی اژدها»
+━━━━━━━━━━━━━━━━━━
+✈️ جنگنده‌ها
+✈️ J-20 Stealth Fighter
+تلفات: ۲ فروند
+---
+👥 تلفات انسانی
+👤 نظامیان (کشته): ۳۴ نفر
+👤 نظامیان (مجروح): ۱۱۵ نفر
+👤 غیرنظامیان (کشته): ۲۸ نفر
+"""
+    res1 = parse_loss_report_text(t_single)
+    assert res1["human"]["mil"] == 34
+    assert res1["human"]["wounded"] == 115
+    assert res1["human"]["civilians"] == 28
+
+    t_multi = """📄 تلفات تجهیزات 🇨🇳 چین — عملیات «دیوار تاریکی اژدها»
+━━━━━━━━━━━━━━━━━━
+✈️ جنگنده‌ها
+✈️ J-20 Stealth Fighter
+تلفات: ۲ فروند
+---
+👥 تلفات انسانی
+👤 نظامیان (کشته)
+تلفات: ۳۴ نفر
+---
+👤 نظامیان (مجروح)
+تلفات: ۱۱۵ نفر
+---
+👤 غیرنظامیان (کشته)
+تلفات: ۲۸ نفر
+---
+"""
+    res2 = parse_loss_report_text(t_multi)
+    assert res2["human"]["mil"] == 34
+    assert res2["human"]["wounded"] == 115
+    assert res2["human"]["civilians"] == 28
+
+

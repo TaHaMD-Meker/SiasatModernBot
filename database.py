@@ -503,11 +503,21 @@ def init_db():
         target_id INTEGER NOT NULL,
         status TEXT DEFAULT 'active',
         created_at TEXT,
+        task_force_json TEXT DEFAULT '{}',
+        coalition_json TEXT DEFAULT '[]',
         UNIQUE(blockader_id, target_id),
         FOREIGN KEY(blockader_id) REFERENCES countries(id) ON DELETE CASCADE,
         FOREIGN KEY(target_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
+    try:
+        cur.execute("ALTER TABLE naval_blockades ADD COLUMN task_force_json TEXT DEFAULT '{}'")
+    except Exception:
+        pass
+    try:
+        cur.execute("ALTER TABLE naval_blockades ADD COLUMN coalition_json TEXT DEFAULT '[]'")
+    except Exception:
+        pass
 
     # روابط دیپلماتیک بین کشورها
     cur.execute("""
@@ -730,6 +740,17 @@ def init_db():
         day TEXT NOT NULL,
         count INTEGER DEFAULT 0,
         PRIMARY KEY (country_id, day)
+        )
+    """)
+
+    # شمارنده‌ی تجارت‌های روزانه به تفکیک روش ترابری (سقف پایه ۲ + افزایش با بنادر/فرودگاه‌ها/جاده‌ها)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trade_daily_modes (
+        country_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        count INTEGER DEFAULT 0,
+        PRIMARY KEY (country_id, day, mode)
         )
     """)
 
@@ -1469,6 +1490,7 @@ LOSS_SPECIAL_COLUMNS = {
     "money": "treasury",
     "oil": "oil_reserves",
     "mil_kia": "active_personnel",
+    "civ_kia": "population",
     "uranium_ore": "uranium_ore",
     "nuclear_fuel": "nuclear_fuel",
     "medical_isotopes": "medical_isotopes",
@@ -1485,12 +1507,13 @@ LOSS_SPECIAL_COLUMNS = {
 }
 
 # اقلامی که فقط ثبت گزارشی می‌شوند و روی هیچ موجودی اثر ندارند
-LOSS_RECORD_ONLY_SPECIALS = ("wounded", "civ_kia")
+LOSS_RECORD_ONLY_SPECIALS = ("wounded",)
 
 _LOSS_SPECIAL_LABELS = {
     "money": "هزینه مالی",
     "oil": "سوخت مصرفی",
     "mil_kia": "تلفات نظامی",
+    "civ_kia": "تلفات غیرنظامی",
     "uranium_ore": "تلفات اورانیوم",
     "nuclear_fuel": "تلفات سوخت هسته‌ای",
     "warheads": "تلفات کلاهک هسته‌ای",
@@ -1614,6 +1637,13 @@ def _restore_loss_items(cur, country_id: int, items: list):
             "UPDATE country_assets SET amount = amount + ? WHERE country_id = ? AND equipment_key = ?",
             (qty, country_id, it["key"]),
         )
+    # بازیابی اثر رضایت عمومی در صورت لغو/حذف گزارش با تلفات غیرنظامی ۵۰ نفر به بالا
+    civ_kia_total = sum(int(it.get("qty", 0) or 0) for it in items if it.get("special") == "civ_kia")
+    if civ_kia_total >= 50:
+        cur.execute(
+            "UPDATE countries SET approval_rating = MIN(100, COALESCE(approval_rating, 80) + 5) WHERE id = ?",
+            (country_id,),
+        )
 
 
 def create_loss_report(country_id: int, items: list, operation_name: str = "", note: str = "", admin_id=None, base_id=None):
@@ -1712,6 +1742,13 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                 cur.execute(
                     "UPDATE country_assets SET amount = MAX(0, amount - ?) WHERE country_id = ? AND equipment_key = ?",
                     (int(it["qty"]), country_id, it["key"]),
+                )
+            # کسر ۵٪ رضایت عمومی در صورت تلفات غیرنظامی ۵۰ نفر یا بیشتر در عملیات (سیاست داخلی)
+            civ_kia_total = sum(int(it.get("qty", 0) or 0) for it in valid_items if it.get("special") == "civ_kia")
+            if civ_kia_total >= 50:
+                cur.execute(
+                    "UPDATE countries SET approval_rating = MAX(0, COALESCE(approval_rating, 80) - 5) WHERE id = ?",
+                    (country_id,),
                 )
             now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
             cur.execute(
@@ -4003,6 +4040,10 @@ def create_trade_contract(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, is_smuggled, origin_country_key, license_country_id, license_status, status, now_str))
     contract_id = cur.lastrowid
+    cur.execute("""
+        INSERT INTO trade_daily_modes (country_id, day, mode, count) VALUES (?, ?, ?, 1)
+        ON CONFLICT(country_id, day, mode) DO UPDATE SET count = count + 1
+    """, (proposer_id, now_str[:10], transport_mode))
     conn.commit()
     conn.close()
     return contract_id
@@ -4091,7 +4132,7 @@ def reject_trade_contract(contract_id: int, actor_country_id: int) -> tuple[bool
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT recipient_id, status FROM trade_contracts WHERE id = ?", (contract_id,))
+            cur.execute("SELECT proposer_id, recipient_id, transport_mode, created_at, status FROM trade_contracts WHERE id = ?", (contract_id,))
             row = cur.fetchone()
             if not row:
                 return False, "قرارداد یافت نشد."
@@ -4102,6 +4143,14 @@ def reject_trade_contract(contract_id: int, actor_country_id: int) -> tuple[bool
             cur.execute("UPDATE trade_contracts SET status = 'rejected' WHERE id = ? AND status = 'pending'", (contract_id,))
             if cur.rowcount != 1:
                 return False, "این قرارداد قبلاً تعیین تکلیف شده است."
+
+            # آزادسازی سهمیه روزانه پیشنهاددهنده در صورت رد
+            c = dict(row)
+            if c.get("proposer_id") and c.get("transport_mode") and c.get("created_at"):
+                cur.execute("""
+                    INSERT INTO trade_daily_modes (country_id, day, mode, count) VALUES (?, ?, ?, 0)
+                    ON CONFLICT(country_id, day, mode) DO UPDATE SET count = MAX(0, count - 1)
+                """, (c["proposer_id"], c["created_at"][:10], c["transport_mode"]))
         return True, "قرارداد با موفقیت رد شد."
     except Exception as e:
         return False, f"خطا در رد قرارداد: {e}"
@@ -4155,6 +4204,13 @@ def cancel_pending_contract_by_proposer(proposer_id: int, contract_id: int) -> t
                 return False, f"این قرارداد قبلاً تعیین تکلیف شده است (وضعیت: {c['status']})."
 
             cur.execute("UPDATE trade_contracts SET status = 'canceled' WHERE id = ?", (contract_id,))
+
+            # آزادسازی سهمیه روزانه پیشنهاددهنده در صورت لغو
+            if c.get("transport_mode") and c.get("created_at"):
+                cur.execute("""
+                    INSERT INTO trade_daily_modes (country_id, day, mode, count) VALUES (?, ?, ?, 0)
+                    ON CONFLICT(country_id, day, mode) DO UPDATE SET count = MAX(0, count - 1)
+                """, (proposer_id, c["created_at"][:10], c["transport_mode"]))
         return True, "پیشنهاد قرارداد تجاری با موفقیت لغو و ابطال گردید."
     except Exception as e:
         return False, f"خطا در لغو قرارداد: {e}"
@@ -4253,25 +4309,16 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                     return False, "⚓ **امکان اجرای معاهده از طریق ترابری دریایی وجود ندارد:** خطوط مواصلاتی دریایی یکی از دو کشور تحت محاصره کامل دریایی است. لطفا برای این معاهده از ترابری هوایی یا زمینی استفاده بفرمایید."
 
                 # Check Strait Blockades & Tolls based on realistic geographic maritime route
-                for owner_key, strait_info in STRAITS_MAPPING.items():
-                    s_key = strait_info["strait_key"]
-                    st_data = get_strait_status(s_key)
-                    st_status = st_data.get("status", "open")
-                    st_toll = int(st_data.get("toll", 0) or 0)
+                analysis = get_trade_route_strait_analysis(p_c_key, r_c_key)
+                if analysis["is_blocked"]:
+                    blocked_str = "، ".join([f"{s['name']} (توسط {s['owner_flag']} {s['owner_name']})" for s in analysis["blocked_straits"]])
+                    return False, f"⛔ **امکان ترانزیت دریایی وجود ندارد:** {blocked_str} مسدود گردیده است!\n\n💡 برای عبور موفق از این مسیر، باید معاهده با **ترابری هوایی** یا **زمینی** صادر شود."
 
-                    p_c_key = p_c.get("country_key")
-                    r_c_key = r_c.get("country_key")
-
-                    if is_trade_route_crossing_strait(p_c_key, r_c_key, s_key):
-                        if st_status == "blocked" and owner_key not in [p_c_key, r_c_key]:
-                            owner_c = get_country_by_key(owner_key)
-                            owner_name = owner_c["name"] if owner_c else owner_key
-                            return False, f"⛔ **امکان ترانزیت دریایی وجود ندارد:** {strait_info['name']} توسط کشور {owner_name} مسدود گردیده است!\n\n💡 برای عبور موفق از این تنگه، باید معاهده با **ترابری هوایی** یا **زمینی** صادر شود."
-
-                        elif st_status == "toll" and owner_key not in [p_c_key, r_c_key]:
-                            owner_c = get_country_by_key(owner_key)
-                            if owner_c and st_toll > 0:
-                                strait_tolls.append((owner_c, st_toll, strait_info["name"]))
+                for t_entry in analysis["toll_straits"]:
+                    owner_c = t_entry["owner_c"]
+                    st_toll = t_entry["toll_amount"]
+                    if owner_c and st_toll > 0:
+                        strait_tolls.append((owner_c, st_toll, t_entry["name"]))
 
             # Check capacity limits for commodity transport
             t_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("limits", {})
@@ -4291,6 +4338,7 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             p_extra_cost = t_cost if t_payer == "seller" else 0
             r_extra_cost = t_cost if t_payer == "buyer" else 0
             strait_toll_total = sum(toll[1] for toll in strait_tolls)
+            toll_payer_id = p_id if t_payer == "seller" else r_id
 
             col_map = {"treasury": "treasury", "gold": "gold", "oil": "oil_reserves", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel", "vaccine_doses": "vaccine_doses"}
 
@@ -4319,16 +4367,16 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                             f"محموله را کوچک‌تر کنید."
                         )
 
-                r_total_needed = req_amt + r_extra_cost
+                r_total_needed = req_amt + r_extra_cost + (strait_toll_total if t_payer == "buyer" else 0)
                 if (r_c["treasury"] or 0) < r_total_needed:
                     return False, f"کشور خریدار ({r_c['name']}) موجودی کافی در خزانه برای پرداخت قیمت و ترانزیت ندارد."
 
-                seller_route_cost = p_extra_cost + strait_toll_total
+                seller_route_cost = p_extra_cost + (strait_toll_total if t_payer == "seller" else 0)
                 if (p_c["treasury"] or 0) < seller_route_cost:
                     return False, f"کشور فروشنده ({p_c['name']}) موجودی کافی برای پرداخت ترانزیت و عوارض تنگه‌ها ندارد."
 
                 for owner_c, toll_amount, strait_name in strait_tolls:
-                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, p_id))
+                    cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, toll_payer_id))
                     cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (toll_amount, owner_c["id"]))
                     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
                     cur.execute(
@@ -4405,7 +4453,8 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
 
             p_off_col = col_map[off_type]
             r_req_col = col_map[req_type]
-            seller_route_cost = p_extra_cost + strait_toll_total
+            seller_route_cost = p_extra_cost + (strait_toll_total if t_payer == "seller" else 0)
+            buyer_route_cost = r_extra_cost + (strait_toll_total if t_payer == "buyer" else 0)
 
             p_avail = (p_c[p_off_col] or 0) - (seller_route_cost if p_off_col == "treasury" else 0)
             if p_avail < off_amt:
@@ -4413,14 +4462,14 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             if p_off_col != "treasury" and (p_c["treasury"] or 0) < seller_route_cost:
                 return False, f"طرف پیشنهاددهنده ({p_c['name']}) موجودی کافی برای پرداخت هزینه ترانزیت و عوارض تنگه‌ها ندارد."
 
-            r_avail = (r_c[r_req_col] or 0) - (r_extra_cost if r_req_col == "treasury" else 0)
+            r_avail = (r_c[r_req_col] or 0) - (buyer_route_cost if r_req_col == "treasury" else 0)
             if r_avail < req_amt:
                 return False, f"طرف قبول‌کننده ({r_c['name']}) موجودی کافی برای اجرای قرارداد ندارد."
-            if r_req_col != "treasury" and (r_c["treasury"] or 0) < r_extra_cost:
+            if r_req_col != "treasury" and (r_c["treasury"] or 0) < buyer_route_cost:
                 return False, f"طرف قبول‌کننده ({r_c['name']}) موجودی کافی برای پرداخت هزینه ترانزیت ندارد."
 
             for owner_c, toll_amount, strait_name in strait_tolls:
-                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, p_id))
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, toll_payer_id))
                 cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (toll_amount, owner_c["id"]))
                 now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 cur.execute(
@@ -4523,6 +4572,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                 return False, f"⛔ **مازاد بر ظرفیت بارگیری ناوگان ({t_name}):** حداکثر سقف ارسال برای این کالا برابر با **{max_cap:,} واحد** در هر محموله است."
 
             # بررسی دسترسی دریایی و محاصره در ترابری دریایی
+            strait_tolls = []
             if transport_mode == "sea":
                 if not has_open_sea_access(d_key) or not has_open_sea_access(r_key):
                     no_sea = d_c if not has_open_sea_access(d_key) else r_c
@@ -4532,16 +4582,19 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                     return False, "⚓ **ترابری دریایی مسدود است:** خطوط کشتیرانی یکی از دو کشور تحت محاصره دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده فرمایید."
 
                 # بررسی انسداد و عوارض تنگه‌ها
-                for owner_key, strait_info in STRAITS_MAPPING.items():
-                    s_key = strait_info["strait_key"]
-                    if is_trade_route_crossing_strait(d_key, r_key, s_key):
-                        st_data = get_strait_status(s_key)
-                        if st_data.get("status") == "blocked" and owner_key not in (d_key, r_key):
-                            return False, f"⛔ **مسیر ترانزیت دریایی مسدود است:** {strait_info['name']} توسط کشور {owner_key} مسدود گردیده است. از ترابری هوایی یا زمینی استفاده کنید."
-                        elif st_data.get("status") == "toll" and owner_key not in (d_key, r_key):
-                            st_toll = st_data.get("toll", 0)
-                            if st_toll > 0:
-                                t_cost += st_toll
+                analysis = get_trade_route_strait_analysis(d_key, r_key)
+                if analysis["is_blocked"]:
+                    blocked_str = "، ".join([f"{s['name']} (توسط {s['owner_flag']} {s['owner_name']})" for s in analysis["blocked_straits"]])
+                    return False, f"⛔ **مسیر ترانزیت دریایی مسدود است:** {blocked_str} مسدود گردیده است. از ترابری هوایی یا زمینی استفاده کنید."
+
+                for t_entry in analysis["toll_straits"]:
+                    owner_c = t_entry["owner_c"]
+                    st_toll = t_entry["toll_amount"]
+                    if owner_c and st_toll > 0:
+                        strait_tolls.append((owner_c, st_toll, t_entry["name"]))
+
+            strait_toll_total = sum(t[1] for t in strait_tolls)
+            total_transit_cost = t_cost + strait_toll_total
 
             # ضدتقلب: سقف محموله‌های خروجی روزانه
             if transfer_weight_enabled():
@@ -4556,8 +4609,8 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             col_name = resource_cols[resource_type]
 
             donor_money_avail = (d_c["treasury"] or 0) - (amount if resource_type == "treasury" else 0)
-            if donor_money_avail < t_cost:
-                return False, f"💵 **کسری بودجه برای پرداخت هزینه ترانزیت:** هزینه حمل‌ونقل و ترانزیت این محموله برابر با **{format_money(t_cost)}** است و موجودی خزانه شما کافی نیست."
+            if donor_money_avail < total_transit_cost:
+                return False, f"💵 **کسری بودجه برای پرداخت هزینه ترانزیت:** هزینه حمل‌ونقل و ترانزیت این محموله برابر با **{format_money(total_transit_cost)}** است و موجودی خزانه شما کافی نیست."
 
             if (d_c[col_name] or 0) < amount:
                 return False, f"موجودی {resource_type} کشور شما برای ارسال این کمک کافی نیست."
@@ -4566,6 +4619,15 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             if t_cost > 0:
                 cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (t_cost, donor_id))
 
+            for owner_c, toll_amount, strait_name in strait_tolls:
+                cur.execute("UPDATE countries SET treasury = treasury - ? WHERE id = ?", (toll_amount, donor_id))
+                cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (toll_amount, owner_c["id"]))
+                now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                cur.execute(
+                    "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)",
+                    (owner_c["id"], f"دریافت عوارض ترانزیت {strait_name} از محموله کمک خارجی {d_c['name']} به {r_c['name']}", toll_amount, now_str)
+                )
+
             cur.execute(f"UPDATE countries SET {col_name} = {col_name} - ? WHERE id = ?", (amount, donor_id))
             cur.execute(f"UPDATE countries SET {col_name} = {col_name} + ? WHERE id = ?", (amount, recipient_id))
 
@@ -4573,7 +4635,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'aid_out', ?, ?, ?)
-            """, (donor_id, f"ارسال کمک خارجی ({transport_mode}) به {r_c['name']} (هزینه ترانزیت: {format_money(t_cost)})", -amount if resource_type == "treasury" else 0, now_str))
+            """, (donor_id, f"ارسال کمک خارجی ({transport_mode}) به {r_c['name']} (هزینه ترانزیت: {format_money(total_transit_cost)})", -amount if resource_type == "treasury" else 0, now_str))
             cur.execute("""
                 INSERT INTO transactions (country_id, type, description, amount, created_at)
                 VALUES (?, 'aid_in', ?, ?, ?)
@@ -4736,6 +4798,111 @@ def transfer_daily_budget(country_id: int) -> tuple[int, int]:
     return used, cap
 
 
+# ---------- سقف تجارت روزانه بر اساس زیرساخت (دریایی/هوایی/زمینی) ----------
+
+def get_trade_mode_daily_limit(country_id: int, mode: str) -> int:
+    """محاسبه سقف مجاز تجارت روزانه بر اساس زیرساخت‌های احداث‌شده.
+
+    * سقف پایه برای کشور فابریک: ۲ تجارت در روز برای هر روش (دریایی، هوایی، زمینی)
+    * دریایی (sea): ۲ + تعداد بنادر تجاری و استراتژیک (port + mega_port)
+    * هوایی (air): ۲ + تعداد فرودگاه‌های بین‌المللی (airport)
+    * زمینی (land): ۲ + تعداد بزرگراه‌ها/جاده‌ها (highway)
+    """
+    base_cap = 2
+    eq = get_equipment(country_id)
+    if mode == "sea":
+        return base_cap + int(eq.get("port", 0) or 0) + int(eq.get("mega_port", 0) or 0)
+    elif mode == "air":
+        return base_cap + int(eq.get("airport", 0) or 0)
+    elif mode == "land":
+        return base_cap + int(eq.get("highway", 0) or 0)
+    return base_cap
+
+
+def get_trade_mode_day_count(country_id: int, mode: str, day: str | None = None) -> int:
+    """تعداد تجارت‌های انجام‌شده در روز جاری با روش ترابری مشخص."""
+    day = day or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT count FROM trade_daily_modes WHERE country_id = ? AND day = ? AND mode = ?",
+            (country_id, day, mode),
+        ).fetchone()
+        return int(row["count"] or 0) if row else 0
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def bump_trade_mode_day_count(country_id: int, mode: str, day: str | None = None, delta: int = 1):
+    """افزایش یا کاهش شمارنده تجارت روزانه یک روش ترابری."""
+    day = day or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO trade_daily_modes (country_id, day, mode, count) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(country_id, day, mode) DO UPDATE SET count = MAX(0, count + ?)",
+                (country_id, day, mode, max(0, delta), delta),
+            )
+    finally:
+        conn.close()
+
+
+def get_trade_mode_budget(country_id: int, mode: str, day: str | None = None) -> tuple[int, int]:
+    """(مصرف‌شده, سقف مجاز) تجارت امروز برای روش ترابری مشخص."""
+    used = get_trade_mode_day_count(country_id, mode, day)
+    cap = get_trade_mode_daily_limit(country_id, mode)
+    return used, cap
+
+
+def check_trade_mode_limit(country_id: int, mode: str, day: str | None = None) -> tuple[bool, str]:
+    """بررسی سقف تجارت روزانه برای یک روش ترابری و ساخت پیام راهنما در صورت تکمیل ظرفیت."""
+    used, cap = get_trade_mode_budget(country_id, mode, day)
+    if used < cap:
+        return True, ""
+
+    mode_info = {
+        "sea": {
+            "name": "دریایی",
+            "infra": "بندر تجاری",
+            "help": (
+                "برای افزایش سقف تجارت دریایی، از بخش فروشگاه (/shop ⬅️ حمل‌ونقل و ترابری) اقدام به احداث **بندر تجاری** یا **بندر بزرگ استراتژیک** نمایید. "
+                "هر ۱ بندر جدید در روز **+۱ سقف تجارت دریایی** به ظرفیت روزانه شما اضافه می‌کند (مثلاً با ۲ بندر، سقف شما به ۴ تجارت در روز افزایش می‌یابد)."
+            ),
+        },
+        "air": {
+            "name": "هوایی",
+            "infra": "فرودگاه بین‌المللی",
+            "help": (
+                "برای افزایش سقف تجارت هوایی، از بخش فروشگاه (/shop ⬅️ حمل‌ونقل و ترابری) اقدام به احداث **فرودگاه بین‌المللی** نمایید. "
+                "هر ۱ فرودگاه جدید در روز **+۱ سقف تجارت هوایی** به ظرفیت روزانه شما اضافه می‌کند."
+            ),
+        },
+        "land": {
+            "name": "زمینی",
+            "infra": "بزرگراه سراسری (جاده)",
+            "help": (
+                "برای افزایش سقف تجارت زمینی، از بخش فروشگاه (/shop ⬅️ حمل‌ونقل و ترابری) اقدام به احداث **بزرگراه سراسری (جاده)** نمایید. "
+                "هر ۱ بزرگراه جدید در روز **+۱ سقف تجارت زمینی** به ظرفیت روزانه شما اضافه می‌کند."
+            ),
+        },
+    }
+    info = mode_info.get(mode, {
+        "name": mode,
+        "infra": "زیرساخت ترابری",
+        "help": "برای افزایش سقف، زیرساخت‌های مربوطه را در /shop ارتقا دهید.",
+    })
+
+    msg = (
+        f"⛔ **سقف مجاز تجارت {info['name']} امروز پر شده است! (لیمیت)**\n\n"
+        f"📊 **وضعیت سقف امروز:** `{used}` از `{cap}` معاهده مجاز مصرف شده است.\n\n"
+        f"💡 **راهنمای افزایش لیمیت:**\n{info['help']}"
+    )
+    return False, msg
+
+
 def log_transfer(
     from_id: int, to_id: int, kind: str,
     item_key: str = "", item_name: str = "", qty: int = 0,
@@ -4878,19 +5045,182 @@ def has_open_sea_access(country_key: str) -> bool:
     return country_key not in config.NO_SEA_ACCESS_COUNTRIES
 
 
-def create_naval_blockade(blockader_id: int, target_id: int) -> int:
+def calculate_blockade_defense_power(target_id: int) -> tuple[int, list[dict]]:
+    """محاسبه مجموع قدرت دفاعی ائتلاف محاصره‌کننده علیه یک کشور (شامل رهبر و کلیه متحدین).
+
+    خروجی: (مجموع کل قدرت ائتلاف, لیست جزئیات مشارکت‌کنندگان)
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM naval_blockades WHERE target_id = ? AND status = 'active'", (target_id,))
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return 0, []
+
+    total_power = 0
+    participants = []
+
+    for r in rows:
+        b = dict(r)
+        lead_c = get_country_by_id(b["blockader_id"])
+        if not lead_c:
+            continue
+
+        try:
+            lead_tf = json.loads(b.get("task_force_json") or "{}")
+        except Exception:
+            lead_tf = {}
+
+        lead_pwr = calculate_task_force_naval_power(lead_c["id"], lead_tf)
+        total_power += lead_pwr
+        participants.append({
+            "country_id": lead_c["id"],
+            "name": lead_c["name"],
+            "flag": lead_c["flag"],
+            "role": "leader",
+            "power": lead_pwr,
+            "task_force": lead_tf,
+        })
+
+        # محاسبه قدرت متحدین حاضر در coalition_json
+        try:
+            coalition = json.loads(b.get("coalition_json") or "[]")
+        except Exception:
+            coalition = []
+
+        for ally in coalition:
+            ally_id = int(ally.get("country_id", 0) or 0)
+            ally_c = get_country_by_id(ally_id)
+            if not ally_c:
+                continue
+            ally_tf = ally.get("task_force") or {}
+            ally_pwr = calculate_task_force_naval_power(ally_id, ally_tf)
+            total_power += ally_pwr
+            participants.append({
+                "country_id": ally_id,
+                "name": ally_c["name"],
+                "flag": ally_c["flag"],
+                "role": "ally",
+                "power": ally_pwr,
+                "task_force": ally_tf,
+            })
+
+    return total_power, participants
+
+
+def create_naval_blockade(blockader_id: int, target_id: int, task_force: dict | None = None) -> int:
     conn = get_connection()
     cur = conn.cursor()
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    tf_json = json.dumps(task_force or {})
     cur.execute("""
-        INSERT INTO naval_blockades (blockader_id, target_id, status, created_at)
-        VALUES (?, ?, 'active', ?)
-        ON CONFLICT(blockader_id, target_id) DO UPDATE SET status = 'active'
-    """, (blockader_id, target_id, now_str))
+        INSERT INTO naval_blockades (blockader_id, target_id, status, created_at, task_force_json, coalition_json)
+        VALUES (?, ?, 'active', ?, ?, '[]')
+        ON CONFLICT(blockader_id, target_id) DO UPDATE SET
+            status = 'active',
+            created_at = excluded.created_at,
+            task_force_json = excluded.task_force_json,
+            coalition_json = '[]'
+    """, (blockader_id, target_id, now_str, tf_json))
     blockade_id = cur.lastrowid
     conn.commit()
     conn.close()
     return blockade_id
+
+
+def join_naval_blockade(blockader_id: int, target_id: int, ally_country_id: int, task_force: dict | None = None) -> tuple[bool, str]:
+    """پیوستن یک کشور متحد نظامی به ائتلاف محاصره دریایی فعال."""
+    if blockader_id == ally_country_id or target_id == ally_country_id:
+        return False, "کشور انتخابی نمی‌تواند به عنوان متحد به محاصره بپیوندد."
+
+    # ۱. بررسی رابطه اتحاد رسمی
+    rel = get_diplomatic_relation(blockader_id, ally_country_id)
+    if rel.get("status") != "allied":
+        return False, "فقط کشورهایی که دارای پیمان اتحاد نظامی رسمی (Allied) با رهبر محاصره هستند می‌توانند به ائتلاف محاصره بپیوندند."
+
+    # ۲. دسترسی به آب‌های آزاد
+    ally_c = get_country_by_id(ally_country_id)
+    if not ally_c or not has_open_sea_access(ally_c.get("country_key")):
+        return False, "کشور متحد به آب‌های آزاد دسترسی ندارد و امکان اعزام ناوگروه دریایی ندارد."
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM naval_blockades WHERE blockader_id = ? AND target_id = ? AND status = 'active'", (blockader_id, target_id))
+            row = cur.fetchone()
+            if not row:
+                return False, "محاصره دریایی فعالی با این مشخصات یافت نشد."
+
+            b = dict(row)
+            try:
+                coalition = json.loads(b.get("coalition_json") or "[]")
+            except Exception:
+                coalition = []
+
+            # اگر قبلاً در ائتلاف است، بروزرسانی ناوگروه
+            existing = [c for c in coalition if c.get("country_id") == ally_country_id]
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            tf = task_force or {}
+            if existing:
+                existing[0]["task_force"] = tf
+                existing[0]["updated_at"] = now_str
+            else:
+                coalition.append({
+                    "country_id": ally_country_id,
+                    "name": ally_c["name"],
+                    "flag": ally_c["flag"],
+                    "task_force": tf,
+                    "joined_at": now_str,
+                })
+
+            cur.execute("UPDATE naval_blockades SET coalition_json = ? WHERE id = ?", (json.dumps(coalition), b["id"]))
+        return True, f"کشور {ally_c['flag']} {ally_c['name']} با موفقیت به ائتلاف محاصره دریایی پیوست."
+    except Exception as e:
+        return False, f"خطا در ثبت مشارکت ائتلاف: {e}"
+    finally:
+        conn.close()
+
+
+def leave_naval_blockade(blockader_id: int, target_id: int, ally_country_id: int) -> tuple[bool, str]:
+    """خروج کشور متحد از ائتلاف محاصره دریایی."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM naval_blockades WHERE blockader_id = ? AND target_id = ? AND status = 'active'", (blockader_id, target_id))
+            row = cur.fetchone()
+            if not row:
+                return False, "محاصره دریایی فعال یافت نشد."
+
+            b = dict(row)
+            try:
+                coalition = json.loads(b.get("coalition_json") or "[]")
+            except Exception:
+                coalition = []
+
+            new_coalition = [c for c in coalition if c.get("country_id") != ally_country_id]
+            cur.execute("UPDATE naval_blockades SET coalition_json = ? WHERE id = ?", (json.dumps(new_coalition), b["id"]))
+        return True, "ناوگروه با موفقیت از ائتلاف محاصره خارج شد."
+    except Exception as e:
+        return False, f"خطا در خروج از ائتلاف: {e}"
+    finally:
+        conn.close()
+
+
+def get_allied_countries_for_blockade(leader_country_id: int) -> list[dict]:
+    """لیست کشورهای دارای پیمان اتحاد نظامی رسمی (Allied) با دسترسی به آب‌های آزاد."""
+    relations = get_country_diplomatic_relations_all(leader_country_id)
+    allies = []
+    for r in relations:
+        if r.get("status") == "allied":
+            other_id = r["country2_id"] if r["country1_id"] == leader_country_id else r["country1_id"]
+            other_c = get_country_by_id(other_id)
+            if other_c and has_open_sea_access(other_c.get("country_key")):
+                allies.append(other_c)
+    return allies
 
 
 def is_country_blockaded(country_id: int) -> bool:
@@ -4928,12 +5258,51 @@ def lift_naval_blockade(blockader_id: int, target_id: int):
     conn.close()
 
 
-def break_naval_blockade(target_id: int):
+def break_naval_blockade(target_id: int, apply_task_force_losses: bool = True) -> list[dict]:
+    """شکستن محاصره دریایی با تغییر وضعیت به 'broken' و اعمال تلفات عقب‌نشینی به ناوگروه‌های درگیر."""
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE naval_blockades SET status = 'broken' WHERE target_id = ? AND status = 'active'", (target_id,))
-    conn.commit()
-    conn.close()
+    retreated_losses = []
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM naval_blockades WHERE target_id = ? AND status = 'active'", (target_id,))
+            rows = cur.fetchall()
+            for r in rows:
+                b = dict(r)
+                if apply_task_force_losses:
+                    # اعمال تلفات جزئی به ناوگروه اعزامی رهبر
+                    try:
+                        lead_tf = json.loads(b.get("task_force_json") or "{}")
+                    except Exception:
+                        lead_tf = {}
+                    for eq_key, qty in lead_tf.items():
+                        loss_qty = max(1, int(qty * 0.10)) if qty >= 2 else 1
+                        cur.execute(
+                            "UPDATE country_assets SET amount = MAX(0, amount - ?) WHERE country_id = ? AND equipment_key = ?",
+                            (loss_qty, b["blockader_id"], eq_key),
+                        )
+                        retreated_losses.append({"country_id": b["blockader_id"], "equipment_key": eq_key, "qty": loss_qty})
+
+                    # اعمال تلفات جزئی به ناوگروه متحدین
+                    try:
+                        coalition = json.loads(b.get("coalition_json") or "[]")
+                    except Exception:
+                        coalition = []
+                    for ally in coalition:
+                        a_id = ally.get("country_id")
+                        a_tf = ally.get("task_force") or {}
+                        for eq_key, qty in a_tf.items():
+                            loss_qty = max(1, int(qty * 0.10)) if qty >= 2 else 1
+                            cur.execute(
+                                "UPDATE country_assets SET amount = MAX(0, amount - ?) WHERE country_id = ? AND equipment_key = ?",
+                                (loss_qty, a_id, eq_key),
+                            )
+                            retreated_losses.append({"country_id": a_id, "equipment_key": eq_key, "qty": loss_qty})
+
+            cur.execute("UPDATE naval_blockades SET status = 'broken' WHERE target_id = ? AND status = 'active'", (target_id,))
+    finally:
+        conn.close()
+    return retreated_losses
 
 
 ANTISHIP_TOKENS = (
@@ -5031,43 +5400,63 @@ def get_country_rankings() -> list:
     return [dict(r) for r in rows]
 
 
+def _score_single_naval_asset(eq_name: str, amount: int) -> float:
+    eq_name = (eq_name or "").lower()
+    if amount <= 0:
+        return 0
+
+    if any(t in eq_name for t in ["boat", "craft", "شناور", "قایق", "تندرو", "گشتی", "patrol", "موشک‌انداز", "موشک انداز"]):
+        return amount * 0.2
+
+    if any(c in eq_name for c in ["ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "carrier", "هواپیمابر"]):
+        return amount * 500
+    elif any(l in eq_name for l in ["america", "wasp", "dokdo", "anadolu", "trieste", "lha", "lhd", "lph", "بالگردبر", "ناو بالگردبر"]):
+        return amount * 200
+    elif any(d in eq_name for d in ["destroyer", "burke", "zumwalt", "ticonderoga", "cruiser", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "slava", "maya", "atago", "kongo", "sejong", "کلاس کیروف", "رزم‌پناو", "ناوشکن"]):
+        return amount * 80
+    elif any(s in eq_name for s in ["virginia", "ohio", "los angeles", "seawolf", "yasen", "borei", "type 094", "type 093", "astute", "vanguard", "suffren", "arihant", "dreadnought", "ssn", "ssbn", "هسته‌ای"]):
+        return amount * 70
+    elif any(f in eq_name for f in ["frigate", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "halifax", "hobart", "miecznik", "perry", "برگامینی", "جماران", "سهند", "دنا", "دماوند", "ناوچه"]):
+        return amount * 30
+    elif any(c in eq_name for c in ["corvette", "کوروت", "buyan", "steregushchiy", "sa'ar", "baynunah", "soleimani", "شهید سلیمانی", "فاتح", "پیروز"]):
+        return amount * 12
+    elif any(s in eq_name for s in ["sub", "kilo", "ghadir", "midget", "زیردریایی"]):
+        return amount * 10
+    else:
+        return amount * 0.2
+
+
+def calculate_task_force_naval_power(country_id: int, task_force: dict | None = None) -> int:
+    """محاسبه قدرت رزمی ناوگروه انتخابی (Task Force). اگر خالی یا None باشد کل ناوگان کشور محاسبه می‌شود."""
+    if not task_force:
+        return calculate_naval_power(country_id)
+
+    assets = get_country_assets(country_id, category="Navy")
+    asset_map = {a["equipment_key"]: a for a in assets}
+    total_power = 0.0
+    for eq_key, count in task_force.items():
+        qty = max(0, int(count or 0))
+        if qty <= 0:
+            continue
+        real_asset = asset_map.get(eq_key)
+        if real_asset:
+            real_amt = int(real_asset.get("amount", 0) or 0)
+            actual_qty = min(qty, real_amt)
+            if actual_qty > 0:
+                total_power += _score_single_naval_asset(real_asset.get("equipment_name", eq_key), actual_qty)
+        else:
+            total_power += _score_single_naval_asset(eq_key, qty)
+    return int(total_power)
+
+
 def calculate_naval_power(country_id: int) -> int:
     """محاسبه متوازن و واقعی امتیاز قدرت رزمی نیروی دریایی آب‌های آزاد."""
     assets = get_country_assets(country_id, category="Navy")
     if not assets:
         return 0
 
-    total_power = 0
-    for a in assets:
-        eq_name = a["equipment_name"].lower()
-        amount = a["amount"]
-        if amount <= 0:
-            continue
-
-        # گارد: شناورهای سبک/گشتی/تندرو نباید با نام مشابه ناوهای بزرگ اشتباه گرفته شوند
-        # (مثلاً قایق گشتی Wasp نباید با ناو بالگردبر Wasp کلاس اشتباه شود)
-        if any(t in eq_name for t in ["boat", "craft", "شناور", "قایق", "تندرو", "گشتی", "patrol", "موشک‌انداز", "موشک انداز"]):
-            total_power += int(amount * 0.2)
-            continue
-
-        if any(c in eq_name for c in ["ford", "nimitz", "fujian", "shandong", "liaoning", "kuznetsov", "charles de gaulle", "queen elizabeth", "carrier", "هواپیمابر"]):
-            total_power += int(amount * 500)
-        elif any(l in eq_name for l in ["america", "wasp", "dokdo", "anadolu", "trieste", "lha", "lhd", "lph", "بالگردبر", "ناو بالگردبر"]):
-            total_power += int(amount * 200)
-        elif any(d in eq_name for d in ["destroyer", "burke", "zumwalt", "ticonderoga", "cruiser", "type 055", "type 052", "type 45", "visakhapatnam", "kirov", "gorshkov", "slava", "maya", "atago", "kongo", "sejong", "کلاس کیروف", "رزم‌پناو", "ناوشکن"]):
-            total_power += int(amount * 80)
-        elif any(s in eq_name for s in ["virginia", "ohio", "los angeles", "seawolf", "yasen", "borei", "type 094", "type 093", "astute", "vanguard", "suffren", "arihant", "dreadnought", "ssn", "ssbn", "هسته‌ای"]):
-            total_power += int(amount * 70)
-        elif any(f in eq_name for f in ["frigate", "constellation", "fremm", "f125", "f124", "type 054", "gotland", "type 214", "dolphin", "halifax", "hobart", "miecznik", "perry", "برگامینی", "جماران", "سهند", "دنا", "دماوند", "ناوچه"]):
-            total_power += int(amount * 30)
-        elif any(c in eq_name for c in ["corvette", "کوروت", "buyan", "steregushchiy", "sa'ar", "baynunah", "soleimani", "شهید سلیمانی", "فاتح", "پیروز"]):
-            total_power += int(amount * 12)
-        elif any(s in eq_name for s in ["sub", "kilo", "ghadir", "midget", "زیردریایی"]):
-            total_power += int(amount * 10)
-        else:
-            total_power += int(amount * 0.2)
-
-    return total_power
+    total_power = sum(_score_single_naval_asset(a["equipment_name"], a["amount"]) for a in assets if (a.get("amount") or 0) > 0)
+    return int(total_power)
 
 
 # ---------- مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی) ----------
@@ -5467,7 +5856,7 @@ def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_
         "bulgaria", "russia", "ukraine", "georgia", "algeria", "tunisia", "libya", "morocco", "syria",
         "lebanon", "israel", "usa", "canada", "mexico", "brazil", "argentina", "chile", "colombia",
         "peru", "ecuador", "nigeria", "angola", "south_africa", "cuba", "venezuela", "austria", "belarus",
-        "czech", "hungary", "serbia", "slovakia"
+        "czech", "hungary", "serbia", "slovakia", "ireland", "lithuania", "slovenia", "albania", "bosnia"
     }
 
     # حوزه شرق/جنوب سوئز (دریای سرخ، خلیج فارس، اقیانوس هند، آسیای جنوبی و شرقی، اقیانوسیه)
@@ -5487,21 +5876,23 @@ def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_
     # حوزه دریای مدیترانه
     MEDITERRANEAN = {
         "italy", "greece", "cyprus", "croatia", "turkey", "romania", "bulgaria", "georgia",
-        "russia", "ukraine", "egypt", "israel", "lebanon", "syria", "libya", "tunisia", "algeria"
+        "russia", "ukraine", "egypt", "israel", "lebanon", "syria", "libya", "tunisia", "algeria",
+        "slovenia", "albania", "bosnia"
     }
 
     # کشورهای اقیانوس اطلس و آمریکا (خارج از مدیترانه)
     ATLANTIC_OUTSIDE = {
         "usa", "canada", "mexico", "cuba", "venezuela", "brazil", "argentina", "chile", "colombia",
         "peru", "ecuador", "uk", "norway", "sweden", "finland", "denmark", "germany", "netherlands",
-        "belgium", "poland", "portugal", "south_africa", "nigeria", "angola"
+        "belgium", "poland", "portugal", "south_africa", "nigeria", "angola", "ireland", "lithuania"
     }
 
     # حوزه غرب مالاکا (اقیانوس هند، خاورمیانه، آفریقا، اروپا)
     MALACCA_WEST = {
         "india", "pakistan", "sri_lanka", "bangladesh", "iran", "iraq", "kuwait", "saudi", "qatar",
         "uae", "oman", "yemen", "egypt", "sudan", "somalia", "kenya", "south_africa",
-        "uk", "france", "germany", "italy", "spain", "netherlands", "turkey", "russia", "greece"
+        "uk", "france", "germany", "italy", "spain", "netherlands", "turkey", "russia", "greece",
+        "ireland", "lithuania", "slovenia", "albania", "bosnia"
     }
 
     # حوزه شرق مالاکا (شرق و جنوب شرق آسیا در اقیانوس آرام)
@@ -5532,7 +5923,7 @@ def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_
         return (c1 in MEDITERRANEAN and c2 in ATLANTIC_OUTSIDE) or (c1 in ATLANTIC_OUTSIDE and c2 in MEDITERRANEAN)
 
     elif strait_key == "danish_straits":
-        baltic_countries = {"sweden", "finland", "poland"}
+        baltic_countries = {"sweden", "finland", "poland", "lithuania"}
         return (c1 in baltic_countries and c2 not in baltic_countries and c2 not in MEDITERRANEAN) or \
                (c2 in baltic_countries and c1 not in baltic_countries and c1 not in MEDITERRANEAN)
 
@@ -5557,6 +5948,66 @@ def get_strait_status(strait_key: str) -> dict:
     status = get_setting(f"strait_status_{strait_key}", "open")
     toll = int(get_setting(f"strait_toll_{strait_key}", "1000000"))
     return {"status": status, "toll": toll}
+
+
+def get_trade_route_strait_analysis(country1_key: str, country2_key: str) -> dict:
+    """تحلیل جامع وضعیت آبراه‌ها و تنگه‌های استراتژیک در طول مسیر ترانزیت دریایی بین دو کشور."""
+    if not country1_key or not country2_key:
+        return {
+            "is_blocked": False,
+            "blocked_straits": [],
+            "has_tolls": False,
+            "total_toll": 0,
+            "toll_straits": [],
+            "all_crossed": [],
+        }
+
+    c1_k = country1_key.lower()
+    c2_k = country2_key.lower()
+
+    blocked_straits = []
+    toll_straits = []
+    all_crossed = []
+
+    for owner_key, strait_info in STRAITS_MAPPING.items():
+        s_key = strait_info["strait_key"]
+        if is_trade_route_crossing_strait(c1_k, c2_k, s_key):
+            st_data = get_strait_status(s_key)
+            st_status = st_data.get("status", "open")
+            st_toll = int(st_data.get("toll", 0) or 0)
+
+            owner_c = get_country_by_key(owner_key)
+            owner_name = owner_c["name"] if owner_c else owner_key
+            owner_flag = owner_c.get("flag", "") if owner_c else ""
+
+            strait_entry = {
+                "strait_key": s_key,
+                "name": strait_info["name"],
+                "owner_key": owner_key,
+                "owner_name": owner_name,
+                "owner_flag": owner_flag,
+                "owner_c": owner_c,
+                "status": st_status,
+                "toll_amount": st_toll,
+            }
+            all_crossed.append(strait_entry)
+
+            if owner_key not in (c1_k, c2_k):
+                if st_status in ("blocked", "closed"):
+                    blocked_straits.append(strait_entry)
+                elif st_status == "toll" and st_toll > 0:
+                    toll_straits.append(strait_entry)
+
+    total_toll = sum(s["toll_amount"] for s in toll_straits)
+
+    return {
+        "is_blocked": len(blocked_straits) > 0,
+        "blocked_straits": blocked_straits,
+        "has_tolls": len(toll_straits) > 0,
+        "total_toll": total_toll,
+        "toll_straits": toll_straits,
+        "all_crossed": all_crossed,
+    }
 
 
 def set_strait_status(strait_key: str, status: str, toll_amount: int = 1000000):
@@ -5872,18 +6323,25 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
             if rel_row and rel_row["status"] == "sanctioned":
                 return False, "امکان معامله تجاری با کشور تحریم‌شده وجود ندارد.", {}
 
+            strait_tolls = []
             if transport_mode == "sea":
                 if is_country_blockaded(seller_id) or is_country_blockaded(buyer_id):
                     return False, "⚓ **ترابری دریایی مسدود است:** یکی از دو کشور تحت محاصره کامل دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده بفرمایید.", {}
 
-                for owner_key, strait_info in STRAITS_MAPPING.items():
-                    s_key = seller_c.get("country_key")
-                    b_key = buyer_c.get("country_key")
-                    if is_trade_route_crossing_strait(s_key, b_key, strait_info["strait_key"]) and owner_key not in (s_key, b_key):
-                        st_status = get_strait_status(strait_info["strait_key"])
-                        if st_status["status"] in ("blocked", "closed"):
-                            return False, f"⚓ **گلوگاه دریایی مسدود است:** مسیر ترانزیت دریایی از {strait_info['name']} توسط کشور {owner_key} مسدود شده است.", {}
+                s_key = seller_c.get("country_key")
+                b_key = buyer_c.get("country_key")
+                analysis = get_trade_route_strait_analysis(s_key, b_key)
+                if analysis["is_blocked"]:
+                    blocked_str = "، ".join([f"{s['name']} (توسط {s['owner_flag']} {s['owner_name']})" for s in analysis["blocked_straits"]])
+                    return False, f"⚓ **گلوگاه دریایی مسدود است:** مسیر ترانزیت دریایی از {blocked_str} مسدود شده است.", {}
 
+                for t_entry in analysis["toll_straits"]:
+                    owner_c = t_entry["owner_c"]
+                    st_toll = t_entry["toll_amount"]
+                    if owner_c and st_toll > 0:
+                        strait_tolls.append((owner_c, st_toll, t_entry["name"]))
+
+            strait_toll_total = sum(t[1] for t in strait_tolls)
             res_type = order["resource_type"]
             res_names = {"oil": "نفت", "gold": "طلا", "grain": "غلات", "iron_ore": "آهن و فولاد", "microchips": "میکروچیپ", "uranium_ore": "کیک زرد", "nuclear_fuel": "سوخت هسته‌ای"}
             unit_names = {"oil": "بشکه", "gold": "شمش", "grain": "تن", "iron_ore": "تن", "microchips": "عدد", "uranium_ore": "تن", "nuclear_fuel": "کیلوگرم"}
@@ -5901,10 +6359,10 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
 
             unit_price = order["unit_price"]
             commodity_cost = buy_amount * unit_price
-            total_buyer_cost = commodity_cost + t_cost
+            total_buyer_cost = commodity_cost + t_cost + strait_toll_total
 
             if buyer_c["treasury"] < total_buyer_cost:
-                return False, f"موجودی خزانه کافی نیست!\nارزش کالا: {format_money(commodity_cost)}\nهزینه ترابری: {format_money(t_cost)}\nمجموع هزینه: {format_money(total_buyer_cost)}\nخزانه شما: {format_money(buyer_c['treasury'])}", {}
+                return False, f"موجودی خزانه کافی نیست!\nارزش کالا: {format_money(commodity_cost)}\nهزینه ترابری و عوارض: {format_money(t_cost + strait_toll_total)}\nمجموع هزینه: {format_money(total_buyer_cost)}\nخزانه شما: {format_money(buyer_c['treasury'])}", {}
 
             resource_cols = {"oil": "oil_reserves", "gold": "gold", "grain": "grain", "iron_ore": "iron_ore", "microchips": "microchips", "uranium_ore": "uranium_ore", "nuclear_fuel": "nuclear_fuel"}
             col = resource_cols[res_type]
@@ -5919,6 +6377,13 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 cur.execute("UPDATE market_orders SET amount = ? WHERE id = ?", (rem_amount, order_id))
 
             now_str = datetime.datetime.now().isoformat()
+            for owner_c, toll_amount, strait_name in strait_tolls:
+                cur.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (toll_amount, owner_c["id"]))
+                cur.execute(
+                    "INSERT INTO transactions (country_id, type, description, amount, created_at) VALUES (?, 'strait_toll', ?, ?, ?)",
+                    (owner_c["id"], f"دریافت عوارض ترانزیت {strait_name} از خرید بورس {buyer_c['name']} و {seller_c['name']}", toll_amount, now_str)
+                )
+
             cur.execute("""
                 INSERT INTO market_history (seller_id, buyer_id, resource_type, amount, unit_price, total_price, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -5938,7 +6403,9 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 "seller": seller_c,
                 "buyer": buyer_c,
                 "commodity_cost": commodity_cost,
-                "transport_cost": t_cost,
+                "transport_cost": t_cost + strait_toll_total,
+                "strait_toll_total": strait_toll_total,
+                "total_buyer_cost": total_buyer_cost,
                 "total_buyer_cost": total_buyer_cost,
                 "res_type": res_type,
                 "res_label": res_label,
@@ -6510,12 +6977,68 @@ def record_country_statement(country_id: int, player_id: int, statement_type: st
     now_str = now_utc.isoformat()
     cur.execute(
         "INSERT INTO daily_statements (country_id, player_id, statement_type, content, created_at, statement_date) VALUES (?, ?, ?, ?, ?, ?)",
-        (country_id, player_id, statement_type, content[:500] if content else "", now_str, stmt_date)
+        (country_id, player_id, statement_type, content[:4000] if content else "", now_str, stmt_date)
     )
     stmt_id = cur.lastrowid
     conn.commit()
     conn.close()
     return stmt_id
+
+
+def get_recent_statements(limit: int = 50, hours: int | None = 24) -> list[dict]:
+    """دریافت لیست تمام بیانیه‌ها و توییت‌های ثبت‌شده در ۲۴ ساعت اخیر یا به ترتیب نزولی با مشخصات کشور."""
+    conn = get_connection()
+    cur = conn.cursor()
+    if hours:
+        since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)).isoformat()
+        cur.execute("""
+            SELECT s.id, s.country_id, s.player_id, s.statement_type, s.content, s.created_at, s.statement_date,
+                   c.name AS country_name, c.flag AS country_flag, c.country_key, c.player_id AS country_owner_id
+            FROM daily_statements s
+            LEFT JOIN countries c ON s.country_id = c.id
+            WHERE s.created_at >= ?
+            ORDER BY s.id DESC
+            LIMIT ?
+        """, (since, limit))
+    else:
+        cur.execute("""
+            SELECT s.id, s.country_id, s.player_id, s.statement_type, s.content, s.created_at, s.statement_date,
+                   c.name AS country_name, c.flag AS country_flag, c.country_key, c.player_id AS country_owner_id
+            FROM daily_statements s
+            LEFT JOIN countries c ON s.country_id = c.id
+            ORDER BY s.id DESC
+            LIMIT ?
+        """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_statement_by_id(stmt_id: int) -> dict | None:
+    """دریافت مشخصات کامل یک بیانیه با شناسه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.id, s.country_id, s.player_id, s.statement_type, s.content, s.created_at, s.statement_date,
+               c.name AS country_name, c.flag AS country_flag, c.country_key, c.player_id AS country_owner_id
+        FROM daily_statements s
+        LEFT JOIN countries c ON s.country_id = c.id
+        WHERE s.id = ?
+    """, (stmt_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_statement_by_id(stmt_id: int) -> bool:
+    """حذف یک بیانیه از دیتابیس توسط ادمین."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM daily_statements WHERE id = ?", (stmt_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def get_country_statement_count_today(country_id: int) -> int:
