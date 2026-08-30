@@ -1465,6 +1465,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             sea_line = f"• 🚢 **ترابری دریایی:** ۳۰۰,۰۰۰ دلار (سقف امروز: {sea_used}/{sea_cap})"
             sea_btn = InlineKeyboardButton(f"🚢 ترابری دریایی ({sea_used}/{sea_cap})", callback_data=f"dip:mil_finish:sea:{payer}")
 
+        has_land = db.has_land_trade_route(my_key, t_key)
+        if has_land:
+            land_line = f"• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (سقف امروز: {land_used}/{land_cap})"
+            land_btn = InlineKeyboardButton(f"🚛 ترابری زمینی ({land_used}/{land_cap})", callback_data=f"dip:mil_finish:land:{payer}")
+        else:
+            land_line = "• 🚫 **ترابری زمینی:** غیرفعال — مسیر خشکی پیوسته‌ای بین دو کشور وجود ندارد"
+            land_btn = None
+
         text = (
             "🌐 **انتخاب روش ترابری و ترانزیت محموله نظامی**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1472,13 +1480,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"⚖️ **ظرفیت هر محموله (تن):** کشتی **{db.transfer_weight_capacity('sea'):,}** | قطار/کامیون **{db.transfer_weight_capacity('land'):,}** | هواپیما **{db.transfer_weight_capacity('air'):,}**\n"
             "*(جنگنده ≈ ۲۰ تن | تانک ≈ ۳۰ تن | پدافند ≈ ۱۵ تن | موشک ≈ ۲ تن | پهپاد ≈ ۰.۴ تن)*\n\n"
             f"• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سقف امروز: {air_used}/{air_cap})\n"
-            f"• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (سقف امروز: {land_used}/{land_cap})\n"
+            f"{land_line}\n"
             f"{sea_line}"
         )
         keyboard = [
             [InlineKeyboardButton(f"✈️ ترابری هوایی ({air_used}/{air_cap})", callback_data=f"dip:mil_finish:air:{payer}")],
-            [InlineKeyboardButton(f"🚛 ترابری زمینی ({land_used}/{land_cap})", callback_data=f"dip:mil_finish:land:{payer}")],
         ]
+        if land_btn:
+            keyboard.append([land_btn])
         if sea_btn:
             keyboard.append([sea_btn])
         keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
@@ -1588,6 +1597,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 ]
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
                 return
+
+        if mode == "land" and not db.has_land_trade_route(p_key, t_key):
+            await query.edit_message_text(
+                f"🚛 **ترابری زمینی غیرمجاز است!**\n\n"
+                f"هیچ مسیر خشکی پیوسته‌ای (مرز مشترک یا ترانزیت زمینی) بین {country['flag']} **{country['name']}** و {target_c['flag']} **{target_c['name']}** وجود ندارد.\n\n"
+                "لطفاً برای این معاهده از ترابری دریایی یا هوایی استفاده فرمایید.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:air:{payer}")],
+                    [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:mil_finish:sea:{payer}")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
 
         is_smuggled = draft.get("is_smuggled", 0)
         orig_key = draft.get("origin_key", country.get("country_key"))
@@ -1833,6 +1856,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             sea_line = f"• 🚢 **ترابری دریایی:** ۳۰۰,۰۰۰ دلار (سقف امروز: {sea_used}/{sea_cap})"
             sea_btn = InlineKeyboardButton(f"🚢 ترابری دریایی ({sea_used}/{sea_cap})", callback_data=f"dip:trade_finish:sea:{payer}")
 
+        has_land = db.has_land_trade_route(my_key, t_key)
+        if has_land:
+            land_line = f"• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (سقف امروز: {land_used}/{land_cap})"
+            land_btn = InlineKeyboardButton(f"🚛 ترابری زمینی ({land_used}/{land_cap})", callback_data=f"dip:trade_finish:land:{payer}")
+        else:
+            land_line = "• 🚫 **ترابری زمینی:** غیرفعال — مسیر خشکی پیوسته‌ای بین دو کشور وجود ندارد"
+            land_btn = None
+
         text = (
             "🌐 **انتخاب روش ترابری و ترانزیت محموله تجاری**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
@@ -1840,13 +1871,14 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"⚖️ **ظرفیت هر محموله (تن):** کشتی **{db.transfer_weight_capacity('sea'):,}** | قطار/کامیون **{db.transfer_weight_capacity('land'):,}** | هواپیما **{db.transfer_weight_capacity('air'):,}**\n"
             "*(جنگنده ≈ ۲۰ تن | تانک ≈ ۳۰ تن | پدافند ≈ ۱۵ تن | موشک ≈ ۲ تن | پهپاد ≈ ۰.۴ تن)*\n\n"
             f"• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سقف امروز: {air_used}/{air_cap})\n"
-            f"• **🚛 ترابری زمینی:** ۱,۰۰۰,۰۰۰ دلار (سقف امروز: {land_used}/{land_cap})\n"
+            f"{land_line}\n"
             f"{sea_line}"
         )
         keyboard = [
             [InlineKeyboardButton(f"✈️ ترابری هوایی ({air_used}/{air_cap})", callback_data=f"dip:trade_finish:air:{payer}")],
-            [InlineKeyboardButton(f"🚛 ترابری زمینی ({land_used}/{land_cap})", callback_data=f"dip:trade_finish:land:{payer}")],
         ]
+        if land_btn:
+            keyboard.append([land_btn])
         if sea_btn:
             keyboard.append([sea_btn])
         keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
@@ -1956,6 +1988,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 ]
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
                 return
+
+        if mode == "land" and not db.has_land_trade_route(p_key, t_key):
+            await query.edit_message_text(
+                f"🚛 **ترابری زمینی غیرمجاز است!**\n\n"
+                f"هیچ مسیر خشکی پیوسته‌ای (مرز مشترک یا ترانزیت زمینی) بین {country['flag']} **{country['name']}** و {target_c['flag']} **{target_c['name']}** وجود ندارد.\n\n"
+                "لطفاً برای این معاهده از ترابری دریایی یا هوایی استفاده فرمایید.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:air:{payer}")],
+                    [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data=f"dip:trade_finish:sea:{payer}")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
 
         cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
         mode_labels = {"air": "✈️ ترابری هوایی", "land": "🚛 ترابری زمینی", "sea": "🚢 ترابری دریایی"}
@@ -2353,6 +2399,20 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
                 return
 
+        if mode == "land" and not db.has_land_trade_route(my_key, t_key):
+            await query.edit_message_text(
+                f"🚛 **ترابری زمینی غیرمجاز است!**\n\n"
+                f"هیچ مسیر خشکی پیوسته‌ای (مرز مشترک یا ترانزیت زمینی) بین {country['flag']} **{country['name']}** و {target_c['flag']} **{target_c['name']}** وجود ندارد.\n\n"
+                "لطفاً برای ارسال این کمک از ترابری دریایی یا هوایی استفاده فرمایید.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")],
+                    [InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:sea")],
+                    [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
         succ, msg_res = db.execute_foreign_aid_transaction(country["id"], target_id, res_type, amt, transport_mode=mode)
         if not succ:
             await query.edit_message_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
@@ -2731,7 +2791,9 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                 else:
                     kb.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:sea")])
 
-            kb.append([InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")])
+            has_land = db.has_land_trade_route(my_key, t_key)
+            if has_land:
+                kb.append([InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")])
             kb.append([InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")])
             kb.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
 
@@ -2742,6 +2804,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                 f"• **محموله ارسالی:** {amt:,} {type_labels.get(res_type, res_type)}\n\n"
                 "لطفاً روش ترابری و لجستیک انتقال این کمک را انتخاب فرمایید:\n"
                 "*(هزینه ترانزیت و عوارض احتمالی از خزانه کشور اهداکننده کسر می‌شود)*"
+                + ("" if has_land else "\n🚫 **ترابری زمینی:** غیرفعال — مسیر خشکی پیوسته‌ای بین دو کشور وجود ندارد.")
             )
 
             await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")

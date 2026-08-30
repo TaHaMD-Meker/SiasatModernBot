@@ -20,6 +20,7 @@ try:
 except Exception:
     IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 import config
+import borders
 from utils import format_money, format_number, format_oil
 
 def get_connection():
@@ -4320,6 +4321,17 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                     if owner_c and st_toll > 0:
                         strait_tolls.append((owner_c, st_toll, t_entry["name"]))
 
+            # ترابری زمینی: وجود مسیر خشکی پیوسته (مرز مستقیم یا ترانزیت خاکی) الزامی است
+            if t_mode == "land":
+                p_land_key = p_c.get("country_key")
+                r_land_key = r_c.get("country_key")
+                if not has_land_trade_route(p_land_key, r_land_key):
+                    return False, (
+                        f"🚛 **امکان ترابری زمینی وجود ندارد:** هیچ مسیر خشکی پیوسته‌ای (مرز مشترک یا ترانزیت زمینی) بین "
+                        f"{p_c['flag']} **{p_c['name']}** و {r_c['flag']} **{r_c['name']}** وجود ندارد.\n"
+                        "لطفاً این معاهده با ترابری دریایی یا هوایی صادر شود."
+                    )
+
             # Check capacity limits for commodity transport
             t_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(t_mode, {}).get("limits", {})
             if off_type in t_limits and off_amt > t_limits[off_type]:
@@ -4592,6 +4604,15 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                     st_toll = t_entry["toll_amount"]
                     if owner_c and st_toll > 0:
                         strait_tolls.append((owner_c, st_toll, t_entry["name"]))
+
+            # ترابری زمینی: وجود مسیر خشکی پیوسته (مرز مستقیم یا ترانزیت خاکی) الزامی است
+            if transport_mode == "land":
+                if not has_land_trade_route(d_key, r_key):
+                    return False, (
+                        f"🚛 **ترابری زمینی ممکن نیست:** مسیر خشکی پیوسته‌ای (مرز مشترک یا ترانزیت زمینی) بین "
+                        f"{d_c['flag']} {d_c['name']} و {r_c['flag']} {r_c['name']} وجود ندارد. "
+                        "لطفاً از ترابری دریایی یا هوایی استفاده فرمایید."
+                    )
 
             strait_toll_total = sum(t[1] for t in strait_tolls)
             total_transit_cost = t_cost + strait_toll_total
@@ -5043,6 +5064,22 @@ def has_open_sea_access(country_key: str) -> bool:
     if not country_key:
         return True
     return country_key not in config.NO_SEA_ACCESS_COUNTRIES
+
+
+def has_land_trade_route(country1_key: str, country2_key: str) -> bool:
+    """آیا بین دو کشور «مسیر خشکی پیوسته» برای ترابری زمینی وجود دارد؟
+
+    بر پایه‌ی نقشه‌ی خالص زمینی borders (پیوندهای دریایی-نزدیک مثل آمریکا↔کوبا
+    محسوب نمی‌شوند). مرز مستقیم یا ترانزیت خاکی از کشورهای میانی هر دو معتبرند.
+
+    سیاست fail-open هم‌راستا با has_open_sea_access: کشور خارج از کاتالوگ
+    جغرافیایی بازی (کلید نامعتبر/ساختگی) محدودیت مسیر ندارد.
+    """
+    valid_keys = list((getattr(config, "COUNTRY_STARTING_OVERRIDES", {}) or {}).keys())
+    known = set(valid_keys)
+    if country1_key not in known or country2_key not in known:
+        return True
+    return borders.has_land_route(country1_key, country2_key, valid_keys)
 
 
 def calculate_blockade_defense_power(target_id: int) -> tuple[int, list[dict]]:
@@ -6340,6 +6377,17 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                     st_toll = t_entry["toll_amount"]
                     if owner_c and st_toll > 0:
                         strait_tolls.append((owner_c, st_toll, t_entry["name"]))
+
+            # ترابری زمینی: وجود مسیر خشکی پیوسته (مرز مستقیم یا ترانزیت خاکی) الزامی است
+            if transport_mode == "land":
+                s_land_key = seller_c.get("country_key")
+                b_land_key = buyer_c.get("country_key")
+                if not has_land_trade_route(s_land_key, b_land_key):
+                    return False, (
+                        f"🚛 **ترابری زمینی ممکن نیست:** مسیر خشکی پیوسته‌ای (مرز مشترک یا ترانزیت زمینی) بین "
+                        f"{seller_c['flag']} **{seller_c['name']}** و {buyer_c['flag']} **{buyer_c['name']}** وجود ندارد. "
+                        "لطفاً این خرید با ترابری دریایی یا هوایی انجام شود."
+                    ), {}
 
             strait_toll_total = sum(t[1] for t in strait_tolls)
             res_type = order["resource_type"]

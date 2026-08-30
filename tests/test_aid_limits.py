@@ -23,7 +23,10 @@ def test_foreign_aid_capacity_and_transport_costs(monkeypatch):
     db.init_db()
 
     cid1 = db.create_country(111, "آمریکا", "🇺🇸", country_key="usa")
-    cid2 = db.create_country(222, "بریتانیا", "🇬🇧", country_key="uk")
+    # نکته: از وقتی «قانون مسیر زمینی» اضافه شده، سناریوی ترابری زمینی باید بین
+    # دو کشور دارای مسیر خشکی پیوسته باشد؛ آمریکا↔کانادا مسیر زمینی دارد
+    # (آمریکا↔بریتانیا ندارد و کمک زمینی بین‌شان قانوناً مسدود است).
+    cid2 = db.create_country(222, "کانادا", "🇨🇦", country_key="canada")
 
     conn = db.get_connection()
     conn.execute("UPDATE countries SET oil_reserves = 10000000, treasury = 50000000 WHERE id = ?", (cid1,))

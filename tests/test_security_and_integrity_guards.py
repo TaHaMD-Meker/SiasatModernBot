@@ -95,7 +95,8 @@ def test_market_rejects_unknown_transport_mode(monkeypatch, tmp_path):
 def test_trade_accept_and_reject_are_recipient_only_and_one_shot(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     proposer_id = database.create_country(7006, "پیشنهاددهنده", "🏳️", country_key="usa")
-    recipient_id = database.create_country(7007, "دریافت‌کننده", "🏳️", country_key="uk")
+    # مقصد کانادا است تا قرارداد «زمینی» طبق قانون مسیر زمینی (مرز خشکی مشترک) معتبر بماند
+    recipient_id = database.create_country(7007, "دریافت‌کننده", "🏳️", country_key="canada")
 
     contract_id = database.create_trade_contract(
         proposer_id,

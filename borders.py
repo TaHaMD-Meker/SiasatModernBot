@@ -137,3 +137,109 @@ def build_border_map(valid_keys) -> dict:
                 borders[country].add(neighbour)
                 borders[neighbour].add(country)
     return {key: sorted(value) for key, value in borders.items()}
+
+
+# ══════════════════════════ نقشه‌ی خالص زمینی (ترابری زمینی) ══════════════════════════
+#
+# نقشه‌ی عملیاتی بالا چند پیوند «دریایی-نزدیک» دارد که در رول‌پلی مثل هم‌مرزی
+# حساب می‌شوند اما هیچ گذرگاه زمینی/ریلی واقعی ندارند (کامیون و قطار نمی‌توانند
+# از آن‌ها عبور کنند). این جفت‌ها برای ترابری زمینی حذف می‌شوند.
+#
+# گذرگاه‌های مصنوعیِ واقعی آگاهانه به‌عنوان زمینی حفظ شده‌اند:
+#   uk–france (تونل مانش)، denmark–sweden (پل اورسوند)،
+#   saudi–bahrain (گذرگاه ملک فهد)، malaysia–singapore (گذرگاه جوهر).
+_NEAR_SEA_LINKS = {
+    frozenset(pair)
+    for pair in {
+        # خاورمیانه و دریای سرخ
+        ("turkey", "cyprus"),
+        ("cyprus", "greece"),
+        ("qatar", "bahrain"),
+        ("yemen", "somalia"),
+        ("yemen", "eritrea"),
+        # جنوب و شرق آسیا
+        ("india", "sri_lanka"),
+        ("china", "taiwan"),
+        ("taiwan", "japan"),
+        ("taiwan", "philippines"),
+        ("philippines", "indonesia"),
+        ("south_korea", "japan"),
+        ("japan", "russia"),
+        ("malaysia", "indonesia"),
+        ("singapore", "indonesia"),
+        ("indonesia", "australia"),
+        ("australia", "new_zealand"),
+        # اروپا و مدیترانه
+        ("italy", "croatia"),
+        ("italy", "greece"),
+        ("denmark", "norway"),
+        ("uk", "belgium"),
+        ("uk", "netherlands"),
+        ("spain", "morocco"),
+        # آمریکا و کارائیب
+        ("usa", "cuba"),
+        ("mexico", "cuba"),
+    }
+}
+
+
+def build_land_route_map(valid_keys) -> dict:
+    """نقشه‌ی هم‌مرزی «خالص زمینی»؛ پیوندهای دریایی-نزدیک حذف شده‌اند.
+
+    این نقشه برای ترابری زمینی (کامیون/قطار) استفاده می‌شود و با build_border_map
+    (که پیوندهای رول‌پلی دریایی را هم دارد) متفاوت است.
+    """
+    valid = set(valid_keys)
+    land = {key: set() for key in valid}
+    for country, neighbours in _RAW_BORDERS.items():
+        if country not in valid:
+            continue
+        for neighbour in neighbours:
+            if neighbour not in valid or neighbour == country:
+                continue
+            if frozenset((country, neighbour)) in _NEAR_SEA_LINKS:
+                continue
+            land[country].add(neighbour)
+            land[neighbour].add(country)
+    return {key: sorted(value) for key, value in land.items()}
+
+
+_LAND_COMPONENTS_CACHE: dict = {}
+
+
+def land_route_components(valid_keys) -> dict:
+    """برچسب مؤلفه‌ی همبندی خشکی هر کشور؛ دو کشور با برچسب برابر مسیر زمینی دارند.
+
+    نتیجه بر اساس فهرست کشورها کش می‌شود (کاتالوگ کشورها در طول اجرا ثابت است).
+    """
+    signature = tuple(sorted(valid_keys))
+    cached = _LAND_COMPONENTS_CACHE.get(signature)
+    if cached is not None:
+        return cached
+    land_map = build_land_route_map(valid_keys)
+    components: dict = {}
+    component_id = 0
+    for key in land_map:
+        if key in components:
+            continue
+        stack = [key]
+        components[key] = component_id
+        while stack:
+            current = stack.pop()
+            for neighbour in land_map.get(current, ()):
+                if neighbour not in components:
+                    components[neighbour] = component_id
+                    stack.append(neighbour)
+        component_id += 1
+    _LAND_COMPONENTS_CACHE[signature] = components
+    return components
+
+
+def has_land_route(country_key_a: str, country_key_b: str, valid_keys) -> bool:
+    """آیا زنجیره‌ای پیوسته از خشکی (مرز مستقیم یا ترانزیت خاکی) بین دو کشور هست؟"""
+    if not country_key_a or not country_key_b or country_key_a == country_key_b:
+        return False
+    components = land_route_components(valid_keys)
+    component_a = components.get(country_key_a)
+    component_b = components.get(country_key_b)
+    return component_a is not None and component_a == component_b
