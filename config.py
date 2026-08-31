@@ -2451,6 +2451,114 @@ ALL_SHOP_ITEMS = {}
 for group in (BUILDINGS, FACTORIES, POWER_PLANTS, TRANSPORTATION, MINES_AND_RESOURCES, AGRICULTURE):
     ALL_SHOP_ITEMS.update(group)
 
+
+# ===== نگهداری روزانه‌ی سازه‌ها =====
+# هر سازه روزانه منابع مصرف می‌کند. اگر منبع کم بیاید، سازه‌ها یکی‌یکی
+# (از کم‌بازده‌ترین) خاموش می‌شوند و با تأمین منبع خودکار روشن می‌شوند.
+
+# سهم پول از درآمد همان سازه (بالانس سخت‌گیرانه). برای حالت ملایم روی 0.28 بگذارید.
+UPKEEP_INCOME_RATIO = 0.55
+
+# دوره‌ی گذار: نگهداری در N روز اول به‌تدریج اعمال می‌شود تا به بازیکن‌های
+# فعلی شوک وارد نشود. ضریب روز اول 1/(N+1) و روز N ام برابر N/(N+1).
+UPKEEP_RAMP_DAYS = 7
+UPKEEP_RAMP_START_DATE = None  # مثال: "2026-09-05" — تا وقتی None باشد رمپ غیرفعال و نگهداری کامل است
+
+# مصرف روزانه‌ی هر واحد سازه (به‌جز پول که از UPKEEP_INCOME_RATIO محاسبه می‌شود)
+BUILDING_UPKEEP = {
+    # ── ساختمان‌های شهری
+    "house":                {"oil": 300,    "grain": 20, "elec": 0.2},
+    "office":               {"oil": 600,    "elec": 0.3},
+    "commercial":           {"oil": 1_500,  "elec": 0.5},
+    "hotel":                {"oil": 2_200,  "grain": 60, "elec": 0.7},
+    "tower":                {"oil": 3_200,  "elec": 1.0},
+    "skyscraper":           {"oil": 6_500,  "elec": 2.0},
+    "media_center":         {"oil": 4_000,  "elec": 1.5, "microchips": 2},
+    # ── صنعت
+    "small_factory":        {"oil": 5_000,  "elec": 1.0, "iron_ore": 20},
+    "medium_factory":       {"oil": 12_000, "elec": 2.0, "iron_ore": 50},
+    "large_factory":        {"oil": 26_000, "elec": 4.0, "iron_ore": 120},
+    "industrial_complex":   {"oil": 48_000, "elec": 7.0, "iron_ore": 250},
+    "chip_fab":             {"oil": 8_000,  "elec": 6.0},
+    "enrichment_facility":  {"oil": 12_000, "elec": 10.0},
+    # ── انرژی (نیروگاه پاک هیچ نفتی مصرف نمی‌کند — مزیت عمدی)
+    "fossil_plant":         {"oil": 55_000},
+    "solar_plant":          {},
+    "wind_plant":           {},
+    "hydro_plant":          {},
+    "nuclear_plant":        {"nuclear_fuel": 3},
+    # ── حمل‌ونقل
+    "highway":              {"oil": 4_000},
+    "railway":              {"oil": 7_000,  "elec": 1.5},
+    "train_station":        {"oil": 3_000,  "elec": 0.8},
+    "airport":              {"oil": 30_000, "elec": 3.0},
+    "port":                 {"oil": 18_000, "elec": 2.0},
+    "mega_port":            {"oil": 42_000, "elec": 4.0},
+    # ── معادن و منابع
+    "iron_mine":            {"oil": 14_000, "elec": 2.5},
+    "copper_mine":          {"oil": 13_000, "elec": 2.0},
+    "gold_mine":            {"oil": 26_000, "elec": 4.0},
+    "oil_refinery":         {"elec": 5.0},
+    "uranium_mine":         {"oil": 22_000, "elec": 5.0, "microchips": 1},
+    # ── کشاورزی
+    "wheat_farm":           {"oil": 2_000,  "elec": 0.5},
+    "agro_complex":         {"oil": 9_000,  "elec": 1.5},
+    "grain_silo":           {"oil": 2_500,  "elec": 1.0},
+}
+
+# منابعی که از انبار کسر می‌شوند (برق جداست چون ظرفیت است نه انبار)
+UPKEEP_STOCK_RESOURCES = ("oil", "grain", "iron_ore", "microchips", "nuclear_fuel")
+
+UPKEEP_RESOURCE_LABELS = {
+    "money": "💵 خزانه",
+    "oil": "🛢️ نفت",
+    "grain": "🌾 غلات",
+    "iron_ore": "⛏️ آهن و فولاد",
+    "microchips": "💻 میکروچیپ",
+    "nuclear_fuel": "🧪 سوخت هسته‌ای",
+    "elec": "⚡ برق",
+}
+
+UPKEEP_RESOURCE_UNITS = {
+    "money": "دلار",
+    "oil": "بشکه",
+    "grain": "تن",
+    "iron_ore": "تن",
+    "microchips": "عدد",
+    "nuclear_fuel": "کیلوگرم",
+    "elec": "واحد",
+}
+
+
+def get_building_upkeep(item_key: str) -> dict:
+    """مصرف روزانه‌ی یک واحد از این سازه. پول از درصد درآمد خودش می‌آید."""
+    item = ALL_SHOP_ITEMS.get(item_key)
+    if not item:
+        return {}
+    upkeep = dict(BUILDING_UPKEEP.get(item_key, {}))
+    income = int(item.get("income_add", 0) or 0)
+    if income > 0:
+        upkeep["money"] = int(income * UPKEEP_INCOME_RATIO)
+    return upkeep
+
+
+def upkeep_ramp_factor(today_str: str | None = None) -> float:
+    """ضریب دوره‌ی گذار. ۱.۰ یعنی نگهداری کامل."""
+    if not UPKEEP_RAMP_START_DATE:
+        return 1.0
+    import datetime as _dt
+    try:
+        start = _dt.date.fromisoformat(UPKEEP_RAMP_START_DATE)
+        today = _dt.date.fromisoformat(today_str) if today_str else _dt.date.today()
+    except (ValueError, TypeError):
+        return 1.0
+    elapsed = (today - start).days
+    if elapsed < 0:
+        return 0.0
+    if elapsed >= UPKEEP_RAMP_DAYS:
+        return 1.0
+    return round((elapsed + 1) / (UPKEEP_RAMP_DAYS + 1), 4)
+
 # ===== کانال تلگرام جهت انتشار بیانیه‌ها و توییت‌ها =====
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ModernWarFarChannel")
 

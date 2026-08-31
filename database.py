@@ -6,6 +6,7 @@
 
 import os
 import re
+import math
 import glob
 import shutil
 import json
@@ -445,6 +446,12 @@ def init_db():
         FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
+
+    # سازه‌های خاموش‌شده بر اثر کسری منابع (نگهداری روزانه)
+    try:
+        cur.execute("ALTER TABLE equipment ADD COLUMN inactive_qty INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
 
     # درخواست‌های معلق انتخاب کشور جهت تایید ادمین
     cur.execute("""
@@ -2963,7 +2970,8 @@ def rebalance_existing_countries_income():
                 base_nuclear_fuel_daily = overrides.get("nuclear_fuel_daily", config.STARTING_VALUES.get("nuclear_fuel_daily", 0))
                 base_warheads = overrides.get("warheads", config.STARTING_VALUES.get("warheads", 0))
 
-                cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ?", (c_id,))
+                cur.execute("SELECT item_key, quantity, COALESCE(inactive_qty, 0) AS inactive_qty"
+                            " FROM equipment WHERE country_id = ?", (c_id,))
                 eq_rows = cur.fetchall()
                 civ_income = 0
                 civ_elec = 0
@@ -2977,7 +2985,9 @@ def rebalance_existing_countries_income():
 
                 for eq in eq_rows:
                     i_key = eq["item_key"]
-                    qty = eq["quantity"]
+                    qty = max(0, int(eq["quantity"] or 0) - int(eq["inactive_qty"] or 0))
+                    if qty <= 0:
+                        continue
                     item = config.ALL_SHOP_ITEMS.get(i_key, {})
                     inc = item.get("income_add", 0)
                     oil_p = item.get("oil_prod_add", 0)
@@ -3062,6 +3072,217 @@ def rebalance_existing_countries_income():
         print(f"Error rebalancing country incomes: {e}")
 
 
+def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict:
+    """نگهداری روزانه‌ی سازه‌ها: کسر منابع، خاموشی جزئی، بازفعال‌سازی خودکار.
+
+    منطق:
+      ۱) نیاز روزانه‌ی همه‌ی سازه‌ها (با فرض فعال بودن همه) محاسبه می‌شود.
+      ۲) اگر منابع کافی است → همه فعال، منابع کسر می‌شود، inactive_qty صفر.
+      ۳) اگر کم است → سازه‌ها بر اساس «بازده» (درآمد ÷ هزینه) صعودی مرتب
+         می‌شوند و از کم‌بازده‌ترین، واحد به واحد خاموش می‌شوند تا موجودی
+         کفاف بدهد. سازه‌ی خاموش نه منبع می‌خورد نه بونوس می‌دهد.
+      ۴) هر بار از صفر حساب می‌شود، پس idempotent است و بازفعال‌سازی
+         خودکار اتفاق می‌افتد؛ نیازی به دکمه نیست.
+
+    برق ظرفیت است نه انبار: سقف برق در دسترس = برق پایه‌ی کشور (بدون
+    سهم سازه‌های خاموش) و مصرف سازه‌ها از همان کم می‌شود.
+
+    خروجی: dict گزارش برای نمایش در چرخه‌ی روزانه.
+    """
+    empty = {"ok": True, "shortages": {}, "shut_down": [], "reactivated": [],
+             "consumed": {}, "income_lost": 0, "ramp": 1.0}
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, country_key, treasury, oil_reserves, grain, iron_ore,"
+                        " microchips, nuclear_fuel, electricity FROM countries WHERE id = ?", (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return empty
+            c_key = c["country_key"]
+
+            cur.execute("SELECT item_key, quantity, COALESCE(inactive_qty, 0) AS inactive_qty"
+                        " FROM equipment WHERE country_id = ? AND quantity > 0", (country_id,))
+            rows = [r for r in cur.fetchall() if r["item_key"] in config.ALL_SHOP_ITEMS]
+            if not rows:
+                return empty
+
+            ramp = config.upkeep_ramp_factor(today_str)
+            if ramp <= 0:
+                cur.execute("UPDATE equipment SET inactive_qty = 0 WHERE country_id = ?", (country_id,))
+                return dict(empty, ramp=0.0)
+
+            # ── موجودی در دسترس
+            stock = {
+                "money": max(0, int(c["treasury"] or 0)),
+                "oil": max(0, int(c["oil_reserves"] or 0)),
+                "grain": max(0, int(c["grain"] or 0)),
+                "iron_ore": max(0, int((c["iron_ore"] if "iron_ore" in c.keys() else 0) or 0)),
+                "microchips": max(0, int((c["microchips"] if "microchips" in c.keys() else 0) or 0)),
+                "nuclear_fuel": max(0, int((c["nuclear_fuel"] if "nuclear_fuel" in c.keys() else 0) or 0)),
+            }
+
+            ov = config.COUNTRY_STARTING_OVERRIDES.get(c_key, config.STARTING_VALUES)
+            base_elec = int(ov.get("electricity", config.STARTING_VALUES["electricity"]))
+
+            # ── واحدها را باز کن: هر واحد یک ردیف، مرتب بر اساس بازده صعودی
+            units = []
+            for r in rows:
+                key = r["item_key"]
+                item = config.ALL_SHOP_ITEMS[key]
+                up = config.get_building_upkeep(key)
+                if not up:
+                    continue
+                income = int(item.get("income_add", 0) or 0)
+                if key == "oil_refinery":
+                    income = int(config.get_refinery_effect(c_key).get("income", income))
+                cost_weight = float(up.get("money", 0)) + float(up.get("oil", 0)) * 5.0
+                efficiency = income / cost_weight if cost_weight > 0 else float("inf")
+                for _ in range(int(r["quantity"])):
+                    units.append({"key": key, "eff": efficiency, "income": income,
+                                  "upkeep": up, "elec_add": float(item.get("elec_add", 0) or 0)})
+            if not units:
+                return empty
+            units.sort(key=lambda u: u["eff"])
+
+            def scaled(u, res):
+                raw = float(u["upkeep"].get(res, 0)) * ramp
+                if res == "elec":
+                    return raw
+                return int(math.ceil(raw)) if raw > 0 else 0
+
+            # ── از همه‌فعال شروع کن و از کم‌بازده‌ترین خاموش کن تا جا بیفتد
+            active = [True] * len(units)
+
+            def totals():
+                need = {k: 0 for k in ("money", "oil", "grain", "iron_ore", "microchips", "nuclear_fuel")}
+                elec_need = 0.0
+                elec_cap = float(base_elec)
+                for u, on in zip(units, active):
+                    if not on:
+                        continue
+                    for res in need:
+                        need[res] += scaled(u, res)
+                    elec_need += scaled(u, "elec")
+                    elec_cap += u["elec_add"]
+                return need, elec_need, elec_cap
+
+            shortages = {}
+            for _ in range(len(units) + 1):
+                need, elec_need, elec_cap = totals()
+                lacking = {res: need[res] - stock[res] for res in need if need[res] > stock[res]}
+                if elec_need > elec_cap:
+                    lacking["elec"] = round(elec_need - elec_cap, 2)
+                if not lacking:
+                    break
+                for res, amount in lacking.items():
+                    shortages[res] = max(shortages.get(res, 0), amount)
+                # کم‌بازده‌ترین واحدِ فعالی که در این کسری سهم دارد را خاموش کن
+                victim = None
+                for idx, (u, on) in enumerate(zip(units, active)):
+                    if not on:
+                        continue
+                    if any(scaled(u, res) > 0 for res in lacking):
+                        victim = idx
+                        break
+                if victim is None:
+                    victim = next((i for i, on in enumerate(active) if on), None)
+                if victim is None:
+                    break
+                active[victim] = False
+
+            need, elec_need, elec_cap = totals()
+
+            # ── کسر منابع
+            consumed = {res: min(need[res], stock[res]) for res in need if need[res] > 0}
+            cur.execute("""
+                UPDATE countries SET
+                    treasury      = treasury - ?,
+                    oil_reserves  = MAX(0, oil_reserves - ?),
+                    grain         = MAX(0, grain - ?),
+                    iron_ore      = MAX(0, COALESCE(iron_ore, 0) - ?),
+                    microchips    = MAX(0, COALESCE(microchips, 0) - ?),
+                    nuclear_fuel  = MAX(0, COALESCE(nuclear_fuel, 0) - ?)
+                WHERE id = ?
+            """, (consumed.get("money", 0), consumed.get("oil", 0), consumed.get("grain", 0),
+                  consumed.get("iron_ore", 0), consumed.get("microchips", 0),
+                  consumed.get("nuclear_fuel", 0), country_id))
+
+            # ── ثبت خاموشی‌ها
+            off = {}
+            for u, on in zip(units, active):
+                if not on:
+                    off[u["key"]] = off.get(u["key"], 0) + 1
+            prev = {r["item_key"]: int(r["inactive_qty"] or 0) for r in rows}
+            for r in rows:
+                key = r["item_key"]
+                cur.execute("UPDATE equipment SET inactive_qty = ? WHERE country_id = ? AND item_key = ?",
+                            (off.get(key, 0), country_id, key))
+
+            shut_down, reactivated, income_lost = [], [], 0
+            for key in sorted(set(list(off.keys()) + list(prev.keys()))):
+                now_off, was_off = off.get(key, 0), prev.get(key, 0)
+                name = config.ALL_SHOP_ITEMS.get(key, {}).get("name", key)
+                inc = int(config.ALL_SHOP_ITEMS.get(key, {}).get("income_add", 0) or 0)
+                income_lost += inc * now_off
+                if now_off > was_off:
+                    shut_down.append({"key": key, "name": name, "qty": now_off - was_off,
+                                      "total_off": now_off, "income": inc})
+                elif now_off < was_off:
+                    reactivated.append({"key": key, "name": name, "qty": was_off - now_off, "income": inc})
+
+            return {
+                "ok": not shortages,
+                "shortages": {k: (round(v, 2) if k == "elec" else int(v)) for k, v in shortages.items()},
+                "shut_down": shut_down,
+                "reactivated": reactivated,
+                "consumed": consumed,
+                "income_lost": income_lost,
+                "ramp": ramp,
+            }
+    except Exception as e:
+        print(f"[building-upkeep] error for country {country_id}: {e}")
+        return empty
+    finally:
+        conn.close()
+
+
+def format_upkeep_report(result: dict) -> str:
+    """متن هشدار نگهداری برای گزارش روزانه. اگر چیزی برای گفتن نبود، رشته‌ی خالی."""
+    if not result:
+        return ""
+    lines = []
+    labels, units = config.UPKEEP_RESOURCE_LABELS, config.UPKEEP_RESOURCE_UNITS
+
+    if result.get("shut_down"):
+        total = sum(s["qty"] for s in result["shut_down"])
+        lines.append(f"⚠️ <b>کمبود منابع — {total} سازه از کار افتاد</b>")
+        for res, amount in result.get("shortages", {}).items():
+            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
+            lines.append(f"\n{labels.get(res, res)} کسری: <b>{amt} {units.get(res, '')}</b>")
+        for s in result["shut_down"]:
+            lines.append(f"   🔴 {s['qty']} × {s['name']} — خاموش")
+        if result.get("income_lost"):
+            lines.append(f"   💸 درآمد از‌دست‌رفته: <b>{result['income_lost']:,}</b> دلار/روز")
+        lines.append("\n💡 با تأمین کسری، سازه‌ها در چرخه‌ی بعد خودکار روشن می‌شوند.")
+
+    if result.get("reactivated"):
+        total = sum(s["qty"] for s in result["reactivated"])
+        gained = sum(s["qty"] * s["income"] for s in result["reactivated"])
+        if lines:
+            lines.append("")
+        lines.append(f"✅ <b>{total} سازه دوباره وارد مدار شدند</b>")
+        for s in result["reactivated"]:
+            lines.append(f"   🟢 {s['qty']} × {s['name']}")
+        if gained:
+            lines.append(f"   💰 درآمد بازگشته: <b>+{gained:,}</b> دلار/روز")
+
+    if lines and result.get("ramp", 1.0) < 1.0:
+        lines.append(f"\n<i>ℹ️ دوره‌ی گذار نگهداری: هزینه‌ها فعلاً {int(result['ramp'] * 100)}٪ اعمال می‌شود.</i>")
+    return "\n".join(lines)
+
+
 def recalc_country_civ_effects(country_id: int) -> dict:
     """بازمحاسبهٔ عواید روزانهٔ یک کشور از روی ساخت‌وسازهای فعلی‌اش.
 
@@ -3101,10 +3322,15 @@ def recalc_country_civ_effects(country_id: int) -> dict:
                 "nuclear_fuel_daily": ov.get("nuclear_fuel_daily", sv.get("nuclear_fuel_daily", 0)),
             }
 
-            cur.execute("SELECT item_key, quantity FROM equipment WHERE country_id = ? AND quantity > 0", (country_id,))
+            cur.execute("SELECT item_key, quantity, COALESCE(inactive_qty, 0) AS inactive_qty"
+                        " FROM equipment WHERE country_id = ? AND quantity > 0", (country_id,))
             civ = {k: 0 for k in base}
             for eq in cur.fetchall():
-                i_key, qty = eq["item_key"], eq["quantity"]
+                i_key = eq["item_key"]
+                # سازه‌های خاموش‌شده بر اثر کسری منابع هیچ بونوسی نمی‌دهند
+                qty = max(0, int(eq["quantity"]) - int(eq["inactive_qty"] or 0))
+                if qty <= 0:
+                    continue
                 item = config.ALL_SHOP_ITEMS.get(i_key, {})
                 inc = item.get("income_add", 0)
                 oil_p = item.get("oil_prod_add", 0)
@@ -8193,7 +8419,9 @@ def recalculate_all_countries_income_from_equipment() -> int:
 
                 for eq in eq_rows:
                     i_key = eq["item_key"]
-                    qty = eq["quantity"]
+                    qty = max(0, int(eq["quantity"] or 0) - int(eq["inactive_qty"] or 0))
+                    if qty <= 0:
+                        continue
                     item = config.ALL_SHOP_ITEMS.get(i_key, {})
                     inc = item.get("income_add", 0)
                     oil_p = item.get("oil_prod_add", 0)

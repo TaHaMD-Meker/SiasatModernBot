@@ -261,6 +261,13 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             try:
                 cycle = internal_affairs.run_daily_cycle(db.get_country_by_id(c["id"]) or c, app_res)
                 if cycle:
+                    # 🏭 هشدار نگهداری سازه‌ها (خاموشی بر اثر کسری / بازفعال‌سازی)
+                    try:
+                        _up = db.format_upkeep_report(cycle.get("upkeep") or {})
+                        if _up:
+                            resource_note += "\n\n" + _up
+                    except Exception:
+                        logger.exception("Upkeep report render failed for country %s", c["id"])
                     fresh = db.get_country_by_id(c["id"]) or c
                     news_items = internal_affairs.collect_news(fresh, cycle)
                     if news_items:

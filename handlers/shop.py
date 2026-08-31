@@ -405,6 +405,25 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         )
     desc_text += f"\n📊 *تعداد احداث‌شده فعلی شما:* {curr_qty}/{max_limit} واحد"
 
+    # 🏭 مصرف روزانه‌ی نگهداری — بازیکن قبل از خرید بداند چه هزینه‌ای برمی‌دارد
+    upkeep = config.get_building_upkeep(item_key)
+    if upkeep:
+        order = ("money", "oil", "elec", "grain", "iron_ore", "microchips", "nuclear_fuel")
+        parts = []
+        for res in order:
+            amount = upkeep.get(res)
+            if not amount:
+                continue
+            label = config.UPKEEP_RESOURCE_LABELS.get(res, res)
+            unit = config.UPKEEP_RESOURCE_UNITS.get(res, "")
+            shown = f"{amount:g}" if res == "elec" else f"{int(amount):,}"
+            parts.append(f"• {label}: *{shown}* {unit}/روز")
+        if parts:
+            desc_text += "\n\n🏭 *مصرف روزانه‌ی نگهداری (هر واحد):*\n" + "\n".join(parts)
+            desc_text += "\n⚠️ در صورت کسری منابع، این سازه موقتاً خاموش می‌شود و درآمدی نمی‌دهد."
+    else:
+        desc_text += "\n\n🏭 *نگهداری روزانه:* ندارد"
+
     await query.edit_message_text(
         desc_text,
         reply_markup=InlineKeyboardMarkup(buttons),

@@ -2936,6 +2936,18 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
     except Exception:
         logger.exception("Vaccine collection failed for country %s", cid)
 
+    # ── نگهداری روزانه‌ی سازه‌ها (کسر منابع + خاموشی/بازفعال‌سازی خودکار)
+    # عمداً قبل از بازمحاسبه‌ی درآمد اجرا می‌شود تا سازه‌های خاموش در همان
+    # چرخه از درآمد و برق کشور کنار گذاشته شوند.
+    upkeep_result = {}
+    try:
+        upkeep_result = db.apply_building_upkeep(cid, today)
+        if upkeep_result.get("shut_down") or upkeep_result.get("reactivated"):
+            db.recalc_country_civ_effects(cid)
+            country = db.get_country_by_id(cid) or country
+    except Exception:
+        logger.exception("Building upkeep failed for country %s", cid)
+
     # ── ۰. پیشروی بحران‌های موجود (هشدار → وقوع → بازسازی → پایان)
     # عمداً قبل از محاسبه‌ی جمعیت و مالیات انجام می‌شود تا خسارت بحران در همان
     # چرخه روی رشد جمعیت، ناآرامی و وصول مالیات اثر بگذارد.
@@ -3083,6 +3095,7 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
         "crisis_events": crisis_events,
         "new_crises": [c for c in new_crises if c],
         "band": band_label,
+        "upkeep": upkeep_result,
     }
 
 
