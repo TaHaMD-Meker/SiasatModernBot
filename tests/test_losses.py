@@ -570,6 +570,9 @@ def test_buildings_are_not_swallowed_by_the_resource_matcher():
     ):
         assert match_strategic_resource(name) is None, name
 
+    # سامانه‌ی پدافند «برق-۲» یمن نباید راهبردی برق شمرده شود
+    assert match_strategic_resource("سامانه پدافند هوایی برق-۲ (Barq-2)") is None
+
 
 def test_oil_reserve_loss_is_deducted_and_reverted(db, country):
     cid = country["id"]
@@ -681,11 +684,38 @@ def test_long_statement_is_split_instead_of_failing_as_caption():
     assert "send_message" in source, "متن کامل باید به‌صورت پیام جداگانه برود"
 
 
+def test_blackout_phrases_route_to_electricity_not_barq2():
+    """رگرسیون مسیر کامل پارس: خط خاموشی نباید به پدافند «برق-۲» بچسبد."""
+    from handlers.losses import (
+        is_explicit_strategic,
+        match_asset_by_name,
+        match_strategic_resource,
+    )
+
+    yemen_assets = [{
+        "equipment_key": "barq2_ym",
+        "equipment_name": "سامانه موشکی پدافند هوایی برق-۲ (Barq-2)",
+        "category": "Air Defense",
+    }]
+
+    for name in ("قطع برق سراسری کشور", "برق سراسری", "خاموشی سراسری", "شبکه برق ملی"):
+        # همان ترتیب مسیر اصلی پارسر: اول صریحِ راهبردی، بعد دارایی، بعد match_strategic_resource
+        a = None if is_explicit_strategic(name) else match_asset_by_name(name, yemen_assets)
+        assert a is None, f"{name} wrongly matched a yemen asset"
+        res = match_strategic_resource(name)
+        assert res and res["special"] == "electricity", name
+
+    # و دارایی واقعی همچنان از مسیر خودش پیدا می‌شود
+    a = match_asset_by_name("سامانه پدافند هوایی برق-۲", yemen_assets)
+    assert a is not None and a["equipment_key"] == "barq2_ym"
+
+
 def test_power_grid_and_vaccine_are_deductible_and_reversible(db, country):
     """حمله به شبکه برق و مرکز واکسن باید اثر واقعی داشته باشد."""
     from handlers.losses import match_strategic_resource
 
-    for name in ("شبکه برق و پست‌های انتقال", "سوئیچ یارد", "پست انتقال"):
+    for name in ("شبکه برق و پست‌های انتقال", "سوئیچ یارد", "پست انتقال",
+                 "قطع برق سراسری کشور", "برق سراسری", "خاموشی سراسری"):
         match = match_strategic_resource(name)
         assert match and match["special"] == "electricity", name
     for name in ("ذخایر واکسن", "دز واکسن"):
