@@ -46,12 +46,35 @@ def test_every_shop_item_has_an_upkeep_entry():
     assert not missing, f"سازه‌های بدون نگهداری: {missing}"
 
 
-def test_money_upkeep_is_a_fixed_share_of_income():
+def test_money_upkeep_follows_the_configured_ratio():
+    """با نسبت صفر هیچ سازه‌ای نباید هزینه‌ی نقدی داشته باشد."""
     for key, item in config.ALL_SHOP_ITEMS.items():
         income = int(item.get("income_add", 0) or 0)
-        if income <= 0:
-            continue
-        assert config.get_building_upkeep(key)["money"] == int(income * config.UPKEEP_INCOME_RATIO)
+        expected = int(income * config.UPKEEP_INCOME_RATIO)
+        got = config.get_building_upkeep(key).get("money", 0)
+        assert got == expected
+
+
+def test_no_cash_cost_while_ratio_is_zero():
+    """طراحی فعلی: فشار روی منابع است نه خزانه."""
+    if config.UPKEEP_INCOME_RATIO != 0:
+        pytest.skip("نسبت نقدی صفر نیست")
+    for key in config.ALL_SHOP_ITEMS:
+        assert "money" not in config.get_building_upkeep(key)
+
+
+def test_every_building_consumes_at_least_one_resource():
+    """هیچ سازه‌ای نباید کاملاً مجانی بماند."""
+    free = [k for k in config.ALL_SHOP_ITEMS if not config.get_building_upkeep(k)]
+    assert not free, f"سازه‌های کاملاً مجانی: {free}"
+
+
+def test_electricity_demand_stays_within_world_capacity():
+    """اگر مصرف برق از سقف تولید بگذرد، بازی قفل می‌شود."""
+    cap = sum(v.get("elec_add", 0) * v.get("max_limit", 1) for v in config.ALL_SHOP_ITEMS.values())
+    need = sum(config.get_building_upkeep(k).get("elec", 0) * v.get("max_limit", 1)
+               for k, v in config.ALL_SHOP_ITEMS.items())
+    assert need < cap, f"مصرف برق {need} از ظرفیت {cap} بیشتر است"
 
 
 def test_clean_power_plants_burn_no_oil_but_fossil_does():
@@ -87,7 +110,7 @@ def test_upkeep_deducts_resources_when_country_is_rich(monkeypatch, tmp_path):
     up = config.get_building_upkeep("large_factory")
     assert before["oil_reserves"] - after["oil_reserves"] == up["oil"] * 3
     assert before["iron_ore"] - after["iron_ore"] == up["iron_ore"] * 3
-    assert before["treasury"] - after["treasury"] == up["money"] * 3
+    assert before["treasury"] - after["treasury"] == up.get("money", 0) * 3
 
 
 def test_upkeep_is_idempotent_shape(monkeypatch, tmp_path):

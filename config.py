@@ -2456,8 +2456,9 @@ for group in (BUILDINGS, FACTORIES, POWER_PLANTS, TRANSPORTATION, MINES_AND_RESO
 # هر سازه روزانه منابع مصرف می‌کند. اگر منبع کم بیاید، سازه‌ها یکی‌یکی
 # (از کم‌بازده‌ترین) خاموش می‌شوند و با تأمین منبع خودکار روشن می‌شوند.
 
-# سهم پول از درآمد همان سازه (بالانس سخت‌گیرانه). برای حالت ملایم روی 0.28 بگذارید.
-UPKEEP_INCOME_RATIO = 0.55
+# سهم پول از درآمد همان سازه. صفر یعنی سازه‌ها هیچ هزینه‌ی نقدی ندارند و
+# گلوگاه واقعی «منابع» است: نفت، برق، آهن، غلات، چیپ و سوخت هسته‌ای.
+UPKEEP_INCOME_RATIO = 0.0   # هزینه‌ی نقدی برداشته شد — فشار روی منابع است نه خزانه
 
 # دوره‌ی گذار: نگهداری در N روز اول به‌تدریج اعمال می‌شود تا به بازیکن‌های
 # فعلی شوک وارد نشود. ضریب روز اول 1/(N+1) و روز N ام برابر N/(N+1).
@@ -2467,43 +2468,43 @@ UPKEEP_RAMP_START_DATE = None  # مثال: "2026-09-05" — تا وقتی None �
 # مصرف روزانه‌ی هر واحد سازه (به‌جز پول که از UPKEEP_INCOME_RATIO محاسبه می‌شود)
 BUILDING_UPKEEP = {
     # ── ساختمان‌های شهری
-    "house":                {"oil": 300,    "grain": 20, "elec": 0.2},
-    "office":               {"oil": 600,    "elec": 0.3},
-    "commercial":           {"oil": 1_500,  "elec": 0.5},
-    "hotel":                {"oil": 2_200,  "grain": 60, "elec": 0.7},
-    "tower":                {"oil": 3_200,  "elec": 1.0},
-    "skyscraper":           {"oil": 6_500,  "elec": 2.0},
-    "media_center":         {"oil": 4_000,  "elec": 1.5, "microchips": 2},
+    "house":                {"oil": 10_000,  "grain": 150, "elec": 0.7},
+    "office":               {"oil": 22_000,  "elec": 0.9},
+    "commercial":           {"oil": 60_000,  "elec": 2.2},
+    "hotel":                {"oil": 100_000, "grain": 400, "elec": 3.1},
+    "tower":                {"oil": 140_000, "elec": 4},
+    "skyscraper":           {"oil": 280_000, "elec": 8.1},
+    "media_center":         {"oil": 100_000, "elec": 5.4, "microchips": 15},
     # ── صنعت
-    "small_factory":        {"oil": 5_000,  "elec": 1.0, "iron_ore": 20},
-    "medium_factory":       {"oil": 12_000, "elec": 2.0, "iron_ore": 50},
-    "large_factory":        {"oil": 26_000, "elec": 4.0, "iron_ore": 120},
-    "industrial_complex":   {"oil": 48_000, "elec": 7.0, "iron_ore": 250},
-    "chip_fab":             {"oil": 8_000,  "elec": 6.0},
-    "enrichment_facility":  {"oil": 12_000, "elec": 10.0},
+    "small_factory":        {"oil": 40_000,  "elec": 2.7,  "iron_ore": 200},
+    "medium_factory":       {"oil": 100_000, "elec": 6.3, "iron_ore": 500},
+    "large_factory":        {"oil": 230_000, "elec": 11.7, "iron_ore": 1_200},
+    "industrial_complex":   {"oil": 390_000, "elec": 20.2, "iron_ore": 2_500},
+    "chip_fab":             {"oil": 170_000, "elec": 18},
+    "enrichment_facility":  {"oil": 500_000, "elec": 27, "microchips": 10},
     # ── انرژی (نیروگاه پاک هیچ نفتی مصرف نمی‌کند — مزیت عمدی)
-    "fossil_plant":         {"oil": 55_000},
-    "solar_plant":          {},
-    "wind_plant":           {},
-    "hydro_plant":          {},
-    "nuclear_plant":        {"nuclear_fuel": 3},
+    "fossil_plant":         {"oil": 130_000},
+    "solar_plant":          {"iron_ore": 300},
+    "wind_plant":           {"iron_ore": 400},
+    "hydro_plant":          {"iron_ore": 500},
+    "nuclear_plant":        {"nuclear_fuel": 25},
     # ── حمل‌ونقل
-    "highway":              {"oil": 4_000},
-    "railway":              {"oil": 7_000,  "elec": 1.5},
-    "train_station":        {"oil": 3_000,  "elec": 0.8},
-    "airport":              {"oil": 30_000, "elec": 3.0},
-    "port":                 {"oil": 18_000, "elec": 2.0},
-    "mega_port":            {"oil": 42_000, "elec": 4.0},
+    "highway":              {"oil": 60_000},
+    "railway":              {"oil": 110_000, "elec": 3.6},
+    "train_station":        {"oil": 45_000,  "elec": 1.8},
+    "airport":              {"oil": 260_000, "elec": 9.9},
+    "port":                 {"oil": 200_000, "elec": 7.2},
+    "mega_port":            {"oil": 480_000, "elec": 13.5},
     # ── معادن و منابع
-    "iron_mine":            {"oil": 14_000, "elec": 2.5},
-    "copper_mine":          {"oil": 13_000, "elec": 2.0},
-    "gold_mine":            {"oil": 26_000, "elec": 4.0},
-    "oil_refinery":         {"elec": 5.0},
-    "uranium_mine":         {"oil": 22_000, "elec": 5.0, "microchips": 1},
+    "iron_mine":            {"oil": 100_000, "elec": 8.1},
+    "copper_mine":          {"oil": 100_000, "elec": 7.2},
+    "gold_mine":            {"oil": 350_000, "elec": 12.6},
+    "oil_refinery":         {"oil": 60_000,  "elec": 13.5},
+    "uranium_mine":         {"oil": 240_000, "elec": 13.5, "microchips": 8},
     # ── کشاورزی
-    "wheat_farm":           {"oil": 2_000,  "elec": 0.5},
-    "agro_complex":         {"oil": 9_000,  "elec": 1.5},
-    "grain_silo":           {"oil": 2_500,  "elec": 1.0},
+    "wheat_farm":           {"oil": 30_000,  "elec": 1.4},
+    "agro_complex":         {"oil": 130_000, "elec": 4.5},
+    "grain_silo":           {"oil": 150_000, "elec": 4.5},
 }
 
 # منابعی که از انبار کسر می‌شوند (برق جداست چون ظرفیت است نه انبار)
@@ -2537,8 +2538,9 @@ def get_building_upkeep(item_key: str) -> dict:
         return {}
     upkeep = dict(BUILDING_UPKEEP.get(item_key, {}))
     income = int(item.get("income_add", 0) or 0)
-    if income > 0:
-        upkeep["money"] = int(income * UPKEEP_INCOME_RATIO)
+    money = int(income * UPKEEP_INCOME_RATIO)
+    if money > 0:
+        upkeep["money"] = money
     return upkeep
 
 
