@@ -276,3 +276,47 @@ def db_format_silent():
     import database as db
     return db.format_upkeep_report({"ok": True, "shortages": {}, "shut_down": [],
                                     "reactivated": [], "consumed": {}, "income_lost": 0, "ramp": 1.0})
+
+
+# ─────────────── آهن به‌عنوان مصالح ساخت ───────────────
+
+def test_every_building_needs_iron_to_build():
+    """ساخت هر سازه باید آهن و فولاد لازم داشته باشد."""
+    free = [k for k, v in config.ALL_SHOP_ITEMS.items() if not int(v.get("iron_req", 0) or 0)]
+    assert not free, f"سازه‌های بدون نیاز به آهن: {free}"
+
+
+def test_iron_build_cost_scales_with_project_size():
+    """پروژه‌ی گران‌تر باید آهن بیشتری بخواهد."""
+    small = config.ALL_SHOP_ITEMS["small_factory"]
+    large = config.ALL_SHOP_ITEMS["large_factory"]
+    huge = config.ALL_SHOP_ITEMS["industrial_complex"]
+    assert small["iron_req"] < large["iron_req"] < huge["iron_req"]
+    assert config.ALL_SHOP_ITEMS["house"]["iron_req"] < config.ALL_SHOP_ITEMS["skyscraper"]["iron_req"]
+
+
+def test_bootstrap_is_possible_from_default_iron_stock():
+    """با موجودی پیش‌فرض باید بشود معدن آهن ساخت، وگرنه بازیکن قفل می‌شود."""
+    default_iron = config.STARTING_VALUES.get("iron_ore", 0)
+    assert config.ALL_SHOP_ITEMS["iron_mine"]["iron_req"] <= default_iron
+
+
+def test_building_purchase_is_blocked_without_iron(monkeypatch, tmp_path):
+    db = _fresh(monkeypatch, tmp_path, "iron_gate.db")
+    cid = _country(db, treasury=900_000_000, oil_reserves=90_000_000,
+                   gold=5_000, microchips=50_000, iron_ore=0)
+    price = config.ALL_SHOP_ITEMS["large_factory"]["price"]
+    ok, msg = db.buy_item_transaction(cid, "large_factory", 1, price, "کارخانه بزرگ")
+    assert not ok
+    assert "آهن" in msg
+
+
+def test_building_purchase_consumes_iron(monkeypatch, tmp_path):
+    db = _fresh(monkeypatch, tmp_path, "iron_pay.db")
+    need = config.ALL_SHOP_ITEMS["large_factory"]["iron_req"]
+    cid = _country(db, treasury=900_000_000, oil_reserves=90_000_000,
+                   gold=5_000, microchips=50_000, iron_ore=need + 500)
+    price = config.ALL_SHOP_ITEMS["large_factory"]["price"]
+    ok, msg = db.buy_item_transaction(cid, "large_factory", 1, price, "کارخانه بزرگ")
+    assert ok, msg
+    assert db.get_country_by_id(cid)["iron_ore"] == 500

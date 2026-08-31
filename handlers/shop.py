@@ -405,6 +405,26 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         )
     desc_text += f"\n📊 *تعداد احداث‌شده فعلی شما:* {curr_qty}/{max_limit} واحد"
 
+    # 🧱 مصالح و پیش‌نیاز ساخت — با وضعیت موجودی خود بازیکن
+    if country:
+        build_reqs = (
+            ("price", "💰 هزینه احداث", "دلار", "treasury"),
+            ("iron_req", "⛏️ آهن و فولاد", "تن", "iron_ore"),
+            ("oil_req", "🛢️ سوخت اولیه", "بشکه", "oil_reserves"),
+            ("gold_req", "🪙 طلا", "شمش", "gold"),
+            ("chips_req", "💻 میکروچیپ", "عدد", "microchips"),
+        )
+        req_lines = []
+        for cfg_key, label, unit, col in build_reqs:
+            needed = int(item.get(cfg_key, 0) or 0)
+            if needed <= 0:
+                continue
+            have = int(country.get(col) or 0)
+            mark = "✅" if have >= needed else "⚠️ کسری"
+            req_lines.append(f"• {label}: *{needed:,}* {unit} — {mark} (موجودی: {have:,})")
+        if req_lines:
+            desc_text += "\n\n🧱 *مصالح لازم برای احداث:*\n" + "\n".join(req_lines)
+
     # 🏭 مصرف روزانه‌ی نگهداری — بازیکن قبل از خرید بداند چه هزینه‌ای برمی‌دارد
     upkeep = config.get_building_upkeep(item_key)
     if upkeep:
