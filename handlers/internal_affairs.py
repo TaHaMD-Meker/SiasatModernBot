@@ -231,6 +231,7 @@ def _approval_causes(country: dict) -> list[str]:
         lines.append(f"✅ برق و انرژی: تأمین کامل ({elec}٪ از {elec_need}٪ موردنیاز)")
     else:
         lines.append(f"❌ برق و انرژی: <b>کسری</b> ({elec}٪ از {elec_need}٪ موردنیاز)")
+    lines.append(f"   🏭 تولید: <b>{elec}٪</b> ظرفیت شبکه")
 
     oil_res = int(country.get("oil_reserves") or 0)
     oil_prod = int(country.get("oil_production") or 0)
@@ -241,6 +242,7 @@ def _approval_causes(country: dict) -> list[str]:
         lines.append(f"⚠️ سوخت و نفت: تأمین از ذخایر (کسری تولید {format_oil(oil_need - oil_prod)}/روز)")
     else:
         lines.append(f"❌ سوخت و نفت: <b>کمبود شدید</b> (کسری {format_oil(oil_need - oil_res - oil_prod)})")
+    lines.append(f"   🏭 تولید: <b>{format_oil(oil_prod)}</b> در روز")
 
     grain = int(country.get("grain") or 0)
     grain_daily = int(country.get("grain_daily") or 0)
@@ -249,6 +251,24 @@ def _approval_causes(country: dict) -> list[str]:
         lines.append(f"✅ غذا و غلات: تأمین کامل (ذخیره {format_number(grain)} تن، نیاز {format_number(grain_need)} تن/روز)")
     else:
         lines.append(f"❌ غذا و غلات: <b>گرسنگی</b> (کسری {format_number(grain_need - grain - grain_daily)} تن)")
+    lines.append(f"   🏭 تولید: <b>{format_number(grain_daily)}</b> تن در روز")
+
+    # تولید روزانه‌ی بقیه‌ی منابع (فقط آن‌هایی که واقعاً تولید دارند)
+    other_production = [
+        ("🪙 طلا", country.get("gold_daily"), "شمش"),
+        ("⛏️ سنگ آهن", country.get("iron_ore_daily"), "تن"),
+        ("💻 میکروچیپ", country.get("microchips_daily"), "عدد"),
+        ("☢️ کیک زرد", country.get("uranium_ore_daily"), "تن"),
+        ("🧪 سوخت هسته‌ای", country.get("nuclear_fuel_daily"), "کیلوگرم"),
+        ("💊 ایزوتوپ پزشکی", country.get("medical_isotopes_daily"), "واحد"),
+    ]
+    produced = [f"{label} {format_number(int(value))} {unit}"
+                for label, value, unit in other_production if int(value or 0) > 0]
+    if produced:
+        lines.append("")
+        lines.append("<b>🏭 تولید روزانه سایر منابع</b>")
+        for entry in produced:
+            lines.append(f"• {entry}")
 
     treasury = int(country.get("treasury") or 0)
     if treasury < 0:

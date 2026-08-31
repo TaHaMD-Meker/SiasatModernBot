@@ -1910,3 +1910,41 @@ def test_vaccine_second_run_skips_research_cost(monkeypatch, tmp_path):
 def test_vaccine_run_cost_is_full_cost_minus_research():
     assert ia.VACCINE_RUN_COST_PER_BATCH == ia.VACCINE_COST_PER_BATCH - ia.VACCINE_RESEARCH_COST
     assert ia.VACCINE_RESEARCH_COST == ia.VACCINE_COST_BREAKDOWN["🔬 تحقیق و توسعه و کارآزمایی"]
+
+
+def test_approval_page_shows_production_for_every_resource(monkeypatch, tmp_path):
+    """صفحه‌ی رضایت باید تولید روزانه‌ی هر منبع را نشان دهد، نه فقط مصرف و ذخیره."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    from handlers.internal_affairs import build_approval_view
+
+    cid = _country(database, approval=100)
+    database.update_country_field(cid, "electricity", 230)
+    database.update_country_field(cid, "oil_production", 12_500_000)
+    database.update_country_field(cid, "grain_daily", 28_000)
+    database.update_country_field(cid, "gold_daily", 60)
+    database.update_country_field(cid, "microchips_daily", 850)
+
+    text, _markup = build_approval_view(database.get_country_by_id(cid), ia.get_state(cid))
+
+    # تولید سه منبع حیاتی
+    assert "🏭 تولید:" in text
+    assert text.count("🏭 تولید:") == 3, "برق، نفت و غلات هر کدام باید خط تولید داشته باشند"
+    assert "ظرفیت شبکه" in text
+    assert "تن در روز" in text
+    # تولید سایر منابع
+    assert "تولید روزانه سایر منابع" in text
+    assert "طلا" in text and "میکروچیپ" in text
+
+
+def test_approval_page_hides_resources_with_zero_production(monkeypatch, tmp_path):
+    """منبعی که تولیدش صفر است نباید در فهرست سایر منابع ظاهر شود."""
+    database = _fresh_db(monkeypatch, tmp_path)
+    from handlers.internal_affairs import build_approval_view
+
+    cid = _country(database, approval=80)
+    for field in ("gold_daily", "iron_ore_daily", "microchips_daily",
+                  "uranium_ore_daily", "nuclear_fuel_daily", "medical_isotopes_daily"):
+        database.update_country_field(cid, field, 0)
+
+    text, _markup = build_approval_view(database.get_country_by_id(cid), ia.get_state(cid))
+    assert "تولید روزانه سایر منابع" not in text
