@@ -254,6 +254,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             logger.exception("Crisis slot cycle failed for country %s", c["id"])
 
         app_res = None
+        resource_note = ""
         if first_of_day:
             app_res = approval_system.process_daily_approval_and_emigration(c)
             # چرخه‌ی جمعیت پویا، مالیات، ناآرامی و بحران‌ها (پشت کلید ادمین، idempotent)
@@ -283,6 +284,26 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         db.update_country_field(c["id"], "combat_readiness", new_readiness)
             except Exception:
                 pass
+
+            # 🌾🛢 مصرف روزانه منابع توسط جمعیت و صنایع (واریز تولید، کسر نیاز، جریمه کمبود)
+            try:
+                cons = internal_affairs.process_daily_resource_consumption(
+                    db.get_country_by_id(c["id"]) or c
+                )
+                if cons.get("grain_shortage") or cons.get("oil_shortage"):
+                    _parts = []
+                    if cons.get("grain_shortage"):
+                        _parts.append(
+                            f"🌾 کمبود غلات به میزان {cons['grain_shortage']:,} تن — "
+                            f"قحطی! ({cons['grain_pop_loss']:,} نفر از جمعیت کاسته شد، رضایت افت کرد)"
+                        )
+                    if cons.get("oil_shortage"):
+                        _parts.append(
+                            f"🛢️ کمبود نفت به میزان {cons['oil_shortage']:,} بشکه — بحران انرژی! (رضایت افت کرد)"
+                        )
+                    resource_note = "\n\n⏳ *بحران مصرف منابع:*\n• " + "\n• ".join(_parts)
+            except Exception:
+                logger.exception("Daily resource consumption failed for country %s", c["id"])
 
         tax_part = tax_income if force else int(tax_income / INCOME_PARTS)
         daily_part = daily_income if force else int(daily_income / INCOME_PARTS)
@@ -327,7 +348,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                             "maint_part": maint_part,
                         },
                     )
-                    report_msg += stmt_status_section
+                    report_msg += resource_note + stmt_status_section
                 else:
                     c2 = db.get_country_by_id(c["id"])
                     chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""

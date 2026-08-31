@@ -5690,6 +5690,17 @@ NUCLEAR_COMPENSATION_ECONOMY_MULT = 3
 NPT_WITHDRAWAL_APPROVAL_HIT = 10   # افت رضایت عمومی هنگام خروج از NPT (واکنش داخلی و بین‌المللی)
 UN_SANCTION_INCOME_FACTOR = 0.5    # ضریب درآمد روزانهٔ کشورِ تحت تحریم جامع (۰.۵ = نصف)
 
+# ===== 🌾🛢 مصرف روزانهٔ منابع (جمعیت و صنایع) =====
+# در اولین پرداخت هر روز تقویمی: تولید روزانه به ذخیره واریز و سپس مصرف جمعیت/صنعت
+# کسر می‌شود (نرخ نیاز از approval_system.calculate_country_requirements).
+# کمبود گندم = قحطی: افت رضایت + ریزش روزانه جمعیت؛ کمبود نفت = بحران انرژی: افت رضایت.
+RESOURCE_CONSUMPTION_ENABLED = True
+RESOURCE_DEFICIT_PENALTY = {
+    "grain_approval_drop": 3,          # افت رضایت در هر روز کمبود غلات
+    "grain_population_loss_pct": 0.001,  # ریزش جمعیت در هر روز قحطی (۰/۱٪)
+    "oil_approval_drop": 3,            # افت رضایت در هر روز کمبود نفت
+}
+
 # ===== 🔬 سطوح و دکترین‌های برنامه غنی‌سازی و چرخه سوخت =====
 ENRICHMENT_FACILITY_PRICE = 60_000_000
 ENRICHMENT_FACILITY_GOLD = 150

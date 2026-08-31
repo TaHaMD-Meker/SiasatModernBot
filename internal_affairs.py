@@ -2804,6 +2804,88 @@ def run_crisis_slot_cycle(country: dict, now_dt: datetime.datetime | None = None
     return events
 
 
+def process_daily_resource_consumption(country: dict) -> dict:
+    """مصرف روزانهٔ گندم و نفت توسط جمعیت و صنایع (یک‌بار در روز، نوبت اول پرداخت).
+
+    ترتیب: ۱) تولید روزانه (oil_production / grain_daily) به ذخیره واریز می‌شود —
+    این تنها مسیر اعتبار‌گیریِ نرخ‌های تولید است؛ ۲) نیاز روزانهٔ جمعیت و صنایع
+    (از approval_system.calculate_country_requirements) کسر می‌شود؛ ۳) اگر ذخیره
+    کم بود، کمبود ثبت و جریمهٔ کمبود اعمال می‌شود (خودِ این تابع در DB می‌نویسد).
+
+    کمبود گندم = قحطی: افت رضایت + ریزش جمعیت. کمبود نفت = بحران انرژی: افت رضایت.
+    مصرف سوخت نظامی جداست و همچنان در main.py اجرا می‌شود.
+    """
+    import approval_system  # وارد کردن تنبل برای پرهیز از وابستگی حلقوی
+
+    out = {
+        "grain_need": 0, "oil_need": 0,
+        "grain_shortage": 0, "oil_shortage": 0,
+        "grain_pop_loss": 0, "approval_dropped": 0,
+    }
+    if not getattr(config, "RESOURCE_CONSUMPTION_ENABLED", True):
+        return out
+    cid = country.get("id")
+    if not cid:
+        return out
+
+    # ۱) واریز تولید روزانه به ذخایر
+    grain_prod = max(0, int(country.get("grain_daily") or 0))
+    oil_prod = max(0, int(country.get("oil_production") or 0))
+    if grain_prod:
+        db.adjust_grain(cid, grain_prod)
+    if oil_prod:
+        db.adjust_oil(cid, oil_prod)
+
+    fresh = db.get_country_by_id(cid) or country
+    try:
+        reqs = approval_system.calculate_country_requirements(fresh)
+    except Exception:
+        logger.exception("resource requirement calc failed for country %s", cid)
+        return out
+
+    pen = getattr(config, "RESOURCE_DEFICIT_PENALTY", {}) or {}
+
+    # ۲) گندم: مصرف جمعیت
+    g_need = int(reqs.get("grain_need_daily") or 0)
+    if g_need > 0:
+        g_have = max(0, int(fresh.get("grain") or 0))
+        paid = min(g_need, g_have)
+        if paid:
+            db.adjust_grain(cid, -paid)
+        out["grain_need"] = g_need
+        shortage = g_need - paid
+        if shortage > 0:
+            out["grain_shortage"] = shortage
+            drop = int(pen.get("grain_approval_drop", 3))
+            app_now = int(fresh.get("approval_rating") or 80)
+            db.update_country_field(cid, "approval_rating", max(0, app_now - drop))
+            out["approval_dropped"] += drop
+            pop_now = max(0, int(fresh.get("population") or 0))
+            pop_loss = int(pop_now * float(pen.get("grain_population_loss_pct", 0.001)))
+            if pop_loss > 0:
+                db.update_country_field(cid, "population", max(0, pop_now - pop_loss))
+            out["grain_pop_loss"] = pop_loss
+
+    # ۳) نفت: مصرف جمعیت + مصرف صنایع و کارخانه‌ها
+    fresh2 = db.get_country_by_id(cid) or fresh
+    o_need = int((reqs.get("pop_oil_need") or 0) + (reqs.get("ind_oil_need") or 0))
+    if o_need > 0:
+        o_have = max(0, int(fresh2.get("oil_reserves") or 0))
+        paid = min(o_need, o_have)
+        if paid:
+            db.adjust_oil(cid, -paid)
+        out["oil_need"] = o_need
+        shortage = o_need - paid
+        if shortage > 0:
+            out["oil_shortage"] = shortage
+            drop = int(pen.get("oil_approval_drop", 3))
+            app_now = int(fresh2.get("approval_rating") or 80)
+            db.update_country_field(cid, "approval_rating", max(0, app_now - drop))
+            out["approval_dropped"] += drop
+
+    return out
+
+
 def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: datetime.datetime | None = None) -> dict | None:
     """چرخه‌ی روزانه‌ی یک کشور. برای هر تاریخ فقط یک‌بار اجرا می‌شود.
 
