@@ -21424,3 +21424,120 @@ def ship_repair_spec(equipment_name: str, price: int, severity: str = "heavy") -
         "can_sink": SHIP_SINK_CHANCE[tier] > 0,
         "sink_chance": SHIP_SINK_CHANCE[tier],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  اسکورت و عبور از محاصره / تنگه
+# ═══════════════════════════════════════════════════════════════════
+
+# قواعد درگیری. مسدودکننده از قبل انتخاب می‌کند چون موقع عبور آنلاین نیست.
+NAVAL_ROE = {
+    "inspect": {
+        "label": "🟢 فقط بازرسی",
+        "desc": "کشتی متوقف و بازرسی می‌شود؛ در بدترین حالت برگردانده می‌شود.",
+        "pass_bonus": 0.20,
+        "seize_weight": 0.0,
+        "strike_weight": 0.0,
+        "unrest": 0, "approval": 0,
+    },
+    "seize": {
+        "label": "🟡 توقیف محموله",
+        "desc": "محموله مصادره و به انبار شما اضافه می‌شود.",
+        "pass_bonus": 0.0,
+        "seize_weight": 1.0,
+        "strike_weight": 0.15,
+        "unrest": 1, "approval": -1,
+    },
+    "fire": {
+        "label": "🔴 آتش به اختیار",
+        "desc": "به کشتی متخلف شلیک می‌شود. محکومیت بین‌المللی در پی دارد.",
+        "pass_bonus": -0.15,
+        "seize_weight": 0.6,
+        "strike_weight": 1.0,
+        "unrest": 4, "approval": -6,
+    },
+}
+NAVAL_ROE_DEFAULT = "seize"
+
+# مدل احتمال عبور: هیچ‌وقت صفر، هیچ‌وقت صد.
+PASSAGE_BASE_CHANCE = 0.15      # کف — حتی بدون اسکورت
+PASSAGE_MAX_CHANCE = 0.85       # سقف — حتی با برتری مطلق
+PASSAGE_SPAN = 0.70             # دامنه‌ی وابسته به نسبت قدرت
+
+# سهم ناوگان خودِ صاحب محموله در قدرت عبور (بدون اینکه لازم باشد انتخابش کند)
+PASSAGE_OWN_NAVY_SHARE = 0.30
+
+# قفل ناوگروه اسکورت — بدون این، اسکورت به یک مالیات ساده تبدیل می‌شود
+ESCORT_LOCK_HOURS = 8
+ESCORT_REQUEST_TTL_HOURS = 6
+
+# هزینه‌ی اعزام اسکورت به ازای هر فروند، بر پایه‌ی رده‌ی شناور
+ESCORT_COST_PER_SHIP = {
+    "capital": {"money": 900_000, "oil": 45_000},
+    "heavy":   {"money": 350_000, "oil": 18_000},
+    "medium":  {"money": 140_000, "oil": 7_000},
+    "light":   {"money":  30_000, "oil": 1_500},
+}
+
+# نتیجه‌های ممکن عبور
+PASSAGE_OUTCOMES = {
+    "passed":      "✅ عبور کامل",
+    "passed_hurt": "⚠️ عبور با آسیب به محموله",
+    "turned_back": "🔙 بازگردانده شد",
+    "seized":      "⛓️ توقیف شد",
+    "struck":      "💥 مورد اصابت قرار گرفت",
+}
+
+
+def passage_chance(escort_power: float, blocker_power: float, roe: str = NAVAL_ROE_DEFAULT) -> float:
+    """احتمال عبور موفق از محاصره یا تنگه‌ی بسته."""
+    blocker_power = max(0.0, float(blocker_power or 0))
+    escort_power = max(0.0, float(escort_power or 0))
+    if blocker_power <= 0:
+        return 1.0
+    ratio = escort_power / blocker_power
+    chance = PASSAGE_BASE_CHANCE + PASSAGE_SPAN * (ratio / (ratio + 1.0))
+    chance += NAVAL_ROE.get(roe, NAVAL_ROE[NAVAL_ROE_DEFAULT])["pass_bonus"]
+    return max(0.02, min(PASSAGE_MAX_CHANCE, chance))
+
+
+def escort_cost(task_force: dict, name_lookup) -> dict:
+    """هزینه‌ی پول و سوخت اعزام یک ناوگروه اسکورت."""
+    money = oil = 0
+    for key, qty in (task_force or {}).items():
+        qty = max(0, int(qty or 0))
+        if qty <= 0:
+            continue
+        tier = ship_tier(name_lookup(key) or "")
+        c = ESCORT_COST_PER_SHIP.get(tier, ESCORT_COST_PER_SHIP["medium"])
+        money += c["money"] * qty
+        oil += c["oil"] * qty
+    return {"money": money, "oil": oil}
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  دریای خزر — مسیر ترابری بسته
+# ═══════════════════════════════════════════════════════════════════
+# خزر دریای بسته است: نه محاصره‌ی اقیانوسی رویش اثر دارد نه تنگه‌ای سر راهش
+# هست. برای ایرانِ محاصره‌شده در خلیج فارس یک دریچه‌ی فرار واقعی می‌سازد و
+# روسیه را به شریان حیاتی‌اش تبدیل می‌کند.
+# آذربایجان و قزاقستان و ترکمنستان در NO_SEA_ACCESS_COUNTRIES می‌مانند —
+# خزر یک «مسیر جدا» است، نه دسترسی به آب آزاد.
+
+CASPIAN_COUNTRIES = ("iran", "russia", "kazakhstan", "turkmenistan", "azerbaijan")
+
+CASPIAN_TRANSPORT = {
+    "name": "🌊 ترابری دریای خزر",
+    "desc": "دریای بسته — بدون محاصره و بدون تنگه، ولی ظرفیت محدود",
+    "cost": 900_000,
+    "oil": 40_000,
+    "max_amount": 120_000,
+}
+
+
+def is_caspian_pair(country1_key: str, country2_key: str) -> bool:
+    """آیا هر دو کشور در حاشیه‌ی دریای خزرند؟"""
+    if not country1_key or not country2_key:
+        return False
+    a, b = country1_key.lower(), country2_key.lower()
+    return a != b and a in CASPIAN_COUNTRIES and b in CASPIAN_COUNTRIES

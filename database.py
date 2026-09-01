@@ -514,6 +514,37 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+    # قفل ناوگروه اعزامی (اسکورت/مأموریت) — تا انقضا عملیاتی نیست
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS naval_locks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        equipment_key TEXT NOT NULL,
+        qty INTEGER NOT NULL,
+        reason TEXT,
+        until_at TEXT NOT NULL,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_naval_locks_c ON naval_locks(country_id)")
+
+    # درخواست اسکورت دریایی
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS escort_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requester_id INTEGER NOT NULL,
+        escort_id INTEGER NOT NULL,
+        blocker_id INTEGER,
+        payload_json TEXT DEFAULT '{}',
+        task_force_json TEXT DEFAULT '{}',
+        status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        expires_at TEXT,
+        FOREIGN KEY(requester_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(escort_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     # محاصره‌های دریایی بین‌المللی
     cur.execute("""
     CREATE TABLE IF NOT EXISTS naval_blockades (
@@ -535,6 +566,11 @@ def init_db():
         pass
     try:
         cur.execute("ALTER TABLE naval_blockades ADD COLUMN coalition_json TEXT DEFAULT '[]'")
+    except Exception:
+        pass
+    # قواعد درگیری محاصره (بعد از ساخت جدول، وگرنه ALTER بی‌صدا رد می‌شود)
+    try:
+        cur.execute("ALTER TABLE naval_blockades ADD COLUMN roe TEXT DEFAULT 'seize'")
     except Exception:
         pass
 
@@ -5721,6 +5757,392 @@ def calculate_task_force_naval_power(country_id: int, task_force: dict | None = 
         else:
             total_power += _score_single_naval_asset(eq_key, qty)
     return int(total_power)
+
+
+# ---------- دریای خزر ----------
+
+def caspian_route_available(country1_key: str, country2_key: str) -> bool:
+    """مسیر خزر فقط بین پنج کشور حاشیه‌ی آن باز است."""
+    return config.is_caspian_pair(country1_key, country2_key)
+
+
+def caspian_route_info(country1_key: str, country2_key: str) -> dict | None:
+    """اطلاعات مسیر خزر، یا None اگر این جفت کشور به خزر راه ندارند.
+
+    خزر دریای بسته است: هیچ محاصره‌ی اقیانوسی و هیچ تنگه‌ای رویش اثر ندارد.
+    """
+    if not caspian_route_available(country1_key, country2_key):
+        return None
+    info = dict(config.CASPIAN_TRANSPORT)
+    info["immune_to_blockade"] = True
+    info["immune_to_straits"] = True
+    return info
+
+
+# ---------- قفل ناوگروه، اسکورت و عبور از محاصره ----------
+
+def _now_iso(dt=None):
+    return (dt or datetime.datetime.now()).isoformat(timespec="seconds")
+
+
+def purge_expired_naval_locks(now_dt=None) -> int:
+    """قفل‌های منقضی‌شده را آزاد می‌کند. idempotent."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM naval_locks WHERE until_at <= ?", (_now_iso(now_dt),))
+            return cur.rowcount or 0
+    finally:
+        conn.close()
+
+
+def get_locked_ship_counts(country_id: int, now_dt=None) -> dict:
+    """چند فروند از هر شناور هم‌اکنون در مأموریت قفل است."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT equipment_key, SUM(qty) AS q FROM naval_locks"
+            " WHERE country_id = ? AND until_at > ? GROUP BY equipment_key",
+            (country_id, _now_iso(now_dt))).fetchall()
+        return {r["equipment_key"]: int(r["q"] or 0) for r in rows}
+    finally:
+        conn.close()
+
+
+def get_deployable_ships(country_id: int, now_dt=None) -> list[dict]:
+    """شناورهای قابل اعزام: کل منهای در تعمیر منهای قفل‌شده."""
+    locks = get_locked_ship_counts(country_id, now_dt)
+    out = []
+    for a in get_country_assets(country_id, category="Navy"):
+        free = available_ship_count(a) - locks.get(a["equipment_key"], 0)
+        if free <= 0:
+            continue
+        out.append({
+            "equipment_key": a["equipment_key"],
+            "equipment_name": a["equipment_name"],
+            "tier": config.ship_tier(a["equipment_name"]),
+            "available": free,
+            "buy_price": int(a["buy_price"] or 0),
+        })
+    return sorted(out, key=lambda x: -x["buy_price"])
+
+
+def lock_task_force(country_id: int, task_force: dict, hours: int, reason: str = "escort",
+                    now_dt=None) -> tuple[bool, str]:
+    """ناوگروه را برای مدت مشخص قفل می‌کند. اگر فروند کافی آزاد نباشد رد می‌شود."""
+    task_force = {k: int(v or 0) for k, v in (task_force or {}).items() if int(v or 0) > 0}
+    if not task_force:
+        return False, "هیچ شناوری انتخاب نشده است."
+    deployable = get_deployable_ships(country_id, now_dt)
+    free = {d["equipment_key"]: d["available"] for d in deployable}
+    names = {d["equipment_key"]: d["equipment_name"] for d in deployable}
+    for key, qty in task_force.items():
+        if free.get(key, 0) < qty:
+            nm = names.get(key, key)
+            return False, f"⛔ فقط {free.get(key, 0)} فروند «{nm}» آزاد است (بقیه در تعمیر یا مأموریت‌اند)."
+    until = (now_dt or datetime.datetime.now()) + datetime.timedelta(hours=max(1, int(hours)))
+    conn = get_connection()
+    try:
+        with conn:
+            for key, qty in task_force.items():
+                conn.execute(
+                    "INSERT INTO naval_locks (country_id, equipment_key, qty, reason, until_at)"
+                    " VALUES (?,?,?,?,?)",
+                    (country_id, key, qty, reason, until.isoformat(timespec="seconds")))
+        return True, until.isoformat(timespec="seconds")
+    finally:
+        conn.close()
+
+
+def task_force_power(country_id: int, task_force: dict) -> int:
+    """توان رزمی یک ناوگروه انتخابی."""
+    names = {a["equipment_key"]: a["equipment_name"]
+             for a in get_country_assets(country_id, category="Navy")}
+    total = 0
+    for key, qty in (task_force or {}).items():
+        qty = max(0, int(qty or 0))
+        if qty <= 0:
+            continue
+        total += _score_single_naval_asset(names.get(key, key), qty)
+    return int(total)
+
+
+def task_force_escort_cost(country_id: int, task_force: dict) -> dict:
+    names = {a["equipment_key"]: a["equipment_name"]
+             for a in get_country_assets(country_id, category="Navy")}
+    return config.escort_cost(task_force, lambda k: names.get(k, ""))
+
+
+# ---------- درخواست اسکورت ----------
+
+def create_escort_request(requester_id: int, escort_id: int, blocker_id: int | None,
+                          payload: dict | None = None, now_dt=None) -> tuple[bool, str, int]:
+    if requester_id == escort_id:
+        return False, "نمی‌توانید از خودتان درخواست اسکورت کنید.", 0
+    now = now_dt or datetime.datetime.now()
+    exp = now + datetime.timedelta(hours=config.ESCORT_REQUEST_TTL_HOURS)
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "SELECT id FROM escort_requests WHERE requester_id = ? AND escort_id = ?"
+                " AND status = 'pending' AND expires_at > ?",
+                (requester_id, escort_id, _now_iso(now)))
+            if cur.fetchone():
+                return False, "یک درخواست اسکورت باز برای همین کشور دارید.", 0
+            cur = conn.execute(
+                "INSERT INTO escort_requests (requester_id, escort_id, blocker_id, payload_json,"
+                " status, created_at, expires_at) VALUES (?,?,?,?,'pending',?,?)",
+                (requester_id, escort_id, blocker_id, json.dumps(payload or {}, ensure_ascii=False),
+                 _now_iso(now), exp.isoformat(timespec="seconds")))
+            return True, "درخواست اسکورت ارسال شد.", int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def get_escort_request(request_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT * FROM escort_requests WHERE id = ?", (request_id,)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def get_pending_escort_requests(escort_id: int, now_dt=None) -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM escort_requests WHERE escort_id = ? AND status = 'pending'"
+            " AND expires_at > ? ORDER BY id DESC", (escort_id, _now_iso(now_dt))).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def accept_escort_request(request_id: int, task_force: dict, now_dt=None) -> tuple[bool, str]:
+    """پذیرش اسکورت: هزینه کسر و ناوگروه قفل می‌شود."""
+    req = get_escort_request(request_id)
+    if not req:
+        return False, "درخواست یافت نشد."
+    if req["status"] != "pending":
+        return False, "این درخواست دیگر باز نیست."
+    now = now_dt or datetime.datetime.now()
+    try:
+        if datetime.datetime.fromisoformat(req["expires_at"]) <= now:
+            return False, "مهلت این درخواست تمام شده است."
+    except (ValueError, TypeError):
+        pass
+
+    escort_id = req["escort_id"]
+    cost = task_force_escort_cost(escort_id, task_force)
+    c = get_country_by_id(escort_id)
+    if not c:
+        return False, "کشور اسکورت‌کننده یافت نشد."
+    if int(c["treasury"] or 0) < cost["money"]:
+        return False, f"⛔ خزانه کافی نیست. هزینه اعزام: {cost['money']:,} دلار"
+    if int(c["oil_reserves"] or 0) < cost["oil"]:
+        return False, f"⛔ سوخت کافی نیست. نیاز: {cost['oil']:,} بشکه"
+
+    ok, msg = lock_task_force(escort_id, task_force, config.ESCORT_LOCK_HOURS, "escort", now)
+    if not ok:
+        return False, msg
+
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE countries SET treasury = treasury - ?, oil_reserves = MAX(0, oil_reserves - ?)"
+                " WHERE id = ?", (cost["money"], cost["oil"], escort_id))
+            conn.execute(
+                "UPDATE escort_requests SET status = 'accepted', task_force_json = ? WHERE id = ?",
+                (json.dumps(task_force, ensure_ascii=False), request_id))
+    finally:
+        conn.close()
+    return True, (f"✅ اسکورت پذیرفته شد. ناوگروه تا {config.ESCORT_LOCK_HOURS} ساعت "
+                  f"در مأموریت قفل است.\n💵 {cost['money']:,} دلار | 🛢️ {cost['oil']:,} بشکه")
+
+
+def reject_escort_request(request_id: int) -> tuple[bool, str]:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE escort_requests SET status = 'rejected' WHERE id = ? AND status = 'pending'",
+                (request_id,))
+        return (cur.rowcount or 0) > 0, "درخواست رد شد."
+    finally:
+        conn.close()
+
+
+def expire_stale_escort_requests(now_dt=None) -> int:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE escort_requests SET status = 'expired'"
+                " WHERE status = 'pending' AND expires_at <= ?", (_now_iso(now_dt),))
+            return cur.rowcount or 0
+    finally:
+        conn.close()
+
+
+# ---------- قواعد درگیری ----------
+
+def get_blockade_roe(blockader_id: int, target_id: int) -> str:
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT roe FROM naval_blockades WHERE blockader_id = ? AND target_id = ?",
+                         (blockader_id, target_id)).fetchone()
+        roe = (r["roe"] if r else None) or config.NAVAL_ROE_DEFAULT
+        return roe if roe in config.NAVAL_ROE else config.NAVAL_ROE_DEFAULT
+    finally:
+        conn.close()
+
+
+def set_blockade_roe(blockader_id: int, target_id: int, roe: str) -> bool:
+    if roe not in config.NAVAL_ROE:
+        return False
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE naval_blockades SET roe = ? WHERE blockader_id = ? AND target_id = ?",
+                (roe, blockader_id, target_id))
+        return (cur.rowcount or 0) > 0
+    finally:
+        conn.close()
+
+
+def get_strait_roe(strait_key: str) -> str:
+    roe = get_setting(f"strait_roe_{strait_key}", config.NAVAL_ROE_DEFAULT)
+    return roe if roe in config.NAVAL_ROE else config.NAVAL_ROE_DEFAULT
+
+
+def set_strait_roe(strait_key: str, roe: str) -> bool:
+    if roe not in config.NAVAL_ROE:
+        return False
+    set_setting(f"strait_roe_{strait_key}", roe)
+    return True
+
+
+# ---------- قرعه‌ی عبور ----------
+
+def _apply_incident_damage(country_id: int, task_force: dict, hit_ratio: float,
+                           rng, now_dt=None) -> list[dict]:
+    """آسیب/غرق به یک ناوگروه طبق رده‌ی هر شناور. ناو سرمایه‌ای هرگز غرق نمی‌شود."""
+    names = {a["equipment_key"]: a["equipment_name"]
+             for a in get_country_assets(country_id, category="Navy")}
+    report = []
+    for key, qty in (task_force or {}).items():
+        qty = max(0, int(qty or 0))
+        if qty <= 0:
+            continue
+        hits = sum(1 for _ in range(qty) if rng.random() < hit_ratio)
+        if hits <= 0:
+            continue
+        tier = config.ship_tier(names.get(key, ""))
+        sink_p = config.SHIP_SINK_CHANCE.get(tier, 0.0)
+        sunk = sum(1 for _ in range(hits) if rng.random() < sink_p)
+        hurt = hits - sunk
+        if sunk:
+            sunk = sink_ships(country_id, key, sunk)
+        if hurt:
+            sev = "heavy" if rng.random() < 0.5 else "light"
+            hurt = damage_ships(country_id, key, hurt, sev, now_dt).get("damaged", 0)
+        if sunk or hurt:
+            report.append({"equipment_key": key, "equipment_name": names.get(key, key),
+                           "tier": tier, "sunk": sunk, "damaged": hurt})
+    return report
+
+
+def resolve_sea_passage(sender_id: int, blocker_id: int | None, escort_id: int | None = None,
+                        escort_task_force: dict | None = None, roe: str = None,
+                        blocker_power: int | None = None, now_dt=None, rng=None) -> dict:
+    """قرعه‌ی عبور از محاصره یا تنگه‌ی بسته.
+
+    برنده‌ی قطعی وجود ندارد: کف عبور ۱۵٪ و سقف ۸۵٪ است. درگیری دوطرفه است،
+    یعنی ناوگروه مسدودکننده هم می‌تواند آسیب ببیند.
+    """
+    import random as _random
+    rng = rng or _random.Random()
+    roe = roe if roe in config.NAVAL_ROE else config.NAVAL_ROE_DEFAULT
+    spec = config.NAVAL_ROE[roe]
+    escort_task_force = escort_task_force or {}
+
+    if blocker_power is None:
+        blocker_power = calculate_blockade_break_power(blocker_id)[2] if blocker_id else 0
+    blocker_power = max(0, int(blocker_power or 0))
+
+    escort_power = 0
+    if escort_id and escort_task_force:
+        escort_power += task_force_power(escort_id, escort_task_force)
+    escort_power += int(calculate_naval_power(sender_id) * config.PASSAGE_OWN_NAVY_SHARE)
+
+    chance = config.passage_chance(escort_power, blocker_power, roe)
+    roll = rng.random()
+    passed = roll < chance
+
+    if passed:
+        outcome = "passed_hurt" if rng.random() < 0.20 else "passed"
+    else:
+        weights = [("turned_back", 1.0),
+                   ("seized", spec["seize_weight"]),
+                   ("struck", spec["strike_weight"])]
+        weights = [(k, w) for k, w in weights if w > 0]
+        total = sum(w for _, w in weights)
+        pick = rng.random() * total
+        outcome = weights[-1][0]
+        acc = 0.0
+        for k, w in weights:
+            acc += w
+            if pick <= acc:
+                outcome = k
+                break
+
+    # درگیری دوطرفه — هرچه نبرد سخت‌تر، آسیب بیشتر
+    escort_losses, blocker_losses = [], []
+    intensity = {"inspect": 0.0, "seize": 0.10, "fire": 0.30}[roe]
+    if intensity > 0 and escort_id and escort_task_force:
+        if outcome in ("struck", "seized", "passed_hurt"):
+            escort_losses = _apply_incident_damage(escort_id, escort_task_force,
+                                                   intensity, rng, now_dt)
+        if outcome in ("passed", "passed_hurt") and blocker_id:
+            bl_tf = _blockade_lead_task_force(blocker_id)
+            if bl_tf:
+                ratio = min(0.35, intensity * (escort_power / max(1, blocker_power)))
+                blocker_losses = _apply_incident_damage(blocker_id, bl_tf, ratio, rng, now_dt)
+
+    return {
+        "passed": passed,
+        "outcome": outcome,
+        "outcome_label": config.PASSAGE_OUTCOMES[outcome],
+        "chance": round(chance, 4),
+        "roll": round(roll, 4),
+        "escort_power": escort_power,
+        "blocker_power": blocker_power,
+        "roe": roe,
+        "escort_losses": escort_losses,
+        "blocker_losses": blocker_losses,
+        "cargo_ratio": 1.0 if outcome == "passed" else (0.6 if outcome == "passed_hurt" else 0.0),
+    }
+
+
+def _blockade_lead_task_force(blockader_id: int) -> dict:
+    """ناوگروه اعزامی رهبر محاصره (برای اعمال تلفات متقابل)."""
+    conn = get_connection()
+    try:
+        r = conn.execute(
+            "SELECT task_force_json FROM naval_blockades WHERE blockader_id = ? AND status = 'active'"
+            " LIMIT 1", (blockader_id,)).fetchone()
+        if not r:
+            return {}
+        try:
+            return {k: int(v or 0) for k, v in (json.loads(r["task_force_json"] or "{}")).items()}
+        except (ValueError, TypeError):
+            return {}
+    finally:
+        conn.close()
 
 
 # ---------- آسیب و تعمیر شناور ----------

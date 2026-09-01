@@ -2936,6 +2936,13 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
     except Exception:
         logger.exception("Vaccine collection failed for country %s", cid)
 
+    # ── قفل ناوگروه‌های منقضی و درخواست‌های اسکورت بی‌جواب آزاد می‌شوند
+    try:
+        db.purge_expired_naval_locks(now_dt)
+        db.expire_stale_escort_requests(now_dt)
+    except Exception:
+        logger.exception("Naval lock cleanup failed for country %s", cid)
+
     # ── شناورهای تعمیرشده دوباره عملیاتی می‌شوند
     ship_repairs = []
     try:
