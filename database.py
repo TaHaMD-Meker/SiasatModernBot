@@ -6699,7 +6699,7 @@ def get_market_stats() -> dict:
     cur = conn.cursor()
 
     stats = {}
-    for r_type in ("oil", "gold", "grain", "iron_ore", "microchips", "uranium_ore", "nuclear_fuel"):
+    for r_type in ("oil", "gold", "grain", "iron_ore", "microchips", "uranium_ore", "nuclear_fuel", "vaccine_doses"):
         cur.execute("""
             SELECT COUNT(*) as trade_count, SUM(amount) as total_volume, AVG(unit_price) as avg_price, MIN(unit_price) as min_price, MAX(unit_price) as max_price
             FROM market_history
