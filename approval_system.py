@@ -56,7 +56,9 @@ def calculate_country_requirements(c: dict):
     )
     energy_intensity = 2.0 if is_industrial_importer else 1.0
 
-    pop_oil_need = max(2_000, int((pop_millions ** 0.72) * 10_000 * energy_intensity))
+    # مصرف سرانه‌ی واقعی: خطی نسبت به جمعیت و متفاوت در هر کشور (config.OIL_PER_CAPITA_TIERS).
+    # ضریب واردکننده‌ی صنعتی روی همان نرخ سرانه اعمال می‌شود.
+    pop_oil_need = int(config.population_oil_need(pop, c_key) * energy_intensity)
     ind_oil_need = db.get_industrial_oil_consumption(cid) if cid else 0
     total_oil_need_daily = pop_oil_need + ind_oil_need
 

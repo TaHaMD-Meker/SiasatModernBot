@@ -1246,6 +1246,10 @@ COUNTRY_EQUIPMENT_CATALOG = {
         {'category': 'Aircraft', 'initial': 60, 'key': 'tu95ms', 'maint': 80000, 'name': 'بمب‌افکن استراتژیک سنگین بومی Tu-95MS Bear', 'price': 50000000, 'producible': True},
         {'category': 'Aircraft', 'initial': 65, 'key': 'tu22m3', 'maint': 75000, 'name': 'بمب‌افکن سنگین بومی Tu-22M3M Backfire', 'price': 48000000, 'producible': True},
         {'category': 'Aircraft', 'initial': 6, 'key': 'a100_awacs', 'maint': 60000, 'name': 'آواکس استراتژیک بومی A-100 Premier', 'price': 50000000, 'producible': True},
+        {'category': 'Aircraft', 'initial': 100, 'key': 'il76md_russia', 'maint': 35000, 'name': 'ترابری سنگین بومی Il-76MD-90A Candid', 'price': 14000000, 'producible': True},
+        {'category': 'Aircraft', 'initial': 20, 'key': 'an124_russia', 'maint': 60000, 'name': 'ترابری راهبردی فوق‌سنگین بومی An-124 Ruslan', 'price': 40000000, 'producible': True},
+        {'category': 'Aircraft', 'initial': 90, 'key': 'an26_russia', 'maint': 9000, 'name': 'ترابری تاکتیکی سبک بومی An-26 / An-72', 'price': 5000000, 'producible': True},
+        {'category': 'Aircraft', 'initial': 19, 'key': 'il78_russia', 'maint': 40000, 'name': 'سوخت‌رسان هوایی بومی Il-78M Midas', 'price': 26000000, 'producible': True},
         {'category': 'Aircraft', 'initial': 15, 'key': 'a50_awacs', 'maint': 45000, 'name': 'آواکس بومی A-50M / A-50U Mainstay', 'price': 40000000, 'producible': True},
         {'category': 'Aircraft', 'initial': 170, 'key': 'ka52_heli', 'maint': 16000, 'name': 'بالگرد تهاجمی سنگین بومی Ka-52M Alligator', 'price': 22000000, 'producible': True},
         {'category': 'Aircraft', 'initial': 120, 'key': 'mi28_heli', 'maint': 14000, 'name': 'بالگرد تهاجمی شبانه بومی Mi-28NM Night Hunter', 'price': 21000000, 'producible': True},
@@ -2677,6 +2681,57 @@ COMMODITY_MARKET_BOUNDS = {
 # ===== قیمت پایه و جهانی کامودیتی‌ها در بورس =====
 # قیمت پایه جهانی نفت و آهن (کف بورس)
 OIL_GLOBAL_PRICE = 5  # دلار به ازای هر بشکه
+
+# ===== مصرف سرانه‌ی نفت (بشکه در روز به ازای هر ۱۰۰۰ نفر) =====
+# فرمول قبلی pop^0.72 بود که مصرف را به‌شدت زیرخطی می‌کرد: آمریکا فقط ۱.۹۶
+# بشکه به ازای هر ۱۰۰۰ نفر مصرف می‌کرد در حالی که رقم واقعی ۵۸.۸ است — یعنی
+# ۳۰ برابر کمتر. تولید اما در سطح واقعی تنظیم شده بود و همین شکاف، مازاد
+# ۴.۲ برابری و بی‌ارزش شدن نفت را ساخته بود.
+# حالا مصرف واقعاً سرانه است و بین کشورها بر اساس سطح توسعه فرق می‌کند.
+
+OIL_PER_CAPITA_TIERS = {
+    # کشورهای نفت‌خیز خلیج: یارانه‌ی سوخت، مصرف سرانه‌ی بسیار بالا
+    100: ("saudi", "uae", "kuwait", "qatar", "oman", "bahrain", "brunei"),
+    # اقتصادهای پرمصرف با فاصله‌های جغرافیایی زیاد
+    55: ("usa", "canada", "australia", "new_zealand", "norway"),
+    # صنعتی توسعه‌یافته
+    28: ("germany", "japan", "south_korea", "france", "uk", "italy", "spain",
+         "netherlands", "belgium", "austria", "sweden", "switzerland", "denmark",
+         "finland", "taiwan", "singapore", "israel", "ireland", "czech", "poland",
+         "portugal", "greece", "hungary", "slovakia", "slovenia", "estonia",
+         "latvia", "lithuania", "croatia", "iceland", "luxembourg", "malta", "cyprus"),
+    # با درآمد متوسط رو به بالا
+    15: ("russia", "china", "turkey", "iran", "brazil", "mexico", "malaysia",
+         "thailand", "argentina", "chile", "south_africa", "kazakhstan", "romania",
+         "bulgaria", "serbia", "belarus", "azerbaijan", "venezuela", "iraq",
+         "libya", "algeria", "colombia", "peru", "ukraine"),
+    # با درآمد پایین
+    4: ("india", "indonesia", "egypt", "vietnam", "philippines", "pakistan",
+        "nigeria", "morocco", "bangladesh", "myanmar", "kenya", "tanzania",
+        "uganda", "ghana", "sudan", "yemen", "afghanistan", "somalia", "ethiopia",
+        "nepal", "sri_lanka", "cambodia", "laos", "syria", "tajikistan", "kyrgyzstan"),
+}
+
+OIL_PER_CAPITA_DEFAULT = 9
+
+# ضریب تنظیم جهانی. با ۱.۰ تقاضای جمعیتی ۱۰۲.۶M می‌شود که از تولید جهانی
+# ۸۱.۲M بیشتر است و همه دچار قحطی انرژی می‌شوند. با ۰.۵۵ تقاضا ۵۶.۴M است:
+# نفت کمیاب و ارزشمند می‌شود ولی جا برای مصرف سازه‌ها و ارتش هم می‌ماند.
+OIL_DEMAND_SCALE = 0.55
+
+_OIL_RATE_BY_COUNTRY = {k: r for r, keys in OIL_PER_CAPITA_TIERS.items() for k in keys}
+
+
+def oil_per_capita_rate(country_key: str) -> int:
+    """بشکه در روز به ازای هر ۱۰۰۰ نفر برای این کشور."""
+    return _OIL_RATE_BY_COUNTRY.get(country_key or "", OIL_PER_CAPITA_DEFAULT)
+
+
+def population_oil_need(population: int, country_key: str) -> int:
+    """نیاز روزانه‌ی نفت جمعیت — کاملاً خطی نسبت به جمعیت، متفاوت در هر کشور."""
+    rate = oil_per_capita_rate(country_key)
+    return max(2_000, int((max(0, int(population or 0)) / 1000) * rate * OIL_DEMAND_SCALE))
+
 IRON_ORE_GLOBAL_PRICE = 1_000  # دلار به ازای هر تن آهن
 
 # ===== سقف ظرفیت بارگیری ناوگان‌های ترابری بین‌المللی =====
