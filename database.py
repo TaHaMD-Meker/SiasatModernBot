@@ -4801,8 +4801,14 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
         return False, f"خطا در اجرای قرارداد: {e}"
 
 
-def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int, transport_mode: str = "sea") -> tuple[bool, str]:
-    """انتقال اتمیک کمک خارجی با اعتبارسنجی کامل ورودی‌ها."""
+def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int,
+                                    transport_mode: str = "sea", passage_won: bool = False) -> tuple[bool, str]:
+    """انتقال اتمیک کمک خارجی با اعتبارسنجی کامل ورودی‌ها.
+
+    passage_won=True یعنی قرعه‌ی عبور از محاصره/تنگه قبلاً برده شده و نباید
+    دوباره سد راه شود. بدون این، محموله‌ای که در قرعه پیروز شده بود دوباره
+    با پیام «مسیر مسدود است» رد می‌شد.
+    """
     resource_cols = {
         "treasury": "treasury",
         "gold": "gold",
@@ -4814,7 +4820,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
         "uranium_ore": "uranium_ore",
         "nuclear_fuel": "nuclear_fuel",
     }
-    valid_transport_modes = {"sea", "land", "air"}
+    valid_transport_modes = {"sea", "land", "air", "caspian"}
 
     if donor_id == recipient_id:
         return False, "ارسال کمک به همان کشور امکان‌پذیر نیست."
@@ -4846,7 +4852,8 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
             d_key = d_c.get("country_key")
             r_key = r_c.get("country_key")
 
-            cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000}
+            cost_map = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000,
+                        "caspian": config.TRANSPORT_CAPACITY_LIMITS["caspian"]["cost"]}
             t_cost = cost_map.get(transport_mode, 300_000)
 
             # بررسی سقف ظرفیت بارگیری برای روش ترابری انتخاب‌شده
@@ -4856,6 +4863,14 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                 t_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(transport_mode, {}).get("name", transport_mode)
                 return False, f"⛔ **مازاد بر ظرفیت بارگیری ناوگان ({t_name}):** حداکثر سقف ارسال برای این کالا برابر با **{max_cap:,} واحد** در هر محموله است."
 
+            # 🌊 ترابری خزر: فقط بین کشورهای حاشیه‌ی خزر، ولی مصون از محاصره و تنگه
+            if transport_mode == "caspian":
+                if not caspian_route_available(d_key, r_key):
+                    return False, (
+                        "🌊 **مسیر دریای خزر در دسترس نیست:** این مسیر فقط بین کشورهای "
+                        "حاشیه‌ی خزر (ایران، روسیه، قزاقستان، ترکمنستان، آذربایجان) برقرار است."
+                    )
+
             # بررسی دسترسی دریایی و محاصره در ترابری دریایی
             strait_tolls = []
             if transport_mode == "sea":
@@ -4863,12 +4878,12 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                     no_sea = d_c if not has_open_sea_access(d_key) else r_c
                     return False, f"⚓ **ترابری دریایی ممکن نیست:** کشور {no_sea['flag']} {no_sea['name']} محصور در خشکی است. لطفاً از ترابری هوایی یا زمینی استفاده فرمایید."
 
-                if is_country_blockaded(donor_id) or is_country_blockaded(recipient_id):
+                if not passage_won and (is_country_blockaded(donor_id) or is_country_blockaded(recipient_id)):
                     return False, "⚓ **ترابری دریایی مسدود است:** خطوط کشتیرانی یکی از دو کشور تحت محاصره دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده فرمایید."
 
                 # بررسی انسداد و عوارض تنگه‌ها
                 analysis = get_trade_route_strait_analysis(d_key, r_key)
-                if analysis["is_blocked"]:
+                if analysis["is_blocked"] and not passage_won:
                     blocked_str = "، ".join([f"{s['name']} (توسط {s['owner_flag']} {s['owner_name']})" for s in analysis["blocked_straits"]])
                     return False, f"⛔ **مسیر ترانزیت دریایی مسدود است:** {blocked_str} مسدود گردیده است. از ترابری هوایی یا زمینی استفاده کنید."
 
@@ -5101,6 +5116,7 @@ def get_trade_mode_daily_limit(country_id: int, mode: str) -> int:
     * دریایی (sea): ۲ + تعداد بنادر تجاری و استراتژیک (port + mega_port)
     * هوایی (air): ۲ + تعداد فرودگاه‌های بین‌المللی (airport)
     * زمینی (land): ۲ + تعداد بزرگراه‌ها/جاده‌ها (highway)
+    * خزر (caspian): ۱ + تعداد بنادر — دریای بسته با ناوگان کوچک‌تر
     """
     base_cap = 2
     eq = get_equipment(country_id)
@@ -5110,6 +5126,9 @@ def get_trade_mode_daily_limit(country_id: int, mode: str) -> int:
         return base_cap + int(eq.get("airport", 0) or 0)
     elif mode == "land":
         return base_cap + int(eq.get("highway", 0) or 0)
+    elif mode == "caspian":
+        # خزر سقف کمتری دارد چون ناوگان دریاچه‌ای کوچک است
+        return max(1, 1 + int(eq.get("port", 0) or 0))
     return base_cap
 
 
@@ -7195,7 +7214,7 @@ def reset_all_market_orders() -> tuple[bool, int, dict]:
 
 def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int, transport_mode: str = "sea") -> tuple[bool, str, dict]:
     """خرید فوری و مستقیم کالا از بورس جهانی توسط کشور خریدار."""
-    if transport_mode not in {"sea", "land", "air"}:
+    if transport_mode not in {"sea", "land", "air", "caspian"}:
         return False, "روش ترابری نامعتبر است.", {}
     if isinstance(buy_amount, bool) or not isinstance(buy_amount, int) or buy_amount <= 0:
         return False, "مقدار خرید باید یک عدد صحیح بزرگ‌تر از صفر باشد.", {}

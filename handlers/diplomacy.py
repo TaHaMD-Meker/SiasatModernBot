@@ -5,6 +5,7 @@
 """
 
 import datetime
+import json
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
@@ -13,6 +14,264 @@ import database as db
 import config
 import news_engine
 from utils import format_money, format_number, format_oil, get_main_keyboard
+
+
+
+def _blocked_route_keyboard(kind: str, country: dict, target_c: dict, strait_analysis: dict,
+                            payer: str = "") -> list:
+    """وقتی مسیر دریایی بسته است، به‌جای بن‌بست سه انتخاب واقعی می‌دهد."""
+    suffix = f":{payer}" if payer else ""
+    prefix = "dip:mil_finish" if kind == "mil" else "dip:aid_finish"
+    run_prefix = "dip:runblock_mil" if kind == "mil" else "dip:runblock_aid"
+
+    owner_key = ""
+    for st in (strait_analysis or {}).get("blocked_straits", []):
+        owner_key = st.get("owner_key") or owner_key
+    blocker = db.get_country_by_key(owner_key) if owner_key else None
+    blocker_power = db.calculate_blockade_break_power(blocker["id"])[2] if blocker else 0
+    own_power = int(db.calculate_naval_power(country["id"]) * config.PASSAGE_OWN_NAVY_SHARE)
+    roe = db.get_strait_roe(strait_analysis["blocked_straits"][0]["strait_key"]) \
+        if strait_analysis.get("blocked_straits") else config.NAVAL_ROE_DEFAULT
+    chance = int(config.passage_chance(own_power, blocker_power, roe) * 100)
+
+    kb = [
+        [InlineKeyboardButton(f"🚢 بدون اسکورت بزن برو (شانس ≈ {chance}٪)",
+                              callback_data=f"{run_prefix}:solo{suffix}")],
+        [InlineKeyboardButton("🤝 درخواست اسکورت از یک کشور",
+                              callback_data=f"dip:escort_pick:{kind}{suffix}")],
+    ]
+    my_key = country.get("country_key")
+    t_key = target_c.get("country_key") if target_c else ""
+    if db.caspian_route_available(my_key, t_key):
+        cc = config.TRANSPORT_CAPACITY_LIMITS["caspian"]["cost"]
+        kb.append([InlineKeyboardButton(f"🌊 دریای خزر ({cc:,} $) — مصون از محاصره",
+                                        callback_data=f"{prefix}:caspian{suffix}")])
+    kb.append([InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)",
+                                    callback_data=f"{prefix}:air{suffix}")])
+    kb.append([InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)",
+                                    callback_data=f"{prefix}:land{suffix}")])
+    kb.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
+    return kb
+
+
+
+async def _run_blockade_and_report(query, context, country, kind: str, payer: str = ""):
+    """اجرای قرعه‌ی عبور از مسیر مسدود و گزارش نتیجه به بازیکن."""
+    draft_key = "aid_draft" if kind == "aid" else "mil_draft"
+    draft = context.user_data.get(draft_key) or {}
+    target_id = draft.get("target_id")
+    target_c = db.get_country_by_id(target_id) if target_id else None
+    if not target_c:
+        await query.edit_message_text(
+            "❌ اطلاعات محموله منقضی شده است.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
+            parse_mode="Markdown")
+        return
+
+    my_key = country.get("country_key")
+    t_key = target_c.get("country_key")
+    analysis = db.get_trade_route_strait_analysis(my_key, t_key)
+    blocked = analysis.get("blocked_straits") or []
+
+    owner_key = blocked[0]["owner_key"] if blocked else ""
+    strait_key = blocked[0]["strait_key"] if blocked else ""
+    blocker = db.get_country_by_key(owner_key) if owner_key else None
+    blocker_id = blocker["id"] if blocker else None
+    roe = db.get_strait_roe(strait_key) if strait_key else config.NAVAL_ROE_DEFAULT
+
+    # اگر اسکورتی پذیرفته شده باشد، ناوگروهش وارد محاسبه می‌شود
+    escort_id, escort_tf = None, {}
+    esc = draft.get("escort") or {}
+    if esc.get("request_id"):
+        req = db.get_escort_request(esc["request_id"])
+        if req and req["status"] == "accepted":
+            escort_id = req["escort_id"]
+            try:
+                escort_tf = json.loads(req["task_force_json"] or "{}")
+            except (ValueError, TypeError):
+                escort_tf = {}
+
+    result = db.resolve_sea_passage(country["id"], blocker_id, escort_id, escort_tf, roe)
+
+    spec = config.NAVAL_ROE[result["roe"]]
+    lines = [
+        "⚓ **گزارش تلاش عبور از مسیر مسدود**",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🎯 مقصد: {target_c['flag']} **{target_c['name']}**",
+        f"⛔ مسدودکننده: {blocker['flag'] + ' ' + blocker['name'] if blocker else 'نامشخص'}",
+        f"📜 قواعد درگیری حریف: {spec['label']}",
+        "",
+        f"⚔️ توان عبور شما: `{result['escort_power']:,}`"
+        + (f"  (با اسکورت {db.get_country_by_id(escort_id)['flag']})" if escort_id else "  (بدون اسکورت)"),
+        f"🛡️ توان مسدودکننده: `{result['blocker_power']:,}`",
+        f"🎲 شانس عبور: **{int(result['chance'] * 100)}٪**",
+        "",
+        f"**نتیجه: {result['outcome_label']}**",
+    ]
+
+    if result["passed"]:
+        mode = "sea"
+        ok, msg = db.execute_foreign_aid_transaction(
+            country["id"], target_id, draft.get("resource_type", "oil"),
+            max(1, int(draft.get("amount", 0) * result["cargo_ratio"])), mode,
+            passage_won=True,
+        ) if kind == "aid" else (True, "محموله عبور کرد.")
+        if result["outcome"] == "passed_hurt":
+            lines.append("⚠️ بخشی از محموله در مسیر از دست رفت.")
+        lines.append("")
+        lines.append(("✅ " if ok else "❌ ") + msg)
+    else:
+        if result["outcome"] == "seized":
+            lines.append("⛓️ محموله توقیف و به انبار مسدودکننده منتقل شد.")
+        elif result["outcome"] == "struck":
+            lines.append("💥 محموله در مسیر منهدم شد.")
+        else:
+            lines.append("🔙 ناوگان مجبور به بازگشت شد؛ محموله سالم برگشت.")
+
+    for side, label in (("escort_losses", "🚢 تلفات ناوگروه شما"),
+                        ("blocker_losses", "🎯 تلفات ناوگروه مسدودکننده")):
+        losses = result.get(side) or []
+        if not losses:
+            continue
+        lines.append("")
+        lines.append(f"**{label}:**")
+        for l in losses:
+            bits = []
+            if l.get("sunk"):
+                bits.append(f"غرق {l['sunk']}")
+            if l.get("damaged"):
+                bits.append(f"آسیب‌دیده {l['damaged']}")
+            lines.append(f"• {l['equipment_name'][:34]} — {' و '.join(bits)}")
+
+    context.user_data.pop(draft_key, None)
+    await query.edit_message_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")]]),
+        parse_mode="Markdown")
+
+
+async def _escort_pick_country(query, context, country, kind: str, payer: str = ""):
+    """انتخاب کشوری که قرار است اسکورت کند."""
+    draft = context.user_data.get("aid_draft" if kind == "aid" else "mil_draft") or {}
+    target_id = draft.get("target_id")
+    rows, line = [], []
+    for c in db.get_all_countries():
+        if c["id"] in (country["id"], target_id):
+            continue
+        if not db.has_open_sea_access(c.get("country_key")):
+            continue
+        if db.calculate_naval_power(c["id"]) <= 0:
+            continue
+        line.append(InlineKeyboardButton(f"{c.get('flag','')} {c['name']}",
+                                         callback_data=f"dip:escort_req:{kind}:{c['id']}"))
+        if len(line) == 2:
+            rows.append(line)
+            line = []
+    if line:
+        rows.append(line)
+    rows = rows[:20]
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")])
+    await query.edit_message_text(
+        "🤝 **درخواست اسکورت دریایی**\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "کدام کشور ناوگانش را برای اسکورت محموله‌ی شما بفرستد؟\n\n"
+        "_کشور مقابل باید درخواست را بپذیرد و ناوگروهش را انتخاب کند. "
+        "شناورهای اعزامی تا ۸ ساعت در مأموریت قفل می‌شوند._",
+        reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
+async def _escort_send_request(query, context, country, kind: str, escort_cid: int):
+    draft_key = "aid_draft" if kind == "aid" else "mil_draft"
+    draft = context.user_data.get(draft_key) or {}
+    target_id = draft.get("target_id")
+    target_c = db.get_country_by_id(target_id) if target_id else None
+    analysis = db.get_trade_route_strait_analysis(
+        country.get("country_key"), target_c.get("country_key") if target_c else "")
+    blocked = analysis.get("blocked_straits") or []
+    blocker = db.get_country_by_key(blocked[0]["owner_key"]) if blocked else None
+
+    ok, msg, rid = db.create_escort_request(
+        country["id"], escort_cid, blocker["id"] if blocker else None,
+        {"kind": kind, "target_id": target_id,
+         "resource_type": draft.get("resource_type"), "amount": draft.get("amount")})
+    if ok:
+        draft["escort"] = {"request_id": rid, "escort_id": escort_cid}
+        context.user_data[draft_key] = draft
+
+    esc_c = db.get_country_by_id(escort_cid)
+    await query.edit_message_text(
+        ("✅ " if ok else "❌ ") + f"**{msg}**\n\n"
+        + (f"درخواست به {esc_c['flag']} **{esc_c['name']}** ارسال شد.\n"
+           f"مهلت پاسخ: {config.ESCORT_REQUEST_TTL_HOURS} ساعت.\n\n"
+           "بعد از پذیرش، از همین منو دوباره تلاش عبور را بزنید." if ok else ""),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚢 تلاش عبور (با اسکورت فعلی)",
+                                  callback_data=f"dip:runblock_{kind}:solo")],
+            [InlineKeyboardButton("🔙 بازگشت به دیپلماسی", callback_data="dip:menu")],
+        ]), parse_mode="Markdown")
+
+
+async def _escort_inbox(query, context, country):
+    """صندوق درخواست‌های اسکورت رسیده."""
+    reqs = db.get_pending_escort_requests(country["id"])
+    if not reqs:
+        await query.edit_message_text(
+            "🤝 **درخواست‌های اسکورت**\n\nهیچ درخواست بازی ندارید.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
+            parse_mode="Markdown")
+        return
+    rows, lines = [], ["🤝 **درخواست‌های اسکورت رسیده**", "━━━━━━━━━━━━━━━━━━", ""]
+    for r in reqs[:8]:
+        req_c = db.get_country_by_id(r["requester_id"])
+        blk_c = db.get_country_by_id(r["blocker_id"]) if r["blocker_id"] else None
+        lines.append(f"• {req_c['flag']} **{req_c['name']}** — مقابل: "
+                     f"{(blk_c['flag'] + ' ' + blk_c['name']) if blk_c else 'نامشخص'}")
+        rows.append([InlineKeyboardButton(f"⚓ بررسی درخواست {req_c['name']}",
+                                          callback_data=f"dip:escort_open:{r['id']}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")])
+    await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(rows),
+                                  parse_mode="Markdown")
+
+
+async def _escort_open(query, context, country, request_id: int):
+    """انتخاب ناوگروه اسکورت — شناور به شناور، نه «کل قدرت دریایی»."""
+    req = db.get_escort_request(request_id)
+    if not req or req["status"] != "pending":
+        await query.edit_message_text("❌ این درخواست دیگر باز نیست.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
+            parse_mode="Markdown")
+        return
+    sel = context.user_data.setdefault("escort_tf", {}).setdefault(str(request_id), {})
+    ships = db.get_deployable_ships(country["id"])[:8]
+    req_c = db.get_country_by_id(req["requester_id"])
+
+    rows, lines = [], [
+        f"⚓ **اسکورت برای {req_c['flag']} {req_c['name']}**",
+        "━━━━━━━━━━━━━━━━━━",
+        "",
+        "شناورهایی که می‌فرستید را انتخاب کنید:",
+        "",
+    ]
+    for sh in ships:
+        picked = sel.get(sh["equipment_key"], 0)
+        lines.append(f"• {config.SHIP_TIER_LABELS[sh['tier']]} {sh['equipment_name'][:30]} "
+                     f"— آزاد: {sh['available']} | انتخاب: **{picked}**")
+        rows.append([
+            InlineKeyboardButton("➖", callback_data=f"dip:escort_adj:{request_id}:{sh['equipment_key']}:-1"),
+            InlineKeyboardButton(f"{sh['equipment_name'][:18]} ({picked})", callback_data="dip:noop"),
+            InlineKeyboardButton("➕", callback_data=f"dip:escort_adj:{request_id}:{sh['equipment_key']}:1"),
+        ])
+    cost = db.task_force_escort_cost(country["id"], sel)
+    power = db.task_force_power(country["id"], sel)
+    lines += ["", f"⚔️ توان ناوگروه: `{power:,}`",
+              f"💵 هزینه اعزام: `{cost['money']:,} $` | 🛢️ `{cost['oil']:,}` بشکه",
+              "", f"⚠️ _شناورهای اعزامی تا {config.ESCORT_LOCK_HOURS} ساعت در مأموریت قفل می‌شوند "
+                  "و در محاصره یا رول جنگی قابل استفاده نیستند._"]
+    rows.append([InlineKeyboardButton("✅ قبول و اعزام", callback_data=f"dip:escort_ok:{request_id}"),
+                 InlineKeyboardButton("❌ رد درخواست", callback_data=f"dip:escort_no:{request_id}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="dip:escort_inbox")])
+    await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(rows),
+                                  parse_mode="Markdown")
 
 
 async def check_and_alert_anti_cheat(context, proposer_c, recipient_c, amount_val, tx_type_label):
@@ -92,6 +351,7 @@ async def diplomacy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⚓ محاصره دریایی بین‌المللی", callback_data="dip:blockade_start")],
         [InlineKeyboardButton("🌊 مدیریت و انسداد تنگه‌ها", callback_data="dip:strait_menu")],
         [InlineKeyboardButton("🕊️ کمک خارجی و انسان‌دوستانه", callback_data="dip:aid_start")],
+        [InlineKeyboardButton("⚓ درخواست‌های اسکورت دریایی", callback_data="dip:escort_inbox")],
         [InlineKeyboardButton("🤝 اتحادها و تحریم‌ها", callback_data="dip:rel_start")],
     ]
 
@@ -1482,6 +1742,10 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             f"• **✈️ ترابری هوایی:** ۲,۰۰۰,۰۰۰ دلار (سقف امروز: {air_used}/{air_cap})\n"
             f"{land_line}\n"
             f"{sea_line}"
+            + ("\n• 🌊 **ترابری دریای خزر:** "
+               f"{config.TRANSPORT_CAPACITY_LIMITS['caspian']['cost']:,} دلار — "
+               "مصون از محاصره و تنگه (دریای بسته)"
+               if db.caspian_route_available(my_key, t_key) else "")
         )
         keyboard = [
             [InlineKeyboardButton(f"✈️ ترابری هوایی ({air_used}/{air_cap})", callback_data=f"dip:mil_finish:air:{payer}")],
@@ -1490,6 +1754,10 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             keyboard.append([land_btn])
         if sea_btn:
             keyboard.append([sea_btn])
+        if db.caspian_route_available(my_key, t_key):
+            _cc = config.TRANSPORT_CAPACITY_LIMITS["caspian"]["cost"]
+            keyboard.append([InlineKeyboardButton(f"🌊 ترابری دریای خزر ({_cc:,} $)",
+                                                  callback_data=f"dip:mil_finish:caspian:{payer}")])
         keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -2294,6 +2562,70 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     pass
         await query.edit_message_text("❌ قرارداد تجاری رد شد.", parse_mode="Markdown")
 
+    elif data == "dip:noop":
+        return
+
+    elif data == "dip:escort_inbox":
+        await _escort_inbox(query, context, country)
+
+    elif data.startswith("dip:escort_pick:"):
+        parts = data.split(":")
+        await _escort_pick_country(query, context, country, parts[2],
+                                   parts[3] if len(parts) > 3 else "")
+
+    elif data.startswith("dip:escort_req:"):
+        parts = data.split(":")
+        await _escort_send_request(query, context, country, parts[2], int(parts[3]))
+
+    elif data.startswith("dip:escort_open:"):
+        await _escort_open(query, context, country, int(data.split(":")[2]))
+
+    elif data.startswith("dip:escort_adj:"):
+        _, _, rid, key, delta = data.split(":")
+        sel = context.user_data.setdefault("escort_tf", {}).setdefault(rid, {})
+        free = {d["equipment_key"]: d["available"] for d in db.get_deployable_ships(country["id"])}
+        sel[key] = max(0, min(free.get(key, 0), sel.get(key, 0) + int(delta)))
+        if sel[key] == 0:
+            sel.pop(key, None)
+        await _escort_open(query, context, country, int(rid))
+
+    elif data.startswith("dip:escort_ok:"):
+        rid = int(data.split(":")[2])
+        sel = (context.user_data.get("escort_tf") or {}).get(str(rid), {})
+        ok, msg = db.accept_escort_request(rid, sel)
+        if ok:
+            (context.user_data.get("escort_tf") or {}).pop(str(rid), None)
+            req = db.get_escort_request(rid)
+            asker = db.get_country_by_id(req["requester_id"]) if req else None
+            if asker and asker.get("player_id"):
+                try:
+                    await context.bot.send_message(
+                        asker["player_id"],
+                        f"\u2693 **{country['flag']} {country['name']} درخواست اسکورت شما را پذیرفت.**\n"
+                        "ناوگروهش اعزام شد \u2014 حالا می‌توانید تلاش عبور را انجام دهید.",
+                        parse_mode="Markdown")
+                except Exception:
+                    pass
+        await query.edit_message_text(
+            ("\u2705 " if ok else "\u274c ") + msg,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
+            parse_mode="Markdown")
+
+    elif data.startswith("dip:escort_no:"):
+        db.reject_escort_request(int(data.split(":")[2]))
+        await query.edit_message_text(
+            "\u274c درخواست اسکورت رد شد.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]),
+            parse_mode="Markdown")
+
+    elif data.startswith("dip:runblock_aid:"):
+        await _run_blockade_and_report(query, context, country, "aid")
+
+    elif data.startswith("dip:runblock_mil:"):
+        parts = data.split(":")
+        await _run_blockade_and_report(query, context, country, "mil",
+                                       parts[3] if len(parts) > 3 else "")
+
     elif data == "dip:aid_start":
         await dip_aid_start(query, context, country)
 
@@ -2363,12 +2695,9 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     f"⚓ **ترابری دریایی مسدود است!**\n\n"
                     f"مسیر ترانزیت دریایی بین دو کشور به دلیل مسدود بودن آبراه‌های استراتژیک قطع می‌باشد:\n\n"
                     f"{blocked_details}\n\n"
-                    f"💡 لطفاً برای ارسال این کمک از ترابری هوایی یا زمینی استفاده فرمایید.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("✈️ ترابری هوایی (۲,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:air")],
-                        [InlineKeyboardButton("🚛 ترابری زمینی (۱,۰۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:land")],
-                        [InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]
-                    ]),
+                    f"می‌توانید ریسک عبور را بپذیرید یا مسیر دیگری انتخاب کنید.",
+                    reply_markup=InlineKeyboardMarkup(_blocked_route_keyboard(
+                        "aid", country, target_c, strait_analysis)),
                     parse_mode="Markdown"
                 )
                 return
@@ -2790,6 +3119,12 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
                     kb.append([InlineKeyboardButton(f"🚢 ترابری دریایی ({total_sea:,} $ با عوارض)", callback_data="dip:aid_finish:sea")])
                 else:
                     kb.append([InlineKeyboardButton("🚢 ترابری دریایی (۳۰۰,۰۰۰ دلار)", callback_data="dip:aid_finish:sea")])
+
+            # 🌊 دریای خزر: دریای بسته — مصون از محاصره و تنگه
+            if db.caspian_route_available(my_key, t_key):
+                _cc = config.TRANSPORT_CAPACITY_LIMITS["caspian"]["cost"]
+                kb.append([InlineKeyboardButton(f"🌊 ترابری دریای خزر ({_cc:,} دلار)",
+                                                callback_data="dip:aid_finish:caspian")])
 
             has_land = db.has_land_trade_route(my_key, t_key)
             if has_land:

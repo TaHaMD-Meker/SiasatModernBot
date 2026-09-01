@@ -2750,6 +2750,20 @@ TRANSPORT_CAPACITY_LIMITS = {
             "nuclear_fuel": 500       # ۵۰۰ کیلوگرم سوخت
         }
     },
+    "caspian": {
+        "name": "🌊 ترابری دریای خزر",
+        "desc": "دریای بسته — مصون از محاصره و تنگه، ولی ظرفیت محدود (فقط کشورهای حاشیه خزر)",
+        "cost": 900_000,
+        "limits": {"vaccine_doses": 60_000,
+            "oil": 400_000,
+            "grain": 25_000,
+            "iron_ore": 20_000,
+            "gold": 40,
+            "microchips": 5_000,
+            "uranium_ore": 150,
+            "nuclear_fuel": 150
+        }
+    },
     "land": {
         "name": "🚛 ترابری زمینی (قطارهای باری و کاروان‌های تریلی)",
         "desc": "ظرفیت متوسط جاده‌ای و ریلی (بای‌پاس محاصره دریایی)",
@@ -21527,11 +21541,11 @@ def escort_cost(task_force: dict, name_lookup) -> dict:
 CASPIAN_COUNTRIES = ("iran", "russia", "kazakhstan", "turkmenistan", "azerbaijan")
 
 CASPIAN_TRANSPORT = {
-    "name": "🌊 ترابری دریای خزر",
-    "desc": "دریای بسته — بدون محاصره و بدون تنگه، ولی ظرفیت محدود",
-    "cost": 900_000,
+    "name": TRANSPORT_CAPACITY_LIMITS["caspian"]["name"],
+    "desc": TRANSPORT_CAPACITY_LIMITS["caspian"]["desc"],
+    "cost": TRANSPORT_CAPACITY_LIMITS["caspian"]["cost"],
     "oil": 40_000,
-    "max_amount": 120_000,
+    "max_amount": TRANSPORT_CAPACITY_LIMITS["caspian"]["limits"]["oil"],
 }
 
 

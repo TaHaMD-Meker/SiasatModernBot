@@ -308,5 +308,9 @@ def test_blockader_can_also_take_losses(monkeypatch, tmp_path):
 def test_no_blocker_means_free_passage(monkeypatch, tmp_path):
     db = _fresh(monkeypatch, tmp_path, "pass8.db")
     sender = _c(db, 1, "saudi", "عربستان")
-    r = db.resolve_sea_passage(sender, None, blocker_power=0)
-    assert r["passed"] is True and r["cargo_ratio"] == 1.0
+    # ۲۰٪ مواقع «عبور با آسیب» است، پس cargo_ratio همیشه ۱.۰ نیست
+    for _ in range(30):
+        r = db.resolve_sea_passage(sender, None, blocker_power=0)
+        assert r["passed"] is True
+        assert r["outcome"] in ("passed", "passed_hurt")
+        assert r["cargo_ratio"] > 0
