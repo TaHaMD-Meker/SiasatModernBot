@@ -2936,6 +2936,13 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
     except Exception:
         logger.exception("Vaccine collection failed for country %s", cid)
 
+    # ── شناورهای تعمیرشده دوباره عملیاتی می‌شوند
+    ship_repairs = []
+    try:
+        ship_repairs = db.process_ship_repairs(cid, now_dt)
+    except Exception:
+        logger.exception("Ship repair processing failed for country %s", cid)
+
     # ── نگهداری روزانه‌ی سازه‌ها (کسر منابع + خاموشی/بازفعال‌سازی خودکار)
     # عمداً قبل از بازمحاسبه‌ی درآمد اجرا می‌شود تا سازه‌های خاموش در همان
     # چرخه از درآمد و برق کشور کنار گذاشته شوند.
@@ -3096,6 +3103,7 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
         "new_crises": [c for c in new_crises if c],
         "band": band_label,
         "upkeep": upkeep_result,
+        "ship_repairs": ship_repairs,
     }
 
 

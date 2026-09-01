@@ -268,6 +268,22 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                             resource_note += "\n\n" + _up
                     except Exception:
                         logger.exception("Upkeep report render failed for country %s", c["id"])
+                    # ⚓ شناورهایی که از تعمیرگاه برگشتند
+                    try:
+                        _rep = cycle.get("ship_repairs") or []
+                        if _rep:
+                            _lines = ["⚓ <b>شناورهای بازگشته از تعمیرگاه</b>"]
+                            for _r in _rep:
+                                _lines.append(f"   🟢 {_r['qty']} × {_r['equipment_name']}")
+                            _tm = sum(x["money"] for x in _rep)
+                            _ti = sum(x["iron_ore"] for x in _rep)
+                            _lines.append(f"   💵 هزینه تعمیر: {_tm:,} دلار | ⛏️ {_ti:,} تن فولاد")
+                            _wait = sum(x["still_waiting"] for x in _rep)
+                            if _wait:
+                                _lines.append(f"   ⚠️ {_wait} فروند به دلیل کمبود منابع در تعمیرگاه ماند")
+                            resource_note += "\n\n" + "\n".join(_lines)
+                    except Exception:
+                        logger.exception("Ship repair report failed for country %s", c["id"])
                     fresh = db.get_country_by_id(c["id"]) or c
                     news_items = internal_affairs.collect_news(fresh, cycle)
                     if news_items:

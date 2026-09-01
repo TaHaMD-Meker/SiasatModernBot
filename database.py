@@ -503,6 +503,17 @@ def init_db():
     )
     """)
 
+    # شناورهای آسیب‌دیده و در حال تعمیر (سیستم آسیب/تعمیر ناوگان)
+    for _col, _ddl in (
+        ("under_repair_qty", "ALTER TABLE country_assets ADD COLUMN under_repair_qty INTEGER DEFAULT 0"),
+        ("repair_ready_at",  "ALTER TABLE country_assets ADD COLUMN repair_ready_at TEXT"),
+        ("repair_severity",  "ALTER TABLE country_assets ADD COLUMN repair_severity TEXT"),
+    ):
+        try:
+            cur.execute(_ddl)
+        except sqlite3.OperationalError:
+            pass
+
     # محاصره‌های دریایی بین‌المللی
     cur.execute("""
     CREATE TABLE IF NOT EXISTS naval_blockades (
@@ -5712,13 +5723,235 @@ def calculate_task_force_naval_power(country_id: int, task_force: dict | None = 
     return int(total_power)
 
 
+# ---------- آسیب و تعمیر شناور ----------
+
+def available_ship_count(asset: dict | sqlite3.Row) -> int:
+    """تعداد فروند عملیاتی این قلم (کل منهای در حال تعمیر)."""
+    try:
+        total = int(asset["amount"] or 0)
+    except (KeyError, IndexError, TypeError):
+        total = 0
+    try:
+        repairing = int(asset["under_repair_qty"] or 0)
+    except (KeyError, IndexError, TypeError):
+        repairing = 0
+    return max(0, total - max(0, repairing))
+
+
+def damage_ships(country_id: int, equipment_key: str, qty: int,
+                 severity: str = "heavy", now_dt=None) -> dict:
+    """چند فروند از یک شناور را آسیب‌دیده و از رده خارج می‌کند.
+
+    شناور آسیب‌دیده از انبار حذف نمی‌شود؛ فقط تا پایان تعمیر عملیاتی نیست.
+    اگر قبلاً فروندی در تعمیر باشد، زمان آمادگی به دیرترین موعد کشیده می‌شود
+    تا آسیب جدید موعد قبلی را عقب نیندازد.
+    """
+    qty = max(0, int(qty or 0))
+    if qty <= 0:
+        return {"damaged": 0}
+    severity = severity if severity in ("light", "heavy") else "heavy"
+    now_dt = now_dt or datetime.datetime.now()
+
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT equipment_name, amount, COALESCE(under_repair_qty,0) AS under_repair_qty,"
+                " repair_ready_at, buy_price FROM country_assets"
+                " WHERE country_id = ? AND equipment_key = ?",
+                (country_id, equipment_key))
+            row = cur.fetchone()
+            if not row:
+                return {"damaged": 0}
+
+            free = max(0, int(row["amount"] or 0) - int(row["under_repair_qty"] or 0))
+            hurt = min(qty, free)
+            if hurt <= 0:
+                return {"damaged": 0}
+
+            spec = config.ship_repair_spec(row["equipment_name"], row["buy_price"], severity)
+            ready = now_dt + datetime.timedelta(hours=spec["hours"])
+            prev = row["repair_ready_at"]
+            if prev:
+                try:
+                    prev_dt = datetime.datetime.fromisoformat(prev)
+                    ready = max(ready, prev_dt)
+                except (ValueError, TypeError):
+                    pass
+
+            cur.execute(
+                "UPDATE country_assets SET under_repair_qty = COALESCE(under_repair_qty,0) + ?,"
+                " repair_ready_at = ?, repair_severity = ?"
+                " WHERE country_id = ? AND equipment_key = ?",
+                (hurt, ready.isoformat(timespec="seconds"), severity, country_id, equipment_key))
+
+            return {"damaged": hurt, "tier": spec["tier"], "severity": severity,
+                    "hours": spec["hours"], "ready_at": ready.isoformat(timespec="seconds"),
+                    "equipment_name": row["equipment_name"],
+                    "repair_money": spec["money"] * hurt,
+                    "repair_iron": spec["iron_ore"] * hurt}
+    finally:
+        conn.close()
+
+
+def sink_ships(country_id: int, equipment_key: str, qty: int) -> int:
+    """غرق کردن قطعی: از انبار حذف می‌شود. اول از فروندهای سالم."""
+    qty = max(0, int(qty or 0))
+    if qty <= 0:
+        return 0
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT amount, COALESCE(under_repair_qty,0) AS ur FROM country_assets"
+                        " WHERE country_id = ? AND equipment_key = ?", (country_id, equipment_key))
+            row = cur.fetchone()
+            if not row:
+                return 0
+            total = int(row["amount"] or 0)
+            lost = min(qty, total)
+            if lost <= 0:
+                return 0
+            new_total = total - lost
+            # اگر فروند سالم کم آمد، از فروندهای در تعمیر هم کم می‌شود
+            new_ur = min(int(row["ur"] or 0), new_total)
+            cur.execute("UPDATE country_assets SET amount = ?, under_repair_qty = ?"
+                        " WHERE country_id = ? AND equipment_key = ?",
+                        (new_total, new_ur, country_id, equipment_key))
+            if new_ur == 0:
+                cur.execute("UPDATE country_assets SET repair_ready_at = NULL, repair_severity = NULL"
+                            " WHERE country_id = ? AND equipment_key = ?", (country_id, equipment_key))
+            return lost
+    finally:
+        conn.close()
+
+
+def get_ships_under_repair(country_id: int) -> list[dict]:
+    """فهرست شناورهای در حال تعمیر با زمان باقی‌مانده."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT equipment_key, equipment_name, amount,"
+                    " COALESCE(under_repair_qty,0) AS under_repair_qty,"
+                    " repair_ready_at, repair_severity, buy_price"
+                    " FROM country_assets WHERE country_id = ? AND category = 'Navy'"
+                    " AND COALESCE(under_repair_qty,0) > 0", (country_id,))
+        now = datetime.datetime.now()
+        out = []
+        for r in cur.fetchall():
+            remaining = 0
+            if r["repair_ready_at"]:
+                try:
+                    ready = datetime.datetime.fromisoformat(r["repair_ready_at"])
+                    remaining = max(0, int((ready - now).total_seconds() // 3600))
+                except (ValueError, TypeError):
+                    remaining = 0
+            out.append({
+                "equipment_key": r["equipment_key"],
+                "equipment_name": r["equipment_name"],
+                "tier": config.ship_tier(r["equipment_name"]),
+                "qty": int(r["under_repair_qty"]),
+                "operational": max(0, int(r["amount"] or 0) - int(r["under_repair_qty"])),
+                "severity": r["repair_severity"] or "heavy",
+                "hours_left": remaining,
+                "ready_at": r["repair_ready_at"],
+            })
+        return out
+    finally:
+        conn.close()
+
+
+def process_ship_repairs(country_id: int, now_dt=None) -> list[dict]:
+    """شناورهایی که موعد تعمیرشان رسیده را عملیاتی می‌کند.
+
+    هزینه‌ی تعمیر (پول + آهن) همین‌جا کسر می‌شود. اگر کشور توان پرداخت
+    نداشته باشد، تعمیر انجام نمی‌شود و شناور در تعمیرگاه می‌ماند تا وقتی
+    منابع تأمین شود — پس تعمیر رایگان نیست و آهن واقعاً راهبردی می‌شود.
+    """
+    now_dt = now_dt or datetime.datetime.now()
+    conn = get_connection()
+    restored = []
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT equipment_key, equipment_name, buy_price,"
+                        " COALESCE(under_repair_qty,0) AS ur, repair_ready_at, repair_severity"
+                        " FROM country_assets WHERE country_id = ? AND category = 'Navy'"
+                        " AND COALESCE(under_repair_qty,0) > 0", (country_id,))
+            rows = [dict(r) for r in cur.fetchall()]
+            if not rows:
+                return []
+
+            cur.execute("SELECT treasury, COALESCE(iron_ore,0) AS iron_ore FROM countries WHERE id = ?",
+                        (country_id,))
+            c = cur.fetchone()
+            if not c:
+                return []
+            money_left = int(c["treasury"] or 0)
+            iron_left = int(c["iron_ore"] or 0)
+
+            for r in rows:
+                if not r["repair_ready_at"]:
+                    continue
+                try:
+                    ready = datetime.datetime.fromisoformat(r["repair_ready_at"])
+                except (ValueError, TypeError):
+                    continue
+                if ready > now_dt:
+                    continue
+
+                spec = config.ship_repair_spec(r["equipment_name"], r["buy_price"],
+                                               r["repair_severity"] or "heavy")
+                qty = int(r["ur"])
+                # هر فروندی که توان پرداختش هست تعمیر می‌شود، نه همه‌یا‌هیچ
+                per_money, per_iron = spec["money"], spec["iron_ore"]
+                affordable = qty
+                if per_money > 0:
+                    affordable = min(affordable, money_left // per_money)
+                if per_iron > 0:
+                    affordable = min(affordable, iron_left // per_iron)
+                affordable = max(0, int(affordable))
+                if affordable <= 0:
+                    continue
+
+                money_left -= per_money * affordable
+                iron_left -= per_iron * affordable
+                remaining_ur = qty - affordable
+                cur.execute(
+                    "UPDATE country_assets SET under_repair_qty = ?,"
+                    " repair_ready_at = CASE WHEN ? = 0 THEN NULL ELSE repair_ready_at END,"
+                    " repair_severity = CASE WHEN ? = 0 THEN NULL ELSE repair_severity END"
+                    " WHERE country_id = ? AND equipment_key = ?",
+                    (remaining_ur, remaining_ur, remaining_ur, country_id, r["equipment_key"]))
+                restored.append({
+                    "equipment_key": r["equipment_key"],
+                    "equipment_name": r["equipment_name"],
+                    "qty": affordable,
+                    "still_waiting": remaining_ur,
+                    "money": per_money * affordable,
+                    "iron_ore": per_iron * affordable,
+                })
+
+            if restored:
+                cur.execute("UPDATE countries SET treasury = ?, iron_ore = ? WHERE id = ?",
+                            (money_left, iron_left, country_id))
+        return restored
+    finally:
+        conn.close()
+
+
 def calculate_naval_power(country_id: int) -> int:
     """محاسبه متوازن و واقعی امتیاز قدرت رزمی نیروی دریایی آب‌های آزاد."""
     assets = get_country_assets(country_id, category="Navy")
     if not assets:
         return 0
 
-    total_power = sum(_score_single_naval_asset(a["equipment_name"], a["amount"]) for a in assets if (a.get("amount") or 0) > 0)
+    # شناور در حال تعمیر عملیاتی نیست و در توان رزمی حساب نمی‌شود
+    total_power = sum(
+        _score_single_naval_asset(a["equipment_name"], available_ship_count(a))
+        for a in assets if available_ship_count(a) > 0
+    )
     return int(total_power)
 
 
