@@ -581,6 +581,7 @@ COUNTRY_STAT_FIELDS = {
     "nuclear_fuel":     ("🧪 سوخت هسته‌ای", "کیلوگرم", 50, "num"),
     "nuclear_fuel_daily":("🧪 تولید روزانه سوخت هسته‌ای", "کیلوگرم", 10, "num"),
     "medical_isotopes": ("🏥 رادیوداروهای پزشکی", "دوز", 50, "num"),
+    "vaccine_doses":    ("💉 دُز واکسن", "دُز", 50_000, "num"),
     "enriched_60":      ("⚛️ اورانیوم غنی‌شده ۶۰٪", "کیلوگرم", 20, "num"),
     "weapons_grade_90": ("☢️ اورانیوم نظامی ۹۰٪ (HEU)", "کیلوگرم", 10, "num"),
     "warheads":         ("🚀 کلاهک‌های هسته‌ای", "عدد", 1, "num"),
@@ -634,6 +635,14 @@ async def menu_cstat_adjust(query, country_id: int, field: str):
     note = ""
     if field in ("daily_income", "tax_income"):
         note = "\n\n⚠️ _این دو مورد با هر ری‌استارت بر اساس کانفیگ و ساختمان‌ها بازسازی می‌شوند._"
+    elif field == "vaccine_doses":
+        import internal_affairs as _ia
+        per_use = _ia.VACCINE_DOSES_PER_USE
+        note = (
+            f"\n\n💉 معادل *{int(current) // per_use}* نوبت تزریق سراسری"
+            f" (هر نوبت {per_use:,} دُز)\n"
+            "_هر نوبت تزریق، سقف مهار بحران اپیدمی را به ۹۵٪ می‌رساند._"
+        )
     rows = [
         [InlineKeyboardButton(f"➖ {step*10:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-10"),
          InlineKeyboardButton(f"➖ {step*5:,}", callback_data=f"admin:cstatadj:{country_id}:{field}:-5"),
