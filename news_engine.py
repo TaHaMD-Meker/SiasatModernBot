@@ -337,6 +337,23 @@ async def trigger_un_targeted_sanction_news(bot, country: dict, sanction_label: 
                              event_category=f"شورای امنیت | {sanction_label}")
 
 
+_UN_VIOLATION_TEMPLATES = [
+    ("کشف محموله نقض تحریم؛ سایه سنگین شورای امنیت",
+     "منابع اطلاعاتی از توقیف محموله‌ای از سلاح در مسیر نقض تحریم تسلیحاتی شورای امنیت خبر می‌دهند؛ نام چند کشور در اسناد محرمانه آمده است."),
+    ("قاچاق سلاح زیر رادار شورا لو رفت",
+     "یکی دیگر از محموله‌های قاچاق که قصد دور زدن تحریم تسلیحاتی سازمان ملل را داشت، در میانه‌ی راه شناسایی و توقیف شد؛ رسوایی دیپلماتیک تازه در راه است."),
+]
+
+
+async def trigger_un_sanction_violation_news(bot, sender: dict, receiver: dict):
+    """خبر لو رفتن نقض تحریم تسلیحاتی سازمان ملل — بدون عدد."""
+    s_name = sender.get("name") or "یک کشور"
+    r_name = receiver.get("name") or "یک کشور"
+    rng = _ins_random.Random(f"unviol|{s_name}|{r_name}")
+    headline, body = rng.choice(_UN_VIOLATION_TEMPLATES)
+    await post_breaking_news(bot, headline, body, event_category="شورای امنیت | نقض تحریم")
+
+
 async def trigger_insurgency_news(bot, ev: dict):
     """خبر خودکار شورش — نسخه‌ی متن بر اساس seed تا هر شب متفاوت باشد."""
     name = ev.get("country_name") or "یک کشور"

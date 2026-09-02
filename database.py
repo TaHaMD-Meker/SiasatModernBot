@@ -4737,14 +4737,20 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             c_min, c_max = _ordered_pair(p_id, r_id)
             cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id = ? AND country2_id = ?", (c_min, c_max))
             rel_row = cur.fetchone()
-            if rel_row and rel_row["status"] == "sanctioned":
+            _bilateral_sanctioned = bool(rel_row and rel_row["status"] == "sanctioned")
+            _smuggled = bool(c.get("is_smuggled"))
+            if _bilateral_sanctioned and not _smuggled:
                 return False, "امکان انعقاد قرارداد یا انتقال تجهیزات با کشور تحریم‌شده وجود ندارد."
 
             # 🚫 تحریم‌های هدفمند سازمان ملل
+            # استثنا: قاچاق سلاح سبک بازار سیاه زیر تحریم تسلیحاتی باز می‌ماند
+            # (ریسک رهگیری تشدیدشده در بخش انتقال نظامی). تحریم تجاری مطلق است.
             if has_targeted_sanction(p_id, "trade_embargo") or has_targeted_sanction(r_id, "trade_embargo"):
                 return False, "🚫 **تحریم تجاری سازمان ملل:** انعقاد قرارداد با کشور تحت تحریم تجاری ممنوع است."
-            if off_type == "military_asset" and has_targeted_sanction(r_id, "arms_embargo"):
-                return False, "🚫 **تحریم تسلیحاتی سازمان ملل:** هرگونه انتقال تجهیز نظامی به کشور تحت تحریم تسلیحاتی ممنوع است."
+            _un_arms_embargo = off_type == "military_asset" and has_targeted_sanction(r_id, "arms_embargo")
+            if _un_arms_embargo and not _smuggled:
+                return False, ("🚫 **تحریم تسلیحاتی سازمان ملل:** انتقال رسمی تجهیز نظامی به کشور تحت تحریم ممنوع است.\n\n"
+                               "💡 فقط قاچاق سلاح سبک از بازار سیاه ممکن است (۱.۵ برابر ترانزیت + ریسک رهگیری تشدیدشده).")
 
             # عوارض تنگه‌ها فقط بعد از موفقیت همه اعتبارسنجی‌ها کسر می‌شود؛
             # تا یک قرارداد نامعتبر باعث پرداخت یک‌طرفه عوارض نشود.
@@ -4850,11 +4856,25 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                 delivered_amt = off_amt
                 lost_amt = 0
                 is_intercepted = False
+                _un_violation = False
+
+                # 🕵️ گیت سمت سرور: قاچاق فقط برای سلاح سبک (ضد callback جعلی)
+                if is_smuggled and not config.is_light_weapon(
+                        asset_dict.get("category", ""), off_key, asset_dict.get("equipment_name", "")):
+                    return False, ("🚫 **قاچاق فقط برای سلاح‌های سبک ممکن است:** پلتفرم‌های سنگین (تانک، جنگنده، ناو، "
+                                   "موشک بالستیک) باید از کانال رسمی با مجوز کشور سازنده منتقل شوند.")
 
                 if is_smuggled:
                     import random
-                    # ۲۵٪ ریسک ردگیری اطلاعاتی و توقیف نیمی از محموله در مرز
-                    if random.random() < 0.25:
+                    # ریسک ردگیری و توقیف نیمی از محموله در مرز:
+                    # پایه ۲۵٪ — نقض تحریم تسلیحاتی سازمان ملل ۴۰٪ — تحریم دوجانبه ۳۵٪
+                    _risk = 0.25
+                    if _un_arms_embargo:
+                        _risk = 0.40
+                        _un_violation = True
+                    elif _bilateral_sanctioned:
+                        _risk = 0.35
+                    if random.random() < _risk:
                         is_intercepted = True
                         delivered_amt = max(1, off_amt // 2)
                         lost_amt = off_amt - delivered_amt
@@ -4907,7 +4927,7 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                 )
 
                 if is_intercepted:
-                    return True, f"INTERCEPTED:{lost_amt}:{delivered_amt}:{asset_dict['equipment_name']}:{c.get('origin_country_key') or ''}"
+                    return True, f"INTERCEPTED:{lost_amt}:{delivered_amt}:{asset_dict['equipment_name']}:{c.get('origin_country_key') or ''}:{1 if _un_violation else 0}"
                 elif is_smuggled:
                     return True, f"SMUGGLED_SAFE:{delivered_amt}:{asset_dict['equipment_name']}"
                 else:

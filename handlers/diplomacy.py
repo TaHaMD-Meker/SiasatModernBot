@@ -1539,14 +1539,16 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         orig_flag = orig_info.get("flag", "🌐")
         orig_name = orig_info.get("name", orig_key)
 
-        if not is_self_produced and is_light:
+        if is_light:
             text = (
                 f"🎖️ **انتقال {asset['equipment_name']}**\n"
                 f"🏷️ **کشور سازنده اصلی:** {orig_flag} {orig_name}\n"
                 f"📦 موجودی انبار شما: {asset['amount']:,} واحد\n\n"
                 "💡 این جنگ‌افزار یک **سلاح سبک/دوش‌پرتاب** است. نحوه انتقال را انتخاب فرمایید:\n\n"
-                f"• 📜 **معاهده رسمی بین‌المللی:** انتقال قانونی با استعلام مجوز صادرات (End-User License) از کشور سازنده ({orig_name})\n"
-                "• 🕵️ **قاچاق از بازار سیاه:** ارسال مخفیانه بدون نیاز به مجوز سازنده (۱.۵ برابر هزینه ترانزیت + ۲۵٪ ریسک رهگیری امنیتی)"
+                + (f"• 📜 **معاهده رسمی بین‌المللی:** انتقال قانونی با استعلام مجوز صادرات (End-User License) از کشور سازنده ({orig_name})\n"
+                   if not is_self_produced else
+                   "• 📜 **انتقال مستقیم (تولید خودی):** ارسال قانونی بدون نیاز به مجوز\n")
+                + "• 🕵️ **قاچاق از بازار سیاه:** ارسال مخفیانه (۱.۵ برابر ترانزیت + ۲۵٪ ریسک رهگیری؛ زیر تحریم تسلیحاتی شورای امنیت ۴۰٪)"
             )
             kb = [
                 [InlineKeyboardButton("📜 معاهده رسمی (با استعلام مجوز سازنده)", callback_data="dip:mil_set_mode:official")],
@@ -1588,6 +1590,9 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
     elif data.startswith("dip:mil_set_mode:"):
         mode_type = data.split(":")[2]
         draft = context.user_data.get("mil_draft", {})
+        if mode_type == "smuggle" and not draft.get("is_light"):
+            await query.answer("⛔ قاچاق فقط برای سلاح‌های سبک/دوش‌پرتاب ممکن است.", show_alert=True)
+            return
         draft["is_smuggled"] = 1 if mode_type == "smuggle" else 0
         context.user_data["diplomacy_input"] = {"type": "mil_asset_qty"}
 
@@ -2356,7 +2361,9 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             pass
 
         if str(msg).startswith("INTERCEPTED:"):
-            _, lost_str, deliv_str, eq_name, orig_k = msg.split(":")
+            _iparts = str(msg).split(":")
+            _, lost_str, deliv_str, eq_name, orig_k = _iparts[:5]
+            _un_viol = len(_iparts) > 5 and _iparts[5] == "1"
             lost_num = int(lost_str)
             deliv_num = int(deliv_str)
             orig_c = db.get_country_by_key(orig_k)
@@ -2371,6 +2378,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 f"• ⚠️ رضایت عمومی فروشنده ({p_c['name']}) ۳٪ کاهش یافت.\n\n"
                 "📢 خبر فوری این حادثه امنیتی در کانال رسمی منتشر گردید."
             )
+            if _un_viol:
+                inter_text += "\n\n🚫 **این محموله نقض تحریم تسلیحاتی سازمان ملل بود** و در گزارش شورای امنیت ثبت شد."
             await query.edit_message_text(inter_text, parse_mode="Markdown")
             if p_c and p_c.get("player_id"):
                 try:
@@ -2378,6 +2387,8 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                 except Exception:
                     pass
             await news_engine.trigger_smuggling_intercepted_news(context.bot, p_c, r_c, orig_c, eq_name, lost_num)
+            if _un_viol:
+                await news_engine.trigger_un_sanction_violation_news(context.bot, p_c, r_c)
             return
 
         elif str(msg).startswith("SMUGGLED_SAFE:"):
