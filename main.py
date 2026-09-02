@@ -735,7 +735,7 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
                 f"کاربر گرامی،\n"
                 f"به دلیل عدم ثبت حداقل {req_stmts} بیانیه یا توییت رسمی در روز گذشته ({yesterday_str})، "
                 f"مالکیت کشور *{flag} {name}* موقتاً از شما سلب شد.\n\n"
-                f"⏳ *این کشور به مدت {country_queue.QUARANTINE_DAYS} روز در قرنطینه است.* "
+                f"⏳ *این کشور به مدت {country_queue.QUARANTINE_HOURS} ساعت در قرنطینه است.* "
                 f"تا پایان این مهلت می‌توانید با دستور /reclaim کشورتان را با تمام تجهیزات و "
                 f"ساختمان‌هایش پس بگیرید. بعد از آن، به نفر اول صف انتظار واگذار می‌شود.\n\n"
                 f"• تعداد بیانیه‌های ثبت‌شده شما: *{user_stmts} از {req_stmts} بیانیه*\n\n"

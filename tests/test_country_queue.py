@@ -70,16 +70,16 @@ def test_reclaim_fails_after_the_window_closes(monkeypatch, tmp_path):
     assert not ok and "مهلت" in message
 
 
-def test_quarantine_lasts_two_days_by_default(monkeypatch, tmp_path):
+def test_quarantine_lasts_24h_by_default(monkeypatch, tmp_path):
     database = _fresh(monkeypatch, tmp_path)
     cid = _country(database, 5004)
     before = cq._now()
     cq.quarantine_country(cid)
 
     until = cq._parse(database.get_country_by_id(cid)["quarantine_until"])
-    days = (until - before).total_seconds() / 86400
-    assert cq.QUARANTINE_DAYS == 2
-    assert 1.9 < days < 2.1
+    hours = (until - before).total_seconds() / 3600
+    assert cq.QUARANTINE_HOURS == 24
+    assert 23.9 < hours < 24.1
 
 
 def test_expired_quarantine_moves_the_country_into_the_free_pool(monkeypatch, tmp_path):

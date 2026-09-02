@@ -1928,7 +1928,7 @@ def _apply_crisis_impact(crisis: dict, factor: float | None = None, advance_stag
     return applied
 
 
-def change_severity(crisis_id: int, direction: int, admin_id: int | None = None, reason: str = "admin"):
+def change_severity(crisis_id: int, direction: int, admin_id: int | None = None, reason: str = "admin", now_dt: datetime.datetime | None = None):
     """تغییر یک سطح شدت بحران. direction=+1 تشدید، -1 تخفیف.
 
     تشدید خسارت افزایشی وارد می‌کند (فقط اختلاف ضریب دو سطح)، تا کشور بابت
@@ -1967,7 +1967,7 @@ def change_severity(crisis_id: int, direction: int, admin_id: int | None = None,
                     light_since = ?
                 WHERE id = ?
                 """,
-                (new_severity, 1 if direction > 0 else 0, _iran_date(), light_since, crisis_id),
+                (new_severity, 1 if direction > 0 else 0, _iran_date(now_dt), light_since, crisis_id),
             )
     finally:
         conn.close()
@@ -2776,7 +2776,7 @@ def run_crisis_slot_cycle(country: dict, now_dt: datetime.datetime | None = None
             else DEESCALATION_MITIGATION_THRESHOLD
         )
         if not stepped_today and mitigation >= deesc_thr and severity != SEVERITY_ORDER[0]:
-            ok, _msg, eased, _x = change_severity(crisis["id"], -1, reason="auto_slot")
+            ok, _msg, eased, _x = change_severity(crisis["id"], -1, reason="auto_slot", now_dt=now_dt)
             if ok:
                 events.append({"crisis": eased, "event": "deescalated"})
                 continue
@@ -2785,7 +2785,7 @@ def run_crisis_slot_cycle(country: dict, now_dt: datetime.datetime | None = None
         #    بازیکن کشورش را نابود نکند)
         if not stepped_today and crisis["stage"] in ("warning", "impact") and severity != SEVERITY_ORDER[-1]:
             if mitigation < ESCALATION_MITIGATION_THRESHOLD:
-                ok, _msg, worse, extra = change_severity(crisis["id"], +1, reason="auto_slot")
+                ok, _msg, worse, extra = change_severity(crisis["id"], +1, reason="auto_slot", now_dt=now_dt)
                 if ok:
                     events.append({"crisis": worse, "event": "escalated", "damage": extra})
                     continue
