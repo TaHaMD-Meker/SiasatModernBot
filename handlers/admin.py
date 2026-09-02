@@ -959,6 +959,11 @@ async def show_queue_panel(query, context):
             kb.append([InlineKeyboardButton(
                 f"🔓 {country.get('flag','')} {country.get('name','')}",
                 callback_data=f"admin:q_release:{country['id']}")])
+        if stats["quarantined"] > len(quarantined):
+            lines.append(f"• … و {stats['quarantined'] - len(quarantined)} کشور دیگر (فقط ۱۰ اول اینجا می‌آید)")
+        kb.append([InlineKeyboardButton("🔓🔓 آزادسازی همه‌ی قرنطینه‌ها", callback_data="admin:q_release_all")])
+    else:
+        lines.append("\n✅ هیچ کشوری در قرنطینه نیست.")
         kb.append([InlineKeyboardButton("🔓🔓 آزادسازی همه‌ی قرنطینه‌ها", callback_data="admin:q_release_all")])
     kb.append([InlineKeyboardButton("▶️ اجرای فوری صف", callback_data="admin:queue_run")])
     kb.append([InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")])
