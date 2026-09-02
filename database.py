@@ -6837,15 +6837,32 @@ def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_
         "china", "japan", "south_korea", "north_korea", "taiwan", "philippines", "vietnam", "cambodia", "thailand"
     }
 
+    # حوضه‌ی اقیانوس آرام: کشورهایی که سواحل اقیانوس آرام دارند.
+    # بدون این مفهوم، منطق مبتنی بر «غرب/شرق سوئز» نتیجه‌های نادرست می‌داد:
+    # آمریکا (غرب سوئز) ↔ ژاپن (شرق سوئز) از سوئز و باب‌المندب رد می‌شد، در
+    # حالی که مسیر واقعی اقیانوس آرام است؛ و روسیه ↔ چین که هم مرز زمینی
+    # دارند و هم هر دو بندر اقیانوس آرام، از سوئز و بسفر و مالاکا می‌گذشت.
+    PACIFIC_BASIN = {
+        "usa", "canada", "mexico", "guatemala", "colombia", "ecuador", "peru", "chile",
+        "russia", "china", "japan", "south_korea", "north_korea", "taiwan",
+        "philippines", "vietnam", "indonesia", "malaysia", "singapore", "thailand",
+        "cambodia", "brunei", "australia", "new_zealand", "papua_new_guinea",
+    }
+    both_pacific = c1 in PACIFIC_BASIN and c2 in PACIFIC_BASIN
+
     if strait_key in ("hormuz", "hormuz_south"):
         return (c1 in PERSIAN_GULF) != (c2 in PERSIAN_GULF)
 
     elif strait_key == "suez":
         # کانال سوئز تنها زمانی طی می‌شود که یک طرف در غرب/شمال سوئز و طرف دیگر در شرق/جنوب سوئز باشد
+        if both_pacific:
+            return False        # مسیر اقیانوس آرام، نیازی به سوئز نیست
         return (c1 in SUEZ_WEST and c2 in SUEZ_EAST) or (c1 in SUEZ_EAST and c2 in SUEZ_WEST)
 
     elif strait_key in ("bab_el_mandeb", "bab_el_mandeb_west"):
         # باب‌المندب اتصال دریای سرخ/اروپا به اقیانوس هند و آسیا است
+        if both_pacific:
+            return False
         is_c1_north = c1 in RED_SEA_LITTORAL or c1 in SUEZ_WEST
         is_c2_north = c2 in RED_SEA_LITTORAL or c2 in SUEZ_WEST
         is_c1_south = c1 in SUEZ_EAST and c1 not in RED_SEA_LITTORAL
@@ -6853,6 +6870,8 @@ def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_
         return (is_c1_north and is_c2_south) or (is_c2_north and is_c1_south)
 
     elif strait_key == "bosphorus":
+        if both_pacific:
+            return False        # روسیه از بنادر اقیانوس آرامش استفاده می‌کند
         return (c1 in BLACK_SEA) != (c2 in BLACK_SEA)
 
     elif strait_key in ("gibraltar_north", "gibraltar_south"):
@@ -6865,6 +6884,8 @@ def is_trade_route_crossing_strait(country1_key: str, country2_key: str, strait_
                (c2 in baltic_countries and c1 not in baltic_countries and c1 not in MEDITERRANEAN)
 
     elif strait_key in ("malacca", "malacca_north", "singapore_strait", "andaman_malacca"):
+        if both_pacific:
+            return False        # هر دو در حوضه‌ی اقیانوس آرام‌اند
         return (c1 in MALACCA_WEST and c2 in MALACCA_EAST) or (c1 in MALACCA_EAST and c2 in MALACCA_WEST)
 
     elif strait_key in ("taiwan_strait_cn", "taiwan_strait_tw"):

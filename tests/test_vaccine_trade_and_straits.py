@@ -148,3 +148,51 @@ def test_admin_panel_exposes_the_strait_screen():
         src = f.read()
     assert "admin:straits" in src
     assert "admin:straits_open_all" in src
+
+
+# ─────────────── صحت مسیریابی تنگه‌ها ───────────────
+
+def _crossed(db, a, b):
+    return {s["strait_key"] for s in db.get_trade_route_strait_analysis(a, b)["all_crossed"]}
+
+
+def test_atlantic_neighbours_cross_nothing(monkeypatch, tmp_path):
+    """آمریکا→انگلیس نباید هیچ ربطی به سوئز داشته باشد."""
+    db = _fresh(monkeypatch, tmp_path, "rt1.db")
+    for a, b in (("usa", "uk"), ("usa", "canada"), ("uk", "france"),
+                 ("germany", "usa"), ("brazil", "argentina"), ("usa", "brazil")):
+        assert _crossed(db, a, b) == set(), f"{a}→{b} نباید تنگه‌ای داشته باشد"
+
+
+def test_pacific_pairs_do_not_use_suez_or_malacca(monkeypatch, tmp_path):
+    """باگ: آمریکا↔ژاپن از سوئز و باب‌المندب رد می‌شد، روسیه↔چین از بسفر."""
+    db = _fresh(monkeypatch, tmp_path, "rt2.db")
+    for a, b in (("usa", "japan"), ("usa", "china"), ("russia", "china"),
+                 ("russia", "japan"), ("china", "south_korea"), ("australia", "new_zealand")):
+        crossed = _crossed(db, a, b)
+        assert not crossed & {"suez", "bab_el_mandeb", "bab_el_mandeb_west",
+                              "bosphorus", "malacca", "malacca_north"}, f"{a}→{b}: {crossed}"
+
+
+def test_genuine_long_routes_still_cross_the_right_straits(monkeypatch, tmp_path):
+    """اصلاح نباید مسیرهای واقعی را هم خالی کند."""
+    db = _fresh(monkeypatch, tmp_path, "rt3.db")
+    assert "suez" in _crossed(db, "india", "germany")
+    assert "suez" in _crossed(db, "china", "germany")
+    assert "suez" in _crossed(db, "australia", "uk")
+    assert _crossed(db, "japan", "india") & {"malacca", "malacca_north"}
+    assert _crossed(db, "saudi", "china") & {"hormuz", "hormuz_south"}
+    assert _crossed(db, "iran", "japan") & {"hormuz", "hormuz_south"}
+
+
+def test_a_strait_owner_is_never_tolled_on_its_own_route(monkeypatch, tmp_path):
+    db = _fresh(monkeypatch, tmp_path, "rt4.db")
+    db.set_strait_status("hormuz", "blocked")
+    assert db.get_trade_route_strait_analysis("iran", "china")["is_blocked"] is False
+    assert db.get_trade_route_strait_analysis("saudi", "china")["is_blocked"] is True
+
+
+def test_route_is_symmetric(monkeypatch, tmp_path):
+    db = _fresh(monkeypatch, tmp_path, "rt5.db")
+    for a, b in (("india", "germany"), ("usa", "japan"), ("saudi", "china"), ("uk", "australia")):
+        assert _crossed(db, a, b) == _crossed(db, b, a), f"{a}/{b} نامتقارن است"
