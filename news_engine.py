@@ -312,6 +312,31 @@ _INS_TEMPLATES = {
 }
 
 
+_UN_SANCTION_TEMPLATES = {
+    "imposed": [
+        ("شورای امنیت {name} را هدف قرار داد",
+         "شورای امنیت سازمان ملل تحریم‌های تازه‌ای علیه {flag} **{name}** تصویب کرد؛ دبیرکل این اقدام را «پیام روشن جامعه‌ی جهانی» خواند."),
+        ("تحریم‌های تازه علیه {name}",
+         "در نشست شبانه‌ی شورای امنیت، بسته‌ی تازه‌ای از تحریم‌ها علیه {flag} **{name}** به تصویب رسید؛ دیپلمات‌ها از تشدید فشارها خبر می‌دهند."),
+    ],
+    "lifted": [
+        ("آرامش پس از تحریم؛ شورای امنیت {name} را آزاد کرد",
+         "شورای امنیت سازمان ملل بخشی از تحریم‌های علیه {flag} **{name}** را لغو کرد؛ ناظران آن را آغاز بازگشت این کشور به اقتصاد جهانی می‌دانند."),
+    ],
+}
+
+
+async def trigger_un_targeted_sanction_news(bot, country: dict, sanction_label: str, imposed: bool):
+    """خبر اعمال/لغو تحریم هدفمند سازمان ملل — بدون عدد، انتخاب نسخه با seed."""
+    name = country.get("name") or "یک کشور"
+    flag = country.get("flag") or ""
+    rng = _ins_random.Random(f"unsanc|{name}|{sanction_label}|{imposed}")
+    key = "imposed" if imposed else "lifted"
+    headline, body = rng.choice(_UN_SANCTION_TEMPLATES[key])
+    await post_breaking_news(bot, headline.format(name=name), body.format(name=name, flag=flag),
+                             event_category=f"شورای امنیت | {sanction_label}")
+
+
 async def trigger_insurgency_news(bot, ev: dict):
     """خبر خودکار شورش — نسخه‌ی متن بر اساس seed تا هر شب متفاوت باشد."""
     name = ev.get("country_name") or "یک کشور"

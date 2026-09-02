@@ -206,6 +206,11 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             factor = getattr(config, "UN_SANCTION_INCOME_FACTOR", 0.5)
             gross_income = int(gross_income * factor)
             sanction_note = f" — 🚫 درآمد تحت تحریم جامع سازمان ملل ({int(factor * 100)}٪)"
+        # 🚫 تحریم‌های هدفمند سازمان ملل: تحریم مالی ۲۵٪ درآمد را قطع می‌کند
+        if db.has_targeted_sanction(c["id"], "financial"):
+            fin_factor = getattr(config, "UN_TARGETED_FINANCIAL_FACTOR", 0.75)
+            gross_income = int(gross_income * fin_factor)
+            sanction_note += f" — 💰 تحریم مالی سازمان ملل ({int(fin_factor * 100)}٪ درآمد)"
         net_full = gross_income - maint_info["total_maint"]
         net_payment = net_full if force else int(net_full / INCOME_PARTS)
         gold_daily = c.get("gold_daily", 0) or 0

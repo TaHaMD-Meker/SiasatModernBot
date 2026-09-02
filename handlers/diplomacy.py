@@ -2783,6 +2783,13 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         target_c = db.get_country_by_id(target_id)
 
         if act == "propose_alliance":
+            # 🏴 انزوای دیپلماتیک سازمان ملل: اتحاد با کشور تحت انزوا ممنوع
+            if db.has_targeted_sanction(target_id, "diplomatic_isolation") or db.has_targeted_sanction(country["id"], "diplomatic_isolation"):
+                await query.edit_message_text(
+                    "🏴 **انزوای دیپلماتیک سازمان ملل:** تشکیل پیمان اتحاد با کشور تحت انزوای دیپلماتیک ممنوع است.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:rel_start")]]),
+                    parse_mode="Markdown")
+                return
             # Send alliance offer
             offer_msg = (
                 f"🤝 **پیشنهاد رسمی معاهده اتحاد استراتژیک از طرف {country['flag']} {country['name']}**\n\n"
@@ -2832,6 +2839,12 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
     elif data.startswith("dip:alliance_accept:"):
         proposer_id = int(data.split(":")[2])
+        # 🏴 انزوای دیپلماتیک سازمان ملل
+        if db.has_targeted_sanction(proposer_id, "diplomatic_isolation") or db.has_targeted_sanction(country["id"], "diplomatic_isolation"):
+            await query.edit_message_text(
+                "🏴 **انزوای دیپلماتیک سازمان ملل:** این پیمان قابل امضا نیست — یکی از طرفین تحت انزوای دیپلماتیک است.",
+                parse_mode="Markdown")
+            return
         db.set_diplomatic_relation(country["id"], proposer_id, "allied", 0)
         p_c = db.get_country_by_id(proposer_id)
         if p_c and p_c.get("player_id"):

@@ -691,6 +691,20 @@ def init_db():
         FOREIGN KEY(voter_country_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
+    # تحریم‌های هدفمند سازمان ملل — هر نوع جداگانه قابل اعمال/لغو است
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS un_targeted_sanctions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL,
+        sanction_key TEXT NOT NULL,
+        reason TEXT DEFAULT '',
+        imposed_by INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(country_id, sanction_key),
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_un_targeted_country ON un_targeted_sanctions(country_id)")
 
     # جدول ثبت نتایج نبردها جهت مشاهده تعاملی با دکمه‌های شیشه‌ای
     cur.execute("""
@@ -4209,6 +4223,91 @@ def get_game_stats():
     }
 
 
+def has_targeted_sanction(country_id: int, sanction_key: str) -> bool:
+    """آیا این تحریم هدفمند روی کشور فعال است؟ (هوک‌های اقتصادی، سبک و تک‌کوئری)"""
+    conn = get_connection()
+    try:
+        r = conn.execute(
+            "SELECT 1 FROM un_targeted_sanctions WHERE country_id = ? AND sanction_key = ?",
+            (int(country_id), str(sanction_key))).fetchone()
+        return bool(r)
+    finally:
+        conn.close()
+
+
+def get_targeted_sanctions(country_id: int) -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM un_targeted_sanctions WHERE country_id = ? ORDER BY created_at",
+            (int(country_id),)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def apply_targeted_sanction(country_id: int, sanction_key: str, reason: str = "",
+                            imposed_by: int = 0) -> tuple[bool, str]:
+    """اعمال یک تحریم هدفمند (تک‌نوع). اگر از قبل فعال باشد کاری نمی‌کند."""
+    spec = config.UN_TARGETED_SANCTIONS.get(sanction_key)
+    if not spec:
+        return False, "نوع تحریم نامعتبر است."
+    label = spec["label"]
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO un_targeted_sanctions"
+                " (country_id, sanction_key, reason, imposed_by, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (int(country_id), str(sanction_key), str(reason or "")[:400],
+                 int(imposed_by),
+                 datetime.datetime.now(datetime.timezone.utc).isoformat()))
+            ok = cur.rowcount > 0
+    finally:
+        conn.close()
+    if ok:
+        add_transaction(int(country_id), f"un_sanction_{sanction_key}",
+                        f"🚫 {label} سازمان ملل علیه کشور اعمال شد."
+                        + (f" دلیل: {reason}" if reason else ""), 0)
+        try:
+            add_log(f"admin:{imposed_by}", "un_sanction_apply",
+                    f"{sanction_key} on country_id={int(country_id)}"
+                    + (f" | reason={reason}" if reason else ""))
+        except Exception:
+            pass
+        return True, f"{label} اعمال شد."
+    return False, f"{label} از قبل فعال است."
+
+
+def remove_targeted_sanction(country_id: int, sanction_key: str,
+                             removed_by: int = 0) -> tuple[bool, str]:
+    """لغو یک تحریم هدفمند."""
+    spec = config.UN_TARGETED_SANCTIONS.get(sanction_key)
+    if not spec:
+        return False, "نوع تحریم نامعتبر است."
+    label = spec["label"]
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM un_targeted_sanctions WHERE country_id = ? AND sanction_key = ?",
+                (int(country_id), str(sanction_key)))
+            ok = cur.rowcount > 0
+    finally:
+        conn.close()
+    if ok:
+        add_transaction(int(country_id), f"un_unsanction_{sanction_key}",
+                        f"✅ {label} سازمان ملل لغو شد.", 0)
+        try:
+            add_log(f"admin:{removed_by}", "un_sanction_remove",
+                    f"{sanction_key} on country_id={int(country_id)}")
+        except Exception:
+            pass
+        return True, f"{label} لغو شد."
+    return False, f"{label} فعال نبود."
+
+
 def add_transaction(country_id: int, type_: str, description: str, amount: int):
     conn = get_connection()
     cur = conn.cursor()
@@ -4623,6 +4722,12 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             rel_row = cur.fetchone()
             if rel_row and rel_row["status"] == "sanctioned":
                 return False, "امکان انعقاد قرارداد یا انتقال تجهیزات با کشور تحریم‌شده وجود ندارد."
+
+            # 🚫 تحریم‌های هدفمند سازمان ملل
+            if has_targeted_sanction(p_id, "trade_embargo") or has_targeted_sanction(r_id, "trade_embargo"):
+                return False, "🚫 **تحریم تجاری سازمان ملل:** انعقاد قرارداد با کشور تحت تحریم تجاری ممنوع است."
+            if off_type == "military_asset" and has_targeted_sanction(r_id, "arms_embargo"):
+                return False, "🚫 **تحریم تسلیحاتی سازمان ملل:** هرگونه انتقال تجهیز نظامی به کشور تحت تحریم تسلیحاتی ممنوع است."
 
             # عوارض تنگه‌ها فقط بعد از موفقیت همه اعتبارسنجی‌ها کسر می‌شود؛
             # تا یک قرارداد نامعتبر باعث پرداخت یک‌طرفه عوارض نشود.
@@ -7139,6 +7244,12 @@ def create_market_order(seller_id: int, resource_type: str, amount: int, unit_pr
     if s_row and (s_row["un_sanctioned"] or 0):
         return False, "🚫 **تحریم جامع سازمان ملل:** امکان عرضه کالا در بورس جهانی برای کشور شما مسدود است."
 
+    # 🚫 تحریم‌های هدفمند سازمان ملل
+    if has_targeted_sanction(seller_id, "market_ban"):
+        return False, "🚫 **ممنوعیت بورس جهانی (سازمان ملل):** دسترسی کشور شما به بورس قطع است."
+    if resource_type == "oil" and has_targeted_sanction(seller_id, "oil_embargo"):
+        return False, "🚫 **تحریم نفتی سازمان ملل:** عرضه‌ی نفت این کشور در بورس جهانی ممنوع است."
+
     # قیمت کف: نفت را نمی‌توان زیر قیمت پایه در بورس عرضه کرد
     if resource_type == "oil" and unit_price < config.OIL_GLOBAL_PRICE:
         return False, (
@@ -7356,6 +7467,15 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 return False, "🚫 **تحریم جامع سازمان ملل:** امکان خرید از این عرضه وجود ندارد — کشور فروشنده تحت تحریم جامع است.", {}
             if buyer and (buyer["un_sanctioned"] or 0):
                 return False, "🚫 **تحریم جامع سازمان ملل:** بورس جهانی برای کشور شما مسدود است و امکان خرید وجود ندارد.", {}
+
+            # 🚫 تحریم‌های هدفمند سازمان ملل
+            if seller and has_targeted_sanction(seller_id, "market_ban"):
+                return False, "🚫 **ممنوعیت بورس جهانی (سازمان ملل):** فروشنده تحت تحریم بورس است.", {}
+            if buyer and has_targeted_sanction(buyer_id, "market_ban"):
+                return False, "🚫 **ممنوعیت بورس جهانی (سازمان ملل):** دسترسی کشور شما به بورس قطع است.", {}
+            if (seller and buyer and order.get("resource_type") == "oil"
+                    and has_targeted_sanction(seller_id, "oil_embargo")):
+                return False, "🚫 **تحریم نفتی سازمان ملل:** خرید نفت از کشور تحت تحریم نفتی ممنوع است.", {}
 
             if not seller or not buyer:
                 return False, "کشور خریدار یا فروشنده یافت نشد.", {}
