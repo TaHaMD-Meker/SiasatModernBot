@@ -67,6 +67,7 @@ def test_eruption_requires_collapse_risk(monkeypatch, tmp_path):
     cid = _country()
     out = insurgency.nightly_tick(db.get_country_by_id(cid), "2026-09-01",
                                   {"collapse_risk": 0})
+    assert out["events"] == []
     assert insurgency.get(cid) is None
 
 

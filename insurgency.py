@@ -317,7 +317,7 @@ def nightly_tick(country: dict, today_str: str, cycle: dict | None = None) -> di
         hostage = db.insurgency_take_hostage(cid)
 
     # ۷) اعمال افکت‌ها به دیتابیس
-    effect = db.insurgency_apply_effects(
+    db.insurgency_apply_effects(
         cid,
         fighters_delta=fighters - ins["fighters"],
         boldness_delta=boldness_delta,
