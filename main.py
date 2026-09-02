@@ -686,6 +686,12 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
         if not p_id or p_id in config.ADMIN_IDS or p_id <= 0 or c_key == "un":
             continue
 
+        # معافیت گروهک‌ها: گروهک‌های استاندارد (۱۰۰هزاری) و شبه‌نظامی‌های سفارشی
+        # (همه با کلید faction_*) مشمول بیانیه‌ی اجباری روزانه و سلب مالکیت نیستند —
+        # این قانون فقط برای کشورهای رسمی است.
+        if db.is_militia_country_key(c_key):
+            continue
+
         # مهلت برای ثبت‌نام‌های تازه: اگر دیروز بعد از ساعت ۱۲ ظهر یا امروز ثبت‌نام کرده، روز اول معاف است
         created_at_raw = c.get("created_at") or ""
         if created_at_raw:

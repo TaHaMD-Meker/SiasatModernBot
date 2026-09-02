@@ -70,8 +70,10 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
     else:
         vip_str = "👤 <b>کاربر عادی</b>"
 
-    # وضعیت بیانیه‌ها
-    if stmt_count >= config.REQUIRED_DAILY_STATEMENTS:
+    # وضعیت بیانیه‌ها — گروهک‌ها (faction_*) معاف از سهمیه‌ی روزانه‌اند
+    if db.is_militia_country_key(c.get("country_key")):
+        stmt_badge = f"🏴 <b>گروهک شبه‌نظامی</b> (معاف از بیانیه‌ی روزانه)"
+    elif stmt_count >= config.REQUIRED_DAILY_STATEMENTS:
         stmt_badge = f"🟢 <b>{stmt_count}/{config.REQUIRED_DAILY_STATEMENTS} بیانیه</b> (دارای مصونیت)"
     elif stmt_count == 1:
         stmt_badge = f"🟡 <b>۱/{config.REQUIRED_DAILY_STATEMENTS} بیانیه</b> (نیازمند ۱ بیانیه دیگر)"

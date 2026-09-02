@@ -52,7 +52,9 @@ async def statements_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     today_count = db.get_country_statement_count_today(c["id"])
     req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
-    if today_count >= req_stmts:
+    if db.is_militia_country_key(c.get("country_key")):
+        status_text = "🏴 *گروهک شبه‌نظامی هستید* — معاف از سهمیه‌ی بیانیه‌ی روزانه"
+    elif today_count >= req_stmts:
         status_text = f"✅ *وضعیت فعالیت امروز:* `{today_count} از {req_stmts}` بیانیه ثبت شده (تکمیل شده)"
     else:
         status_text = f"⚠️ *وضعیت فعالیت امروز:* `{today_count} از {req_stmts}` بیانیه ثبت شده (نیاز به {req_stmts - today_count} بیانیه دیگر تا ۰۰:۰۰)"
@@ -354,7 +356,9 @@ async def process_official_statement_input(update: Update, context: ContextTypes
     today_cnt = db.get_country_statement_count_today(country["id"])
     req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
     conf_msg += f"\n\n📊 *مجموع بیانیه‌ها و توییت‌های امروز شما:* `{today_cnt} از {req_stmts}`"
-    if today_cnt >= req_stmts:
+    if db.is_militia_country_key(country.get("country_key")):
+        conf_msg += " (🏴 گروهک — معاف از سهمیه)"
+    elif today_cnt >= req_stmts:
         conf_msg += " (✅ سهمیه فعالیت امروز تکمیل شد)"
     else:
         conf_msg += f" (⚠️ نیاز به {req_stmts - today_cnt} بیانیه دیگر تا ساعت ۰۰:۰۰)"
@@ -574,7 +578,9 @@ async def process_official_tweet_input(update: Update, context: ContextTypes.DEF
     today_cnt = db.get_country_statement_count_today(country["id"])
     req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
     conf_msg += f"\n\n📊 *مجموع بیانیه‌ها و توییت‌های امروز شما:* `{today_cnt} از {req_stmts}`"
-    if today_cnt >= req_stmts:
+    if db.is_militia_country_key(country.get("country_key")):
+        conf_msg += " (🏴 گروهک — معاف از سهمیه)"
+    elif today_cnt >= req_stmts:
         conf_msg += " (✅ سهمیه فعالیت امروز تکمیل شد)"
     else:
         conf_msg += f" (⚠️ نیاز به {req_stmts - today_cnt} بیانیه دیگر تا ساعت ۰۰:۰۰)"
