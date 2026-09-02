@@ -1036,7 +1036,7 @@ def main():
             await diplomacy_text_input_handler(update, context)
         elif context.user_data.get("market_sell_draft"):
             await market_text_input_handler(update, context)
-        elif context.user_data.get("un_draft"):
+        elif context.user_data.get("un_draft") or context.user_data.get("un_sanc_search"):
             await un_text_input_handler(update, context)
         elif context.user_data.get("roleplay_text_input"):
             await operations_text_input_handler(update, context)

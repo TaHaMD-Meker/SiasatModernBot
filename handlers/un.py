@@ -95,9 +95,13 @@ def _filter_sanction_countries(countries: list, cont: str | None = None,
                or (cont == "mideast" and (x.get("country_key") or "").startswith("faction_"))]
     if q:
         q = q.lower().strip()
-        out = [x for x in out
-               if q in (x.get("name") or "").lower()
-               or q in (x.get("country_key") or "").lower()]
+        if q.isdigit():
+            # هم‌سبک پنل مالک: جستجو با شناسه‌ی عددی بازیکن هم ممکن است
+            out = [x for x in out if q in str(x.get("player_id") or "")]
+        else:
+            out = [x for x in out
+                   if q in (x.get("name") or "").lower()
+                   or q in (x.get("country_key") or "").lower()]
     return out
 
 
@@ -201,7 +205,8 @@ async def _sanc_search_prompt(update, context):
     context.user_data["un_sanc_search"] = True
     await update.callback_query.edit_message_text(
         "🔎 **جستجوی کشور برای تحریم**\n\n"
-        "نام کشور یا کلید آن را بفرست (مثلاً: `انگلیس` یا `uk`).\n"
+        "**نام کشور**، **کلید کشور** یا **شناسه‌ی عددی بازیکن** را بفرست\n"
+        "(مثلاً: `انگلیس` یا `uk` یا `805298765`).\n"
         "برای انصراف، دکمه‌ی پایین را بزن.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
             "❌ انصراف", callback_data="un:sanc:list:0:all")]]),
