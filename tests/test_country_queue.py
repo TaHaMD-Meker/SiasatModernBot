@@ -261,3 +261,36 @@ def test_a_no_show_goes_to_the_back_of_the_queue(monkeypatch, tmp_path):
     cq.process_queue(start + datetime.timedelta(hours=cq.OFFER_HOURS + 1))
     assert cq.get_queue_entry(7602)["status"] == "offered", "نوبت باید به نفر بعدی برسد"
     assert cq.get_queue_entry(7601)["priority"] < cq.get_queue_entry(7602)["priority"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ضد «کشور خلع‌شده بی‌صاحب می‌ماند»: پیوستن به صف باید همان لحظه موتور صف را
+# روشن کند تا کشور آزاد (از جمله خلع‌شده/قرنطینه‌گذشته) فوراً پیشنهاد شود.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_join_flow_offers_free_country_immediately(monkeypatch, tmp_path):
+    database = _fresh(monkeypatch, tmp_path)
+    cid = _country(database, 6001, key="instant_free_c", name="کشور آزاد")
+    cq.quarantine_country(cid)   # مثل چرخه‌ی کامل: قرنطینه → انقضا → آزاد
+    cq.release_expired_quarantines(cq._now() + datetime.timedelta(days=2))
+    assert len(cq.get_free_countries()) == 1
+    assert cq.queue_stats()["waiting"] == 0
+
+    # بازیکن به صف می‌پیوندد (همان کاری که q:join انجام می‌دهد)…
+    cq.join_queue(6002, first_name="ب", username="b")
+    assert cq.queue_stats()["waiting"] == 1
+    # …و پردازش فوری (که حالا در هندلر q:join صدا زده می‌شود) باید
+    # بلافاصله پیشنهاد بسازد — نه اینکه تا جاب بعدی صبر کند.
+    result = cq.process_queue()
+    assert len(result["offered"]) == 1
+    entry = cq.get_queue_entry(6002)
+    assert entry["status"] == "offered"
+    assert entry["offered_country_id"] == cid
+
+
+def test_source_guard_join_triggers_process_and_refresh():
+    src = open("handlers/queue.py", encoding="utf-8").read()
+    idx = src.index('if data == "q:join":')
+    window = src[idx:src.index("elif data", idx)]
+    assert "process_queue" in window, "q:join باید فوراً موتور صف را اجرا کند"
+    assert "queue_status(update, context)" in window, "بعد از join باید صفحه رندر شود"

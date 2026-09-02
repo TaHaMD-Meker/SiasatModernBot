@@ -119,9 +119,22 @@ async def queue_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             user.id, first_name=user.first_name or "", username=user.username or ""
         )
         await query.answer(message, show_alert=not ok)
+        if ok:
+            # ضد «کشور خالی می‌ماند»: موتور صف همین حالا اجرا شود تا اگر کشور
+            # آزادی موجود است فوراً به همین بازیکن پیشنهاد شود، نه تا جاب ۱۰دقیقه‌ای.
+            try:
+                cq.process_queue()
+            except Exception:
+                pass
+            await queue_status(update, context)  # رندر مجدد: پیشنهاد یا جایگاه صف
     elif data == "q:leave":
         cq.leave_queue(user.id)
         await query.answer("از صف خارج شدید.")
+        try:
+            cq.process_queue()  # جا باز شد؛ کشور پیشنهادی هم آزاد بماند
+        except Exception:
+            pass
+        await queue_status(update, context)
     elif data == "q:reclaim":
         ok, message, _country = cq.reclaim_country(user.id)
         await query.answer(message, show_alert=True)
@@ -138,6 +151,10 @@ async def queue_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
     elif data == "q:decline":
         cq.decline_offer(user.id)
+        try:
+            cq.process_queue()  # کشور ردشده فوراً به نفر بعدی پیشنهاد شود
+        except Exception:
+            pass
         await query.answer("پیشنهاد رد شد و به صف بازگشتید.")
 
     await queue_status(update, context)
