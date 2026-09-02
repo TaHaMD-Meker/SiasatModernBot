@@ -236,6 +236,7 @@ async def _world_submenu(query):
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
         [InlineKeyboardButton("🌊 وضعیت تنگه‌ها و آبراه‌ها", callback_data="admin:straits")],
+        [InlineKeyboardButton("✅ اعتبارسنجی گزارش تلفات", callback_data="admin:validate")],
     ]
     await _admin_submenu(
         query,
@@ -1081,6 +1082,44 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("admin:c:"):
         c_id = int(data.split(":")[2])
         await show_country_dashboard(query, context, c_id)
+
+    elif data.startswith("admin:c_export:"):
+        c_id = int(data.split(":")[2])
+        c = db.get_country_by_id(c_id)
+        text = db.export_country_inventory_text(c_id)
+        if not text:
+            await query.answer("انبار خالی یا کشور یافت نشد.", show_alert=True)
+            return
+        head = (f"📤 *خروجی انبار {c['flag']} {c['name']}*\n"
+                "این متن را کپی و در بخش «انبار» تمپلت داوری بچسبانید.\n\n")
+        # تلگرام سقف ۴۰۹۶ کاراکتر دارد؛ خروجی بلند تکه‌تکه فرستاده می‌شود
+        chunks, cur = [], ""
+        for line in text.splitlines(keepends=True):
+            if len(cur) + len(line) > 3500:
+                chunks.append(cur)
+                cur = ""
+            cur += line
+        if cur:
+            chunks.append(cur)
+        await query.edit_message_text(
+            head + f"`{chunks[0]}`",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                "🔙 بازگشت به پرونده", callback_data=f"admin:c:{c_id}")]]),
+            parse_mode="Markdown")
+        for extra in chunks[1:]:
+            await context.bot.send_message(query.from_user.id, f"`{extra}`", parse_mode="Markdown")
+
+    elif data == "admin:validate":
+        context.user_data["admin_awaiting_input"] = {"type": "validate_report"}
+        await query.edit_message_text(
+            "✅ *اعتبارسنجی گزارش تلفات*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "متن کامل گزارش تلفات را بفرستید تا قبل از ثبت بررسی شود.\n\n"
+            "_بررسی می‌شود: شناسایی نام کشور، وجود هر قلم در انبار، "
+            "کسر بیش از موجودی، نسبت مجروح به کشته و سقف تلفات غیرنظامی._",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                "❌ انصراف", callback_data="admin:main")]]),
+            parse_mode="Markdown")
 
     elif data == "admin:straits":
         rows = db.list_strait_statuses()
@@ -3008,6 +3047,23 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("لطفاً پاسخ را به‌صورت متن بفرست.")
         return
     input_type = input_state.get("type")
+
+    # ✅ اعتبارسنجی گزارش تلفات — قبل از بقیه چون متن گزارش چندخطی است
+    if input_type == "validate_report":
+        context.user_data["admin_awaiting_input"] = None
+        try:
+            result = db.validate_loss_report_text(text)
+            report = db.format_validation_report(result)
+        except Exception:
+            import traceback; traceback.print_exc()
+            report = "❌ بررسی گزارش با خطا مواجه شد."
+        await update.message.reply_text(
+            report,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ بررسی گزارش دیگر", callback_data="admin:validate")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:main")]]),
+            parse_mode="HTML")
+        return
 
     if await handle_dossier_inputs(update, context, input_type, text, input_state):
         context.user_data["admin_awaiting_input"] = None

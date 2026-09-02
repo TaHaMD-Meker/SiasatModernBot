@@ -9287,5 +9287,168 @@ def reset_all_countries_for_new_season() -> tuple[bool, int, str]:
         conn.close()
 
 
+# ---------- ابزارهای داوری: خروجی انبار و اعتبارسنجی گزارش ----------
 
+def export_country_inventory_text(country_id: int) -> str:
+    """انبار کشور به شکل متنی آماده‌ی کپی در پرامپت هوش مصنوعی.
+
+    همان خروجی `tools/loss_tool.py export` است ولی روی دیتابیس زنده و
+    قابل استفاده در پنل تلگرام، چون داور دسترسی ترمینال ندارد.
+    """
+    c = get_country_by_id(country_id)
+    if not c:
+        return ""
+    assets = get_country_assets(country_id)
+
+    by_cat = {}
+    for a in assets:
+        if int(a["amount"] or 0) <= 0:
+            continue
+        by_cat.setdefault(a["category"], []).append(a)
+
+    out = [f"### انبار {c.get('flag', '')} {c['name']}",
+           f"خزانه: {int(c['treasury'] or 0):,} دلار | "
+           f"پرسنل فعال: {int(c['active_personnel'] or 0):,} نفر | "
+           f"ذخایر نفت: {int(c['oil_reserves'] or 0):,} بشکه | "
+           f"کلاهک هسته‌ای: {int(c['warheads'] or 0)}", ""]
+
+    for cat, items in by_cat.items():
+        label, unit = config.ASSET_CATEGORIES.get(cat, (cat, "عدد"))
+        out.append(f"**{label}** (واحد: {unit})")
+        for it in sorted(items, key=lambda x: -int(x["amount"] or 0)):
+            out.append(f"- {it['equipment_name']} = {int(it['amount']):,}")
+        out.append("")
+
+    owned = {k: v for k, v in (get_equipment(country_id) or {}).items() if v}
+    if owned:
+        out.append("**زیرساخت و صنایع** (واحد: واحد)")
+        for k, v in owned.items():
+            nm = config.ALL_SHOP_ITEMS.get(k, {}).get("name", k)
+            out.append(f"- {nm} = {v}")
+        out.append("")
+
+    cmds = get_country_commanders(country_id) or []
+    if cmds:
+        out.append("**رده فرماندهی** (فقط در صورت ترور صریح در رول)")
+        for cm in cmds:
+            out.append(f"- {cm['title']}")
+        out.append("")
+
+    return "\n".join(out).strip()
+
+
+def validate_loss_report_text(text: str) -> dict:
+    """اعتبارسنجی متن گزارش تلفات — همان بررسی‌های `loss_tool check`.
+
+    خروجی: dict با کلیدهای ok، errors، warnings، info و خلاصه‌ی اثر.
+    داور می‌تواند قبل از ثبت، گزارش هوش مصنوعی را با این بسنجد.
+    """
+    from handlers.losses import (parse_loss_report_text, match_country_by_name,
+                                 match_asset_by_name, match_strategic_resource,
+                                 is_explicit_strategic, match_commander)
+
+    res = {"ok": False, "errors": [], "warnings": [], "info": [],
+           "country": None, "items": 0, "effects": {}}
+    try:
+        p = parse_loss_report_text(text or "")
+    except Exception as e:
+        res["errors"].append(f"متن گزارش قابل خواندن نبود: {e}")
+        return res
+
+    c = match_country_by_name(p.get("country") or "")
+    if not c:
+        res["errors"].append(
+            f"نام کشور «{p.get('country')}» شناسایی نشد — بات گزارش را رد می‌کند. "
+            "نام را دقیقاً مطابق نام داخل بازی بنویسید (مثلاً «انگلیس» نه «بریتانیا»).")
+        return res
+    res["country"] = f"{c.get('flag', '')} {c['name']}"
+
+    assets = get_country_assets(c["id"])
+    commanders = get_country_commanders(c["id"]) or []
+    stock = {a["equipment_key"]: int(a["amount"] or 0) for a in assets}
+    items = p.get("items") or []
+    res["items"] = len(items)
+    if not items:
+        res["warnings"].append("هیچ قلم تجهیزاتی در گزارش پیدا نشد.")
+
+    used = {}
+    for it in items:
+        # parse_loss_report_text اقلام را به‌صورت tuple برمی‌گرداند: (نام، تعداد، واحد)
+        if isinstance(it, (tuple, list)):
+            name = str(it[0]) if len(it) > 0 else ""
+            qty = int(it[1] or 0) if len(it) > 1 else 0
+        else:
+            name = it.get("name") or ""
+            qty = int(it.get("qty") or 0)
+        if qty <= 0:
+            res["warnings"].append(f"«{name}»: مقدار صفر یا نامعتبر — نادیده گرفته می‌شود.")
+            continue
+
+        if is_explicit_strategic(name):
+            sres = match_strategic_resource(name)
+            if sres:
+                res["info"].append(f"☢️ {name} → منبع راهبردی ({sres['name']})")
+                continue
+
+        cmd = match_commander(name, commanders)
+        if cmd:
+            res["info"].append(f"🎖️ {name} → فرمانده ({cmd.get('title', '')})")
+            continue
+
+        a = match_asset_by_name(name, assets)
+        if not a:
+            res["errors"].append(f"«{name}» در انبار {c['name']} پیدا نشد.")
+            continue
+
+        key = a["equipment_key"]
+        used[key] = used.get(key, 0) + qty
+        have = stock.get(key, 0)
+        if used[key] > have:
+            res["errors"].append(
+                f"«{a['equipment_name']}»: کسر {used[key]:,} ولی موجودی فقط {have:,} است.")
+
+    human = p.get("human") or {}
+    killed = int(human.get("mil") or 0)
+    wounded = int(human.get("wounded") or 0)
+    civ = int(human.get("civilians") or 0)
+    if killed > 0:
+        ratio = wounded / killed
+        if ratio < 2.0 or ratio > 3.5:
+            res["warnings"].append(
+                f"نسبت مجروح به کشته {ratio:.1f} به ۱ است — بازه‌ی واقع‌گرایانه ۲.۵ تا ۳.")
+        else:
+            res["info"].append(f"نسبت مجروح به کشته {ratio:.1f} به ۱ ✅")
+    if killed > int(c["active_personnel"] or 0):
+        res["errors"].append("تعداد کشته از کل پرسنل فعال کشور بیشتر است.")
+    if civ > 50:
+        res["warnings"].append(f"غیرنظامی {civ} نفر — بالای سقف عرفی ۵۰ نفر.")
+
+    res["effects"] = {"killed": killed, "wounded": wounded, "civilians": civ}
+    res["ok"] = not res["errors"]
+    return res
+
+
+def format_validation_report(v: dict) -> str:
+    """متن خوانا از خروجی validate_loss_report_text برای نمایش در تلگرام."""
+    if not v:
+        return "❌ خطای نامشخص."
+    lines = ["🔍 <b>اعتبارسنجی گزارش تلفات</b>", "━━━━━━━━━━━━━━━━━━", ""]
+    if v.get("country"):
+        lines.append(f"🏳️ کشور: <b>{v['country']}</b>")
+        lines.append(f"📦 اقلام شناسایی‌شده: <b>{v['items']}</b>")
+        e = v.get("effects") or {}
+        if e.get("killed"):
+            lines.append(f"👥 {e['killed']:,} کشته | {e['wounded']:,} مجروح | "
+                         f"{e.get('civilians', 0):,} غیرنظامی")
+        lines.append("")
+    for err in v.get("errors", []):
+        lines.append(f"❌ {err}")
+    for w in v.get("warnings", []):
+        lines.append(f"⚠️ {w}")
+    for i in v.get("info", []):
+        lines.append(f"ℹ️ {i}")
+    lines.append("")
+    lines.append("✅ <b>گزارش سالم است و قابل ثبت.</b>" if v.get("ok")
+                 else "🛑 <b>گزارش ایراد دارد — قبل از ثبت اصلاح شود.</b>")
+    return "\n".join(lines)
 

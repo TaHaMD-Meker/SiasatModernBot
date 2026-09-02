@@ -168,6 +168,7 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
             InlineKeyboardButton("💳 پرونده مالی و VIP", callback_data=f"admin:c_vip_finance:{c['id']}"),
         ],
         [
+            InlineKeyboardButton("📤 خروجی انبار (برای داوری)", callback_data=f"admin:c_export:{c['id']}"),
             InlineKeyboardButton("⚡ ابزارهای مدیریت و تغییر مالکیت", callback_data=f"admin:c_godmode:{c['id']}"),
             InlineKeyboardButton("✉️ پیام مستقیم به رهبر", callback_data=f"admin:msg_prompt:{c['id']}"),
         ],
