@@ -625,6 +625,11 @@ def init_db():
         pass
 
     try:
+        cur.execute("ALTER TABLE countries ADD COLUMN trade_limit_override TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
         cur.execute("ALTER TABLE trade_contracts ADD COLUMN origin_country_key TEXT")
     except sqlite3.OperationalError:
         pass
@@ -2517,6 +2522,8 @@ def update_country_field(country_id: int, field: str, value):
         "approval_rating", "grain_daily", "microchips", "microchips_daily", "iron_ore", "iron_ore_daily", "tech_level",
         "combat_readiness", "last_drill_date", "daily_drill_count", "username", "country_key", "player_id",
         "last_blockade_date",
+        # سقف دستی تجارت روزانه (JSON هر روش ترابری — پنل مالک)
+        "trade_limit_override",
         # فیلدهای چرخه هسته‌ای (ویرایش از پنل ادمین)
         "uranium_ore", "uranium_ore_daily", "nuclear_fuel", "nuclear_fuel_daily", "warheads",
         "warhead_cap_override", "enriched_60", "weapons_grade_90", "medical_isotopes", "medical_isotopes_daily",
@@ -5325,15 +5332,49 @@ def transfer_daily_budget(country_id: int) -> tuple[int, int]:
 
 # ---------- سقف تجارت روزانه بر اساس زیرساخت (دریایی/هوایی/زمینی) ----------
 
+TRADE_TRANSPORT_MODES = ("sea", "caspian", "land", "air")
+TRADE_LIMIT_MIN, TRADE_LIMIT_MAX = 0, 50
+
+
+def get_trade_limit_override(country_id: int) -> dict:
+    """سقف دستی این کشور برای هر روش ترابری؛ {} یعنی همه از فرمول زیرساخت."""
+    c = get_country_by_id(country_id)
+    raw = (c.get("trade_limit_override") or "") if c else ""
+    try:
+        data = json.loads(raw) if raw else {}
+        return {k: int(v) for k, v in data.items()
+                if k in TRADE_TRANSPORT_MODES and TRADE_LIMIT_MIN <= int(v) <= TRADE_LIMIT_MAX}
+    except Exception:
+        return {}
+
+
+def set_trade_limit_override(country_id: int, mode: str, value) -> bool:
+    """تنظیم سقف دستی یک روش (int در بازه ۰..۵۰) یا حذف آن (value=None → فرمولی)."""
+    if mode not in TRADE_TRANSPORT_MODES:
+        return False
+    ov = get_trade_limit_override(country_id)
+    if value is None:
+        ov.pop(mode, None)
+    else:
+        ov[mode] = max(TRADE_LIMIT_MIN, min(TRADE_LIMIT_MAX, int(value)))
+    update_country_field(country_id, "trade_limit_override",
+                         json.dumps(ov, ensure_ascii=False))
+    return True
+
+
 def get_trade_mode_daily_limit(country_id: int, mode: str) -> int:
     """محاسبه سقف مجاز تجارت روزانه بر اساس زیرساخت‌های احداث‌شده.
 
+    * اگر مالک برای این کشور سقف دستی ثبت کرده باشد، همان ملاک است.
     * سقف پایه برای کشور فابریک: ۲ تجارت در روز برای هر روش (دریایی، هوایی، زمینی)
     * دریایی (sea): ۲ + تعداد بنادر تجاری و استراتژیک (port + mega_port)
     * هوایی (air): ۲ + تعداد فرودگاه‌های بین‌المللی (airport)
     * زمینی (land): ۲ + تعداد بزرگراه‌ها/جاده‌ها (highway)
     * خزر (caspian): ۱ + تعداد بنادر — دریای بسته با ناوگان کوچک‌تر
     """
+    ov = get_trade_limit_override(country_id)
+    if mode in ov:
+        return int(ov[mode])
     base_cap = 2
     eq = get_equipment(country_id)
     if mode == "sea":

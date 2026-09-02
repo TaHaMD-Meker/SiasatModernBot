@@ -170,7 +170,10 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
             InlineKeyboardButton("💳 پرونده مالی و VIP", callback_data=f"admin:c_vip_finance:{c['id']}"),
         ],
         [
+            InlineKeyboardButton("⚖️ سقف تجارت روزانه", callback_data=f"admin:tl:{c['id']}"),
             InlineKeyboardButton("📤 خروجی انبار (برای داوری)", callback_data=f"admin:c_export:{c['id']}"),
+        ],
+        [
             InlineKeyboardButton("⚡ ابزارهای مدیریت و تغییر مالکیت", callback_data=f"admin:c_godmode:{c['id']}"),
             InlineKeyboardButton("✉️ پیام مستقیم به رهبر", callback_data=f"admin:msg_prompt:{c['id']}"),
         ],
@@ -1748,3 +1751,37 @@ async def handle_dossier_inputs(update: Update, context: ContextTypes.DEFAULT_TY
         return True
 
     return False
+
+
+async def show_trade_limits(query, context, country_id: int, notice: str = ""):
+    """پنل مالک: سقف تجارت روزانه‌ی یک کشور، جدا برای هر روش ترابری (۰ تا ۵۰)."""
+    c = db.get_country_by_id(country_id)
+    if not c:
+        await query.edit_message_text(
+            "❌ کشور یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:list:0")]]))
+        return
+
+    ov = db.get_trade_limit_override(country_id)
+    mode_info = [("sea", "🚢 دریایی"), ("caspian", "🌊 خزر"), ("land", "🚛 زمینی"), ("air", "✈️ هوایی")]
+    lines = [f"⚖️ **سقف تجارت روزانه — {c.get('flag', '')} {c.get('name', '')}**",
+             "━━━━━━━━━━━━━━━━━━", ""]
+    if notice:
+        lines += [f"✅ {notice}", ""]
+    lines += ["سقف مؤثر هر روش (بازه‌ی ۰ تا ۵۰)؛ ♻️ بازگشت به فرمول زیرساخت:", ""]
+
+    keyboard = []
+    for m, label in mode_info:
+        eff = db.get_trade_mode_daily_limit(country_id, m)
+        tag = "دستی" if m in ov else "فرمولی"
+        lines.append(f"• {label}: **{eff}** ({tag})")
+        keyboard.append([
+            InlineKeyboardButton(f"{label} ➖", callback_data=f"admin:tl:{country_id}:{m}:dec"),
+            InlineKeyboardButton(f"➕", callback_data=f"admin:tl:{country_id}:{m}:inc"),
+            InlineKeyboardButton("♻️", callback_data=f"admin:tl:{country_id}:{m}:reset"),
+        ])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به پرونده", callback_data=f"admin:c:{country_id}")])
+
+    await query.edit_message_text("\n".join(lines),
+                                  reply_markup=InlineKeyboardMarkup(keyboard),
+                                  parse_mode="Markdown")

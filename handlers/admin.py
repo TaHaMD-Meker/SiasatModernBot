@@ -27,6 +27,7 @@ from handlers.internal_admin import internal_admin_callback, handle_internal_adm
 from handlers.vip_admin import vip_admin_callback
 from handlers.admin_dossier import (
     show_country_dashboard,
+    show_trade_limits,
     show_country_trades_menu,
     show_country_trade_detail,
     show_country_bases_menu,
@@ -1409,6 +1410,25 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("admin:c:"):
         c_id = int(data.split(":")[2])
         await show_country_dashboard(query, context, c_id)
+
+    elif data.startswith("admin:tl:"):
+        parts = data.split(":")   # admin:tl:<cid> | admin:tl:<cid>:<mode>:<action>
+        c_id = int(parts[2])
+        notice = ""
+        if len(parts) == 5:
+            mode, action = parts[3], parts[4]
+            ov = db.get_trade_limit_override(c_id)
+            base = ov.get(mode, db.get_trade_mode_daily_limit(c_id, mode))
+            if action == "inc":
+                db.set_trade_limit_override(c_id, mode, base + 1)
+                notice = f"سقف {mode} به {min(50, base + 1)} رسید."
+            elif action == "dec":
+                db.set_trade_limit_override(c_id, mode, base - 1)
+                notice = f"سقف {mode} به {max(0, base - 1)} رسید."
+            elif action == "reset":
+                db.set_trade_limit_override(c_id, mode, None)
+                notice = f"سقف {mode} به فرمول پیش‌فرض بازگشت."
+        await show_trade_limits(query, context, c_id, notice)
 
     elif data.startswith("admin:c_export:"):
         c_id = int(data.split(":")[2])
