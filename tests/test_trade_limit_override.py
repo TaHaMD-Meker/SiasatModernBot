@@ -103,13 +103,13 @@ def test_player_limit_message_uses_effective_limit():
 def test_total_shipment_override_changes_budget(monkeypatch, tmp_path):
     cid = _country(tmp_path, monkeypatch, "کشور کل", "total_tl")
     used, cap = db.transfer_daily_budget(cid)
-    assert cap == config.TRANSFER_DAILY_SHIPMENTS == 3
+    assert cap == config.TRANSFER_DAILY_SHIPMENTS == 6
 
     assert db.set_trade_limit_override(cid, "total", 7)
-    assert db.transfer_daily_budget(cid)[1] == 7, "پیام ۳/۳ باید عدد دستی را نشان دهد"
+    assert db.transfer_daily_budget(cid)[1] == 7, "سقف دستی باید عدد خودش را نشان دهد"
 
     db.set_trade_limit_override(cid, "total", None)
-    assert db.transfer_daily_budget(cid)[1] == 3, "♻️ به پیش‌فرض کانفیگ برگردد"
+    assert db.transfer_daily_budget(cid)[1] == 6, "♻️ به پیش‌فرض کانفیگ برگردد"
 
 
 def test_zero_total_blocks_all_outbound(monkeypatch, tmp_path):
@@ -123,3 +123,46 @@ def test_panel_has_total_row():
     src = open("handlers/admin_dossier.py", encoding="utf-8").read()
     assert "کل محموله‌های خروجی در روز" in src
     assert "admin:tl:{country_id}:total:inc" in src or "admin:tl:{country_id}:total:dec" in src
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# قرارداد جدید سقف کل: پایه ۶/۶ — با اشتراک طلایی فعال ۱۲/۱۲ — اورراید مالک مقدم
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_base_cap_is_six(monkeypatch, tmp_path):
+    cid = _country(tmp_path, monkeypatch, "پایه شش", "base6_c")
+    assert config.TRANSFER_DAILY_SHIPMENTS == 6
+    assert db.transfer_daily_budget(cid)[1] == 6
+
+
+def _grant_vip(cid, tier="vip_gold", days=3):
+    import datetime
+    exp = (datetime.datetime.now(datetime.timezone.utc)
+           + datetime.timedelta(days=days)).isoformat()
+    db.update_country_field(cid, "is_vip", 1)
+    db.update_country_field(cid, "vip_tier", tier)
+    db.update_country_field(cid, "vip_expires_at", exp)
+
+
+def test_gold_subscription_doubles_to_twelve(monkeypatch, tmp_path):
+    cid = _country(tmp_path, monkeypatch, "طلایی", "gold12_c")
+    _grant_vip(cid, "vip_gold")
+    assert db.has_active_gold_subscription(cid)
+    assert db.transfer_daily_budget(cid)[1] == 12
+
+    # اورراید مالک همیشه مقدم است
+    db.set_trade_limit_override(cid, "total", 20)
+    assert db.transfer_daily_budget(cid)[1] == 20
+
+
+def test_expired_or_bronzeless_subscription_no_bonus(monkeypatch, tmp_path):
+    import datetime
+    cid = _country(tmp_path, monkeypatch, "منقضی", "expvip_c")
+    # منقضی‌شده
+    _grant_vip(cid, days=-1)
+    assert not db.has_active_gold_subscription(cid)
+    assert db.transfer_daily_budget(cid)[1] == 6
+    # تیر خالی (بدون انقضا ولی بدون tier)
+    db.update_country_field(cid, "is_vip", 0)
+    db.update_country_field(cid, "vip_tier", None)
+    assert not db.has_active_gold_subscription(cid)

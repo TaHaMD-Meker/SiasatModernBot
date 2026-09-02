@@ -1785,7 +1785,7 @@ async def show_trade_limits(query, context, country_id: int, notice: str = ""):
              "━━━━━━━━━━━━━━━━━━", ""]
     if notice:
         lines += [f"✅ {notice}", ""]
-    lines += ["ردیف اول: سقف کل محموله‌های خروجی در روز (همان ۳/۳) — بعدش سقف هر روش (بازه‌ی ۰ تا ۵۰)؛ ♻️ بازگشت به پیش‌فرض:", ""]
+    lines += ["ردیف اول: سقف کل محموله‌های خروجی در روز (پایه ۶ — اشتراک طلایی ۱۲) — بعدش سقف هر روش (بازه‌ی ۰ تا ۵۰)؛ ♻️ بازگشت به پیش‌فرض:", ""]
 
     _t_ov = db.get_trade_limit_override(country_id).get("total")
     _t_cap = db.transfer_daily_budget(country_id)[1]

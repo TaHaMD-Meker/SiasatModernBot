@@ -4809,7 +4809,7 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                 if used >= cap:
                     return False, (
                         f"⛔ **سقف ارسال روزانه پر شده است:** امروز {used}/{cap} محموله ارسال کرده‌اید. "
-                        f"فردا دوباره می‌توانید معاهده صادر کنید."
+                        f"فردا دوباره می‌توانید معاهده صادر کنید، یا با اشتراک طلایی به ۱۲ محموله در روز برسید."
                     )
 
             p_extra_cost = t_cost if t_payer == "seller" else 0
@@ -5117,7 +5117,7 @@ def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_t
                 if used >= cap:
                     return False, (
                         f"⛔ **سقف ارسال روزانه پر شده است:** امروز {used}/{cap} محموله ارسال کرده‌اید. "
-                        f"فردا دوباره می‌توانید کمک ارسال کنید."
+                        f"فردا دوباره می‌توانید کمک ارسال کنید، یا با اشتراک طلایی به ۱۲ محموله در روز برسید."
                     )
 
             # بررسی موجودی کالا و هزینه ترانزیت
@@ -5323,12 +5323,35 @@ def shipment_capacity(off_type: str, mode: str) -> tuple[int, str]:
     return max_cap, spec.get("name", mode)
 
 
+def has_active_gold_subscription(country_id: int) -> bool:
+    """آیا این کشور اشتراک رهبری فعال (برنز به بالا) دارد؟ (vip_expires_at معتبر)"""
+    c = get_country_by_id(country_id)
+    if not c or not c.get("is_vip") or not c.get("vip_tier"):
+        return False
+    exp = None
+    try:
+        exp = datetime.datetime.fromisoformat(c["vip_expires_at"]) if c.get("vip_expires_at") else None
+    except Exception:
+        exp = None
+    if exp is not None and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=datetime.timezone.utc)
+    if exp is not None and exp < datetime.datetime.now(datetime.timezone.utc):
+        return False
+    return True
+
+
 def transfer_daily_budget(country_id: int) -> tuple[int, int]:
-    """(استفاده‌شده, سقف) محموله‌های خروجی امروز — اورراید مالک بر کانفیگ مقدم است."""
+    """(استفاده‌شده, سقف) محموله‌های خروجی امروز.
+
+    اولویت: اورراید دستی مالک ← اشتراک طلایی فعال (۱۲) ← پایه (۶).
+    """
     used = get_transfer_day_count(country_id)
     ov = get_trade_limit_override(country_id).get("total")
-    cap = int(ov) if ov is not None else int(getattr(config, "TRANSFER_DAILY_SHIPMENTS", 3) or 0)
-    return used, cap
+    if ov is not None:
+        return used, int(ov)
+    if has_active_gold_subscription(country_id):
+        return used, int(getattr(config, "TRANSFER_DAILY_SHIPMENTS_VIP_GOLD", 12) or 12)
+    return used, int(getattr(config, "TRANSFER_DAILY_SHIPMENTS", 6) or 6)
 
 
 # ---------- سقف تجارت روزانه بر اساس زیرساخت (دریایی/هوایی/زمینی) ----------
