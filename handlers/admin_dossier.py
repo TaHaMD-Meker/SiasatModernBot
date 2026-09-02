@@ -171,6 +171,9 @@ async def show_country_dashboard(query, context, country_id: int, notice: str = 
         ],
         [
             InlineKeyboardButton("⚖️ سقف تجارت روزانه", callback_data=f"admin:tl:{c['id']}"),
+            InlineKeyboardButton("🎯 واگذاری به بازیکن با آیدی", callback_data=f"admin:c_transfer_prompt:{c['id']}"),
+        ],
+        [
             InlineKeyboardButton("📤 خروجی انبار (برای داوری)", callback_data=f"admin:c_export:{c['id']}"),
         ],
         [
@@ -1168,23 +1171,27 @@ async def show_country_godmode_menu(query, context, country_id: int):
         "",
         "از گزینه‌های زیر برای اعمال تغییرات ساختاری بر روی کشور استفاده فرمایید:"
     ]
+    _offer = db.get_active_offer_for_country(country_id)
+    if _offer:
+        lines.insert(7, f"🔒 <b>قفل پیشنهاد صف:</b> به بازیکن <code>{_offer['player_id']}</code> تا <code>{(_offer.get('offer_expires_at') or '')[:16].replace('T', ' ')}</code>")
     text = chr(10).join(lines)
 
-    keyboard = [
-        [InlineKeyboardButton("👤 واگذاری مالکیت به بازیکن جدید", callback_data=f"admin:c_transfer_prompt:{country_id}")],
-        [InlineKeyboardButton("✏️ تغییر نام و پرچم کشور", callback_data=f"admin:c_rename_prompt:{country_id}")],
-        [
-            InlineKeyboardButton("💰 تزریق ۱۰۰M$ + ۱M نفت", callback_data=f"admin:c_boost_econ:{country_id}"),
-            InlineKeyboardButton("🪖 تزریق ۵۰k نیرو + ۲۰٪ آمادگی", callback_data=f"admin:c_boost_mil:{country_id}")
-        ],
-        [
-            InlineKeyboardButton("⭐️ ارتقای لول بتل‌پس (+1)", callback_data=f"admin:c_bp_plus:{country_id}"),
-            InlineKeyboardButton("👑 فعال‌سازی پرمیوم بتل‌پس", callback_data=f"admin:c_bp_unlock:{country_id}")
-        ],
-        [InlineKeyboardButton("🔬 تنظیم سطح فناوری (Tech Level)", callback_data=f"admin:cstat:{country_id}:tech_level")],
-        [InlineKeyboardButton("🗑️ حذف کامل کشور", callback_data=f"admin:delconfirm:{country_id}")],
-        [InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{country_id}")]
-    ]
+    keyboard = []
+    if _offer:
+        keyboard.append([InlineKeyboardButton("🔓 آزادسازی قفل پیشنهاد صف", callback_data=f"admin:c_unlock_offer:{country_id}")])
+    keyboard.append([InlineKeyboardButton("🎯 واگذاری به بازیکن با آیدی", callback_data=f"admin:c_transfer_prompt:{country_id}")])
+    keyboard.append([InlineKeyboardButton("✏️ تغییر نام و پرچم کشور", callback_data=f"admin:c_rename_prompt:{country_id}")])
+    keyboard.append([
+        InlineKeyboardButton("💰 تزریق ۱۰۰M$ + ۱M نفت", callback_data=f"admin:c_boost_econ:{country_id}"),
+        InlineKeyboardButton("🪖 تزریق ۵۰k نیرو + ۲۰٪ آمادگی", callback_data=f"admin:c_boost_mil:{country_id}")
+    ])
+    keyboard.append([
+        InlineKeyboardButton("⭐️ ارتقای لول بتل‌پس (+1)", callback_data=f"admin:c_bp_plus:{country_id}"),
+        InlineKeyboardButton("👑 فعال‌سازی پرمیوم بتل‌پس", callback_data=f"admin:c_bp_unlock:{country_id}")
+    ])
+    keyboard.append([InlineKeyboardButton("🔬 تنظیم سطح فناوری (Tech Level)", callback_data=f"admin:cstat:{country_id}:tech_level")])
+    keyboard.append([InlineKeyboardButton("🗑️ حذف کامل کشور", callback_data=f"admin:delconfirm:{country_id}")])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت به داشبورد کشور", callback_data=f"admin:c:{country_id}")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
@@ -1590,6 +1597,16 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
     elif data.startswith("admin:c_godmode:"):
         cid = int(data.split(":")[2])
         await show_country_godmode_menu(query, context, cid)
+        return True
+
+    elif data.startswith("admin:c_unlock_offer:"):
+        cid = int(data.split(":")[2])   # فرمت سه‌تکه — اندیس ۲
+        n = db.release_country_offer(cid)
+        await show_country_godmode_menu(query, context, cid)
+        try:
+            await query.answer(f"🔓 قفل پیشنهاد صف آزاد شد ({n} ردیف).")
+        except Exception:
+            pass
         return True
 
     elif data.startswith("admin:c_transfer_prompt:"):

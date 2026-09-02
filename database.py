@@ -8922,8 +8922,43 @@ def admin_revoke_country_vip(country_id: int) -> tuple[bool, str]:
         return False, f"خطا: {e}"
 
 
+def get_active_offer_for_country(country_id: int):
+    """قفل پیشنهاد فعال صف انتظار روی یک کشور (یا None)."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT player_id, offer_expires_at FROM country_queue "
+            "WHERE offered_country_id = ? AND status = 'offered' LIMIT 1",
+            (country_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def release_country_offer(country_id: int) -> int:
+    """آزادسازی قفل پیشنهاد صف روی یک کشور؛ خروجی: تعداد ردیف‌های آزادشده."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE country_queue SET status = 'waiting', offered_country_id = NULL, "
+                "offer_expires_at = NULL WHERE offered_country_id = ? AND status = 'offered'",
+                (country_id,),
+            )
+            return cur.rowcount or 0
+    finally:
+        conn.close()
+
+
 def admin_transfer_country_ownership(country_id: int, new_player_id: int, new_username: str = "") -> tuple[bool, str]:
-    """واگذاری و انتقال کامل مالکیت یک کشور به بازیکن جدید."""
+    """واگذاری و انتقال کامل مالکیت یک کشور به بازیکن جدید.
+
+    مرجع نهایی دست ادمین است: قفل پیشنهاد صف، قرنطینه و ردپای مالک قبلی
+    همه پاک می‌شوند تا کشور بلافاصله و بدون «قفل» در اختیار بازیکن جدید باشد.
+    """
+    if is_banned(new_player_id):
+        return False, BANNED_MESSAGE
     conn = get_connection()
     try:
         with conn:
@@ -8932,8 +8967,17 @@ def admin_transfer_country_ownership(country_id: int, new_player_id: int, new_us
             existing = cur.fetchone()
             if existing:
                 return False, f"این بازیکن در حال حاضر رهبر کشور {existing['flag']} {existing['name']} (شناسه {existing['id']}) است."
-            cur.execute("UPDATE countries SET player_id = ?, username = ? WHERE id = ?", (new_player_id, new_username or "", country_id))
-        return True, f"مالکیت کشور با موفقیت به بازیکن با شناسه `{new_player_id}` واگذار شد."
+            cur.execute(
+                "UPDATE countries SET player_id = ?, username = ?, previous_player_id = NULL, "
+                "quarantined_at = NULL, quarantine_until = NULL WHERE id = ?",
+                (new_player_id, new_username or "", country_id))
+            cur.execute(
+                "UPDATE country_queue SET status = 'waiting', offered_country_id = NULL, "
+                "offer_expires_at = NULL WHERE offered_country_id = ? AND status = 'offered'",
+                (country_id,))
+        add_log(f"admin:{new_player_id}", "admin_country_assign", f"country={country_id} new_player={new_player_id}")
+        return True, (f"مالکیت کشور با موفقیت به بازیکن با شناسه `{new_player_id}` واگذار شد.\n"
+                      "🔓 هر قفل پیشنهاد صف و قرنطینه روی این کشور آزاد شد.")
     except Exception as e:
         return False, f"خطا در انتقال مالکیت: {e}"
 
