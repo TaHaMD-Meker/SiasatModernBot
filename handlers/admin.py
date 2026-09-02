@@ -4,6 +4,7 @@
 مدیریت کامل کشورها، خزانه، طلا، نفت، تجهیزات، دارایی‌های اختصاصی نظامی (Country Assets) و همگام‌سازی کاتالوگ.
 """
 
+import logging
 import math
 import json
 import html
@@ -16,6 +17,8 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
 import database as db
 import approval_system
 import config
+
+logger = logging.getLogger(__name__)
 import asyncio
 from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.losses import handle_losses_input
@@ -765,7 +768,8 @@ async def menu_cstat_adjust(query, country_id: int, field: str):
         reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
 
 
-def apply_cstat_delta(country_id: int, field: str, mult: int):
+def apply_cstat_delta(country_id: int, field: str, mult: int, actor_id: int = None):
+    """تغییر آمار کشور با گام مشخص — عملیات خطرناک ادمین، کامل لاگ می‌شود."""
     info = COUNTRY_STAT_FIELDS.get(field)
     if not info:
         return None, "فیلد نامعتبر"
@@ -773,20 +777,42 @@ def apply_cstat_delta(country_id: int, field: str, mult: int):
     c = db.get_country_by_id(country_id)
     if not c:
         return None, "کشور یافت نشد"
-    new_val = (c.get(field, 0) or 0) + mult * step
+    old_val = c.get(field, 0) or 0
+    new_val = old_val + mult * step
     lo, hi = _CSTAT_LIMITS.get(field, (0, 10**15))
     new_val = max(lo, min(hi, new_val))
     db.update_country_field(country_id, field, new_val)
+    try:
+        db.add_log(
+            f"admin:{actor_id}" if actor_id else "system",
+            "admin_cstat_delta",
+            f"{c.get('flag', '')} {c.get('name', '')} (id={country_id}) | "
+            f"{field}: {old_val} → {new_val} (Δ{mult * step:+d})",
+        )
+    except Exception:
+        logger.exception("cstat audit log failed")
     return new_val, None
 
 
-def apply_cstat_value(country_id: int, field: str, value: int):
+def apply_cstat_value(country_id: int, field: str, value: int, actor_id: int = None):
+    """ست مقدار مطلق آمار کشور — عملیات خطرناک ادمین، کامل لاگ می‌شود."""
     info = COUNTRY_STAT_FIELDS.get(field)
     if not info:
         return None, "فیلد نامعتبر"
+    c = db.get_country_by_id(country_id)
+    old_val = (c.get(field, 0) or 0) if c else None
     lo, hi = _CSTAT_LIMITS.get(field, (0, 10**15))
     value = max(lo, min(hi, value))
     db.update_country_field(country_id, field, value)
+    try:
+        db.add_log(
+            f"admin:{actor_id}" if actor_id else "system",
+            "admin_cstat_set",
+            f"{c.get('flag', '') if c else ''} {c.get('name', '') if c else ''} (id={country_id}) | "
+            f"{field}: {old_val} → {value}",
+        )
+    except Exception:
+        logger.exception("cstat audit log failed")
     return value, None
 
 
@@ -2684,7 +2710,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:season_reset_confirm":
-        ok, count, msg = db.reset_all_countries_for_new_season()
+        ok, count, msg = db.reset_all_countries_for_new_season(actor=f"admin:{user_id}")
         if ok:
             text = (
                 "🎉 **سلب مالکیت همگانی و ریست فصل جدید با موفقیت انجام شد!**\n\n"
@@ -3002,7 +3028,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         parts = data.split(":")
         if len(parts) == 5:
             cid_, field_, mult_ = int(parts[2]), parts[3], int(parts[4])
-            new_val, err = apply_cstat_delta(cid_, field_, mult_)
+            new_val, err = apply_cstat_delta(cid_, field_, mult_, actor_id=user_id)
             if err:
                 await query.answer(f"❌ {err}", show_alert=True)
                 return
@@ -3274,7 +3300,8 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             return
         cid_ = input_state["country_id"]; field_ = input_state["field"]
         try:
-            new_val, err = apply_cstat_value(cid_, field_, int(raw))
+            new_val, err = apply_cstat_value(cid_, field_, int(raw),
+                                             actor_id=update.effective_user.id)
         except Exception as exc:
             err = f"خطای داخلی در ذخیره فیلد `{field_}`: {exc}"
             new_val = None

@@ -676,7 +676,7 @@ def execute_collapse(country: dict, today_str: str) -> dict:
     except Exception:
         pass
     db.delete_insurgency(cid)
-    db.delete_country_by_id(cid)
+    db.delete_country_by_id(cid, actor="insurgency_collapse")
     pid = country.get("player_id")
     requeued = False
     if pid:

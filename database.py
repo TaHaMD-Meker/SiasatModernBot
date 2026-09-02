@@ -2387,19 +2387,37 @@ def get_taken_country_keys():
     return {r["country_key"] for r in rows}
 
 
-def delete_country_by_id(country_id: int) -> bool:
+def delete_country_by_id(country_id: int, actor: str = "system") -> bool:
+    """حذف کامل کشور — عملیات مخرب و برگشت‌ناپذیر؛ قبل از حذف اسنپ‌شات بایگانی
+    و بعد از حذف رکورد لاگ می‌شود (audit trail برای داوری)."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT id FROM countries WHERE id = ?", (country_id,))
     if not cur.fetchone():
         conn.close()
         return False
+    cur.execute(
+        """
+        SELECT id, name, flag, country_key, player_id, username, treasury,
+               oil_reserves, active_personnel, reserve_personnel,
+               COALESCE(population, 0) AS population, approval_rating
+        FROM countries WHERE id = ?
+        """, (country_id,))
+    snapshot_row = dict(cur.fetchone())
+    cur.execute("SELECT COUNT(*) FROM equipment WHERE country_id = ?", (country_id,))
+    snapshot_row["equipment_rows"] = cur.fetchone()[0]
     cur.execute("DELETE FROM country_assets WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM equipment WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM transactions WHERE country_id = ?", (country_id,))
     cur.execute("DELETE FROM countries WHERE id = ?", (country_id,))
     conn.commit()
     conn.close()
+    try:
+        import json as _json
+        add_log(actor, "country_deleted",
+                _json.dumps(snapshot_row, ensure_ascii=False)[:4000])
+    except Exception:
+        print(f"[audit-log] failed to log deletion of country {country_id}")
     return True
 
 
@@ -9280,15 +9298,30 @@ def grant_infrastructure_package_to_all(is_add: bool = True) -> int:
     return count
 
 
-def reset_all_countries_for_new_season() -> tuple[bool, int, str]:
-    """سلب مالکیت کامل تمام کشورها و پاکسازی داده‌های فصلی جهت شروع رسمی و عادلانه فصل جدید."""
+def reset_all_countries_for_new_season(actor: str = "system") -> tuple[bool, int, str]:
+    """سلب مالکیت کامل تمام کشورها و پاکسازی داده‌های فصلی جهت شروع رسمی و عادلانه فصل جدید.
+
+    مخرب‌ترین عملیات بازی — فهرست کشورها/مالک‌ها قبل از پاک شدن بایگانی و لاگ می‌شود.
+    """
     conn = get_connection()
     count = 0
+    snapshot_summary = ""
     try:
         with conn:
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM countries WHERE player_id > 0 AND country_key != 'un'")
             count = cur.fetchone()[0]
+
+            # بایگانی برای داوری: چه کشورهایی با چه مالک‌هایی ریست می‌شوند
+            try:
+                import json as _json
+                cur.execute(
+                    "SELECT id, name, country_key, player_id FROM countries"
+                    " WHERE country_key != 'un' ORDER BY id")
+                snapshot_summary = _json.dumps(
+                    [dict(r) for r in cur.fetchall()], ensure_ascii=False)[:4000]
+            except Exception:
+                snapshot_summary = "snapshot-failed"
 
             # پاکسازی تمامی جداول فصلی
             cur.execute("DELETE FROM country_assets")
@@ -9316,6 +9349,11 @@ def reset_all_countries_for_new_season() -> tuple[bool, int, str]:
             cur.execute("DELETE FROM settings WHERE key LIKE 'active_entity_%'")
             cur.execute("DELETE FROM settings WHERE key IN ('base_cost_cycle_date', 'blockade_cycle_date', 'strait_blockade_cost_date')")
 
+        try:
+            add_log(actor, "season_reset",
+                    f"count={count} | countries={snapshot_summary}")
+        except Exception:
+            print("[audit-log] failed to log season reset")
         return True, count, f"مالکیت تمام {count} کشور با موفقیت سلب شد و بازی ریست گردید."
     except Exception as e:
         logger.warning(f"Error in reset_all_countries_for_new_season: {e}")
