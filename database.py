@@ -9576,6 +9576,18 @@ def _init_role_tables(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_actions_user"
                 " ON admin_actions(user_id, created_at DESC)")
 
+    # مسدودسازی بازیکنان — فقط مالک (جلوگیری از اسپم درخواست کشور و...)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS banned_players (
+        user_id INTEGER PRIMARY KEY,
+        reason TEXT DEFAULT '',
+        banned_by INTEGER,
+        banned_at TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_banned_active ON banned_players(active)")
+
 
 def is_owner(user_id: int) -> bool:
     return int(user_id) in (config.ADMIN_IDS or [])
@@ -9611,6 +9623,93 @@ PLAY_RESTRICTED_MESSAGE = (
     "⚖️ داورهای فعال نمی‌توانند کشور بگیرند.\n\n"
     "برای بازی، باید ابتدا نقش داوری شما توسط مالک غیرفعال شود."
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# مسدودسازی بازیکن (فقط مالک) — محروم از هر مسیر دریافت کشور
+# ─────────────────────────────────────────────────────────────────────────────
+def ban_player(user_id: int, reason: str = "", banned_by: int = 0) -> tuple[bool, str]:
+    conn = get_connection()
+    try:
+        with conn:
+            row = conn.execute("SELECT active FROM banned_players WHERE user_id = ?",
+                               (int(user_id),)).fetchone()
+            if row and row["active"]:
+                return False, "این کاربر از قبل مسدود است."
+            if row:
+                conn.execute(
+                    "UPDATE banned_players SET active = 1, reason = ?, banned_by = ?,"
+                    " banned_at = ? WHERE user_id = ?",
+                    (str(reason or "")[:500], int(banned_by),
+                     datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                     int(user_id)))
+            else:
+                conn.execute(
+                    "INSERT INTO banned_players (user_id, reason, banned_by, banned_at, active)"
+                    " VALUES (?, ?, ?, ?, 1)",
+                    (int(user_id), str(reason or "")[:500], int(banned_by),
+                     datetime.datetime.now(datetime.timezone.utc).isoformat()))
+    finally:
+        conn.close()
+    try:
+        add_log(f"admin:{banned_by}", "player_ban",
+                f"user_id={int(user_id)} | reason={str(reason or '')[:200]}")
+    except Exception:
+        pass
+    return True, "کاربر مسدود شد."
+
+
+def unban_player(user_id: int, unbanned_by: int = 0) -> tuple[bool, str]:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE banned_players SET active = 0 WHERE user_id = ? AND active = 1",
+                (int(user_id),))
+            ok = cur.rowcount > 0
+    finally:
+        conn.close()
+    if ok:
+        try:
+            add_log(f"admin:{unbanned_by}", "player_unban", f"user_id={int(user_id)}")
+        except Exception:
+            pass
+        return True, "مسدودی کاربر برداشته شد."
+    return False, "این کاربر مسدود نیست."
+
+
+def is_banned(user_id: int) -> bool:
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT 1 FROM banned_players WHERE user_id = ? AND active = 1",
+                         (int(user_id),)).fetchone()
+        return bool(r)
+    finally:
+        conn.close()
+
+
+def get_ban_info(user_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT * FROM banned_players WHERE user_id = ? AND active = 1",
+                         (int(user_id),)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def get_banned_players(limit: int = 100) -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM banned_players WHERE active = 1"
+            " ORDER BY banned_at DESC LIMIT ?", (max(1, min(500, int(limit))),)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+BANNED_MESSAGE = "🚫 شما از دریافت کشور در بازی «سیاست مدرن» مسدود شده‌اید."
 
 
 def user_role(user_id: int) -> str | None:

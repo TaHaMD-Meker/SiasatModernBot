@@ -184,6 +184,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💰 اقتصاد، بازار و فروشگاه", callback_data="admin:menu_economy")],
         [InlineKeyboardButton("⚙️ تنظیمات و ابزار", callback_data="admin:menu_settings")],
         [InlineKeyboardButton("⚠️ عملیات حساس", callback_data="admin:menu_danger")],
+        [InlineKeyboardButton("🚫 مسدودسازی بازیکنان (مالک)", callback_data="admin:menu_bans")],
         [InlineKeyboardButton("❌ بستن پنل", callback_data="admin:close")],
     ]
 
@@ -247,6 +248,52 @@ async def _reftools_submenu(query):
         "همین ابزارها برای داورها با /referee هم هست.",
         rows,
     )
+
+
+async def _bans_submenu(query, notice: str = ""):
+    text = (
+        "🚫 *مسدودسازی بازیکنان (فقط مالک)*\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "کاربر مسدودشده نمی‌تواند هیچ مسیری برای گرفتن کشور برود:\n"
+        "درخواست از /start، ورود به صف، پذیرش پیشنهاد و استرداد قرنطینه.\n\n"
+        "✍️ برای مسدودسازی، **آیدی عددی** کاربر را بفرست (دلیل اختیاری، بعد از آیدی)."
+    )
+    if notice:
+        text = f"✅ {notice}\n\n" + text
+    kb = [
+        [InlineKeyboardButton("✍️ مسدودسازی کاربر (آیدی)", callback_data="admin:ban_prompt")],
+        [InlineKeyboardButton("📋 لیست مسدودشدگان", callback_data="admin:bans_list:0")],
+        [InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")],
+    ]
+    await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def _bans_list_page(query, page: int = 0):
+    bans = db.get_banned_players(limit=200)
+    per = 10
+    total_pages = max(1, (len(bans) + per - 1) // per)
+    page = max(0, min(page, total_pages - 1))
+    chunk = bans[page * per:(page + 1) * per]
+
+    text = f"🚫 *لیست مسدودشدگان* ({len(bans)} نفر — صفحه {page + 1}/{total_pages})\n━━━━━━━━━━━━━━━━━━\n\n"
+    kb = []
+    if not chunk:
+        text += "✅ هیچ کاربری مسدود نیست."
+    for b in chunk:
+        uid = b["user_id"]
+        reason = str(b.get("reason") or "").strip()
+        text += f"• ID: <code>{uid}</code>" + (f" — {reason}" if reason else "") + "\n"
+        kb.append([InlineKeyboardButton(f"♻️ رفع مسدودی {uid}", callback_data=f"admin:unban:{uid}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:bans_list:{page - 1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:bans_list:{page + 1}"))
+    if nav:
+        kb.append(nav)
+    kb.append([InlineKeyboardButton("✍️ مسدودسازی کاربر (آیدی)", callback_data="admin:ban_prompt")])
+    kb.append([InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")])
+    await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
 async def _world_submenu(query):
@@ -918,6 +965,126 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:menu_reftools":
         await _reftools_submenu(query)
+
+    elif data == "admin:menu_bans":
+        if not db.is_owner(user_id):
+            await query.answer("⛔ این بخش فقط برای مالک است.", show_alert=True)
+            return
+        await _bans_submenu(query)
+
+    elif data == "admin:ban_prompt":
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        context.user_data["admin_awaiting_input"] = {"type": "ban_player_input"}
+        await query.edit_message_text(
+            "🚫 *مسدودسازی کاربر*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "**آیدی عددی** کاربر را بفرست؛ دلیل اختیاری است و اگر بخواهی بعد از آیدی بنویس:\n"
+            "`۱۲۳۴۵۶۷۸۹ اسپم تکراری درخواست کشور`\n\n"
+            "کاربر مسدودشده هیچ مسیری برای گرفتن کشور نخواهد داشت.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_bans")]]),
+            parse_mode="Markdown")
+
+    elif data.startswith("admin:bans_list:"):
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        await _bans_list_page(query, int(data.split(":")[2]))
+
+    elif data.startswith("admin:unban:"):
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        uid = int(data.split(":")[2])
+        ok, msg = db.unban_player(uid, unbanned_by=user_id)
+        await query.answer(("✅ " if ok else "⚠️ ") + msg, show_alert=not ok)
+        await _bans_list_page(query, 0)
+
+    elif data.startswith("admin:ban_confirm:"):
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        uid = int(data.split(":")[2])
+        context.user_data["pending_ban"] = {"uid": uid, "reason": ""}
+        kb = [
+            [InlineKeyboardButton("✅ بله، مسدودش کن", callback_data="admin:ban_confirm_go")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="admin:menu_bans")],
+        ]
+        await query.edit_message_text(
+            f"🚫 *تأیید مسدودسازی*\n\nکاربر ID: `<code>{uid}</code>` از همه‌ی مسیرهای دریافت کشور محروم می‌شود.\n مطمئنی؟",
+            reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+    elif data == "admin:ban_confirm_go":
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        pending = context.user_data.get("pending_ban") or {}
+        context.user_data["pending_ban"] = None
+        if not pending.get("uid"):
+            await query.answer("چیزی برای تأیید نیست — دوباره آیدی را بفرست.", show_alert=True)
+            return
+        ok, msg = db.ban_player(int(pending["uid"]), reason=pending.get("reason") or "", banned_by=user_id)
+        await _bans_submenu(query, notice=msg if ok else f"⚠️ {msg}")
+
+    elif data.startswith("admin:rej_ban_confirm:"):
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        req_id = int(data.split(":")[2])
+        req = db.get_pending_country_request(req_id)
+        if not req:
+            await query.edit_message_text("❌ این درخواست قبلاً تعیین تکلیف شده است.", parse_mode="HTML")
+            return
+        u_display = f"@{req['username']}" if req.get("username") else f"ID: {req['player_id']}"
+        kb = [
+            [InlineKeyboardButton("🚫✅ بله — رد کن و مسدودش کن", callback_data=f"admin:do_rej_ban:{req_id}")],
+            [InlineKeyboardButton("🔙 منوی رد معمولی", callback_data=f"admin:reject_country_menu:{req_id}")],
+            [InlineKeyboardButton("📜 پرونده‌ی متقاضی", callback_data=f"admin:view_req:{req_id}")],
+        ]
+        await query.edit_message_text(
+            "🚫 <b>رد درخواست + مسدودسازی متقاضی</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 متقاضی: {u_display} (ID: <code>{req['player_id']}</code>)\n\n"
+            "درخواستش رد می‌شود و تا زمانی که خودت مسدودی‌اش را برداری، "
+            "هیچ مسیری برای گرفتن کشور مجدد نخواهد داشت (اسپم تمام).",
+            reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+    elif data.startswith("admin:do_rej_ban:"):
+        if not db.is_owner(user_id):
+            await query.answer("⛔ فقط مالک.", show_alert=True)
+            return
+        req_id = int(data.split(":")[2])
+        req = db.get_pending_country_request(req_id)
+        if not req:
+            await query.edit_message_text("❌ این درخواست قبلاً تعیین تکلیف شده است.", parse_mode="HTML")
+            return
+        p_id = int(req["player_id"])
+        c_key = req["country_key"]
+        c_info = config.COUNTRIES.get(c_key, {})
+        u_display = f"@{req['username']}" if req.get("username") else f"ID: {p_id}"
+
+        db.delete_pending_country_request(req_id)
+        ban_ok, ban_msg = db.ban_player(p_id, reason="اسپم تکراری درخواست کشور", banned_by=user_id)
+        db.add_log(actor=str(user_id), action="reject_and_ban",
+                   details=f"{c_key} for {p_id} | ban={'ok' if ban_ok else ban_msg}")
+
+        await query.edit_message_text(
+            f"🚫 <b>درخواست {c_info.get('flag', '')} {c_info.get('name', c_key)} رد و کاربر {u_display} مسدود شد.</b>\n\n"
+            f"{'✅ ' if ban_ok else '⚠️ '}{ban_msg}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 لیست درخواست‌های معلق", callback_data="admin:pending_countries")],
+                [InlineKeyboardButton("🚫 لیست مسدودشدگان", callback_data="admin:bans_list:0")],
+                [InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")],
+            ]), parse_mode="HTML")
+
+        try:
+            await context.bot.send_message(
+                chat_id=p_id,
+                text=("🚫 <b>درخواست شما برای دریافت کشور توسط مدیریت بازی رد شد و "
+                      "دسترسی شما به دریافت کشور مسدود شده است.</b>\n\n"
+                      "در صورت اعتراض، با مدیریت بازی در تماس باشید."),
+                parse_mode="HTML")
+        except Exception as e:
+            print(f"Error sending reject+ban message to player {p_id}: {e}")
 
     elif data == "admin:menu_economy":
         await _economy_submenu(query)
@@ -2203,6 +2370,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                         callback_data=f"admin:view_req:{req['id']}",
                     ),
                     InlineKeyboardButton("✅", callback_data=f"admin:quick_approve:{req['id']}"),
+                    InlineKeyboardButton("🚫", callback_data=f"admin:rej_ban_confirm:{req['id']}"),
                 ])
 
         keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
@@ -2258,6 +2426,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             text += "✅ کاربر در حال حاضر مالک هیچ کشوری در بازی نیست.\n"
 
+        if db.is_banned(p_id):
+            ban = db.get_ban_info(p_id) or {}
+            text += f"🚫 <b>این کاربر مسدود است!</b>" + (f" دلیل: {html.escape(str(ban.get('reason') or ''))}\n" if ban.get("reason") else "\n")
+
         raw_user = req.get("username")
         user_url = f"https://t.me/{raw_user.lstrip('@')}" if raw_user else f"tg://user?id={p_id}"
 
@@ -2303,6 +2475,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("🔒 کشور برای بازیکن دیگری رزرو است", callback_data=f"admin:do_reject:{req_id}:reserved")],
             [InlineKeyboardButton("✍️ نوشتن دلیل اختصاصی...", callback_data=f"admin:rej_prompt:{req_id}")],
             [InlineKeyboardButton("❌ رد فوری (بدون ذکر دلیل)", callback_data=f"admin:do_reject:{req_id}:none")],
+            [InlineKeyboardButton("🚫 رد + مسدودسازی متقاضی (اسپم)", callback_data=f"admin:rej_ban_confirm:{req_id}")],
             [InlineKeyboardButton("🔙 انصراف و بازگشت به پرونده", callback_data=f"admin:view_req:{req_id}")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
@@ -3284,6 +3457,31 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
             ("✅ " if ok else "❌ ") + msg + extra,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👥 وضعیت ادمین‌ها", callback_data="admin:referees")]]),
             parse_mode="Markdown")
+        return
+
+    # 🚫 مسدودسازی کاربر با آیدی (فقط مالک — از ساب‌منوی مخصوص)
+    if input_type == "ban_player_input":
+        context.user_data["admin_awaiting_input"] = None
+        cleaned = str(text).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+        m = re.search(r"(\d{4,})", cleaned)
+        if not m:
+            await update.message.reply_text(
+                "❌ آیدی عددی معتبر پیدا نشد. حداقل ۴ رقم لازم است. دوباره تلاش کن یا از دکمه‌ی بازگشت استفاده کن.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_bans")]]))
+            return
+        uid = int(m.group(1))
+        reason = cleaned[m.end():].strip(" \t-—:،") or ""
+        context.user_data["pending_ban"] = {"uid": uid, "reason": reason}
+        kb = [
+            [InlineKeyboardButton("✅ بله، مسدودش کن", callback_data="admin:ban_confirm_go")],
+            [InlineKeyboardButton("❌ انصراف", callback_data="admin:menu_bans")],
+        ]
+        await update.message.reply_text(
+            f"🚫 <b>تأیید مسدودسازی</b>\n\n"
+            f"کاربر ID: <code>{uid}</code>\n"
+            f"دلیل ثبت‌شده: {reason or '—'}\n\n"
+            "مسدود یعنی: بدون کشور، بدون صف، بدون درخواست جدید.",
+            reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
         return
 
     # ✅ اعتبارسنجی گزارش تلفات — قبل از بقیه چون متن گزارش چندخطی است
