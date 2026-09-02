@@ -693,14 +693,38 @@ def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
 
+def _is_owner(user_id: int) -> bool:
+    """مالک — تنها مرجع عملیات‌های دستی/مخرب تلفات."""
+    return user_id in config.ADMIN_IDS
+
+
+def _allowed(user_id: int) -> bool:
+    """کاربران مجاز ابزار تلفات: مالک یا داور فعال.
+    داورها: ثبت با گزارش آماده، تاریخچه، جستجو، آمار و ارسال فاکتور.
+    ثبت دستی تکی، بازگردانی و حذف فقط مالک."""
+    return _is_owner(user_id) or db.is_referee(user_id)
+
+
 async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
-    if not is_admin(user_id):
-        await query.answer("⛔ این بخش فقط برای مدیریت بازی است.", show_alert=True)
+    if not _allowed(user_id):
+        await query.answer("⛔ این بخش فقط برای مدیریت بازی و داورها است.", show_alert=True)
         return
     await query.answer()
     data = query.data
+
+    # ثبت دستی تکی، بازگردانی و حذف — فقط مالک (داور از مسیر گزارش آماده کار می‌کند)
+    if not _is_owner(user_id) and (
+        data == "ls:new"
+        or data.startswith("ls:country:")
+        or data.startswith("ls:catmenu")
+        or data.startswith("ls:item:")
+        or data.startswith("ls:revert:")
+        or data.startswith("ls:del")
+    ):
+        await query.answer("⛔ این عملیات فقط با مدیریت بازی (مالک) امکان‌پذیر است.", show_alert=True)
+        return
 
     if data == "ls:menu":
         text = (
@@ -709,14 +733,21 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             "ثبت، تاریخچه، آمار و بازگردانی تلفات — تعیین نتیجه با مدیریت است، بات فقط ثبت می‌کند.\n\n"
             "یک گزینه را انتخاب کنید:"
         )
-        await query.edit_message_text(text, reply_markup=_kb([
+        rows = [
             [InlineKeyboardButton("📄 ثبت تلفات (پیست گزارش آماده) — روش اصلی", callback_data="ls:fast")],
-            [InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")],
+        ]
+        if _is_owner(user_id):
+            rows.append([InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")])
+        rows += [
             [InlineKeyboardButton("📋 تاریخچه تلفات", callback_data="ls:histpick")],
             [InlineKeyboardButton("🔎 جستجوی تلفات", callback_data="ls:search")],
             [InlineKeyboardButton("📊 آمار تلفات کشور", callback_data="ls:statpick")],
-            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
-        ]), parse_mode="Markdown")
+        ]
+        if _is_owner(user_id):
+            rows.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
+        else:
+            rows.append([InlineKeyboardButton("🔙 منوی داوری", callback_data="ref:menu")])
+        await query.edit_message_text(text, reply_markup=_kb(rows), parse_mode="Markdown")
         return
 
     # ---------- ثبت تلفات ----------
@@ -903,7 +934,8 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=_kb([
                 [InlineKeyboardButton("📋 تاریخچه این کشور", callback_data=f"ls:history:{draft['cid']}")],
                 [InlineKeyboardButton("📄 ثبت تلفات (پیست گزارش آماده) — روش اصلی", callback_data="ls:fast")],
-                [InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")],
+                *([[InlineKeyboardButton("🛠 ثبت دستی تک‌تک تجهیزات (اضطراری)", callback_data="ls:new")]]
+                  if _is_owner(user_id) else []),
                 [InlineKeyboardButton("🔙 منوی تلفات", callback_data="ls:menu")],
             ]),
             parse_mode="Markdown",
@@ -947,11 +979,15 @@ async def losses_callback_handler(update: Update, context: ContextTypes.DEFAULT_
             meta += f"\n📝 {r['note']}"
         rows = []
         if r["status"] == "applied":
-            rows.append([
-                InlineKeyboardButton("↩️ بازگردانی به موجودی", callback_data=f"ls:revert:{rid}"),
-                InlineKeyboardButton("📩 ارسال فاکتور به بازیکن", callback_data=f"ls:resend:{rid}")
-            ])
-        rows.append([InlineKeyboardButton("🗑️ حذف گزارش", callback_data=f"ls:del:{rid}")])
+            if _is_owner(user_id):
+                rows.append([
+                    InlineKeyboardButton("↩️ بازگردانی به موجودی", callback_data=f"ls:revert:{rid}"),
+                    InlineKeyboardButton("📩 ارسال فاکتور به بازیکن", callback_data=f"ls:resend:{rid}")
+                ])
+            else:
+                rows.append([InlineKeyboardButton("📩 ارسال فاکتور به بازیکن", callback_data=f"ls:resend:{rid}")])
+        if _is_owner(user_id):
+            rows.append([InlineKeyboardButton("🗑️ حذف گزارش", callback_data=f"ls:del:{rid}")])
         rows.append([InlineKeyboardButton("🔙 بازگشت به تاریخچه", callback_data=f"ls:history:{r['country_id']}")])
         await query.edit_message_text(body + meta, reply_markup=_kb(rows), parse_mode="Markdown")
         return
@@ -1078,10 +1114,15 @@ def _preview_text(draft):
 
 # ---------- ورودی‌های متنی (تعداد، نام عملیات، توضیح، جستجو) ----------
 async def handle_losses_input(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, input_state: dict):
-    if not is_admin(user_id):
+    if not _allowed(user_id):
         return
     text = (update.message.text or "").strip()
     t = input_state.get("type")
+
+    if t == "ls_qty" and not _is_owner(user_id):
+        context.user_data["admin_awaiting_input"] = None
+        await update.message.reply_text("⛔ ثبت دستی تکی تجهیزات فقط با مدیریت بازی (مالک) است.\nاز «📄 ثبت با گزارش آماده» استفاده کنید.")
+        return
 
     if t == "ls_qty":
         raw = to_english_digits(text).replace(",", "").replace("٬", "")

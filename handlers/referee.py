@@ -39,6 +39,8 @@ def _main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 انبار کشورها", callback_data="ref:inv:0:all")],
         [InlineKeyboardButton("⚔️ مدیریت جنگ", callback_data="ref:war")],
+        [InlineKeyboardButton("📥 رول‌های دریافتی (بررسی و تأیید)", callback_data="admin:roleplays_hub")],
+        [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات (ثبت گزارش)", callback_data="ls:menu")],
         [InlineKeyboardButton("🏆 امتیاز من", callback_data="ref:me")],
     ])
 
@@ -51,8 +53,10 @@ def _main_text(user_id: int) -> str:
             "━━━━━━━━━━━━━━━━━━\n\n"
             f"🏆 امتیاز شما: *{pts}*\n\n"
             "📦 *انبار کشورها* — برای ساختن پرامپت داوری\n"
-            "⚔️ *مدیریت جنگ* — اعتبارسنجی و ثبت گزارش تلفات\n\n"
-            "_دسترسی شما فقط به همین دو بخش است._")
+            "⚔️ *مدیریت جنگ* — اعتبارسنجی و ثبت گزارش تلفات\n"
+            "📥 *رول‌های دریافتی* — بررسی، تأیید یا رد رول نظامی بازیکنان\n"
+            "💥 *مدیریت تلفات* — ثبت رسمی تلفات با پیست گزارش آماده\n\n"
+            "_ثبت دستی تکی تجهیزات، بازگردانی و حذف گزارش فقط با مدیریت بازی است._")
 
 
 async def referee_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -264,6 +268,17 @@ async def referee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def referee_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     waiting = context.user_data.get("ref_awaiting")
+
+    # جریان‌های ثبت تلفات (ls_*) — حتی وقتی ref_awaiting خالی است
+    ls_state = context.user_data.get("admin_awaiting_input") or {}
+    if not waiting and str(ls_state.get("type") or "").startswith("ls_") and db.is_referee(uid):
+        from handlers.losses import _allowed, handle_losses_input
+        if _allowed(uid):
+            await handle_losses_input(update, context, uid, ls_state)
+            if not context.user_data.get("admin_awaiting_input"):
+                context.user_data.pop("ref_awaiting", None)
+            return True
+
     if not waiting or not db.is_referee(uid):
         return False
     text = (update.message.text or "").strip()

@@ -1020,7 +1020,8 @@ def main():
             handled = await mv_text_input_handler(update, context)
             if handled:
                 return
-        if context.user_data.get("ref_awaiting"):
+        _ls_state = context.user_data.get("admin_awaiting_input") or {}
+        if context.user_data.get("ref_awaiting") or str((_ls_state or {}).get("type") or "").startswith("ls_"):
             import handlers.referee as _ref
             if await _ref.referee_text_input(update, context):
                 return

@@ -927,8 +927,17 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
 
     if not is_admin(user_id):
-        await query.answer("⛔ شما ادمین نیستید!", show_alert=True)
-        return
+        # داورهای فعال فقط به گردش‌کار رول‌های نظامی دسترسی دارند
+        # (لیست‌ها، بررسی، تأیید/رد/بایگانی — بدون هیچ ورودی دستی اقتصادی)
+        _qdata = query.data or ""
+        _ref_ok = db.is_referee(user_id) and (
+            _qdata in ("admin:roleplays_hub", "admin:pending_roles")
+            or _qdata.startswith(("admin:roles:", "admin:show_role:", "admin:app_role:",
+                                  "admin:rej_role:", "admin:arch_role:"))
+        )
+        if not _ref_ok:
+            await query.answer("⛔ شما ادمین نیستید!", show_alert=True)
+            return
 
     data = query.data
     await query.answer()
@@ -2566,8 +2575,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton(f"⭐ رول‌های اکانت ویژه (VIP) ({rc['vip']})", callback_data="admin:roles:vip:0")],
             [InlineKeyboardButton(f"⏳ رول‌های در انتظار تأیید ({rc['pending']})", callback_data="admin:roles:pending:0")],
             [InlineKeyboardButton(f"✅ رول‌های تأییدشده و در نوبت اجرا ({rc['approved']})", callback_data="admin:roles:approved:0")],
-            [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]
         ]
+        if db.is_referee(user_id) and not is_admin(user_id):
+            keyboard.append([InlineKeyboardButton("🔙 منوی داوری", callback_data="ref:menu")])
+        else:
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("admin:roles:"):
@@ -2679,6 +2691,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.update_roleplay_status(role_id, "approved")
         c = db.get_country_by_id(r["country_id"])
         c_name = f"{c['flag']} {c['name']}" if c else "کشور"
+        db.add_log(f"admin:{user_id}", "roleplay_approved", f"role_id={role_id} country={c_name}")
 
         p_id = r["player_id"]
         type_label = "تهاجمی (حمله)" if r["role_type"] == "attack" else "پدافندی (دفاع)"
@@ -2708,6 +2721,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         page = int(parts[4]) if len(parts) > 4 else 0
 
         db.update_roleplay_status(role_id, "archived")
+        db.add_log(f"admin:{user_id}", "roleplay_archived", f"role_id={role_id}")
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به رول‌های دریافتی", callback_data="admin:roleplays_hub")]]
         await query.edit_message_text("🏁 **رول با موفقیت مختومه و بایگانی گردید.**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -2725,6 +2739,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.update_roleplay_status(role_id, "rejected")
         c = db.get_country_by_id(r["country_id"])
         c_name = f"{c['flag']} {c['name']}" if c else "کشور"
+        db.add_log(f"admin:{user_id}", "roleplay_rejected", f"role_id={role_id} country={c_name}")
 
         p_id = r["player_id"]
         type_label = "تهاجمی (حمله)" if r["role_type"] == "attack" else "پدافندی (دفاع)"
