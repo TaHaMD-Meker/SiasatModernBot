@@ -84,37 +84,155 @@ def _sanc_kb_back(cid=None):
     return [[InlineKeyboardButton("🔙 ستاد سازمان ملل", callback_data="un:menu")]]
 
 
-async def _sanc_list_page(update, context, page: int):
+def _filter_sanction_countries(countries: list, cont: str | None = None,
+                               q: str | None = None) -> list:
+    """فیلتر کشورها برای پنل تحریم — بر اساس قاره و/یا جستجوی نام/کلید.
+    تابع خالص است تا تست‌پذیر باشد. گروهک‌ها (faction_) زیر خاورمیانه می‌آیند."""
+    out = countries
+    if cont and cont != "all":
+        cont_keys = config.CONTINENTS.get(cont, {}).get("keys", [])
+        out = [x for x in out if (x.get("country_key") or "") in cont_keys
+               or (cont == "mideast" and (x.get("country_key") or "").startswith("faction_"))]
+    if q:
+        q = q.lower().strip()
+        out = [x for x in out
+               if q in (x.get("name") or "").lower()
+               or q in (x.get("country_key") or "").lower()]
+    return out
+
+
+async def _sanc_list_page(update, context, page: int, cont: str = "all"):
     user_id, c = await require_un_or_admin(update)
     if not c:
         return
     countries = [x for x in db.get_all_countries() if (x.get("country_key") or "") != "un"]
+    countries = _filter_sanction_countries(countries, cont=cont)
     countries.sort(key=lambda x: x.get("name") or "")
     per, per_row = 12, 3
     total_pages = max(1, (len(countries) + per - 1) // per)
     page = max(0, min(page, total_pages - 1))
     chunk = countries[page * per:(page + 1) * per]
 
+    cont_name = "همه‌ی قاره‌ها" if cont == "all" else \
+        config.CONTINENTS.get(cont, {}).get("short_name", cont)
     text = ("🚫 **تحریم‌های هدفمند سازمان ملل**\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "کشور هدف را انتخاب کنید. هر نوع تحریم **جداگانه** اعمال و لغو می‌شود:\n")
+            f"🌐 فیلتر: **{cont_name}** — {len(countries)} کشور (صفحه {page + 1}/{total_pages})\n\n"
+            "هر نوع تحریم **جداگانه** اعمال و لغو می‌شود:\n")
     for key, spec in config.UN_TARGETED_SANCTIONS.items():
-        text += f"• {spec['label']} — {spec['desc']}\n"
+        text += f"• {spec['label']}\n"
 
-    rows = []
+    rows = [
+        [InlineKeyboardButton("📋 تحریم‌های فعال (همه‌ی کشورها)", callback_data="un:sanc:active:0"),
+         InlineKeyboardButton("🔎 جستجوی کشور", callback_data="un:sanc:search")],
+    ]
+    cont_row = []
+    for ckey, cspec in config.CONTINENTS.items():
+        mark = "●" if ckey == cont else "○"
+        cont_row.append(InlineKeyboardButton(
+            f"{mark}{cspec.get('emoji', '')}", callback_data=f"un:sanc:list:0:{ckey}"))
+    if cont != "all":
+        cont_row.append(InlineKeyboardButton("🌐 همه", callback_data="un:sanc:list:0:all"))
+    rows.append(cont_row)
+
     for i in range(0, len(chunk), per_row):
         rows.append([InlineKeyboardButton(
             f"{x.get('flag', '🏳️')} {x.get('name', '')}",
             callback_data=f"un:sanc:country:{x['id']}") for x in chunk[i:i + per_row]])
+    if not chunk:
+        rows.append([InlineKeyboardButton("— کشوری در این فیلتر نیست —", callback_data="un:noop")])
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"un:sanc:list:{page - 1}"))
+        nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"un:sanc:list:{page - 1}:{cont}"))
     nav.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="un:noop"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"un:sanc:list:{page + 1}"))
+        nav.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"un:sanc:list:{page + 1}:{cont}"))
     rows.append(nav)
     rows.append([InlineKeyboardButton("🔙 ستاد سازمان ملل", callback_data="un:menu")])
     await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
+async def _sanc_active_page(update, context, page: int, notice: str = ""):
+    user_id, c = await require_un_or_admin(update)
+    if not c:
+        return
+    actives = db.get_all_active_targeted_sanctions(limit=300)
+    per = 10
+    total_pages = max(1, (len(actives) + per - 1) // per)
+    page = max(0, min(page, total_pages - 1))
+    chunk = actives[page * per:(page + 1) * per]
+
+    text = (f"📋 **تحریم‌های فعال سازمان ملل** ({len(actives)} مورد — صفحه {page + 1}/{total_pages})\n"
+            "━━━━━━━━━━━━━━━━━━\n\n")
+    rows = []
+    if not chunk:
+        text += "✅ هیچ تحریم هدفمندی روی هیچ کشوری فعال نیست."
+    for s in chunk:
+        spec = config.UN_TARGETED_SANCTIONS.get(s["sanction_key"], {})
+        label = spec.get("label", s["sanction_key"])
+        reason = str(s.get("reason") or "").strip()
+        created = str(s.get("created_at") or "")[:16].replace("T", " ")
+        text += (f"• {s.get('country_flag', '')} **{s.get('country_name', '')}** — {label}"
+                 + (f"\n   ↳ {reason}" if reason else "")
+                 + (f" | از {created}" if created else "") + "\n")
+        rows.append([
+            InlineKeyboardButton(f"⛔ لغو {label} — {s.get('country_name', '')}",
+                                 callback_data=f"un:sanc:quicklift:{s['country_id']}:{s['sanction_key']}:{page}"),
+            InlineKeyboardButton("📋", callback_data=f"un:sanc:country:{s['country_id']}"),
+        ])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"un:sanc:active:{page - 1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"un:sanc:active:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 فهرست کشورها", callback_data="un:sanc:list:0:all")])
+    rows.append([InlineKeyboardButton("🔙 ستاد سازمان ملل", callback_data="un:menu")])
+    if notice:
+        text = f"✅ {notice}\n\n" + text
+    await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
+async def _sanc_search_prompt(update, context):
+    user_id, c = await require_un_or_admin(update)
+    if not c:
+        return
+    context.user_data["un_sanc_search"] = True
+    await update.callback_query.edit_message_text(
+        "🔎 **جستجوی کشور برای تحریم**\n\n"
+        "نام کشور یا کلید آن را بفرست (مثلاً: `انگلیس` یا `uk`).\n"
+        "برای انصراف، دکمه‌ی پایین را بزن.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+            "❌ انصراف", callback_data="un:sanc:list:0:all")]]),
+        parse_mode="Markdown")
+
+
+async def _sanc_search_handle(update, context, text: str) -> bool:
+    """جستجوی متنی کشور در پنل تحریم. خروجی: آیا فلگ سرچ مصرف شد؟"""
+    if not context.user_data.get("un_sanc_search"):
+        return False
+    context.user_data["un_sanc_search"] = None
+    user_id = update.effective_user.id
+    if user_id not in config.ADMIN_IDS:
+        return True
+    countries = [x for x in db.get_all_countries() if (x.get("country_key") or "") != "un"]
+    hits = _filter_sanction_countries(countries, q=text)[:8]
+    if not hits:
+        await update.message.reply_text(
+            f"❌ کشوری با «{text}» پیدا نشد. دوباره تلاش کن یا از فهرست قاره‌ای استفاده کن.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 فهرست کشورها", callback_data="un:sanc:list:0:all"),
+                InlineKeyboardButton("🔎 دوباره", callback_data="un:sanc:search")]]))
+        return True
+    rows = [[InlineKeyboardButton(f"{x.get('flag', '🏳️')} {x.get('name', '')}",
+                                  callback_data=f"un:sanc:country:{x['id']}")]
+            for x in hits]
+    rows.append([InlineKeyboardButton("🔎 جستجوی دیگر", callback_data="un:sanc:search"),
+                 InlineKeyboardButton("🔙 فهرست کشورها", callback_data="un:sanc:list:0:all")])
+    await update.message.reply_text(f"🔎 {len(hits)} نتیجه برای «{text}»:",
+                                    reply_markup=InlineKeyboardMarkup(rows))
+    return True
 
 
 async def _sanc_country_panel(update, context, cid: int, notice: str = ""):
@@ -123,7 +241,8 @@ async def _sanc_country_panel(update, context, cid: int, notice: str = ""):
         return
     target = db.get_country_by_id(cid)
     if not target:
-        await update.callback_query.edit_message_text("❌ کشور یافت نشد.", reply_markup=InlineKeyboardMarkup(_sanc_kb_back()))
+        await update.callback_query.edit_message_text(
+            "❌ کشور یافت نشد.", reply_markup=InlineKeyboardMarkup(_sanc_kb_back()))
         return
 
     active = {s["sanction_key"]: s for s in db.get_targeted_sanctions(cid)}
@@ -146,7 +265,8 @@ async def _sanc_country_panel(update, context, cid: int, notice: str = ""):
         mark = "⛔ لغو" if key in active else "➕ اعمال"
         rows.append([InlineKeyboardButton(
             f"{mark} — {spec['label']}", callback_data=f"un:sanc:ask:{cid}:{key}")])
-    rows.append([InlineKeyboardButton("🔙 فهرست کشورها", callback_data="un:sanc:list:0")])
+    rows.append([InlineKeyboardButton("📋 تحریم‌های فعال (همه‌ی کشورها)", callback_data="un:sanc:active:0")])
+    rows.append([InlineKeyboardButton("🔙 فهرست کشورها", callback_data="un:sanc:list:0:all")])
     if notice:
         text = f"✅ {notice}\n\n" + text
     await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
@@ -195,11 +315,36 @@ async def un_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if data.startswith("un:sanc:"):
         parts = data.split(":")
         if parts[2] == "list":
-            await _sanc_list_page(update, context, int(parts[3]) if len(parts) > 3 else 0)
+            cont = parts[4] if len(parts) > 4 else "all"
+            await _sanc_list_page(update, context, int(parts[3]) if len(parts) > 3 else 0, cont)
         elif parts[2] == "country":
             await _sanc_country_panel(update, context, int(parts[3]))
         elif parts[2] == "ask":
             await _sanc_confirm(update, context, int(parts[3]), parts[4])
+        elif parts[2] == "active":
+            await _sanc_active_page(update, context, int(parts[3]) if len(parts) > 3 else 0)
+        elif parts[2] == "search":
+            await _sanc_search_prompt(update, context)
+        elif parts[2] == "quicklift":
+            cid, key = int(parts[3]), parts[4]
+            back_page = int(parts[5]) if len(parts) > 5 else 0
+            user_id2, c = await require_un_or_admin(update)
+            if not c:
+                return
+            ok, msg = db.remove_targeted_sanction(cid, key, removed_by=user_id2)
+            if not ok:
+                await update.callback_query.answer(f"⚠️ {msg}", show_alert=True)
+                await _sanc_active_page(update, context, back_page)
+                return
+            target = db.get_country_by_id(cid)
+            if target:
+                try:
+                    await news_engine.trigger_un_targeted_sanction_news(
+                        context.bot, target,
+                        config.UN_TARGETED_SANCTIONS.get(key, {}).get("label", key), False)
+                except Exception:
+                    pass
+            await _sanc_active_page(update, context, back_page, notice=msg)
         elif parts[2] == "do":
             cid, key = int(parts[3]), parts[4]
             user_id2, c = await require_un_or_admin(update)
@@ -225,7 +370,7 @@ async def un_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     context.bot, target, spec.get("label", key), imposing)
             except Exception:
                 pass
-            await _sanc_country_panel(query, context, cid, notice=msg)
+            await _sanc_country_panel(update, context, cid, notice=msg)
         return
 
     if data == "un:menu":
@@ -396,6 +541,12 @@ async def un_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def un_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    # 🔎 جستجوی کشور در پنل تحریم‌های هدفمند
+    if context.user_data.get("un_sanc_search"):
+        text = (update.message.text or "").strip()
+        if text:
+            await _sanc_search_handle(update, context, text)
+        return
     draft = context.user_data.get("un_draft")
     if not draft:
         return

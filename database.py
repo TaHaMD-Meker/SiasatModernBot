@@ -4235,6 +4235,23 @@ def has_targeted_sanction(country_id: int, sanction_key: str) -> bool:
         conn.close()
 
 
+def get_all_active_targeted_sanctions(limit: int = 200) -> list[dict]:
+    """همه‌ی تحریم‌های هدفمند فعال روی همه‌ی کشورها — برای پنل سازمان ملل."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT s.*, c.name AS country_name, c.flag AS country_flag,
+                   c.player_id, c.country_key
+            FROM un_targeted_sanctions s JOIN countries c ON c.id = s.country_id
+            ORDER BY s.created_at DESC LIMIT ?
+            """,
+            (max(1, min(500, int(limit))),)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def get_targeted_sanctions(country_id: int) -> list[dict]:
     conn = get_connection()
     try:
