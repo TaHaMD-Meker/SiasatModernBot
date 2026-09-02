@@ -5324,9 +5324,10 @@ def shipment_capacity(off_type: str, mode: str) -> tuple[int, str]:
 
 
 def transfer_daily_budget(country_id: int) -> tuple[int, int]:
-    """(استفاده‌شده, سقف) محموله‌های خروجی امروز."""
+    """(استفاده‌شده, سقف) محموله‌های خروجی امروز — اورراید مالک بر کانفیگ مقدم است."""
     used = get_transfer_day_count(country_id)
-    cap = int(getattr(config, "TRANSFER_DAILY_SHIPMENTS", 3) or 0)
+    ov = get_trade_limit_override(country_id).get("total")
+    cap = int(ov) if ov is not None else int(getattr(config, "TRANSFER_DAILY_SHIPMENTS", 3) or 0)
     return used, cap
 
 
@@ -5342,15 +5343,16 @@ def get_trade_limit_override(country_id: int) -> dict:
     raw = (c.get("trade_limit_override") or "") if c else ""
     try:
         data = json.loads(raw) if raw else {}
+        allowed = set(TRADE_TRANSPORT_MODES) | {"total"}   # total = کل محموله‌های خروجی روزانه
         return {k: int(v) for k, v in data.items()
-                if k in TRADE_TRANSPORT_MODES and TRADE_LIMIT_MIN <= int(v) <= TRADE_LIMIT_MAX}
+                if k in allowed and TRADE_LIMIT_MIN <= int(v) <= TRADE_LIMIT_MAX}
     except Exception:
         return {}
 
 
 def set_trade_limit_override(country_id: int, mode: str, value) -> bool:
     """تنظیم سقف دستی یک روش (int در بازه ۰..۵۰) یا حذف آن (value=None → فرمولی)."""
-    if mode not in TRADE_TRANSPORT_MODES:
+    if mode not in TRADE_TRANSPORT_MODES and mode != "total":
         return False
     ov = get_trade_limit_override(country_id)
     if value is None:

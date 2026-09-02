@@ -1768,9 +1768,16 @@ async def show_trade_limits(query, context, country_id: int, notice: str = ""):
              "━━━━━━━━━━━━━━━━━━", ""]
     if notice:
         lines += [f"✅ {notice}", ""]
-    lines += ["سقف مؤثر هر روش (بازه‌ی ۰ تا ۵۰)؛ ♻️ بازگشت به فرمول زیرساخت:", ""]
+    lines += ["ردیف اول: سقف کل محموله‌های خروجی در روز (همان ۳/۳) — بعدش سقف هر روش (بازه‌ی ۰ تا ۵۰)؛ ♻️ بازگشت به پیش‌فرض:", ""]
 
-    keyboard = []
+    _t_ov = db.get_trade_limit_override(country_id).get("total")
+    _t_cap = db.transfer_daily_budget(country_id)[1]
+    keyboard = [
+        [InlineKeyboardButton(f"📦 کل محموله‌های خروجی در روز: {_t_cap} ({'دستی' if _t_ov is not None else 'پیش‌فرض'}) ➖",
+                              callback_data=f"admin:tl:{country_id}:total:dec"),
+         InlineKeyboardButton("➕", callback_data=f"admin:tl:{country_id}:total:inc"),
+         InlineKeyboardButton("♻️", callback_data=f"admin:tl:{country_id}:total:reset")],
+    ]
     for m, label in mode_info:
         eff = db.get_trade_mode_daily_limit(country_id, m)
         tag = "دستی" if m in ov else "فرمولی"

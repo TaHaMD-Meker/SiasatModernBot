@@ -94,3 +94,32 @@ def test_player_limit_message_uses_effective_limit():
     """پیام مسدودی بازیکن باید همان سقف مؤثر (اوررایدشده) را نشان دهد."""
     src = open("database.py", encoding="utf-8").read()
     assert "get_trade_mode_budget" in src and "get_trade_mode_daily_limit" in src
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# سقف کل محموله‌های خروجی (همان «امروز 3/3 محموله ارسال کرده‌اید») — قابل تنظیم
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_total_shipment_override_changes_budget(monkeypatch, tmp_path):
+    cid = _country(tmp_path, monkeypatch, "کشور کل", "total_tl")
+    used, cap = db.transfer_daily_budget(cid)
+    assert cap == config.TRANSFER_DAILY_SHIPMENTS == 3
+
+    assert db.set_trade_limit_override(cid, "total", 7)
+    assert db.transfer_daily_budget(cid)[1] == 7, "پیام ۳/۳ باید عدد دستی را نشان دهد"
+
+    db.set_trade_limit_override(cid, "total", None)
+    assert db.transfer_daily_budget(cid)[1] == 3, "♻️ به پیش‌فرض کانفیگ برگردد"
+
+
+def test_zero_total_blocks_all_outbound(monkeypatch, tmp_path):
+    cid = _country(tmp_path, monkeypatch, "کشور قفل کل", "zero_total")
+    db.set_trade_limit_override(cid, "total", 0)
+    used, cap = db.transfer_daily_budget(cid)
+    assert cap == 0 and used >= cap
+
+
+def test_panel_has_total_row():
+    src = open("handlers/admin_dossier.py", encoding="utf-8").read()
+    assert "کل محموله‌های خروجی در روز" in src
+    assert "admin:tl:{country_id}:total:inc" in src or "admin:tl:{country_id}:total:dec" in src
