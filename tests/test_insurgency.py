@@ -658,3 +658,27 @@ def test_slot_raid_news_has_no_digits():
         for headline, body in news_engine._INS_TEMPLATES[kind]:
             assert not _re.search(r"\d", headline.format(name="زیستان")), kind
             assert not _re.search(r"\d", body.format(name="زیستان", flag="🏳️")), kind
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# رگرسیون: پارسر callback ترکاندن دستی — فرمت admin:dom_insur_force:<cid>
+# (باگ واقعی production: اندیس ۳ روی رشته‌ی سه‌تکه → list index out of range)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_force_erupt_callback_parses_cid_from_correct_index():
+    src = open("handlers/internal_admin.py", encoding="utf-8").read()
+    idx = src.index('elif data.startswith("admin:dom_insur_force:"):')
+    window = src[idx:idx + 400]
+    assert 'data.split(":")[2]' in window, \
+        "آیدی کشور باید از اندیس ۲ خوانده شود (فرمت سه‌تکه)"
+    assert 'data.split(":")[3]' not in window, \
+        "اندیس ۳ یعنی list index out of range — باگ تولید دوباره ممنوع"
+
+    # شبیه‌سازی دقیق همان دکمه‌ی پنل
+    cb = f"admin:dom_insur_force:{12345}".split(":")
+    assert int(cb[2]) == 12345
+
+
+def test_all_panel_force_buttons_use_three_part_format():
+    src = open("handlers/internal_admin.py", encoding="utf-8").read()
+    assert 'callback_data=f"admin:dom_insur_force:{cid}"' in src

@@ -865,7 +865,7 @@ async def internal_admin_callback(query, context, data: str) -> bool:
     elif data == "admin:dom_insur_list":
         await _insur_list_page(query)
     elif data.startswith("admin:dom_insur_force:"):
-        cid = int(data.split(":")[3])
+        cid = int(data.split(":")[2])   # فرمت: admin:dom_insur_force:<cid> → اندیس ۲
         country = db.get_country_by_id(cid)
         if not country:
             await query.answer("کشور پیدا نشد.", show_alert=True)
