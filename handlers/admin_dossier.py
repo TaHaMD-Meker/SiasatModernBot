@@ -1207,6 +1207,11 @@ async def handle_dossier_callbacks(query, context, data: str) -> bool:
         cid = int(parts[2])
         contract_id = int(parts[3])
         succ, msg = db.execute_trade_contract_transaction(contract_id)
+        if not succ:
+            try:
+                db.free_trade_slot_for_contract(contract_id)  # سهمیه‌ی سوخته بدون جابجایی برنگردد
+            except Exception:
+                pass
         await query.answer(f"{'✅' if succ else '❌'} {msg}", show_alert=True)
         await show_country_trade_detail(query, context, cid, contract_id)
         return True

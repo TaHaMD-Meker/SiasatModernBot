@@ -4485,6 +4485,8 @@ def create_trade_contract(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (proposer_id, recipient_id, offered_type, offered_key, offered_amount, requested_type, requested_amount, transport_payer, transport_cost, transport_mode, is_smuggled, origin_country_key, license_country_id, license_status, status, now_str))
     contract_id = cur.lastrowid
+    # شمارنده‌ی ترانزیت روزانه موقع پیشنهاد +۱ می‌شود (ضداسپم)؛
+    # رد/لغو/شکستِ اجرا آن را آزاد می‌کند (−۱).
     cur.execute("""
         INSERT INTO trade_daily_modes (country_id, day, mode, count) VALUES (?, ?, ?, 1)
         ON CONFLICT(country_id, day, mode) DO UPDATE SET count = count + 1
@@ -5295,6 +5297,23 @@ def bump_transfer_day_count(country_id: int, day: str | None = None):
             )
     finally:
         conn.close()
+
+
+def free_trade_slot_for_contract(contract_id: int) -> None:
+    """آزادسازی سهمیه‌ی روزانه‌ی ترانزیت قراردادی که در لحظه‌ی اجرا رد شد
+    (هم‌سنگ با رد/لغو؛ وگرنه سهمیه‌ی پیشنهاددهنده بدون جابجایی واقعی می‌سوزد)."""
+    c = get_trade_contract(contract_id)
+    if not c:
+        return
+    bump_trade_mode_day_count(c["proposer_id"], c.get("transport_mode") or "sea", delta=-1)
+
+
+def shipment_capacity(off_type: str, mode: str) -> tuple[int, str]:
+    """(حداکثر واحد قابل حمل در هر محموله، نام روش) برای نمایش و ولیدیشن زودهنگام."""
+    spec = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(mode, {})
+    limits = spec.get("limits", {})
+    max_cap = 20_000_000 if off_type == "treasury" else int(limits.get(off_type, 100_000))
+    return max_cap, spec.get("name", mode)
 
 
 def transfer_daily_budget(country_id: int) -> tuple[int, int]:

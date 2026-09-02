@@ -1856,6 +1856,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     f"{toll_lines}\n\n"
                     f"💰 **تفکیک هزینه‌های ترانزیت دریایی:**\n"
                     f"• **کرایه پایه ناوگان دریایی:** `۳۰۰,۰۰۰ $`\n"
+                    f"• **ظرفیت این روش برای کالای شما:** `{db.shipment_capacity(draft.get('offered_type'), 'sea')[0]:,}` واحد (محموله‌ی شما: `{draft.get('offered_amount', 0):,}`)\n"
                     f"• **مجموع عوارض تنگه‌ها:** `{total_toll:,} $`\n"
                     f"• **مجموع کل هزینه ترابری:** **`{total_transport:,} $`**\n"
                     f"• **پرداخت‌کننده هزینه:** **{payer_label}**\n\n"
@@ -2173,6 +2174,32 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        # ⛽ ولیدیشن زودهنگام ظرفیت محموله — قبل از ارسال به گیرنده، نه بعد از تأیید او
+        _cap, _mode_name = db.shipment_capacity(draft.get("offered_type"), mode)
+        _unit_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات",
+                     "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد",
+                     "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
+        _unit = _unit_map.get(draft.get("offered_type"), "واحد")
+        _amt = int(draft.get("offered_amount") or 0)
+        if _amt > _cap:
+            _cost_labels = {"sea": "۳۰۰,۰۰۰ $", "caspian": "۹۰۰,۰۰۰ $", "land": "۱,۰۰۰,۰۰۰ $", "air": "۲,۰۰۰,۰۰۰ $"}
+            _rows = []
+            for _m in ("sea", "caspian", "land", "air"):
+                if _m == mode:
+                    continue
+                _mcap, _mname = db.shipment_capacity(draft.get("offered_type"), _m)
+                _rows.append([InlineKeyboardButton(
+                    f"{_mname.split('(')[0].strip()} — ظرفیت {_mcap:,} {_unit} ({_cost_labels[_m]})",
+                    callback_data=f"dip:trade_finish:{_m}:{payer}")])
+            await query.edit_message_text(
+                f"⛔ **محموله از ظرفیت این روش ترابری بیشتر است.**\n\n"
+                f"• 📦 محموله‌ی شما: {_amt:,} {_unit}\n"
+                f"• {_mode_name}: حداکثر **{_cap:,} {_unit}** در هر محموله\n\n"
+                "یا مقدار را کمتر کنید، یا یکی از روش‌های زیر را انتخاب نمایید:",
+                reply_markup=InlineKeyboardMarkup(_rows + [[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
+                parse_mode="Markdown")
+            return
+
         # بررسی سقف تجارت روزانه برای روش ترابری انتخاب‌شده
         can_trade, limit_msg = db.check_trade_mode_limit(country["id"], mode)
         if not can_trade:
@@ -2330,6 +2357,12 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         succ, msg = db.execute_trade_contract_transaction(contract_id, actor_country_id=country["id"])
 
         if not succ:
+            # قرارداد در لحظه‌ی اجرا رد شد (مثلاً ظرفیت ترابری) — سهمیه‌ی روزانه‌ی
+            # پیشنهاددهنده باید برگردد وگرنه بدون هیچ جابجایی می‌سوزد.
+            try:
+                db.free_trade_slot_for_contract(contract_id)
+            except Exception:
+                pass
             await query.edit_message_text(f"❌ **اجرای قرارداد ناموفق بود:**\n\n{msg}", parse_mode="Markdown")
             return
 
