@@ -235,6 +235,7 @@ async def _world_submenu(query):
         [InlineKeyboardButton("🏆 مدیریت تورنومنت فصلی", callback_data="admin:tournament")],
         [InlineKeyboardButton("🏆 رتبه‌بندی ثروت و قدرتمندترین کشورها", callback_data="admin:rankings")],
         [InlineKeyboardButton("📊 آمار کلی بازی", callback_data="admin:stats")],
+        [InlineKeyboardButton("🌊 وضعیت تنگه‌ها و آبراه‌ها", callback_data="admin:straits")],
     ]
     await _admin_submenu(
         query,
@@ -1080,6 +1081,37 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data.startswith("admin:c:"):
         c_id = int(data.split(":")[2])
         await show_country_dashboard(query, context, c_id)
+
+    elif data == "admin:straits":
+        rows = db.list_strait_statuses()
+        blocked = [r for r in rows if r["status"] in ("blocked", "closed")]
+        tolled = [r for r in rows if r["status"] == "toll"]
+        icons = {"open": "🟢", "blocked": "⛔", "closed": "⛔", "toll": "💰"}
+        lines = ["🌊 *وضعیت تنگه‌ها و آبراه‌های راهبردی*", "━━━━━━━━━━━━━━━━━━", ""]
+        if blocked:
+            lines.append(f"⚠️ *{len(blocked)} تنگه بسته است.* هر تنگه‌ی بسته مسیر دریایی حدود")
+            lines.append("۲۱٪ از جفت‌کشورها را قطع می‌کند و بازیکن فقط می‌بیند «دریایی کار نمی‌کند».")
+            lines.append("")
+        for r in rows:
+            extra = f" — عوارض {r['toll']:,} $" if r["status"] == "toll" else ""
+            lines.append(f"{icons.get(r['status'], '❔')} *{r['name'][:32]}*")
+            lines.append(f"    مالک: {r['owner_flag']} {r['owner_name']}{extra}")
+        kb = []
+        if blocked or tolled:
+            kb.append([InlineKeyboardButton(f"🔓 باز کردن همه ({len(blocked) + len(tolled)} مورد)",
+                                            callback_data="admin:straits_open_all")])
+        kb.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:main")])
+        await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(kb),
+                                      parse_mode="Markdown")
+
+    elif data == "admin:straits_open_all":
+        n = db.reopen_all_straits()
+        await query.edit_message_text(
+            f"✅ *{n} تنگه باز شد.*\n\nتجارت دریایی برای همه‌ی مسیرها آزاد است.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌊 مشاهده وضعیت", callback_data="admin:straits")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:main")]]),
+            parse_mode="Markdown")
 
     elif data == "admin:stats":
         stats = db.get_game_stats()

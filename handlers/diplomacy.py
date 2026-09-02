@@ -2059,7 +2059,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data["trade_draft"]["offered_type"] = off_type
         context.user_data["diplomacy_input"] = {"type": "trade_off_amount"}
         
-        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
         await query.edit_message_text(
             f"💰 **مقدار پیشنهادی ({type_labels.get(off_type, off_type)})** را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
@@ -2073,7 +2073,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data["trade_draft"]["requested_type"] = req_type
         context.user_data["diplomacy_input"] = {"type": "trade_req_amount"}
         
-        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
         await query.edit_message_text(
             f"🎯 **مقدار درخواستی مابه‌ازا ({type_labels.get(req_type, req_type)})** را به عدد وارد فرمایید:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="dip:menu")]]),
@@ -2287,7 +2287,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             transport_mode=mode
         )
 
-        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
 
         strait_toll_msg = ""
         if mode == "sea" and strait_analysis["has_tolls"]:
@@ -2395,7 +2395,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
                     pass
             return
 
-        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        type_map = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
 
         if c_data["offered_type"] == "military_asset":
             off_asset = db.get_asset_by_key(p_c["id"], c_data.get("offered_key"))
@@ -2640,6 +2640,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             [InlineKeyboardButton("🛢️ کمک سوخت (نفت)", callback_data="dip:aid_type:oil"), InlineKeyboardButton("🌾 کمک غذایی (غلات)", callback_data="dip:aid_type:grain")],
             [InlineKeyboardButton("⛏️ آهن و فولاد", callback_data="dip:aid_type:iron_ore"), InlineKeyboardButton("💻 کمک فناوری و تراشه", callback_data="dip:aid_type:microchips")],
             [InlineKeyboardButton("☢️ کیک زرد", callback_data="dip:aid_type:uranium_ore"), InlineKeyboardButton("🧪 سوخت هسته‌ای", callback_data="dip:aid_type:nuclear_fuel")],
+            [InlineKeyboardButton("💉 کمک واکسن (دُز)", callback_data="dip:aid_type:vaccine_doses")],
             [InlineKeyboardButton("🔙 انصراف", callback_data="dip:menu")]
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -2651,7 +2652,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
         context.user_data["aid_draft"]["resource_type"] = res_type
         context.user_data["diplomacy_input"] = {"type": "aid_amount"}
 
-        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
         
         sea_limits = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get("sea", {}).get("limits", {})
         aid_max = 20_000_000 if res_type == "treasury" else sea_limits.get(res_type, 100_000)
@@ -2747,7 +2748,7 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_text(f"❌ **ارسال کمک ناموفق بود:**\n\n{msg_res}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="dip:menu")]]), parse_mode="Markdown")
             return
 
-        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+        type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
         mode_labels = {"sea": "🚢 ترابری دریایی", "land": "🚛 ترابری زمینی (۱M $)", "air": "✈️ ترابری هوایی (۲M $)"}
         sea_label = f"🚢 ترابری دریایی (۳۰۰k $ + {strait_analysis['total_toll']:,} $ عوارض)" if (mode == "sea" and strait_analysis["has_tolls"]) else "🚢 ترابری دریایی (۳۰۰k $)"
 
@@ -3102,7 +3103,7 @@ async def diplomacy_text_input_handler(update: Update, context: ContextTypes.DEF
             draft["amount"] = amt
 
             target_c = db.get_country_by_id(target_id)
-            type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای"}
+            type_labels = {"treasury": "دلار", "gold": "شمش طلا", "oil": "بشکه نفت", "grain": "تن غلات", "iron_ore": "تن آهن و فولاد", "microchips": "عدد میکروچیپ", "uranium_ore": "تن کیک زرد", "nuclear_fuel": "کیلوگرم سوخت هسته‌ای", "vaccine_doses": "دُز واکسن"}
 
             my_key = country.get("country_key")
             t_key = target_c.get("country_key") if target_c else ""

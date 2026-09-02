@@ -6947,6 +6947,39 @@ def get_trade_route_strait_analysis(country1_key: str, country2_key: str) -> dic
     }
 
 
+def list_strait_statuses() -> list[dict]:
+    """وضعیت همه‌ی تنگه‌ها به‌همراه مالکشان — برای پنل ادمین و عیب‌یابی.
+
+    یک تنگه‌ی فراموش‌شده در حالت «بسته» مسیر دریایی حدود ۲۱٪ از جفت‌کشورها
+    را بی‌صدا قطع می‌کند و بازیکن فقط می‌بیند «دریایی کار نمی‌کند».
+    """
+    out = []
+    for owner_key, info in STRAITS_MAPPING.items():
+        st = get_strait_status(info["strait_key"])
+        owner = get_country_by_key(owner_key)
+        out.append({
+            "strait_key": info["strait_key"],
+            "name": info["name"],
+            "owner_key": owner_key,
+            "owner_name": owner["name"] if owner else owner_key,
+            "owner_flag": (owner.get("flag", "") if owner else ""),
+            "status": st.get("status", "open"),
+            "toll": int(st.get("toll", 0) or 0),
+            "roe": get_strait_roe(info["strait_key"]),
+        })
+    return out
+
+
+def reopen_all_straits() -> int:
+    """باز کردن همه‌ی تنگه‌های بسته/عوارضی. برای رفع قفل‌شدگی تجارت دریایی."""
+    changed = 0
+    for entry in list_strait_statuses():
+        if entry["status"] != "open":
+            set_strait_status(entry["strait_key"], "open", 0)
+            changed += 1
+    return changed
+
+
 def set_strait_status(strait_key: str, status: str, toll_amount: int = 1000000):
     set_setting(f"strait_status_{strait_key}", status)
     set_setting(f"strait_toll_{strait_key}", str(toll_amount))
@@ -7261,6 +7294,11 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 return False, "امکان معامله تجاری با کشور تحریم‌شده وجود ندارد.", {}
 
             strait_tolls = []
+            if transport_mode == "caspian":
+                if not caspian_route_available(seller_c.get("country_key"), buyer_c.get("country_key")):
+                    return False, ("🌊 **مسیر دریای خزر در دسترس نیست:** این مسیر فقط بین کشورهای "
+                                   "حاشیه‌ی خزر (ایران، روسیه، قزاقستان، ترکمنستان، آذربایجان) برقرار است."), {}
+
             if transport_mode == "sea":
                 if is_country_blockaded(seller_id) or is_country_blockaded(buyer_id):
                     return False, "⚓ **ترابری دریایی مسدود است:** یکی از دو کشور تحت محاصره کامل دریایی است. لطفاً از ترابری هوایی یا زمینی استفاده بفرمایید.", {}
@@ -7302,7 +7340,8 @@ def execute_market_buy_transaction(buyer_id: int, order_id: int, buy_amount: int
                 t_name = getattr(config, "TRANSPORT_CAPACITY_LIMITS", {}).get(transport_mode, {}).get("name", transport_mode)
                 return False, f"⛔ **مازاد ظرفیت بارگیری ناوگان:**\n\nحداکثر ظرفیت قابل حمل برای **{res_label}** در {t_name} برابر با **{max_cap:,} {unit_names.get(res_type, 'واحد')}** در هر محموله است.\n\n💡 لطفاً روش ترابری با ظرفیت بالاتر (مثل دریایی/زمینی) انتخاب فرمایید یا حجم خرید را کاهش دهید.", {}
 
-            transport_costs = {"sea": 300_000, "land": 1_000_000, "air": 2_000_000}
+            transport_costs = {"sea": 300_000, "land": 1_000_000, "air": 2_000_000,
+                               "caspian": config.TRANSPORT_CAPACITY_LIMITS["caspian"]["cost"]}
             t_cost = transport_costs.get(transport_mode, 300_000)
 
             unit_price = order["unit_price"]
