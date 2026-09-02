@@ -806,6 +806,10 @@ def main():
     for handler in get_assets_handlers():
         app.add_handler(handler)
 
+    # ⚖️ پنل داوری (دسترسی محدود، جدا از پنل مالک)
+    import handlers.referee as referee_panel
+    referee_panel.register(app)
+
     # دستورات متنی نمایش وضعیت کشور
     app.add_handler(CommandHandler("country", country_profile))
     app.add_handler(CommandHandler("approval", approval_command))
@@ -968,6 +972,10 @@ def main():
         if context.user_data.get("mv_input"):
             handled = await mv_text_input_handler(update, context)
             if handled:
+                return
+        if context.user_data.get("ref_awaiting"):
+            import handlers.referee as _ref
+            if await _ref.referee_text_input(update, context):
                 return
         if context.user_data.get("admin_awaiting_input"):
             await admin_input_text_handler(update, context)

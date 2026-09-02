@@ -989,6 +989,9 @@ def init_db():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_logs_action ON logs(action, created_at DESC)")
 
+    # جداول نقش‌ها: داورها، لاگ و امتیاز
+    _init_role_tables(cur)
+
     # ─────────────────────────────────────────────────────────────────────
     # سیستم جمعیت پویا، مالیات، ناآرامی و بحران (internal_affairs)
     # ─────────────────────────────────────────────────────────────────────
@@ -9452,3 +9455,187 @@ def format_validation_report(v: dict) -> str:
                  else "🛑 <b>گزارش ایراد دارد — قبل از ثبت اصلاح شود.</b>")
     return "\n".join(lines)
 
+
+# ═══════════════════════════════════════════════════════════════════
+#  سیستم نقش‌ها: مالک، داور
+# ═══════════════════════════════════════════════════════════════════
+# مالک = config.ADMIN_IDS (تغییرناپذیر از داخل بات، فقط از env)
+# داور = رکورد فعال در جدول game_admins، دسترسی محدود
+
+ROLE_OWNER = "owner"
+ROLE_REFEREE = "referee"
+
+ROLE_LABELS = {ROLE_OWNER: "👑 مالک", ROLE_REFEREE: "⚖️ داور"}
+
+# امتیاز هر عمل داور
+REFEREE_POINTS = {
+    "report_validated": 1,     # اعتبارسنجی گزارش
+    "report_registered": 5,    # ثبت نهایی گزارش تلفات
+    "inventory_export": 0,     # کار روزمره، امتیاز ندارد
+    "war_action": 3,           # اقدام در بخش مدیریت جنگ
+}
+
+
+def _init_role_tables(cur):
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS game_admins (
+        user_id INTEGER PRIMARY KEY,
+        role TEXT NOT NULL DEFAULT 'referee',
+        display_name TEXT DEFAULT '',
+        added_by INTEGER,
+        added_at TEXT,
+        active INTEGER DEFAULT 1,
+        points INTEGER DEFAULT 0,
+        note TEXT DEFAULT ''
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        role TEXT,
+        action TEXT NOT NULL,
+        target TEXT DEFAULT '',
+        details TEXT DEFAULT '',
+        points INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_actions_user"
+                " ON admin_actions(user_id, created_at DESC)")
+
+
+def is_owner(user_id: int) -> bool:
+    return int(user_id) in (config.ADMIN_IDS or [])
+
+
+def get_game_admin(user_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT * FROM game_admins WHERE user_id = ?", (int(user_id),)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def is_referee(user_id: int) -> bool:
+    """داور فعال است؟ مالک به‌صورت خودکار داور هم هست."""
+    if is_owner(user_id):
+        return True
+    a = get_game_admin(user_id)
+    return bool(a and a.get("active") and a.get("role") == ROLE_REFEREE)
+
+
+def user_role(user_id: int) -> str | None:
+    if is_owner(user_id):
+        return ROLE_OWNER
+    a = get_game_admin(user_id)
+    if a and a.get("active"):
+        return a.get("role")
+    return None
+
+
+def add_referee(user_id: int, added_by: int, display_name: str = "") -> tuple[bool, str]:
+    user_id = int(user_id)
+    if is_owner(user_id):
+        return False, "این آیدی مالک بازی است و نیازی به افزودن ندارد."
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    conn = get_connection()
+    try:
+        with conn:
+            existing = conn.execute("SELECT active FROM game_admins WHERE user_id = ?",
+                                    (user_id,)).fetchone()
+            if existing and existing["active"]:
+                return False, "این کاربر از قبل داور فعال است."
+            conn.execute(
+                "INSERT INTO game_admins (user_id, role, display_name, added_by, added_at, active)"
+                " VALUES (?,?,?,?,?,1)"
+                " ON CONFLICT(user_id) DO UPDATE SET active = 1, role = excluded.role,"
+                " display_name = excluded.display_name, added_by = excluded.added_by,"
+                " added_at = excluded.added_at",
+                (user_id, ROLE_REFEREE, display_name or "", int(added_by), now))
+        log_admin_action(added_by, ROLE_OWNER, "referee_added", str(user_id))
+        return True, "داور با موفقیت اضافه شد."
+    finally:
+        conn.close()
+
+
+def remove_referee(user_id: int, removed_by: int) -> tuple[bool, str]:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute("UPDATE game_admins SET active = 0 WHERE user_id = ? AND active = 1",
+                               (int(user_id),))
+        if not cur.rowcount:
+            return False, "این کاربر داور فعال نیست."
+        log_admin_action(removed_by, ROLE_OWNER, "referee_removed", str(user_id))
+        return True, "دسترسی داور سلب شد."
+    finally:
+        conn.close()
+
+
+def list_referees(include_inactive: bool = True) -> list[dict]:
+    conn = get_connection()
+    try:
+        q = "SELECT * FROM game_admins"
+        if not include_inactive:
+            q += " WHERE active = 1"
+        q += " ORDER BY active DESC, points DESC, user_id"
+        return [dict(r) for r in conn.execute(q).fetchall()]
+    finally:
+        conn.close()
+
+
+def log_admin_action(user_id: int, role: str, action: str,
+                     target: str = "", details: str = "", points: int = None) -> None:
+    """ثبت عمل ادمین/داور و افزودن امتیاز مربوطه."""
+    pts = REFEREE_POINTS.get(action, 0) if points is None else int(points)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO admin_actions (user_id, role, action, target, details, points, created_at)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (int(user_id), role or "", action, str(target)[:200], str(details)[:400], pts, now))
+            if pts:
+                conn.execute("UPDATE game_admins SET points = COALESCE(points,0) + ?"
+                             " WHERE user_id = ?", (pts, int(user_id)))
+    except Exception as e:
+        print(f"[admin-log] {e}")
+    finally:
+        conn.close()
+
+
+def get_admin_actions(user_id: int = None, limit: int = 30) -> list[dict]:
+    conn = get_connection()
+    try:
+        if user_id:
+            rows = conn.execute(
+                "SELECT * FROM admin_actions WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+                (int(user_id), int(limit))).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM admin_actions ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_referee_scoreboard() -> list[dict]:
+    """امتیاز و آمار فعالیت داورها."""
+    out = []
+    for a in list_referees():
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(points),0) AS p,"
+                " MAX(created_at) AS last FROM admin_actions WHERE user_id = ?",
+                (a["user_id"],)).fetchone()
+        finally:
+            conn.close()
+        out.append({**a,
+                    "actions": int(row["n"] or 0),
+                    "earned": int(row["p"] or 0),
+                    "last_active": row["last"] or "—"})
+    return sorted(out, key=lambda x: (-x["active"], -x["points"]))

@@ -285,6 +285,7 @@ async def _settings_submenu(query):
 
 async def _danger_submenu(query):
     rows = [
+        [InlineKeyboardButton("👥 وضعیت ادمین‌ها", callback_data="admin:referees")],
         [InlineKeyboardButton("🧹 سلب مالکیت تمام کشورها و شروع فصل جدید", callback_data="admin:season_reset_prompt")],
         [InlineKeyboardButton("📦 ریست کامل بازار بورس و عودت کالاها", callback_data="admin:market_reset_prompt")],
     ]
@@ -338,6 +339,110 @@ async def admin_locks_menu(query, context):
     ]
 
     await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+
+# ==================== مدیریت داورها (فقط مالک) ====================
+
+async def admin_referees_menu(query, context):
+    refs = db.list_referees()
+    active = [r for r in refs if r["active"]]
+    rows = [
+        [InlineKeyboardButton("➕ افزودن داور", callback_data="admin:ref_add")],
+        [InlineKeyboardButton(f"📋 لیست داورها ({len(active)} فعال)", callback_data="admin:ref_list")],
+        [InlineKeyboardButton("📜 لاگ فعالیت داورها", callback_data="admin:ref_log:0")],
+        [InlineKeyboardButton("🏆 امتیاز داورها", callback_data="admin:ref_scores")],
+        [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_danger")],
+    ]
+    await query.edit_message_text(
+        "👥 *وضعیت ادمین‌ها و داورها*\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"👑 مالک: {len(config.ADMIN_IDS)} نفر (فقط از متغیر محیطی قابل تغییر)\n"
+        f"⚖️ داور فعال: {len(active)} نفر\n"
+        f"📦 کل رکوردها: {len(refs)}\n\n"
+        "_داور فقط به «انبار کشورها» و «مدیریت جنگ» دسترسی دارد و "
+        "نمی‌تواند منابع کشورها را تغییر دهد._",
+        reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
+async def admin_referee_list(query, context):
+    refs = db.list_referees()
+    if not refs:
+        await query.edit_message_text(
+            "📋 هنوز هیچ داوری اضافه نشده است.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ افزودن داور", callback_data="admin:ref_add")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:referees")]]),
+            parse_mode="Markdown")
+        return
+    lines = ["📋 *لیست داورها*", "━━━━━━━━━━━━━━━━━━", ""]
+    rows = []
+    for r in refs:
+        mark = "🟢" if r["active"] else "⚫"
+        nm = r["display_name"] or "بدون نام"
+        lines.append(f"{mark} `{r['user_id']}` — {nm} | 🏆 {r['points']} امتیاز")
+        if r["active"]:
+            rows.append([InlineKeyboardButton(f"⛔ خلع {nm} ({r['user_id']})",
+                                              callback_data=f"admin:ref_del:{r['user_id']}")])
+        else:
+            rows.append([InlineKeyboardButton(f"♻️ بازگرداندن {nm}",
+                                              callback_data=f"admin:ref_restore:{r['user_id']}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:referees")])
+    await query.edit_message_text("\n".join(lines),
+                                  reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
+async def admin_referee_log(query, context, page: int = 0):
+    per = 12
+    acts = db.get_admin_actions(limit=200)
+    total = max(1, math.ceil(len(acts) / per))
+    page = max(0, min(page, total - 1))
+    chunk = acts[page * per:(page + 1) * per]
+    lines = [f"📜 *لاگ فعالیت داورها* (صفحه {page + 1} از {total})", "━━━━━━━━━━━━━━━━━━", ""]
+    if not chunk:
+        lines.append("_هنوز فعالیتی ثبت نشده._")
+    labels = {
+        "referee_added": "افزودن داور", "referee_removed": "خلع داور",
+        "report_validated": "اعتبارسنجی گزارش", "report_registered": "ثبت گزارش تلفات",
+        "inventory_export": "خروجی انبار", "war_action": "اقدام مدیریت جنگ",
+    }
+    for a in chunk:
+        when = (a["created_at"] or "")[:16].replace("T", " ")
+        lbl = labels.get(a["action"], a["action"])
+        tgt = f" → {a['target']}" if a["target"] else ""
+        pts = f" (+{a['points']})" if a["points"] else ""
+        lines.append(f"`{a['user_id']}` {lbl}{tgt}{pts}\n    🕐 {when}")
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"admin:ref_log:{page - 1}"))
+    if page < total - 1:
+        nav.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"admin:ref_log:{page + 1}"))
+    rows = ([nav] if nav else []) + [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:referees")]]
+    await query.edit_message_text("\n".join(lines),
+                                  reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
+async def admin_referee_scores(query, context):
+    board = db.get_referee_scoreboard()
+    lines = ["🏆 *امتیاز داورها*", "━━━━━━━━━━━━━━━━━━", ""]
+    if not board:
+        lines.append("_هنوز داوری اضافه نشده._")
+    for i, r in enumerate(board, 1):
+        if not r["active"]:
+            continue
+        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+        nm = r["display_name"] or f"داور {r['user_id']}"
+        last = (r["last_active"] or "—")[:10]
+        lines.append(f"{medal} *{nm}*")
+        lines.append(f"    🏆 {r['points']} امتیاز | 📊 {r['actions']} اقدام | 🕐 آخرین: {last}")
+    lines += ["", "*نحوه امتیازدهی:*",
+              f"• ثبت گزارش تلفات: +{db.REFEREE_POINTS['report_registered']}",
+              f"• اقدام مدیریت جنگ: +{db.REFEREE_POINTS['war_action']}",
+              f"• اعتبارسنجی گزارش: +{db.REFEREE_POINTS['report_validated']}"]
+    await query.edit_message_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:referees")]]),
+        parse_mode="Markdown")
 
 
 # ==================== لیست کشورها با صفحه‌بندی و فیلتر قاره‌ها ====================
@@ -1120,6 +1225,64 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
                 "❌ انصراف", callback_data="admin:main")]]),
             parse_mode="Markdown")
+
+    elif data == "admin:referees":
+        if not db.is_owner(user_id):
+            await query.answer("فقط مالک بازی به این بخش دسترسی دارد.", show_alert=True)
+            return
+        await admin_referees_menu(query, context)
+
+    elif data == "admin:ref_list":
+        if not db.is_owner(user_id):
+            await query.answer("دسترسی ندارید.", show_alert=True)
+            return
+        await admin_referee_list(query, context)
+
+    elif data.startswith("admin:ref_log:"):
+        if not db.is_owner(user_id):
+            await query.answer("دسترسی ندارید.", show_alert=True)
+            return
+        await admin_referee_log(query, context, int(data.split(":")[2]))
+
+    elif data == "admin:ref_scores":
+        if not db.is_owner(user_id):
+            await query.answer("دسترسی ندارید.", show_alert=True)
+            return
+        await admin_referee_scores(query, context)
+
+    elif data == "admin:ref_add":
+        if not db.is_owner(user_id):
+            await query.answer("دسترسی ندارید.", show_alert=True)
+            return
+        context.user_data["admin_awaiting_input"] = {"type": "add_referee"}
+        await query.edit_message_text(
+            "➕ *افزودن داور*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "آیدی عددی تلگرام فرد را بفرست.\n"
+            "می‌توانی بعد از آیدی، نامش را هم بنویسی:\n\n"
+            "`123456789`\n"
+            "`123456789 علی`\n\n"
+            "_داور فقط به «انبار کشورها» و «مدیریت جنگ» دسترسی خواهد داشت._",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data="admin:referees")]]),
+            parse_mode="Markdown")
+
+    elif data.startswith("admin:ref_del:"):
+        if not db.is_owner(user_id):
+            await query.answer("دسترسی ندارید.", show_alert=True)
+            return
+        target = int(data.split(":")[2])
+        ok, msg = db.remove_referee(target, user_id)
+        await query.answer(("✅ " if ok else "❌ ") + msg, show_alert=True)
+        await admin_referee_list(query, context)
+
+    elif data.startswith("admin:ref_restore:"):
+        if not db.is_owner(user_id):
+            await query.answer("دسترسی ندارید.", show_alert=True)
+            return
+        target = int(data.split(":")[2])
+        ok, msg = db.add_referee(target, user_id)
+        await query.answer(("✅ " if ok else "❌ ") + msg, show_alert=True)
+        await admin_referee_list(query, context)
 
     elif data == "admin:straits":
         rows = db.list_strait_statuses()
@@ -3047,6 +3210,35 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("لطفاً پاسخ را به‌صورت متن بفرست.")
         return
     input_type = input_state.get("type")
+
+    if input_type == "add_referee":
+        context.user_data["admin_awaiting_input"] = None
+        parts = text.split(maxsplit=1)
+        from handlers.losses import to_english_digits
+        raw = to_english_digits(parts[0]).strip()
+        if not raw.lstrip("-").isdigit():
+            await update.message.reply_text(
+                "❌ آیدی باید عدد باشد. دوباره تلاش کن.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ افزودن داور", callback_data="admin:ref_add")]]))
+            return
+        name = parts[1].strip() if len(parts) > 1 else ""
+        ok, msg = db.add_referee(int(raw), user_id, name)
+        extra = ""
+        if ok:
+            try:
+                await context.bot.send_message(
+                    int(raw),
+                    "⚖️ *شما به‌عنوان داور بازی سیاست مدرن انتخاب شدید.*\n\n"
+                    "برای ورود به پنل داوری دستور /referee را بزنید.",
+                    parse_mode="Markdown")
+                extra = "\n\n📨 به کاربر اطلاع داده شد."
+            except Exception:
+                extra = "\n\n⚠️ نتوانستم پیام بدهم — کاربر باید اول بات را استارت کند."
+        await update.message.reply_text(
+            ("✅ " if ok else "❌ ") + msg + extra,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👥 وضعیت ادمین‌ها", callback_data="admin:referees")]]),
+            parse_mode="Markdown")
+        return
 
     # ✅ اعتبارسنجی گزارش تلفات — قبل از بقیه چون متن گزارش چندخطی است
     if input_type == "validate_report":
