@@ -15,6 +15,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 import database as db
+import country_queue
 import approval_system
 import config
 
@@ -3427,9 +3428,51 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         keyboard = [
             [InlineKeyboardButton("🔥 بله، حذف کن!", callback_data=f"admin:delfinal:{c_id}")],
+            [InlineKeyboardButton("♻️ حذف مالکیت با حفظ تجهیزات", callback_data=f"admin:detachconfirm:{c_id}")],
             [InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c:{c_id}")],
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:detachconfirm:"):
+        c_id = int(data.split(":")[2])
+        c = db.get_country_by_id(c_id)
+        text = (
+            f"♻️ *حذف مالکیت با حفظ تجهیزات — {c['flag']} {c['name']}*\n\n"
+            f"• مالکیت بازیکن `{c['player_id']}` حذف می‌شود.\n"
+            "• تمام ثروت، طلا، نفت، تجهیزات، ساختمان‌ها و مشخصات کشور *دست‌نخورده می‌ماند*.\n"
+            "• کشور بلافاصله به استخر واگذاری می‌رود و نفر بعدی با همان امکانات تحویل می‌گیرد.\n"
+            "• برخلاف قرنطینه، صاحب قبلی حق /reclaim ندارد.\n"
+            "• انتقال‌های اخیر (۷۲ ساعت) طبق قانون ضدتقلب برگشت می‌خورند."
+        )
+        keyboard = [
+            [InlineKeyboardButton("♻️ بله، مالکیت را حذف کن", callback_data=f"admin:detachfinal:{c_id}")],
+            [InlineKeyboardButton("❌ انصراف", callback_data=f"admin:c:{c_id}")],
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("admin:detachfinal:"):
+        c_id = int(data.split(":")[2])
+        c = db.get_country_by_id(c_id)
+        if c:
+            rollback_result = db.rollback_transfers_from(
+                c_id, getattr(config, "TRANSFER_ROLLBACK_WINDOW_HOURS", 72)
+            )
+            ok, msg = country_queue.detach_country_keep_assets(c_id, actor=f"admin:{user_id}")
+            summary = db.format_transfer_rollback_summary(rollback_result)
+            if ok:
+                await query.edit_message_text(
+                    f"✅ *مالکیت حذف شد — دارایی‌ها حفظ شد.\n\n{msg}\n\n{summary}",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                        "📋 بازگشت به لیست کشورها", callback_data="admin:list:0")]]),
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ {msg}",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                        "🔙 بازگشت به پرونده", callback_data=f"admin:c:{c_id}")]]),
+                    parse_mode="Markdown",
+                )
 
     elif data.startswith("admin:delfinal:"):
         c_id = int(data.split(":")[2])

@@ -79,6 +79,36 @@ def quarantine_country(country_id: int, reason: str = "inactivity") -> tuple[boo
     return True, f"کشور به مدت {days} روز در قرنطینه قرار گرفت."
 
 
+def detach_country_keep_assets(country_id: int, actor: str = "admin") -> tuple[bool, str]:
+    """حذف مالکیت بدون پاک‌سازی (دستور ادمین): تمام تجهیزات، خزانه و مشخصات
+    روی همان کشور می‌ماند و بلافاصله به استخر آزاد (واگذاری به بازیکن بعدی)
+    می‌رود. برخلاف قرنطینه، مهلت بازپس‌گیری برای صاحب قبلی وجود ندارد."""
+    country = db.get_country_by_id(country_id)
+    if not country:
+        return False, "کشور یافت نشد."
+    if not country.get("player_id"):
+        return False, "این کشور هم‌اکنون بی‌صاحب است."
+    owner = country.get("player_id")
+    conn = db.get_connection()
+    try:
+        with conn:
+            conn.execute(
+                """
+                UPDATE countries
+                SET previous_player_id = player_id, player_id = 0,
+                    quarantined_at = NULL, quarantine_until = NULL
+                WHERE id = ?
+                """,
+                (country_id,),
+            )
+    finally:
+        conn.close()
+    db.add_log(f"player:{owner}", "country_detached_keep_assets",
+               f"country={country_id} actor={actor}")
+    return True, (f"مالکیت کشور {country.get('flag', '')} {country.get('name', '')} حذف شد؛ "
+                  "تجهیزات و مشخصات حفظ ماند و کشور به استخر واگذاری رفت.")
+
+
 def reclaim_country(player_id: int) -> tuple[bool, str, dict | None]:
     """بازپس‌گیری کشور توسط صاحب قبلی، در بازه‌ی قرنطینه."""
     if db.is_banned(player_id):
