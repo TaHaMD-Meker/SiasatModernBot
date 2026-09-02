@@ -722,8 +722,8 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
             name = c.get("name", "کشور")
             username = c.get("username") or ""
 
-            # سلب مالکیت → قرنطینه (نه حذف). دارایی‌ها دست‌نخورده می‌مانند و
-            # صاحب قبلی تا پایان مهلت می‌تواند کشورش را پس بگیرد.
+            # سلب مالکیت → آزادسازی فوری (قرنطینه لغو شده). دارایی‌ها دست‌نخورده
+            # می‌مانند و کشور مستقیم وارد استخر واگذاری می‌شود.
             ok_q, _q_msg = country_queue.quarantine_country(c_id, reason="inactivity")
             if not ok_q:
                 continue
@@ -735,9 +735,7 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
                 f"کاربر گرامی،\n"
                 f"به دلیل عدم ثبت حداقل {req_stmts} بیانیه یا توییت رسمی در روز گذشته ({yesterday_str})، "
                 f"مالکیت کشور *{flag} {name}* موقتاً از شما سلب شد.\n\n"
-                f"⏳ *این کشور به مدت {country_queue.QUARANTINE_HOURS} ساعت در قرنطینه است.* "
-                f"تا پایان این مهلت می‌توانید با دستور /reclaim کشورتان را با تمام تجهیزات و "
-                f"ساختمان‌هایش پس بگیرید. بعد از آن، به نفر اول صف انتظار واگذار می‌شود.\n\n"
+                f"🌍 *این کشور هم‌اکنون آزاد شد و به نفر بعدی صف انتظار واگذار می‌شود.*\n\n"
                 f"• تعداد بیانیه‌های ثبت‌شده شما: *{user_stmts} از {req_stmts} بیانیه*\n\n"
                 f"💡 *قوانین بازی:* جهت حفظ رهبری کشور، ثبت روزانه حداقل ۲ بیانیه یا توییت رسمی در ربات الزامی است."
             )

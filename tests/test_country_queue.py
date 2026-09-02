@@ -22,8 +22,8 @@ def _country(database, player_id, key="iran", name="ایران"):
 # قرنطینه
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_quarantine_keeps_everything_instead_of_deleting(monkeypatch, tmp_path):
-    """رگرسیون: سلب مالکیت قبلاً کشور را با تمام دارایی‌هایش DELETE می‌کرد."""
+def test_revocation_frees_country_instantly_keeping_assets(monkeypatch, tmp_path):
+    """قرنطینه حذف شده: خلع = آزاد فوری به استخر واگذاری، دارایی‌ها سالم."""
     database = _fresh(monkeypatch, tmp_path)
     cid = _country(database, 5001)
     database.add_equipment(cid, "small_factory", 7)
@@ -36,63 +36,16 @@ def test_quarantine_keeps_everything_instead_of_deleting(monkeypatch, tmp_path):
     country = database.get_country_by_id(cid)
     assert country is not None, "کشور نباید حذف شود"
     assert country["player_id"] == 0
-    assert country["previous_player_id"] == 5001
     assert country["treasury"] == 42_000_000
     assert (database.get_equipment(cid) or {}).get("small_factory") == 7
+    # بدون هیچ دوره‌ی انتظاری — همان لحظه در استخر آزاد است
+    assert any(c["id"] == cid for c in cq.get_free_countries())
+    assert cq.get_quarantined_countries() == []
 
 
-def test_owner_can_reclaim_during_quarantine(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 5002)
-    database.update_country_field(cid, "treasury", 33_000_000)
-    cq.quarantine_country(cid)
-
-    ok, message, country = cq.reclaim_country(5002)
-    assert ok, message
-    assert country["player_id"] == 5002
-    assert country["treasury"] == 33_000_000
-    assert country["quarantine_until"] is None
-    assert database.get_country_by_player(5002) is not None
-
-
-def test_reclaim_fails_after_the_window_closes(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 5003)
-    cq.quarantine_country(cid)
-
-    past = cq._iso(cq._now() - datetime.timedelta(hours=1))
-    conn = database.get_connection()
-    with conn:
-        conn.execute("UPDATE countries SET quarantine_until = ? WHERE id = ?", (past, cid))
-    conn.close()
-
-    ok, message, _c = cq.reclaim_country(5003)
-    assert not ok and "مهلت" in message
-
-
-def test_quarantine_lasts_24h_by_default(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 5004)
-    before = cq._now()
-    cq.quarantine_country(cid)
-
-    until = cq._parse(database.get_country_by_id(cid)["quarantine_until"])
-    hours = (until - before).total_seconds() / 3600
-    assert cq.QUARANTINE_HOURS == 24
-    assert 23.9 < hours < 24.1
-
-
-def test_expired_quarantine_moves_the_country_into_the_free_pool(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 5005)
-    cq.quarantine_country(cid)
-    assert cq.get_free_countries() == []
-
-    released = cq.release_expired_quarantines(cq._now() + datetime.timedelta(days=3))
-    assert len(released) == 1
-    free = cq.get_free_countries()
-    assert len(free) == 1 and free[0]["id"] == cid
-    assert free[0]["previous_player_id"] is None
+def test_reclaim_is_retired():
+    ok, msg, _c = cq.reclaim_country(999999)
+    assert not ok and "قرنطینه" in msg
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -128,12 +81,12 @@ def test_a_player_with_a_country_cannot_join(monkeypatch, tmp_path):
 def test_free_country_is_offered_to_the_first_in_line(monkeypatch, tmp_path):
     database = _fresh(monkeypatch, tmp_path)
     cid = _country(database, 6301)
-    cq.quarantine_country(cid)
+    cq.quarantine_country(cid)   # خلع → همان لحظه آزاد (قرنطینه حذف شده)
     cq.join_queue(6401)
     cq.join_queue(6402)
 
-    result = cq.process_queue(cq._now() + datetime.timedelta(days=3))
-    assert len(result["released"]) == 1
+    result = cq.process_queue()
+    assert len(result["released"]) == 0
     assert len(result["offered"]) == 1
     assert result["offered"][0]["entry"]["player_id"] == 6401
 
@@ -225,13 +178,12 @@ def test_declining_returns_the_player_to_the_queue(monkeypatch, tmp_path):
     assert entry["status"] == "waiting" and entry["offered_country_id"] is None
 
 
-def test_inactivity_job_quarantines_instead_of_deleting():
-    import inspect
-    import main as main_module
-
-    source = inspect.getsource(main_module.check_daily_inactivity_job)
-    assert "quarantine_country" in source
-    assert "delete_country_by_id" not in source, "سلب مالکیت دیگر نباید کشور را پاک کند"
+def test_inactivity_job_frees_instead_of_deleting():
+    """جاب نیمه‌شب باید مالکیت را لغو کند نه حذف؛ قرنطینه دیگر در کار نیست."""
+    src = open("main.py", encoding="utf-8").read()
+    assert "quarantine_country(c_id" in src
+    assert "QUARANTINE_HOURS" not in src, "منسوخ — پیام باید آزاد فوری بگوید"
+    assert "استخر واگذاری" in src
 
 
 def test_admin_panel_exposes_quick_approve_and_queue():

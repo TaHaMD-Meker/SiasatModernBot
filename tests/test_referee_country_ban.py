@@ -117,4 +117,4 @@ def test_referee_cannot_reclaim_quarantined_country(monkeypatch, tmp_path):
     db.add_referee(91_004, added_by=1)
     ok, msg, _country_row = cq.reclaim_country(91_004)
     assert ok is False
-    assert "داور" in msg
+    assert "قرنطینه" in msg  # بازپس‌گیری برای همه‌ی نقش‌ها منسوخ است

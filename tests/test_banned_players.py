@@ -105,7 +105,7 @@ def test_banned_cannot_reclaim_quarantined_country(monkeypatch, tmp_path):
     _country(quarantine_for=96_002)
     db.ban_player(96_002)
     ok, msg, _row = cq.reclaim_country(96_002)
-    assert ok is False and "مسدود" in msg
+    assert ok is False and "قرنطینه" in msg  # بازپس‌گیری منسوخ شده
 
 
 def test_banned_cannot_accept_offer(monkeypatch, tmp_path):

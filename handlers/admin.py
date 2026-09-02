@@ -937,7 +937,7 @@ async def show_queue_panel(query, context):
         f"🎯 پیشنهاد فعال: <b>{stats['offered']}</b>",
         f"✅ واگذارشده: <b>{stats['done']}</b>",
         f"🌍 کشور آزاد: <b>{stats['free_countries']}</b>",
-        f"⏳ در قرنطینه: <b>{stats['quarantined']}</b>",
+        f"⏳ در قرنطینه: <b>0</b> (سیستم حذف شده)",
     ]
     if waiting:
         lines.append("\n<b>نفرات اول صف</b>")
@@ -945,26 +945,16 @@ async def show_queue_panel(query, context):
             tag = f"@{entry['username']}" if entry.get("username") else str(entry["player_id"])
             star = " ⭐️" if entry["priority"] > 0 else ""
             lines.append(f"{index}. {tag}{star}")
+    # قرنطینه لغو شده — خلع = آزاد فوری. آمار قدیمی قرنطینه صفر نمایش داده می‌شود.
     kb = []
-    if quarantined:
-        lines.append("\n<b>کشورهای در قرنطینه</b>")
-        for country in quarantined:
-            until = cq._parse(country.get("quarantine_until"))
-            mins = max(0, int((until - cq._now()).total_seconds() // 60)) if until else 0
-            if mins >= 60:
-                remain = f"{mins // 60} ساعت و {mins % 60} دقیقه مانده"
-            else:
-                remain = f"{mins} دقیقه مانده"
-            lines.append(f"• {country.get('flag','')} {country.get('name','')} — {remain}")
-            kb.append([InlineKeyboardButton(
-                f"🔓 {country.get('flag','')} {country.get('name','')}",
-                callback_data=f"admin:q_release:{country['id']}")])
-        if stats["quarantined"] > len(quarantined):
-            lines.append(f"• … و {stats['quarantined'] - len(quarantined)} کشور دیگر (فقط ۱۰ اول اینجا می‌آید)")
-        kb.append([InlineKeyboardButton("🔓🔓 آزادسازی همه‌ی قرنطینه‌ها", callback_data="admin:q_release_all")])
+    free_list = cq.get_free_countries(10)
+    if free_list:
+        lines.append("\n<b>🌍 کشورهای بی‌صاحبِ آماده‌ی واگذاری</b>")
+        for country in free_list:
+            pid = country.get("player_id") or 0
+            lines.append(f"• {country.get('flag','')} {country.get('name','')} (ID: {pid})")
     else:
-        lines.append("\n✅ هیچ کشوری در قرنطینه نیست.")
-        kb.append([InlineKeyboardButton("🔓🔓 آزادسازی همه‌ی قرنطینه‌ها", callback_data="admin:q_release_all")])
+        lines.append("\n🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
     kb.append([InlineKeyboardButton("▶️ اجرای فوری صف", callback_data="admin:queue_run")])
     kb.append([InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")])
     await safe_edit_or_reply(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
@@ -3130,71 +3120,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await show_queue_panel(query, context)
         return
 
-    elif False:  # (بدنه‌ی قدیمی نمایش پنل پایین حفظ شده — غیرقابل‌دسترس)
-        import country_queue as cq
-        stats = cq.queue_stats()
-        waiting = cq.get_queue("waiting", 10)
-        quarantined = cq.get_quarantined_countries(10)
-        lines = [
-            "⏳ <b>صف انتظار و قرنطینه</b>",
-            "━━━━━━━━━━━━━━━━━━",
-            f"👥 در صف: <b>{stats['waiting']}</b>",
-            f"🎯 پیشنهاد فعال: <b>{stats['offered']}</b>",
-            f"✅ واگذارشده: <b>{stats['done']}</b>",
-            f"🌍 کشور آزاد: <b>{stats['free_countries']}</b>",
-            f"⏳ در قرنطینه: <b>{stats['quarantined']}</b>",
-        ]
-        if waiting:
-            lines.append("\n<b>نفرات اول صف</b>")
-            for index, entry in enumerate(waiting, 1):
-                tag = f"@{entry['username']}" if entry.get("username") else str(entry["player_id"])
-                star = " ⭐️" if entry["priority"] > 0 else ""
-                lines.append(f"{index}. {tag}{star}")
-        kb = []
-        if quarantined:
-            lines.append("\n<b>کشورهای در قرنطینه</b>")
-            for country in quarantined:
-                until = cq._parse(country.get("quarantine_until"))
-                mins = max(0, int((until - cq._now()).total_seconds() // 60)) if until else 0
-                if mins >= 60:
-                    remain = f"{mins // 60} ساعت و {mins % 60} دقیقه مانده"
-                else:
-                    remain = f"{mins} دقیقه مانده"
-                lines.append(f"• {country.get('flag','')} {country.get('name','')} — {remain}")
-                kb.append([InlineKeyboardButton(
-                    f"🔓 {country.get('flag','')} {country.get('name','')}",
-                    callback_data=f"admin:q_release:{country['id']}")])
-            kb.append([InlineKeyboardButton("🔓🔓 آزادسازی همه‌ی قرنطینه‌ها", callback_data="admin:q_release_all")])
-        kb.append([InlineKeyboardButton("▶️ اجرای فوری صف", callback_data="admin:queue_run")])
-        kb.append([InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")])
-        await safe_edit_or_reply(
-            query, "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup(kb),
-            parse_mode="HTML",
-        )
-        return
-
-    elif data.startswith("admin:q_release:"):
-        import country_queue as cq
-        c_id = int(data.split(":")[2])   # فرمت سه‌تکه — اندیس ۲
-        ok, msg = cq.release_quarantine(c_id)
-        await query.answer(("✅ " + msg) if ok else ("❌ " + msg), show_alert=not ok)
-        if ok:
-            cq.process_queue()  # کشور آزادشده بلافاصله به نفر اول صف پیشنهاد شود
-        await show_queue_panel(query, context)
-        return
-
-    elif data == "admin:q_release_all":
-        import country_queue as cq
-        n, released = cq.release_all_quarantines()
-        if n:
-            cq.process_queue()
-        names = "، ".join(f"{c.get('flag','')} {c.get('name','')}" for c in released[:8])
-        await query.answer(
-            f"🔓 {n} کشور از قرنطینه خارج شد." + (f"\n{names}" + ("…" if len(released) > 8 else "") if names else ""),
-            show_alert=True,
-        )
-        await show_queue_panel(query, context)
+    elif data.startswith("admin:q_release:") or data == "admin:q_release_all":
+        await query.answer("سیستم قرنطینه حذف شده است — کشورهای لغوشده بلافاصله آزاد می‌شوند.", show_alert=True)
         return
 
     elif data == "admin:queue_run":

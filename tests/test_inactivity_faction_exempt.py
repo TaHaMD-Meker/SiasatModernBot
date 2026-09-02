@@ -8,6 +8,7 @@ import asyncio
 import pytest
 import config
 import database as db
+import country_queue
 import main
 
 
@@ -52,17 +53,18 @@ def test_factions_exempt_official_revoked(monkeypatch, tmp_path):
 
     conn = db.get_connection(); cur = conn.cursor()
     rows = {r["id"]: r for r in cur.execute(
-        "SELECT id, player_id, quarantined_at FROM countries").fetchall()}
+        "SELECT id, player_id, quarantine_until FROM countries").fetchall()}
     conn.close()
 
-    # کشور رسمی بدون بیانیه → قرنطینه (player_id صفر و مهر زمانی قرنطینه)
-    assert rows[1]["player_id"] == 0 and rows[1]["quarantined_at"], \
-        "کشور رسمی بدون بیانیه باید قرنطینه شود"
+    # کشور رسمی بدون بیانیه → لغو مالکیت + آزاد فوری (قرنطینه حذف شده)
+    assert rows[1]["player_id"] == 0 and rows[1]["quarantine_until"] is None, \
+        "کشور رسمی بدون بیانیه باید لغو و فوراً آزاد شود"
+    free = {c["id"] for c in country_queue.get_free_countries()}
+    assert 1 in free, "کشور لغوشده باید بلافاصله در استخر واگذاری باشد"
     # گروهک‌ها باید کاملاً دست‌نخورده بمانند
-    assert rows[2]["player_id"] == 1002 and not rows[2]["quarantined_at"], \
-        "گروهک استاندارد (۱۰۰هزاری) نباید سلب مالکیت/قرنطینه شود"
-    assert rows[3]["player_id"] == 1003 and not rows[3]["quarantined_at"], \
-        "گروهک سفارشی نباید سلب مالکیت/قرنطینه شود"
+    assert rows[2]["player_id"] == 1002, "گروهک استاندارد (۱۰۰هزاری) نباید لغو شود"
+    assert rows[3]["player_id"] == 1003, "گروهک سفارشی نباید لغو شود"
+    assert 2 not in free and 3 not in free
 
 
 def test_source_guard_job_checks_faction():

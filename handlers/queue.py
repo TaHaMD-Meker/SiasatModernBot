@@ -30,23 +30,6 @@ async def queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # کشور در قرنطینه؟
-    reclaimable = _reclaimable_country(player_id)
-    if reclaimable:
-        remaining = cq._parse(reclaimable.get("quarantine_until"))
-        hours = max(0, int((remaining - cq._now()).total_seconds() // 3600)) if remaining else 0
-        await send(
-            f"⏳ <b>کشور شما در قرنطینه است</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"{reclaimable.get('flag', '')} <b>{html.escape(reclaimable.get('name', ''))}</b>\n\n"
-            f"تمام تجهیزات، ساختمان‌ها و ذخایر کشور دست‌نخورده باقی مانده‌اند.\n"
-            f"⏰ مهلت بازپس‌گیری: <b>{hours} ساعت</b>\n\n"
-            f"<i>بعد از پایان مهلت، کشور به نفر اول صف انتظار واگذار می‌شود.</i>",
-            reply_markup=_kb([[InlineKeyboardButton("♻️ بازپس‌گیری کشورم", callback_data="q:reclaim")]]),
-            parse_mode="HTML",
-        )
-        return
-
     entry = cq.get_queue_entry(player_id)
     stats = cq.queue_stats()
 
@@ -136,8 +119,7 @@ async def queue_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             pass
         await queue_status(update, context)
     elif data == "q:reclaim":
-        ok, message, _country = cq.reclaim_country(user.id)
-        await query.answer(message, show_alert=True)
+        await query.answer("سیستم قرنطینه حذف شده است.", show_alert=True)
     elif data == "q:accept":
         ok, message, country = cq.accept_offer(user.id)
         await query.answer(message, show_alert=True)
@@ -161,16 +143,10 @@ async def queue_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def reclaim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ok, message, country = cq.reclaim_country(update.effective_user.id)
-    if ok and country:
-        await update.message.reply_text(
-            f"♻️ <b>{html.escape(message)}</b>\n\n"
-            f"تمام تجهیزات، ساختمان‌ها و ذخایر شما دست‌نخورده بازگشتند.\n"
-            f"فراموش نکنید روزانه حداقل ۲ بیانیه ثبت کنید.",
-            parse_mode="HTML",
-        )
-    else:
-        await update.message.reply_text(f"❌ {message}")
+    await update.message.reply_text(
+        "❌ سیستم قرنطینه و بازپس‌گیری حذف شده است.\n"
+        "کشور لغوشده مستقیماً از طریق /queue به نفر بعدی صف واگذار می‌شود."
+    )
 
 
 def get_queue_handlers():

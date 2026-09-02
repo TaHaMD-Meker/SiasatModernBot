@@ -44,39 +44,32 @@ def _parse(raw):
 # قرنطینه
 # ─────────────────────────────────────────────────────────────────────────────
 def quarantine_country(country_id: int, reason: str = "inactivity") -> tuple[bool, str]:
-    """کشور را از بازیکن جدا می‌کند بدون آنکه چیزی پاک شود."""
+    """خلع مالکیت بدون پاک‌سازی دارایی — قرنطینه لغو شده؛ کشور بلافاصله
+    آزاد و وارد استخر واگذاری می‌شود (دستور مالک: هیچ دوره‌ی انتظاری نباشد)."""
     country = db.get_country_by_id(country_id)
     if not country:
         return False, "کشور یافت نشد."
-    if country.get("quarantine_until"):
-        return False, "این کشور هم‌اکنون در قرنطینه است."
+    if not country.get("player_id"):
+        return False, "این کشور هم‌اکنون بی‌صاحب است."
 
     owner = country.get("player_id")
-    now_dt = _now()
-    hours = QUARANTINE_HOURS
-
-    # بیمه‌ی غیبت مهلت را بیشتر می‌کند
-    insured_until = _parse(country.get("absence_insurance_until"))
-    if insured_until and now_dt < insured_until:
-        hours = max(hours, int(getattr(config, "ABSENCE_INSURANCE_DAYS", 7)) * 24)
-
     conn = db.get_connection()
     try:
         with conn:
             conn.execute(
                 """
                 UPDATE countries
-                SET previous_player_id = player_id, player_id = 0,
-                    quarantined_at = ?, quarantine_until = ?
+                SET previous_player_id = NULL, player_id = 0,
+                    quarantined_at = NULL, quarantine_until = NULL
                 WHERE id = ?
                 """,
-                (_iso(now_dt), _iso(now_dt + datetime.timedelta(hours=hours)), country_id),
+                (country_id,),
             )
     finally:
         conn.close()
 
-    db.add_log(f"player:{owner}", "country_quarantined", f"country={country_id} reason={reason} hours={hours}")
-    return True, f"کشور به مدت {hours} ساعت در قرنطینه قرار گرفت."
+    db.add_log(f"player:{owner}", "country_revoked", f"country={country_id} reason={reason}")
+    return True, "مالکیت لغو شد و کشور بلافاصله به استخر واگذاری رفت."
 
 
 def detach_country_keep_assets(country_id: int, actor: str = "admin") -> tuple[bool, str]:
@@ -110,96 +103,30 @@ def detach_country_keep_assets(country_id: int, actor: str = "admin") -> tuple[b
 
 
 def reclaim_country(player_id: int) -> tuple[bool, str, dict | None]:
-    """بازپس‌گیری کشور توسط صاحب قبلی، در بازه‌ی قرنطینه."""
-    if db.is_banned(player_id):
-        return False, db.BANNED_MESSAGE, None
-    if db.is_playing_restricted(player_id):
-        return False, db.PLAY_RESTRICTED_MESSAGE, None
-    conn = db.get_connection()
-    try:
-        row = conn.execute(
-            "SELECT * FROM countries WHERE previous_player_id = ? AND quarantine_until IS NOT NULL AND player_id = 0",
-            (player_id,),
-        ).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        return False, "کشوری برای بازپس‌گیری ندارید.", None
-
-    country = dict(row)
-    until = _parse(country.get("quarantine_until"))
-    if until and _now() > until:
-        return False, "مهلت بازپس‌گیری این کشور تمام شده است.", None
-
-    conn = db.get_connection()
-    try:
-        with conn:
-            conn.execute(
-                """
-                UPDATE countries
-                SET player_id = ?, previous_player_id = NULL,
-                    quarantined_at = NULL, quarantine_until = NULL
-                WHERE id = ? AND player_id = 0
-                """,
-                (player_id, country["id"]),
-            )
-    finally:
-        conn.close()
-    db.add_log(f"player:{player_id}", "country_reclaimed", f"country={country['id']}")
-    return True, f"کشور {country.get('flag', '')} {country.get('name', '')} به شما بازگردانده شد.", db.get_country_by_id(country["id"])
+    """بازپس‌گیری کشور — با لغو قرنطینه دیگر مهلتی وجود ندارد؛ همیشه رد."""
+    return False, "سیستم قرنطینه حذف شده است؛ کشور لغوشده مستقیم به صف واگذاری می‌رود.", None
 
 
 def release_quarantine(country_id: int) -> tuple[bool, str]:
-    """خروج دستی یک کشور از قرنطینه توسط ادمین — مستقیم به استخر آزاد."""
-    country = db.get_country_by_id(country_id)
-    if not country or not country.get("quarantine_until"):
-        return False, "این کشور در قرنطینه نیست."
-    conn = db.get_connection()
-    try:
-        with conn:
-            conn.execute(
-                "UPDATE countries SET quarantine_until = NULL, quarantined_at = NULL, "
-                "previous_player_id = NULL WHERE id = ?",
-                (country_id,),
-            )
-    finally:
-        conn.close()
-    db.add_log("admin", "quarantine_released", f"country={country_id}")
-    return True, (f"کشور {country.get('flag', '')} {country.get('name', '')} از قرنطینه خارج شد "
-                  "و به استخر واگذاری رفت.")
+    """(منسوخ) قرنطینه حذف شده — خلع همان لحظه آزاد می‌شود."""
+    return False, "سیستم قرنطینه حذف شده است."
 
 
 def release_all_quarantines() -> tuple[int, list]:
-    """خروج همه‌ی کشورهای در قرنطینه؛ خروجی: (تعداد، فهرست کشورها)."""
-    rows = get_quarantined_countries(200)
-    released = []
-    for c in rows:
-        ok, _ = release_quarantine(c["id"])
-        if ok:
-            released.append(c)
-    return len(released), released
+    """(منسوخ) قرنطینه حذف شده."""
+    return 0, []
 
 
 def get_quarantined_countries(limit: int = 100) -> list[dict]:
-    conn = db.get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM countries WHERE quarantine_until IS NOT NULL AND player_id = 0"
-            " ORDER BY quarantine_until ASC LIMIT ?",
-            (max(1, min(200, int(limit))),),
-        ).fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+    """(منسوخ) قرنطینه حذف شده — همیشه خالی."""
+    return []
 
 
 def release_expired_quarantines(now_dt: datetime.datetime | None = None) -> list[dict]:
-    """کشورهایی که مهلت قرنطینه‌شان تمام شده وارد استخر آزاد می‌شوند."""
-    now_dt = now_dt or _now()
+    """(منسوخ) قرنطینه حذف شده؛ فقط رکوردهای میراثی قدیمی را پاک می‌کند."""
     released = []
-    for country in get_quarantined_countries(200):
-        until = _parse(country.get("quarantine_until"))
-        if until and now_dt >= until:
+    for country in db.get_all_countries():
+        if country.get("quarantine_until"):
             conn = db.get_connection()
             try:
                 with conn:
@@ -214,14 +141,15 @@ def release_expired_quarantines(now_dt: datetime.datetime | None = None) -> list
     return released
 
 
-def get_free_countries() -> list[dict]:
-    """کشورهای بی‌صاحب و خارج از قرنطینه، آماده‌ی واگذاری."""
+def get_free_countries(limit: int | None = None) -> list[dict]:
+    """کشورهای بی‌صاحب، آماده‌ی واگذاری فوری (قرنطینه لغو شده)."""
     conn = db.get_connection()
     try:
-        rows = conn.execute(
-            "SELECT * FROM countries WHERE player_id = 0 AND quarantine_until IS NULL"
-            " AND country_key NOT LIKE 'faction_%' ORDER BY id ASC"
-        ).fetchall()
+        q = ("SELECT * FROM countries WHERE player_id = 0 AND quarantine_until IS NULL"
+             " AND country_key NOT LIKE 'faction_%' ORDER BY id ASC")
+        if limit:
+            q += f" LIMIT {max(1, min(200, int(limit)))}"
+        rows = conn.execute(q).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
