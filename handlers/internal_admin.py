@@ -11,6 +11,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import config
 import database as db
 import internal_affairs as ia
+import insurgency
 from utils import format_money, format_number
 
 PAGE_SIZE = 8
@@ -96,6 +97,11 @@ def _root_keyboard():
             f"{'🛑 لغو' if ia.power_penalty_enabled() else '⚡ فعال‌سازی'} قطع تولید با کمبود برق",
             callback_data="admin:dom_power_toggle",
         )],
+        [InlineKeyboardButton(
+            f"{'🛑 خاموش‌کردن شورش‌ها' if insurgency.is_enabled() else '⚔️ فعال‌سازی شورش‌های مسلحانه'}",
+            callback_data="admin:dom_insur_toggle",
+        )],
+        [InlineKeyboardButton("🏴 شورش‌های فعال / ترکاندن دستی", callback_data="admin:dom_insur_list")],
         [InlineKeyboardButton("🌍 وضعیت داخلی کشورها", callback_data="admin:dom_overview:0")],
         [InlineKeyboardButton("🚨 بحران‌های فعال", callback_data="admin:dom_active:0")],
         [InlineKeyboardButton("➕ ایجاد بحران دستی", callback_data="admin:dom_new:0")],
@@ -851,9 +857,68 @@ async def internal_admin_callback(query, context, data: str) -> bool:
         await _risk_page(query, _parse_page(data, "admin:dom_risk"))
     elif data == "admin:dom_hist" or data.startswith("admin:dom_hist:"):
         await _history_page(query, _parse_page(data, "admin:dom_hist"))
+    elif data == "admin:dom_insur_toggle":
+        new_value = not insurgency.is_enabled()
+        insurgency.set_enabled(new_value, admin_id=admin_id, role="owner")
+        db.add_log(f"admin:{admin_id}", "insurgency_toggle", f"enabled={new_value}")
+        await _show_root(query, "⚔️ شورش‌های مسلحانه فعال شد — از این لحظه کشورهای در آستانه‌ی سقوط ممکن است شورش بترکانند." if new_value else "شورش‌های مسلحانه خاموش شد؛ شورش‌های فعال ادامه دارند ولی شورش جدید نمی‌ترکد.")
+    elif data == "admin:dom_insur_list":
+        await _insur_list_page(query)
+    elif data.startswith("admin:dom_insur_force:"):
+        cid = int(data.split(":")[3])
+        country = db.get_country_by_id(cid)
+        if not country:
+            await query.answer("کشور پیدا نشد.", show_alert=True)
+            return
+        res = insurgency.erupt(country, insurgency.today_tehran(), force=True)
+        db.log_admin_action(admin_id, "owner", "insurgency_force_erupt",
+                            target=f"country:{cid}",
+                            details=f"fighters={res['fighters']}" if res else "failed")
+        await _insur_list_page(query, "⚔️ شورش ترکاند." if res else "شورش ترک نشد (از قبل فعال است یا پرسنل کافی نیست).")
     else:
         return False
     return True
+
+
+async def _insur_list_page(query, notice: str = ""):
+    import html as _html
+    lines = ["🏴 <b>شورش‌های مسلحانه</b>", "━━━━━━━━━━━━━━━━━━"]
+    actives = db.get_active_insurgencies()
+    if actives:
+        for ins in actives:
+            gov = max(1, int(ins.get("active_personnel") or 0))
+            pct = int(ins["fighters"]) * 100 // gov
+            lines.append(
+                f"\n{ins['country_flag']} <b>{_html.escape(str(ins['country_name']))}</b> — "
+                f"{insurgency.PHASE_LABELS.get(int(ins['phase']), '')}\n"
+                f"   شب {int(ins['night'])} | قدرت: {pct}٪ | روحیه: {int(ins['boldness'])}"
+                + (f" | 🎖️ گروگان: {_html.escape(ins['commander_hostage'])}" if ins.get("commander_hostage") else "")
+            )
+    else:
+        lines.append("هیچ شورش فعالی وجود ندارد. 🟢")
+
+    lines.append("\n<b>کشورهای در آستانه‌ی ترکیدن (collapse_risk):</b>")
+    rows: list[list[InlineKeyboardButton]] = []
+    risky = ia.countries_at_risk(limit=10) or []
+    risky_shown = 0
+    for r in risky:
+        if int(r.get("collapse_risk") or 0) != 1:
+            continue
+        cid = int(r["country_id"])
+        if any(int(a["country_id"]) == cid for a in actives):
+            continue
+        risky_shown += 1
+        lines.append(f"• {r.get('country_flag', '')} {_html.escape(str(r.get('country_name')))}")
+        rows.append([InlineKeyboardButton(
+            f"⚔️ ترکاندن دستی شورش در {r.get('country_name')}",
+            callback_data=f"admin:dom_insur_force:{cid}")])
+    if not risky_shown:
+        lines.append("هیچ کشوری الان روی لبه‌ی سقوط نیست. 🟢")
+    rows.append([InlineKeyboardButton("🔙 مدیریت بحران", callback_data="admin:dom")])
+    text = "\n".join(lines)
+    if notice:
+        text = f"✅ {notice}\n\n{text}"
+    await query.edit_message_text(text, reply_markup=_kb(rows), parse_mode="HTML")
 
 
 async def handle_internal_admin_input(update, context, input_type: str, text: str, input_state: dict) -> bool:

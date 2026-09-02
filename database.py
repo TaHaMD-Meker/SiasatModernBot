@@ -1172,6 +1172,40 @@ def init_db():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_vaccine_projects_country ON vaccine_projects(country_id, status)")
 
+    # شورش مسلحانه — مغز «بازیکن بات» در برابر دولت (کلید سراسری: insurgency_enabled)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS insurgencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        country_id INTEGER NOT NULL UNIQUE,
+        fighters INTEGER NOT NULL DEFAULT 0,
+        boldness REAL NOT NULL DEFAULT 55,
+        phase INTEGER NOT NULL DEFAULT 1,
+        night INTEGER NOT NULL DEFAULT 0,
+        last_tick_date TEXT,
+        actions_today INTEGER NOT NULL DEFAULT 0,
+        last_action_date TEXT,
+        neg_cooldown INTEGER NOT NULL DEFAULT 0,
+        truce_betray_night INTEGER,
+        commander_hostage TEXT NOT NULL DEFAULT '',
+        seed_base INTEGER NOT NULL DEFAULT 0,
+        slot_key TEXT,
+        guard_slots INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_insurgencies_country ON insurgencies(country_id)")
+    # مهاجرت‌های افزایشی شورش — بعد از CREATE TABLE تا داخل try/except بی‌صدا نباشند
+    for ins_column, ins_ddl in (
+        ("slot_key", "ALTER TABLE insurgencies ADD COLUMN slot_key TEXT"),
+        ("guard_slots", "ALTER TABLE insurgencies ADD COLUMN guard_slots INTEGER NOT NULL DEFAULT 0"),
+    ):
+        try:
+            cur.execute(ins_ddl)
+        except sqlite3.OperationalError:
+            pass
+
     # مهاجرت‌های افزایشی country_crises
     for column, ddl in (
         ("escalations", "ALTER TABLE country_crises ADD COLUMN escalations INTEGER NOT NULL DEFAULT 0"),
@@ -9639,3 +9673,269 @@ def get_referee_scoreboard() -> list[dict]:
                     "earned": int(row["p"] or 0),
                     "last_active": row["last"] or "—"})
     return sorted(out, key=lambda x: (-x["active"], -x["points"]))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# شورش مسلحانه (insurgency.py) — CRUD و اعمال افکت‌ها
+# ─────────────────────────────────────────────────────────────────────────────
+def get_insurgency(country_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT * FROM insurgencies WHERE country_id = ?", (int(country_id),)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def get_active_insurgencies(limit: int = 200) -> list[dict]:
+    """همه‌ی شورش‌های زنده به‌همراه مشخصات کشورشان (برای پنل ادمین و سقف خبر)."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT i.*, c.name AS country_name, c.flag AS country_flag,
+                   c.player_id, c.active_personnel
+            FROM insurgencies i JOIN countries c ON c.id = i.country_id
+            ORDER BY i.phase DESC, i.fighters DESC LIMIT ?
+            """,
+            (max(1, min(500, int(limit))),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_insurgency(country_id: int, fighters: int, seed_base: int = 0,
+                      now_str: str = None) -> dict:
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO insurgencies (country_id, fighters, boldness, phase, night,
+                                          seed_base, created_at, updated_at)
+                VALUES (?, ?, 55, 1, 0, ?, ?, ?)
+                ON CONFLICT(country_id) DO NOTHING
+                """,
+                (int(country_id), int(fighters), int(seed_base),
+                 now_str or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                 now_str or datetime.datetime.now(datetime.timezone.utc).isoformat()),
+            )
+    finally:
+        conn.close()
+    return get_insurgency(country_id)
+
+
+def delete_insurgency(country_id: int) -> bool:
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM insurgencies WHERE country_id = ?", (int(country_id),))
+            return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def insurgency_apply_effects(country_id: int, *, fighters_delta: int = 0,
+                             boldness_delta: float = 0.0, approval_delta: int = 0,
+                             unrest_floor: float = None, unrest_add: float = 0.0,
+                             personnel_delta: int = 0, treasury_delta: int = 0,
+                             oil_delta_pct: float = 0.0, oil_delta_units: int = 0,
+                             grain_delta_pct: float = 0.0, chips_delta_pct: float = 0.0,
+                             outage_item: str = None, phase: int = None,
+                             night: int = None, last_tick_date: str = None,
+                             actions_count: int = 0, action_date: str = None,
+                             neg_cooldown: int = None,
+                             truce_betray_night: int = None,
+                             slot_key: str = None,
+                             guard_slots: int = None) -> dict:
+    """اعمال یک‌جای همه‌ی افکت‌های شورش روی کشور + به‌روزرسانی ردیف شورش.
+
+    همه‌ی پارامترها اختیاری‌اند؛ فقط همان‌ها اعمال می‌شوند. خروجی برای لاگ.
+    نکته: last_tick_date فقط توسط چرخه‌ی شبانه ست می‌شود تا idempotent بماند؛
+    اقدامات دستی (سرکوب/مذاکره) آن را دست نمی‌زنند.
+    """
+    summary: dict = {}
+    conn = get_connection()
+    try:
+        with conn:
+            # ── کشور
+            row = conn.execute(
+                "SELECT active_personnel, treasury, oil_reserves, grain, microchips"
+                " FROM countries WHERE id = ?", (int(country_id),)).fetchone()
+            if row:
+                new_p = max(0, int(row["active_personnel"] or 0) + int(personnel_delta))
+                new_t = int(row["treasury"] or 0) + int(treasury_delta)
+                new_o = int(float(row["oil_reserves"] or 0) * (1.0 - float(oil_delta_pct or 0))) + int(oil_delta_units or 0)
+                new_o = max(0, new_o)
+                new_g = max(0, int(float(row["grain"] or 0) * (1.0 - float(grain_delta_pct or 0))))
+                new_c = max(0, int(float(row["microchips"] or 0) * (1.0 - float(chips_delta_pct or 0))))
+                conn.execute(
+                    "UPDATE countries SET active_personnel = ?, treasury = ?,"
+                    " oil_reserves = ?, grain = ?, microchips = ? WHERE id = ?",
+                    (new_p, new_t, new_o, new_g, new_c, int(country_id)))
+                summary.update(personnel=new_p, treasury=new_t, oil=new_o)
+
+            # ── رضایت و ناآرامی (country_internal)
+            ci_row = conn.execute(
+                "SELECT unrest FROM country_internal WHERE country_id = ?",
+                (int(country_id),)).fetchone()
+            if ci_row and (unrest_add or unrest_floor is not None):
+                new_unrest = float(ci_row["unrest"] or 0) + float(unrest_add or 0)
+                if unrest_floor is not None:
+                    new_unrest = max(new_unrest, float(unrest_floor))
+                conn.execute("UPDATE country_internal SET unrest = ? WHERE country_id = ?",
+                             (new_unrest, int(country_id)))
+                summary["unrest"] = new_unrest
+
+            if approval_delta:
+                conn.execute(
+                    "UPDATE countries SET approval_rating = MAX(0, MIN(100,"
+                    " COALESCE(approval_rating, 50) + ?)) WHERE id = ?",
+                    (int(approval_delta), int(country_id)))
+
+            # ── خرابکاری: یک واحد از یک سازه خاموش می‌شود
+            if outage_item:
+                conn.execute(
+                    "UPDATE equipment SET inactive_qty = MIN(quantity, COALESCE(inactive_qty,0) + 1)"
+                    " WHERE country_id = ? AND item_key = ?",
+                    (int(country_id), str(outage_item)))
+                summary["outage"] = outage_item
+
+            # ── ردیف شورش
+            sets, args = [], []
+            if fighters_delta:
+                sets.append("fighters = MAX(1, fighters + ?)")
+                args.append(int(fighters_delta))
+            if boldness_delta:
+                sets.append("boldness = MAX(0, MIN(100, boldness + ?))")
+                args.append(float(boldness_delta))
+            if phase is not None:
+                sets.append("phase = ?")
+                args.append(int(phase))
+            if night is not None:
+                sets.append("night = ?")
+                args.append(int(night))
+            if last_tick_date is not None:
+                sets.append("last_tick_date = ?")
+                args.append(last_tick_date)
+            if actions_count:
+                sets.append("actions_today = COALESCE(actions_today,0) + ?")
+                args.append(int(actions_count))
+            if action_date is not None:
+                sets.append("last_action_date = ?")
+                args.append(action_date)
+            if neg_cooldown is not None:
+                sets.append("neg_cooldown = ?")
+                args.append(int(neg_cooldown))
+            if truce_betray_night is not None:
+                sets.append("truce_betray_night = ?")
+                args.append(int(truce_betray_night))
+            if slot_key is not None:
+                sets.append("slot_key = ?")
+                args.append(str(slot_key))
+            if guard_slots is not None:
+                sets.append("guard_slots = ?")
+                args.append(int(guard_slots))
+            if sets:
+                sets.append("updated_at = ?")
+                args.append(datetime.datetime.now(datetime.timezone.utc).isoformat())
+                args.append(int(country_id))
+                conn.execute(f"UPDATE insurgencies SET {', '.join(sets)} WHERE country_id = ?", tuple(args))
+    finally:
+        conn.close()
+    return summary
+
+
+def insurgency_set_fighters(country_id: int, fighters: int):
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE insurgencies SET fighters = MAX(0, ?), updated_at = ? WHERE country_id = ?",
+                         (int(fighters),
+                          datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                          int(country_id)))
+    finally:
+        conn.close()
+
+
+def insurgency_take_hostage(country_id: int) -> str | None:
+    """گروگان‌گیری موقت یک فرمانده (بدون مرگ — قاعده‌ی MVP)."""
+    conn = get_connection()
+    try:
+        with conn:
+            r = conn.execute(
+                "SELECT title FROM country_commanders WHERE country_id = ? AND status = 'active'"
+                " ORDER BY id ASC LIMIT 1", (int(country_id),)).fetchone()
+            if not r:
+                return None
+            conn.execute("UPDATE insurgencies SET commander_hostage = ?, updated_at = ?"
+                         " WHERE country_id = ?",
+                         (r["title"],
+                          datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                          int(country_id)))
+            return r["title"]
+    finally:
+        conn.close()
+
+
+def insurgency_free_hostage(country_id: int) -> str | None:
+    conn = get_connection()
+    try:
+        with conn:
+            r = conn.execute("SELECT commander_hostage FROM insurgencies WHERE country_id = ?",
+                             (int(country_id),)).fetchone()
+            if not r or not r["commander_hostage"]:
+                return None
+            conn.execute("UPDATE insurgencies SET commander_hostage = '', updated_at = ?"
+                         " WHERE country_id = ?",
+                         (datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                          int(country_id)))
+            return r["commander_hostage"]
+    finally:
+        conn.close()
+
+
+def pick_random_structure_item(country_id: int) -> str | None:
+    """یک سازه‌ی فعال تصادفی برای خرابکاری (فقط اقلام فروشگاه = سازه)."""
+    import random as _random
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT item_key FROM equipment WHERE country_id = ? AND quantity > 0",
+            (int(country_id),)).fetchall()
+    finally:
+        conn.close()
+    import config as _config
+    keys = [r["item_key"] for r in rows if r["item_key"] in _config.ALL_SHOP_ITEMS]
+    return _random.choice(keys) if keys else None
+
+
+def country_has_active_war(country_id: int) -> bool:
+    """جنگ خارجی فعال: نبرد ثبت‌شده در ۳ روز اخیر (پیش/بعد از این کشور)."""
+    cutoff = (datetime.datetime.now(datetime.timezone.utc) -
+              datetime.timedelta(days=3)).isoformat()
+    conn = get_connection()
+    try:
+        r = conn.execute(
+            """
+            SELECT 1 FROM war_results
+            WHERE created_at >= ? AND (attacker_id = ? OR defender_id = ?)
+            LIMIT 1
+            """,
+            (cutoff, int(country_id), int(country_id)),
+        ).fetchone()
+        return bool(r)
+    finally:
+        conn.close()
+
+
+def get_internal_state_baseline(country_id: int) -> int:
+    """درآمد مالیاتی پایه (روزانه) از country_internal برای محاسبه‌ی هزینه‌ی مذاکره."""
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT baseline_tax_income FROM country_internal WHERE country_id = ?",
+                         (int(country_id),)).fetchone()
+        return int(r["baseline_tax_income"] or 0) if r else 0
+    finally:
+        conn.close()

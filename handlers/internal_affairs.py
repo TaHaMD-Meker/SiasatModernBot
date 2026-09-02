@@ -11,6 +11,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 import config
 import database as db
 import internal_affairs as ia
+import insurgency
 from utils import format_money, format_number, format_oil
 
 
@@ -381,7 +382,185 @@ def build_approval_view(country: dict, state: dict):
 
 async def _unrest_page(query, country: dict, state: dict):
     text, markup = build_approval_view(country, state)
+    if insurgency.is_enabled():
+        rows = [list(r) for r in markup.inline_keyboard]
+        rows.insert(0, [InlineKeyboardButton("⚔️ وضعیت شورش مسلحانه", callback_data="dom:insur")])
+        markup = InlineKeyboardMarkup(rows)
     await query.edit_message_text(text, reply_markup=markup, parse_mode="HTML")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# شورش مسلحانه — پنل بازیکن
+# ─────────────────────────────────────────────────────────────────────────────
+def _insurgency_text(country: dict) -> tuple[str, list[list[InlineKeyboardButton]]]:
+    ins = insurgency.get(country["id"])
+    if not ins:
+        return ("⚔️ <b>شورش مسلحانه</b>\n━━━━━━━━━━━━━━━━━━\n"
+                "هم‌اکنون شورش مسلحانه‌ای در کشور شما فعال نیست. 🟢",
+                [_back_row()])
+
+    ratio = insurgency.power_ratio(ins, country)
+    used = int(ins.get("actions_today") or 0) if (ins.get("last_action_date") or "") == insurgency.today_tehran() else 0
+    left = max(0, insurgency.MAX_ACTIONS_PER_NIGHT - used)
+
+    lines = [
+        "⚔️ <b>شورش مسلحانه</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"• شب: <b>{int(ins['night'])}</b> | فاز: <b>{insurgency.PHASE_LABELS[insurgency.phase_of(ins)]}</b>",
+        f"• نیروی شورش: <b>{format_number(int(ins['fighters']))}</b> مبارز "
+        f"(≈ {ratio * 100:.0f}٪ پرسنل فعال دولت)",
+        f"• روحیه‌ی شورشیان: <b>{int(ins['boldness'])}</b> از ۱۰۰",
+    ]
+    if ins.get("commander_hostage"):
+        lines.append(f"• 🎖️ گروگان: <b>{ins['commander_hostage']}</b>")
+    if ins.get("neg_cooldown"):
+        lines.append(f"• 🕊️ آتش‌بس: تا <b>{int(ins['neg_cooldown'])}</b> شب دیگر معتبر")
+    guard_left = int(ins.get("guard_slots") or 0)
+    if guard_left:
+        lines.append(f"• 🛡️ تدابیر امنیتی: <b>فعال</b> ({guard_left} دوره‌ی ۶ ساعته باقی‌مانده)")
+    lines.append("")
+    lines.append("⚠️ در هر دوره‌ی پرداخت خزانه (۶ ساعت)، شورشیان ممکن است به انبار غلات، مخازن سوخت، "
+                 "بانک‌ها، کارخانه‌ها یا اردوگاه‌های نظامی حمله کنند.")
+    lines.append(f"عملیات نظامی باقی‌مانده‌ی امشب: <b>{left}</b> از {insurgency.MAX_ACTIONS_PER_NIGHT}")
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if left:
+        for mode in ("light", "wide", "heavy"):
+            prev = insurgency.suppression_preview(country, mode)
+            mark = "✅ نیروی کافی" if prev["enough"] else "⚠️ نیروی ناکافی (بن‌بست)"
+            label = (f"{insurgency.MODE_LABELS[mode]} — {format_number(prev['assigned'])} نفر | "
+                     f"💵 {format_money(prev['cost'])}")
+            cb = f"dom:insur:{mode}:ok" if mode == "heavy" else f"dom:insur:{mode}"
+            rows.append([InlineKeyboardButton(label, callback_data=cb)])
+            rows.append([InlineKeyboardButton(f"   ↳ {mark}", callback_data="ignore")])
+        neg_cost = min(int((country.get("treasury") or 0) * insurgency.NEGOTIATION_TREASURY_PCT),
+                       int((db.get_internal_state_baseline(country["id"]) or 0) * 30 * insurgency.NEGOTIATION_MONTHLY_INCOME_PCT))
+        neg_cb = "dom:insur:neg:ok" if int(ins.get("neg_cooldown") or 0) <= 0 else "ignore"
+        rows.append([InlineKeyboardButton(
+            f"🕊️ مذاکره / عفو — 💵 {format_money(max(1, neg_cost))}", callback_data=neg_cb)])
+        gp = insurgency.guard_preview(country)
+        if gp["active_slots"] < insurgency.GUARD_SLOTS:
+            rows.append([InlineKeyboardButton(
+                f"🛡️ تدابیر امنیتی ({insurgency.GUARD_SLOTS} دوره) — 💵 {format_money(gp['cost'])}",
+                callback_data="dom:insur:guard")])
+    rows.append(_back_row())
+    return "\n".join(lines), rows
+
+
+async def _insurgency_page(query, country: dict, notice: str = ""):
+    text, rows = _insurgency_text(country)
+    if notice:
+        text = f"{notice}\n\n━━━━━━━━━━━━━━━━━━\n{text}"
+    await query.edit_message_text(text, reply_markup=_kb(rows), parse_mode="HTML")
+
+
+def _suppression_result_text(res: dict, country: dict) -> str:
+    mode_l = insurgency.MODE_LABELS[res["mode"]]
+    if res.get("outcome") == "stalemate":
+        head = "⚠️ <b>بن‌بست خونین</b> — نیروی اعزامی برای پیشروی کافی نبود (حداقل ۱٫۶ برابر شورش لازم است)."
+    else:
+        head = "✅ <b>عملیات موفق</b> — مواضع شورشیان در هم شکسته شد."
+        if res["mode"] == "heavy":
+            head += " (سرکوب سنگین: خشم مردم برانگیخت!)"
+
+    hostage = (f"\n🎖️ فرمانده‌ی گروگان‌گرفته‌شده آزاد شد: {res['freed_hostage']}"
+               if res.get("freed_hostage") else "")
+    return (
+        f"{head}\n━━━━━━━━━━━━━━━━━━\n"
+        f"{mode_l} — اعزام: {format_number(res['assigned'])} نفر\n\n"
+        f"🪖 تلفات دولت: {res['gov_kia']} کشته، {format_number(res['injured_gov'])} مجروح\n"
+        f"🏴 تلفات شورش: {res['rebel_kia']} کشته، {format_number(res['injured_rebel'])} مجروح\n"
+        f"👤 غیرنظامیان: {res['civ']} کشته\n\n"
+        f"💵 هزینه: {format_money(res['cost'])} دلار | 🛢️ سوخت: {format_oil(res['fuel'])}{hostage}"
+    )
+
+
+async def _insurgency_action(update, context, query, country: dict, mode: str, confirmed: bool):
+    today = insurgency.today_tehran()
+
+    if mode in ("light", "wide", "heavy") and not confirmed:
+        prev = insurgency.suppression_preview(country, mode)
+        msg = (f"تأیید عملیات؟\n\n{insurgency.MODE_LABELS[mode]}\n"
+               f"اعزام: {format_number(prev['assigned'])} نفر | 💵 {format_money(prev['cost'])} | 🛢️ {format_oil(prev['fuel'])}\n"
+               f"نیروی لازم برای پیشروی: {format_number(prev['required'])} نفر — "
+               + ("نیروی کافی دارید. ✅" if prev["enough"] else "نیروی ناکافی است؛ عملیات به بن‌بست می‌خورد. ⚠️"))
+        rows = [[InlineKeyboardButton("✅ اجرا", callback_data=f"dom:insur:{mode}:ok")],
+                [InlineKeyboardButton("انصراف", callback_data="dom:insur")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="dom:menu")]]
+        await query.edit_message_text(msg, reply_markup=_kb(rows), parse_mode="HTML")
+        return
+
+    if mode == "guard" and not confirmed:
+        gp = insurgency.guard_preview(country)
+        rows = [[InlineKeyboardButton("✅ فعال‌سازی", callback_data="dom:insur:guard:ok")],
+                [InlineKeyboardButton("انصراف", callback_data="dom:insur")]]
+        await query.edit_message_text(
+            "🛡️ <b>تدابیر امنیتی</b>\n━━━━━━━━━━━━━━━━━━\n"
+            f"هزینه: {format_money(gp['cost'])} دلار | مدت: {insurgency.GUARD_SLOTS} دوره‌ی ۶ ساعته\n\n"
+            "گاردهای بیشتر در اهداف حساس مستقر می‌شوند؛ هر حمله‌ی شورشیان با شانس بالایی "
+            "خنثی می‌شود و بی‌خسارت می‌ماند.",
+            reply_markup=_kb(rows), parse_mode="HTML")
+        return
+
+    if mode == "guard":
+        res = insurgency.resolve_guard(country)
+        if not res.get("ok"):
+            reason_fa = {
+                "disabled": "سیستم شورش فعال نیست.",
+                "no_insurgency": "شورشی فعال وجود ندارد.",
+                "already_active": "تدابیر امنیتی از قبل فعال است.",
+                "no_money": "خزانه برای این هزینه کافی نیست.",
+            }.get(res.get("reason"), "امکان اجرا نیست.")
+            await query.answer("❌ " + reason_fa, show_alert=True)
+            return
+        notice = (f"🛡️ <b>تدابیر امنیتی فعال شد</b> — {res['slots']} دوره‌ی ۶ ساعته | "
+                  f"هزینه: {format_money(res['cost'])} دلار")
+        await _insurgency_page(query, db.get_country_by_id(country["id"]) or country, notice)
+        return
+
+    if mode == "neg" and not confirmed:
+        cost = max(1, min(int((country.get("treasury") or 0) * insurgency.NEGOTIATION_TREASURY_PCT),
+                          int((db.get_internal_state_baseline(country["id"]) or 0) * 30 * insurgency.NEGOTIATION_MONTHLY_INCOME_PCT)))
+        rows = [[InlineKeyboardButton("✅ امضای توافق", callback_data="dom:insur:neg:ok")],
+                [InlineKeyboardButton("انصراف", callback_data="dom:insur")]]
+        await query.edit_message_text(
+            "🕊️ <b>مذاکره / عفو عمومی</b>\n━━━━━━━━━━━━━━━━━━\n"
+            f"هزینه: {format_money(cost)} دلار\n\n"
+            "در ازای این مبلغ، بخشی از شورشیان خلع سلاح می‌شوند و ناآرامی فروکش می‌کند.\n"
+            "⚠️ هیچ تضمینی برای پایبندی آن‌ها به آتش‌بس وجود ندارد.",
+            reply_markup=_kb(rows), parse_mode="HTML")
+        return
+
+    if mode == "neg":
+        res = insurgency.resolve_negotiation(country, today)
+        if not res.get("ok"):
+            reason_fa = {
+                "disabled": "سیستم شورش فعال نیست.",
+                "no_insurgency": "شورشی فعال وجود ندارد.",
+                "cooldown": "آتش‌بس فعلی هنوز معتبر است.",
+                "no_money": "خزانه برای این توافق کافی نیست.",
+            }.get(res.get("reason"), "امکان اجرا نیست.")
+            await query.answer("❌ " + reason_fa, show_alert=True)
+            return
+        notice = ("🕊️ <b>توافق امضا شد.</b>\n"
+                  f"هزینه: {format_money(res['cost'])} دلار | قدرت شورش: {res['power_cut_pct']:.0f}٪ کاهش")
+        await _insurgency_page(query, db.get_country_by_id(country["id"]) or country, notice)
+        return
+
+    res = insurgency.resolve_suppression(country, mode, today)
+    if not res.get("ok"):
+        reason_fa = {
+            "disabled": "سیستم شورش فعال نیست.",
+            "no_insurgency": "شورشی فعال وجود ندارد.",
+            "action_limit": "سهمیه‌ی عملیات امشب تمام شده است.",
+            "no_personnel": "پرسنل کافی برای اعزام ندارید.",
+            "no_money": "خزانه برای هزینه‌ی عملیات کافی نیست.",
+            "no_fuel": "ذخایر سوخت کافی نیست.",
+        }.get(res.get("reason"), "امکان اجرا نیست.")
+        await query.answer("❌ " + reason_fa, show_alert=True)
+        return
+    await _insurgency_page(query, db.get_country_by_id(country["id"]) or country,
+                           _suppression_result_text(res, country))
 
 
 async def show_approval_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -725,6 +904,20 @@ async def domestic_callback_handler(update: Update, context: ContextTypes.DEFAUL
     # رضایت عمومی متعلق به این سیستم نیست؛ صفحه‌اش همیشه باید باز شود.
     if data == "dom:unrest":
         await _unrest_page(query, country, ia.get_state(country["id"]) or {} if ia.is_enabled() else {})
+        return
+
+    # شورش مسلحانه: کلید مستقل خودش را دارد.
+    if data == "dom:insur" or data.startswith("dom:insur:"):
+        if not insurgency.is_enabled():
+            await query.answer("🔒 سیستم شورش هنوز توسط مدیریت فعال نشده است.", show_alert=True)
+            return
+        parts = data.split(":")
+        if data == "dom:insur":
+            await _insurgency_page(query, country)
+            return
+        mode = parts[2] if len(parts) > 2 else ""
+        confirmed = len(parts) > 3 and parts[3] == "ok"
+        await _insurgency_action(update, context, query, country, mode, confirmed)
         return
 
     if not ia.is_enabled():

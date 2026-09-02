@@ -22,6 +22,7 @@ import config
 import database as db
 import approval_system
 import news_engine
+import insurgency
 from input_modes import ExclusiveInputUserData, drop_stale_input_modes
 from utils import format_money, format_number, format_oil, get_main_keyboard
 from handlers.nuclear import nuclear_main_menu, nuclear_callback_handler
@@ -253,10 +254,23 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         except Exception:
             logger.exception("Crisis slot cycle failed for country %s", c["id"])
 
+        # ⚔️ حمله‌های دوره‌ای شورش — هم‌ضرب با همین گرید ۶ ساعته‌ی پرداخت خزانه
+        try:
+            if insurgency.is_enabled():
+                _ins_c = db.get_country_by_id(c["id"]) or c
+                _slot_res = insurgency.slot_tick(_ins_c, internal_affairs.slot_key(now))
+                if _slot_res.get("events") and _slot_res.get("news"):
+                    _sev = _slot_res["events"][0]
+                    if insurgency.news_budget_take_slot(internal_affairs.slot_key(now)):
+                        await news_engine.trigger_insurgency_news(context.bot, _sev)
+        except Exception:
+            logger.exception("Insurgency slot tick failed for country %s", c["id"])
+
         app_res = None
         resource_note = ""
         if first_of_day:
             app_res = approval_system.process_daily_approval_and_emigration(c)
+            cycle = None
             # چرخه‌ی جمعیت پویا، مالیات، ناآرامی و بحران‌ها (پشت کلید ادمین، idempotent)
             try:
                 cycle = internal_affairs.run_daily_cycle(db.get_country_by_id(c["id"]) or c, app_res)
@@ -291,6 +305,39 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         await _notify_crisis_owner(context, fresh, news_items)
             except Exception:
                 logger.exception("Internal affairs daily cycle failed for country %s", c["id"])
+            # ⚔️ چرخه‌ی شبانه‌ی شورش مسلحانه (کلید سراسری insurgency_enabled — پیش‌فرض خاموش)
+            try:
+                if cycle:
+                    _ins_today = cycle.get("date")
+                    _ins_fresh = db.get_country_by_id(c["id"]) or c
+                    _ins_res = insurgency.nightly_tick(_ins_fresh, _ins_today, cycle)
+                    if _ins_res.get("report"):
+                        resource_note += "\n\n" + _ins_res["report"]
+                    if _ins_res.get("events") and _ins_res.get("news"):
+                        _evs = _ins_res["events"]
+                        _ev = next((e for e in _evs if e.get("kind") == "finale_win"), _evs[0])
+                        _force = _ev.get("kind") == "finale_win"
+                        if insurgency.news_budget_take(_ins_today, force=_force):
+                            await news_engine.trigger_insurgency_news(context.bot, _ev)
+                    if _ins_res.get("collapse"):
+                        _col = insurgency.execute_collapse(_ins_fresh, _ins_today)
+                        try:
+                            if _ins_fresh.get("player_id"):
+                                await context.bot.send_message(
+                                    int(_ins_fresh["player_id"]),
+                                    "⚫️ سقوط دولت\n\n"
+                                    f"با سقوط آخرین دژهای دولتی، حکومت {_ins_fresh.get('flag')} {_ins_fresh.get('name')} "
+                                    "پایان یافت و کشور وارد دوران گذار شد.\n\n"
+                                    "امکانات مربوط به آن کشور به بایگانی داوری منتقل شد و "
+                                    "شما می‌توانید با /start مجدداً وارد صف انتخاب کشور شوید."
+                                )
+                        except Exception:
+                            logger.exception("Insurgency collapse DM failed for player %s", _ins_fresh.get("player_id"))
+                        logger.warning("INSURGENCY COLLAPSE: country %s (%s) fell; requeued=%s",
+                                       _ins_fresh.get("id"), _ins_fresh.get("name"), _col.get("requeued"))
+                        continue  # این کشور حذف شده؛ ادامه‌ی پردازش این نوبت بی‌معناست
+            except Exception:
+                logger.exception("Insurgency nightly tick failed for country %s", c["id"])
             # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
             try:
                 fuel_need = db.calculate_military_fuel_consumption(c["id"])
