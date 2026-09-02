@@ -81,6 +81,8 @@ def quarantine_country(country_id: int, reason: str = "inactivity") -> tuple[boo
 
 def reclaim_country(player_id: int) -> tuple[bool, str, dict | None]:
     """بازپس‌گیری کشور توسط صاحب قبلی، در بازه‌ی قرنطینه."""
+    if db.is_playing_restricted(player_id):
+        return False, db.PLAY_RESTRICTED_MESSAGE, None
     conn = db.get_connection()
     try:
         row = conn.execute(
@@ -168,6 +170,8 @@ def get_free_countries() -> list[dict]:
 def join_queue(player_id: int, first_name: str = "", username: str = "",
                preferred_country_key: str | None = None, priority: int = 0):
     """افزودن بازیکن به صف. اگر از قبل در صف باشد، جایگاهش حفظ می‌شود."""
+    if db.is_playing_restricted(player_id):
+        return False, db.PLAY_RESTRICTED_MESSAGE, None
     if db.get_country_by_player(player_id):
         return False, "شما هم‌اکنون کشور دارید.", None
     conn = db.get_connection()
@@ -331,6 +335,8 @@ def process_queue(now_dt: datetime.datetime | None = None) -> dict:
 
 def accept_offer(player_id: int) -> tuple[bool, str, dict | None]:
     """پذیرش پیشنهاد توسط بازیکن. اتمیک است تا دو نفر یک کشور نگیرند."""
+    if db.is_playing_restricted(player_id):
+        return False, db.PLAY_RESTRICTED_MESSAGE, None
     entry = get_queue_entry(player_id)
     if not entry or entry["status"] != "offered":
         return False, "پیشنهاد فعالی برای شما وجود ندارد.", None

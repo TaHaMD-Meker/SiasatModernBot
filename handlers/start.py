@@ -322,6 +322,11 @@ async def pick_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("این کشور دیگر در دسترس نیست.", parse_mode="Markdown")
         return
 
+    # داورهای فعال حق گرفتن کشور ندارند (حفظ بی‌طرفی داوری)
+    if db.is_playing_restricted(player_id):
+        await query.edit_message_text(db.PLAY_RESTRICTED_MESSAGE, parse_mode="Markdown")
+        return
+
     # جلوگیری از انتخاب همزمان کشور توسط دو کاربر
     if key in db.get_taken_and_pending_country_keys():
         await query.edit_message_text(

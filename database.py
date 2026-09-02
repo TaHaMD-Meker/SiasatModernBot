@@ -9598,6 +9598,21 @@ def is_referee(user_id: int) -> bool:
     return bool(a and a.get("active") and a.get("role") == ROLE_REFEREE)
 
 
+def is_playing_restricted(user_id: int) -> bool:
+    """این کاربر اجازه ندارد کشور بگیرد؟ داورهای فعال (غیرمالک) محروم‌اند —
+    داور نباید همزمان بازیکن باشد تا بی‌طرفی حفظ شود. مالک همیشه آزاد است."""
+    if is_owner(user_id):
+        return False
+    a = get_game_admin(user_id)
+    return bool(a and a.get("active") and a.get("role") == ROLE_REFEREE)
+
+
+PLAY_RESTRICTED_MESSAGE = (
+    "⚖️ داورهای فعال نمی‌توانند کشور بگیرند.\n\n"
+    "برای بازی، باید ابتدا نقش داوری شما توسط مالک غیرفعال شود."
+)
+
+
 def user_role(user_id: int) -> str | None:
     if is_owner(user_id):
         return ROLE_OWNER

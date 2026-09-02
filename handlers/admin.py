@@ -179,6 +179,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         un_btn,
         [InlineKeyboardButton("🧑‍💼 بازیکنان و کشورها", callback_data="admin:menu_players")],
         [InlineKeyboardButton("⚔️ جنگ و عملیات", callback_data="admin:menu_war")],
+        [InlineKeyboardButton("⚖️ ابزار داوری — ثبت تلفات و گزارش آماده", callback_data="admin:menu_reftools")],
         [InlineKeyboardButton("🌍 سیاست داخلی و جهان", callback_data="admin:menu_world")],
         [InlineKeyboardButton("💰 اقتصاد، بازار و فروشگاه", callback_data="admin:menu_economy")],
         [InlineKeyboardButton("⚙️ تنظیمات و ابزار", callback_data="admin:menu_settings")],
@@ -228,6 +229,22 @@ async def _war_submenu(query):
         query,
         "⚔️ *جنگ و عملیات*\n━━━━━━━━━━━━━━━━━━\n"
         "بررسی رول‌های دریافتی بازیکنان و ثبت تلفات تجهیزات.",
+        rows,
+    )
+
+
+async def _reftools_submenu(query):
+    rows = [
+        [InlineKeyboardButton("✅ ثبت تلفات / اعتبارسنجی گزارش", callback_data="admin:validate")],
+        [InlineKeyboardButton("📦 انبار کشورها — گزارش آماده", callback_data="ref:inv:0:all")],
+        [InlineKeyboardButton("👥 مدیریت داورها", callback_data="admin:referees")],
+    ]
+    await _admin_submenu(
+        query,
+        "⚖️ *ابزار داوری*\n━━━━━━━━━━━━━━━━━━\n"
+        "• *ثبت تلفات:* متن گزارش بازیکن را بفرست تا اعتبارسنجی شود.\n"
+        "• *گزارش آماده:* انبار هر کشور را برای پرامپت داوری خروجی بگیر.\n"
+        "همین ابزارها برای داورها با /referee هم هست.",
         rows,
     )
 
@@ -898,6 +915,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:menu_world":
         await _world_submenu(query)
+
+    elif data == "admin:menu_reftools":
+        await _reftools_submenu(query)
 
     elif data == "admin:menu_economy":
         await _economy_submenu(query)
