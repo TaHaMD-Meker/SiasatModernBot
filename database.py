@@ -4207,6 +4207,23 @@ def get_equipment(country_id: int):
     return {r["item_key"]: r["quantity"] for r in rows}
 
 
+def get_equipment_active(country_id: int):
+    """مقدار «فعال» هر قلم انبار: منهای واحدهای خاموش‌شده‌ی نگهداری (inactive_qty).
+
+    واحد خاموش نه تولید می‌کند نه مصرف؛ مسیرهایی مثل وضعیت برق صنعتی باید
+    بر پایه‌ی همین مقدار باشند وگرنه واحدِ خاموشِ بی‌منبع، جریمه‌ی بی‌برق هم
+    می‌خورد (جریمه‌ی دوگانه).
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT item_key, MAX(0, quantity - COALESCE(inactive_qty, 0)) AS active_qty"
+        " FROM equipment WHERE country_id=? AND quantity > 0", (country_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return {r["item_key"]: int(r["active_qty"] or 0) for r in rows}
+
+
 # ---------- آمار کلی و لاگ‌ها ----------
 
 def get_game_stats():

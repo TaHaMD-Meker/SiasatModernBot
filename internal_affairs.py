@@ -884,7 +884,7 @@ def power_status(country: dict) -> dict:
         "shortage": False,
     }
     try:
-        equipment = db.get_equipment(country["id"]) or {}
+        equipment = db.get_equipment_active(country["id"]) or {}
     except Exception:
         return result
 
@@ -2956,11 +2956,18 @@ def run_daily_cycle(country: dict, approval_result: dict | None = None, now_dt: 
     upkeep_result = {}
     try:
         upkeep_result = db.apply_building_upkeep(cid, today)
-        if upkeep_result.get("shut_down") or upkeep_result.get("reactivated"):
-            db.recalc_country_civ_effects(cid)
-            country = db.get_country_by_id(cid) or country
     except Exception:
         logger.exception("Building upkeep failed for country %s", cid)
+    # بازمحاسبه‌ی شاخص‌های غیرنظامی هر روز و بی‌قید اجرا می‌شود. اگر فقط روی
+    # «تغییر وضعیت» نگهداری انجام شود، ستونی مثل electricity که از مسیر دیگری
+    # (حذف دستی، پکیج زیرساخت، خطای قدیمی) کهنه شده برای همیشه کهنه می‌ماند و
+    # کشور با منابع کامل و سازه‌ی روشن، تا ابد «بی‌برق» گزارش می‌شود — باگ
+    # گزارش‌شده‌ی «سازه‌ها بعد از تأمین نیازها روشن نمی‌شوند».
+    try:
+        db.recalc_country_civ_effects(cid)
+        country = db.get_country_by_id(cid) or country
+    except Exception:
+        logger.exception("Civ effects recalc failed for country %s", cid)
 
     # ── ۰. پیشروی بحران‌های موجود (هشدار → وقوع → بازسازی → پایان)
     # عمداً قبل از محاسبه‌ی جمعیت و مالیات انجام می‌شود تا خسارت بحران در همان
