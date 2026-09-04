@@ -993,6 +993,7 @@ async def show_queue_panel(query, context):
     else:
         lines.append("")
         lines.append("🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
+    kb = []
     if free_list:
         kb.append([InlineKeyboardButton("🧹 پاک‌سازی کامل همه‌ی بی‌صاحب‌ها (ریست فکتوری)",
                                         callback_data="admin:wipe_free_confirm")])
