@@ -1,0 +1,87 @@
+# -*- coding: utf-8 -*-
+"""دکمه‌ی ادمین «پاک‌سازی کامل بی‌صاحب‌ها»: ریست فکتوری کشورهای player_id=0.
+
+کشور بی‌صاحب با تمام میراث (خزانه تغییرکرده، ساختمان، انبار جنگی، بیانیه‌ها،
+فرمانده‌ها) حذف و با مقادیر پیش‌فرض کانفیگ + انبار استاندارد از نو ساخته می‌شود.
+گروهک‌های faction_* و سازمان ملل دست‌نخورده می‌مانند؛ کشور صاحب‌دار هم.
+"""
+import pytest
+
+import config
+import database as db
+import country_queue as cq
+
+
+def _fresh(monkeypatch, tmp_path, name="wipe.db"):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / name))
+    db.init_db()
+
+
+def test_ownerless_countries_get_factory_reset(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    # بی‌صاحب آلوده: خزانه/انبار/ساختمان/بیانیه/فرمانده تغییرکرده
+    cid = db.create_country(7001, "ایران", "🇮🇷", country_key="iran")
+    db.update_country_field(cid, "player_id", 0)
+    db.update_country_field(cid, "treasury", 123)
+    conn = db.get_connection()
+    with conn:
+        conn.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'small_factory', 3)", (cid,))
+        conn.execute(
+            "INSERT INTO daily_statements (country_id, player_id, statement_type, content, created_at, statement_date)"
+            " VALUES (?, 7001, 'statement', 'متن', '2026-09-05T00:00:00+00:00', '2026-09-05')", (cid,))
+    conn.close()
+
+    ok, count, msg = db.hard_reset_ownerless_countries(actor="test")
+    assert ok and count >= 1
+
+    fresh = db.get_country_by_key("iran")
+    assert fresh and fresh["player_id"] == 0, "بازسازی‌شده باید همچنان بی‌صاحب و «باز» باشد"
+    expected_treasury = config.COUNTRY_STARTING_OVERRIDES.get(
+        "iran", config.STARTING_VALUES)["treasury"]
+    assert fresh["treasury"] == expected_treasury, "خزانه باید پیش‌فرض فکتوری باشد"
+    assert fresh["warheads"] == 0
+
+    # ساختمان‌ها و بیانیه‌های میراثی پاک شده‌اند
+    conn = db.get_connection()
+    eq = conn.execute("SELECT COUNT(*) AS n FROM equipment WHERE country_id = ?",
+                      (fresh["id"],)).fetchone()["n"]
+    stmts = conn.execute("SELECT COUNT(*) AS n FROM daily_statements WHERE country_id = ?",
+                         (fresh["id"],)).fetchone()["n"]
+    conn.close()
+    assert eq == 0
+    assert stmts == 0
+
+    # انبار استاندارد سید شده (شاهد-۱۳۶ ایران)
+    assets = db.get_country_assets(fresh["id"])
+    assert assets, "انبار کشور بازسازی‌شده نباید خالی باشد"
+    assert all(int(a["amount"] or 0) >= 0 for a in assets)
+
+
+def test_owned_faction_and_un_are_untouched(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path, "wipe2.db")
+    owned_id = db.create_country(7002, "عراق", "🇮🇶", country_key="iraq")
+    faction_id = db.create_country(7003, "گروهک", "🏳️", country_key="faction_x")
+    un_id = db.create_country(7004, "سازمان ملل", "🇺🇳", country_key="un")
+
+    ok, count, msg = db.hard_reset_ownerless_countries(actor="test")
+    assert ok and count == 0, "اگر همه صاحب دارند کاری نکند"
+
+    # بی‌صاحب کن و ریست کن
+    db.update_country_field(owned_id, "player_id", 0)
+    ok, count, msg = db.hard_reset_ownerless_countries(actor="test")
+    assert ok and count == 1
+
+    assert db.get_country_by_id(faction_id) is not None, "گروهک نباید حذف شود"
+    assert db.get_country_by_id(un_id) is not None, "سازمان ملل نباید حذف شود"
+    assert db.get_country_by_id(owned_id) is None, "بی‌صاحب باید حذف و بازسازی شود"
+
+
+def test_panel_has_wipe_button_with_confirm_step():
+    src = open("handlers/admin.py", encoding="utf-8").read()
+    assert "admin:wipe_free_confirm" in src, "دکمه‌ی پاک‌سازی باید در پنل بی‌صاحب‌ها باشد"
+    confirm = src.index("async def wipe_free_confirm")
+    assert "غیرقابل بازگشت" in src[confirm:confirm + 1500], "تایید مخرب بودن الزامی است"
+    assert "admin:wipe_free_run" in src
+    run_idx = src.index('data == "admin:wipe_free_run"')
+    window = src[run_idx:run_idx + 300]
+    assert "hard_reset_ownerless_countries" in window, "اجرای واقعی باید تابع ریست را صدا بزند"

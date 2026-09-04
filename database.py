@@ -9698,6 +9698,88 @@ def reset_all_countries_for_new_season(actor: str = "system") -> tuple[bool, int
         conn.close()
 
 
+def hard_reset_ownerless_countries(actor: str = "admin") -> tuple[bool, int, str]:
+    """حذف کامل و بازسازی فکتوری همه‌ی کشورهای بی‌صاحب (دستور ادمین).
+
+    هدف: کشورهای player_id=0 (خلع‌شده‌های ساعت ۰۰:۰۰ یا لغو مالکیت) که جلوی
+    شناسه‌شان خط تیره است — با تمام میراث جنگی/اقتصادی پاک و با مقادیر پیش‌فرض
+    کانفیگ و انبار استاندارد از نو ساخته می‌شوند تا مانند روز اول «باز» باشند.
+    گروهک‌ها (faction_*) و نقش سازمان ملل دست‌نخورده می‌مانند.
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, country_key FROM countries"
+                " WHERE (player_id = 0 OR player_id IS NULL)"
+                " AND country_key != 'un' AND country_key NOT LIKE 'faction_%'")
+            rows = cur.fetchall()
+            if not rows:
+                return True, 0, "هیچ کشور بی‌صاحبی برای پاک‌سازی کامل وجود ندارد."
+            ids = [r["id"] for r in rows]
+            keys = [r["country_key"] for r in rows]
+            ph = ",".join("?" * len(ids))
+
+            # پاک‌سازی تمام ردیف‌های وابسته به این کشورها (نسخه‌ی هدفمند ریست فصل)
+            cur.execute(f"DELETE FROM country_assets WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM equipment WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM base_assets WHERE base_id IN (SELECT id FROM foreign_bases WHERE owner_id IN ({ph}) OR host_id IN ({ph}))", ids + ids)
+            cur.execute(f"DELETE FROM foreign_bases WHERE owner_id IN ({ph}) OR host_id IN ({ph})", ids + ids)
+            cur.execute(f"DELETE FROM base_requests WHERE owner_id IN ({ph}) OR host_id IN ({ph})", ids + ids)
+            cur.execute(f"DELETE FROM naval_blockades WHERE blockader_id IN ({ph}) OR target_id IN ({ph})", ids + ids)
+            cur.execute(f"DELETE FROM diplomatic_relations WHERE country1_id IN ({ph}) OR country2_id IN ({ph})", ids + ids)
+            cur.execute(f"DELETE FROM loss_reports WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM pending_roleplays WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM daily_statements WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM transactions WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM country_commanders WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM intel_operations_history WHERE attacker_id IN ({ph}) OR target_id IN ({ph})", ids + ids)
+            cur.execute(f"DELETE FROM battle_pass WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM country_internal WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM internal_daily_log WHERE country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM un_votes WHERE voter_country_id IN ({ph})", ids)
+            cur.execute(f"DELETE FROM war_results WHERE attacker_id IN ({ph}) OR defender_id IN ({ph})", ids + ids)
+
+            # حذف خود کشورها و ساخت مجدد فکتوری (create_country انبار استاندارد را سید می‌زند)
+            cur.execute(f"DELETE FROM countries WHERE id IN ({ph})", ids)
+
+        rebuilt = 0
+        names = []
+        for key in keys:
+            meta = config.COUNTRIES.get(key)
+            if not meta:
+                continue
+            flag = meta.get("flag", "🏳️")
+            name = str(meta.get("name", key))
+            if flag and flag in name:
+                name = name.replace(flag, "").strip()
+            new_id = create_country(0, name, flag, country_key=key)
+            if new_id:
+                rebuilt += 1
+                names.append(f"{flag} {name}")
+
+        # ناوگان‌های تازه‌ریست ممکن است کنترل تنگه‌ای را که باز مانده دوباره واجد کنند؛
+        # برعکس، وضعیت‌های بسته‌ی میراثی هم اینجا تمیز می‌شوند.
+        try:
+            auto_check_and_reopen_straits_if_navy_destroyed()
+        except Exception:
+            pass
+
+        try:
+            add_log(actor, "ownerless_hard_reset",
+                    f"count={rebuilt} | countries={','.join(keys)}")
+        except Exception:
+            pass
+        return True, rebuilt, (f"{rebuilt} کشور بی‌صاحب کاملاً پاک و فکتوری بازسازی شد: "
+                               + "، ".join(names[:20]) + ("…" if len(names) > 20 else ""))
+    except Exception as e:
+        logger.warning(f"Error in hard_reset_ownerless_countries: {e}")
+        return False, 0, f"خطا در پاک‌سازی کامل بی‌صاحب‌ها: {e}"
+    finally:
+        conn.close()
+
+
 # ---------- ابزارهای داوری: خروجی انبار و اعتبارسنجی گزارش ----------
 
 def export_country_inventory_text(country_id: int) -> str:

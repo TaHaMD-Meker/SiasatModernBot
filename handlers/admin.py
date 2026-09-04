@@ -993,7 +993,35 @@ async def show_queue_panel(query, context):
     else:
         lines.append("")
         lines.append("🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
-    kb = [[InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")]]
+    if free_list:
+        kb.append([InlineKeyboardButton("🧹 پاک‌سازی کامل همه‌ی بی‌صاحب‌ها (ریست فکتوری)",
+                                        callback_data="admin:wipe_free_confirm")])
+    kb.append([InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")])
+    await safe_edit_or_reply(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+
+async def wipe_free_confirm(query, context):
+    """تایید پاک‌سازی کامل کشورهای بی‌صاحب — مخرب؛ دوبار تایید می‌خواهد."""
+    import country_queue as cq
+    free_list = cq.get_free_countries(200)
+    if not free_list:
+        await query.answer("هیچ کشور بی‌صاحبی وجود ندارد.", show_alert=True)
+        await show_queue_panel(query, context)
+        return
+    lines = [
+        "🧹 <b>پاک‌سازی کامل کشورهای بی‌صاحب</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"تعداد: <b>{len(free_list)}</b> کشور",
+        "",
+        "این کشورها با <b>تمام دارایی، ساختمان، تاریخچه و خسارات جنگی</b> حذف و با "
+        "<b>مقادیر پیش‌فرض کانفیگ و انبار استاندارد</b> از نو ساخته می‌شوند (ریست فکتوری).",
+        "",
+        "<b>این عملیات غیرقابل بازگشت است.</b> گروهک‌ها و سازمان ملل دست‌نخورده می‌مانند.",
+    ]
+    kb = [
+        [InlineKeyboardButton("💣 بله، همه را پاک و بازسازی کن", callback_data="admin:wipe_free_run")],
+        [InlineKeyboardButton("🔙 انصراف", callback_data="admin:queue")],
+    ]
     await safe_edit_or_reply(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
@@ -1466,6 +1494,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.set_setting(lock_key, new_val)
         await query.answer("وضعیت قفل با موفقیت تغییر یافت!", show_alert=True)
         await admin_locks_menu(query, context)
+
+    elif data == "admin:wipe_free_confirm":
+        await wipe_free_confirm(query, context)
+
+    elif data == "admin:wipe_free_run":
+        ok, count, msg = db.hard_reset_ownerless_countries(actor=f"admin:{user_id}")
+        await query.answer(("✅ " if ok else "❌ ") + msg, show_alert=True)
+        await show_queue_panel(query, context)
 
     elif data == "admin:stmt_exempt":
         await admin_stmt_exempt_menu(query, context, page=0)
