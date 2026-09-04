@@ -64,57 +64,20 @@ def test_owner_never_restricted_even_with_referee_row(monkeypatch, tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# مسیر ۱: صف کشور
+# صف کشور حذف شده — داور فقط در مسیر درخواست /start کنترل می‌شود
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_referee_cannot_join_queue(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path)
-    db.add_referee(91_001, added_by=1)
-    ok, msg, entry = cq.join_queue(91_001, first_name="داور")
-    assert ok is False and entry is None
-    assert "داور" in msg
+def test_referee_cannot_request_country_in_pick_flow():
+    """مسیر pick_country باید داور محروم (is_playing_restricted) را رد کند."""
+    src = open("handlers/start.py", encoding="utf-8").read()
+    pick = src.index("async def pick_country")
+    window = src[pick:pick + 6000]
+    assert "is_playing_restricted" in window
+    assert "PLAY_RESTRICTED_MESSAGE" in window
 
 
-def test_after_removal_referee_can_join(monkeypatch, tmp_path):
+def test_after_removal_referee_restriction_lifts(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "refban2.db")
     db.add_referee(91_002, added_by=1)
     db.remove_referee(91_002, removed_by=1)
-    ok, _msg, _entry = cq.join_queue(91_002, first_name="داور سابق")
-    assert ok is True
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# مسیر ۲: پذیرش پیشنهاد کشور
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_referee_cannot_accept_offer(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path, "refban3.db")
-    cid = _country(key="offeredland")
-    db.add_referee(91_003, added_by=1)
-    # پیشنهاد معلق دستی برای داور می‌سازیم (انگار قبل از داوری شده)
-    conn = db.get_connection()
-    with conn:
-        conn.execute(
-            "INSERT INTO country_queue (player_id, first_name, preferred_country_key,"
-            " status, offered_country_id, offer_expires_at, joined_at)"
-            " VALUES (91_003, 'داور', 'offeredland', 'offered', ?, ?, ?)",
-            (cid, (datetime.datetime.now(datetime.timezone.utc)
-                   + datetime.timedelta(hours=24)).isoformat(),
-             datetime.datetime.now(datetime.timezone.utc).isoformat()))
-    ok, msg, country = cq.accept_offer(91_003)
-    assert ok is False and country is None
-    assert "داور" in msg
-    assert db.get_country_by_id(cid)["player_id"] == 0, "کشور نباید منتقل شده باشد"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# مسیر ۳: استرداد کشور قرنطینه‌ای
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_referee_cannot_reclaim_quarantined_country(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path, "refban4.db")
-    _country(player_id=91_004, key="oldland", quarantine=True)
-    db.add_referee(91_004, added_by=1)
-    ok, msg, _country_row = cq.reclaim_country(91_004)
-    assert ok is False
-    assert "قرنطینه" in msg  # بازپس‌گیری برای همه‌ی نقش‌ها منسوخ است
+    assert db.is_playing_restricted(91_002) is False

@@ -383,10 +383,7 @@ def test_finale_win_leads_to_collapse(monkeypatch, tmp_path):
     collapsed = insurgency.execute_collapse(db.get_country_by_id(cid), d.isoformat())
     assert db.get_country_by_id(cid) is None
     assert insurgency.get(cid) is None
-    assert collapsed["requeued"]
-    import country_queue
-    entry = country_queue.get_queue_entry(pid)
-    assert entry and entry["status"] == "waiting"
+    assert collapsed["requeued"] is False  # صف کشور حذف شده است
     # لاگ سقوط برای داوری
     logs = db.get_admin_actions(limit=50)
     assert any(a["action"] == "insurgency_collapse" for a in logs)

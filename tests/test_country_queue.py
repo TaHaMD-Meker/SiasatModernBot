@@ -1,248 +1,62 @@
 # -*- coding: utf-8 -*-
-"""تست‌های قرنطینه‌ی کشور رهاشده و صف انتظار."""
+"""استخر واگذاری بدون صف: خلع = آزاد فوری؛ صف انتظار کلاً حذف شده است.
 
-import datetime
+مسیر گرفتن کشور فقط: ‎/start ← pick_country ← درخواست معلق ← تایید ادمین.
+"""
+import pytest
 
 import config
-import country_queue as cq
 import database as db
+import country_queue as cq
 
 
-def _fresh(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "queue.db"))
+def _fresh(monkeypatch, tmp_path, name="cq.db"):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / name))
     db.init_db()
-    return db
 
 
-def _country(database, player_id, key="iran", name="ایران"):
-    return database.create_country(player_id, name, "🏳️", country_key=key)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# قرنطینه
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────── رفتار هسته‌ای: خلع = آزاد فوری با حفظ دارایی ─────────────
 
 def test_revocation_frees_country_instantly_keeping_assets(monkeypatch, tmp_path):
-    """قرنطینه حذف شده: خلع = آزاد فوری به استخر واگذاری، دارایی‌ها سالم."""
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 5001)
-    database.add_equipment(cid, "small_factory", 7)
-    database.update_country_field(cid, "treasury", 42_000_000)
-    database.add_transaction(cid, "daily_income", "واریز", 1_000_000)
+    _fresh(monkeypatch, tmp_path)
+    cid = db.create_country(5001, "ایران", "🇮🇷", country_key="iran")
+    conn = db.get_connection()
+    with conn:
+        conn.execute("UPDATE countries SET treasury = 7_000_000 WHERE id = ?", (cid,))
+    conn.close()
 
-    ok, _msg = cq.quarantine_country(cid)
+    ok, _msg = cq.quarantine_country(cid, reason="inactivity")
     assert ok
 
-    country = database.get_country_by_id(cid)
-    assert country is not None, "کشور نباید حذف شود"
-    assert country["player_id"] == 0
-    assert country["treasury"] == 42_000_000
-    assert (database.get_equipment(cid) or {}).get("small_factory") == 7
-    # بدون هیچ دوره‌ی انتظاری — همان لحظه در استخر آزاد است
+    country = db.get_country_by_id(cid)
+    assert country["player_id"] == 0 and country["treasury"] == 7_000_000, \
+        "خلع باید فوری باشد و دارایی دست‌نخورده بماند"
     assert any(c["id"] == cid for c in cq.get_free_countries())
-    assert cq.get_quarantined_countries() == []
 
 
 def test_reclaim_is_retired():
-    ok, msg, _c = cq.reclaim_country(999999)
-    assert not ok and "قرنطینه" in msg
+    ok, msg, row = cq.reclaim_country(123)
+    assert ok is False and row is None and "قرنطینه" in msg
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# صف
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────── صف دیگر وجود ندارد ─────────────
 
-def test_queue_is_first_in_first_out(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path)
-    for player in (6001, 6002, 6003):
-        assert cq.join_queue(player)[0]
-    assert cq.queue_position(6001) == 1
-    assert cq.queue_position(6003) == 3
-
-
-def test_paid_priority_jumps_the_queue(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path)
-    for player in (6101, 6102, 6103):
-        cq.join_queue(player)
-    assert cq.queue_position(6103) == 3
-
-    assert cq.set_priority(6103, cq.PRIORITY_PAID)
-    assert cq.queue_position(6103) == 1
-    assert cq.queue_position(6101) == 2
-
-
-def test_a_player_with_a_country_cannot_join(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    _country(database, 6201)
-    ok, message, _e = cq.join_queue(6201)
-    assert not ok and "کشور دارید" in message
-
-
-def test_free_country_is_offered_to_the_first_in_line(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 6301)
-    cq.quarantine_country(cid)   # خلع → همان لحظه آزاد (قرنطینه حذف شده)
-    cq.join_queue(6401)
-    cq.join_queue(6402)
-
-    result = cq.process_queue()
-    assert len(result["released"]) == 0
-    assert len(result["offered"]) == 1
-    assert result["offered"][0]["entry"]["player_id"] == 6401
-
-    entry = cq.get_queue_entry(6401)
-    assert entry["status"] == "offered" and entry["offered_country_id"] == cid
-    assert cq.get_queue_entry(6402)["status"] == "waiting"
-
-
-def test_accepting_an_offer_hands_over_the_country(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 6501)
-    database.update_country_field(cid, "treasury", 77_000_000)
-    cq.quarantine_country(cid)
-    cq.join_queue(6601)
-    cq.process_queue(cq._now() + datetime.timedelta(days=3))
-
-    ok, message, country = cq.accept_offer(6601)
-    assert ok, message
-    assert country["player_id"] == 6601
-    assert country["treasury"] == 77_000_000, "کشور با دارایی‌هایش تحویل می‌شود"
-    assert cq.get_queue_entry(6601)["status"] == "done"
-
-
-def test_two_players_cannot_take_the_same_country(monkeypatch, tmp_path):
-    """خطرناک‌ترین حالت: پذیرش همزمان دو نفر روی یک کشور."""
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 6701)
-    cq.quarantine_country(cid)
-    cq.join_queue(6801)
-    cq.join_queue(6802)
-    cq.process_queue(cq._now() + datetime.timedelta(days=3))
-
-    # هر دو را دستی روی همان کشور «پیشنهادشده» می‌کنیم تا رقابت شبیه‌سازی شود
-    conn = database.get_connection()
-    with conn:
-        conn.execute(
-            "UPDATE country_queue SET status = 'offered', offered_country_id = ?, offer_expires_at = ?",
-            (cid, cq._iso(cq._now() + datetime.timedelta(hours=6))),
-        )
-    conn.close()
-
-    first_ok, _m1, _c1 = cq.accept_offer(6801)
-    second_ok, message, _c2 = cq.accept_offer(6802)
-    assert first_ok
-    assert not second_ok, "نفر دوم نباید همان کشور را بگیرد"
-    assert "در دسترس نیست" in message
-    assert database.get_country_by_id(cid)["player_id"] == 6801
-    assert cq.get_queue_entry(6802)["status"] == "waiting"
-
-
-def test_an_unanswered_offer_expires_and_frees_the_queue(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 6901)
-    cq.quarantine_country(cid)
-    cq.join_queue(7001)
-    cq.join_queue(7002)
-    start = cq._now() + datetime.timedelta(days=3)
-    cq.process_queue(start)
-    assert cq.get_queue_entry(7001)["status"] == "offered"
-
-    later = start + datetime.timedelta(hours=cq.OFFER_HOURS + 1)
-    result = cq.process_queue(later)
-    assert result["expired"], "پیشنهاد بی‌پاسخ باید منقضی شود"
-    assert cq.get_queue_entry(7002)["status"] == "offered", "کشور به نفر بعدی می‌رسد"
-
-
-def test_preferred_country_is_honoured_when_available(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    iran = _country(database, 7101, key="iran", name="ایران")
-    japan = _country(database, 7102, key="japan", name="ژاپن")
-    cq.quarantine_country(iran)
-    cq.quarantine_country(japan)
-    cq.join_queue(7201, preferred_country_key="japan")
-
-    cq.process_queue(cq._now() + datetime.timedelta(days=3))
-    entry = cq.get_queue_entry(7201)
-    assert entry["offered_country_id"] == japan, "کشور دلخواه باید اولویت داشته باشد"
-
-
-def test_declining_returns_the_player_to_the_queue(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 7301)
-    cq.quarantine_country(cid)
-    cq.join_queue(7401)
-    cq.process_queue(cq._now() + datetime.timedelta(days=3))
-
-    assert cq.decline_offer(7401)
-    entry = cq.get_queue_entry(7401)
-    assert entry["status"] == "waiting" and entry["offered_country_id"] is None
-
-
-def test_inactivity_job_frees_instead_of_deleting():
-    """جاب نیمه‌شب باید مالکیت را لغو کند نه حذف؛ قرنطینه دیگر در کار نیست."""
+def test_queue_system_is_gone():
+    src = open("country_queue.py", encoding="utf-8").read()
+    for gone in ("join_queue", "process_queue", "accept_offer", "decline_offer",
+                 "get_queue_entry", "queue_position", "OFFER_HOURS", "PRIORITY_PAID"):
+        assert gone not in src, f"{gone} باید از سیستم حذف شده باشد"
     src = open("main.py", encoding="utf-8").read()
-    assert "quarantine_country(c_id" in src
-    assert "QUARANTINE_HOURS" not in src, "منسوخ — پیام باید آزاد فوری بگوید"
-    assert "استخر واگذاری" in src
+    assert "handlers.queue" not in src and "country_queue_job" not in src, \
+        "هندلر و جاب صف باید از main حذف شده باشند"
+    assert "/queue" not in src or "صف کشور حذف شد" in src
 
 
-def test_admin_panel_exposes_quick_approve_and_queue():
-    import inspect
-    from handlers import admin as admin_handlers
-
-    # «صف انتظار» حالا در زیرمنوی «بازیکنان و کشورها» است
-    players = inspect.getsource(admin_handlers._players_submenu)
-    assert "admin:queue" in players
-    handler = inspect.getsource(admin_handlers.admin_callback_handler)
-    assert "admin:quick_approve" in handler
-    assert "admin:queue_run" in handler
-
-
-def test_a_no_show_goes_to_the_back_of_the_queue(monkeypatch, tmp_path):
-    """رگرسیون: بازیکن بی‌پاسخ بلافاصله دوباره اول صف می‌شد و صف قفل می‌ماند."""
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 7501)
-    cq.quarantine_country(cid)
-    cq.join_queue(7601)
-    cq.join_queue(7602)
-
-    start = cq._now() + datetime.timedelta(days=3)
-    cq.process_queue(start)
-    assert cq.get_queue_entry(7601)["status"] == "offered"
-
-    cq.process_queue(start + datetime.timedelta(hours=cq.OFFER_HOURS + 1))
-    assert cq.get_queue_entry(7602)["status"] == "offered", "نوبت باید به نفر بعدی برسد"
-    assert cq.get_queue_entry(7601)["priority"] < cq.get_queue_entry(7602)["priority"]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ضد «کشور خلع‌شده بی‌صاحب می‌ماند»: پیوستن به صف باید همان لحظه موتور صف را
-# روشن کند تا کشور آزاد (از جمله خلع‌شده/قرنطینه‌گذشته) فوراً پیشنهاد شود.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_join_flow_offers_free_country_immediately(monkeypatch, tmp_path):
-    database = _fresh(monkeypatch, tmp_path)
-    cid = _country(database, 6001, key="instant_free_c", name="کشور آزاد")
-    cq.quarantine_country(cid)   # مثل چرخه‌ی کامل: قرنطینه → انقضا → آزاد
-    cq.release_expired_quarantines(cq._now() + datetime.timedelta(days=2))
-    assert len(cq.get_free_countries()) == 1
-    assert cq.queue_stats()["waiting"] == 0
-
-    # بازیکن به صف می‌پیوندد (همان کاری که q:join انجام می‌دهد)…
-    cq.join_queue(6002, first_name="ب", username="b")
-    assert cq.queue_stats()["waiting"] == 1
-    # …و پردازش فوری (که حالا در هندلر q:join صدا زده می‌شود) باید
-    # بلافاصله پیشنهاد بسازد — نه اینکه تا جاب بعدی صبر کند.
-    result = cq.process_queue()
-    assert len(result["offered"]) == 1
-    entry = cq.get_queue_entry(6002)
-    assert entry["status"] == "offered"
-    assert entry["offered_country_id"] == cid
-
-
-def test_source_guard_join_triggers_process_and_refresh():
-    src = open("handlers/queue.py", encoding="utf-8").read()
-    idx = src.index('if data == "q:join":')
-    window = src[idx:src.index("elif data", idx)]
-    assert "process_queue" in window, "q:join باید فوراً موتور صف را اجرا کند"
-    assert "queue_status(update, context)" in window, "بعد از join باید صفحه رندر شود"
+def test_player_country_request_path_has_guards():
+    """مسیر جدید گرفتن کشور باید هم بن‌شده و هم داور را رد کند."""
+    src = open("handlers/start.py", encoding="utf-8").read()
+    pick = src.index("async def pick_country")
+    window = src[pick:pick + 6000]
+    assert "is_banned" in window, "مسیر گرفتن کشور باید کاربر مسدود را رد کند"
+    assert "is_playing_restricted" in window, "مسیر گرفتن کشور باید داور محروم را رد کند"
+    assert "get_taken_and_pending_country_keys" in window, "جلوگیری از درخواست همزمان دو نفر"

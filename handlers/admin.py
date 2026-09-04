@@ -138,7 +138,7 @@ def _admin_pending_counts() -> dict:
         pass
     try:
         import country_queue as cq
-        counts["quarantined"] = cq.queue_stats().get("quarantined", 0)
+        counts["quarantined"] = len(cq.get_free_countries())
     except Exception:
         pass
     return counts
@@ -210,7 +210,7 @@ async def _players_submenu(query):
         [InlineKeyboardButton(f"💳 فیش‌های پرداخت تومانی ({counts['payments']})", callback_data="admin:toman_requests")],
         [InlineKeyboardButton("📢 رصد بیانیه‌ها و توییت‌ها (۲۴ ساعت اخیر)", callback_data="admin:recent_stmts:0:24h")],
         [InlineKeyboardButton("📋 مدیریت و لیست کشورها", callback_data="admin:list:0")],
-        [InlineKeyboardButton(f"⏳ صف انتظار و کشورهای قرنطینه ({counts['quarantined']})", callback_data="admin:queue")],
+        [InlineKeyboardButton(f"🌍 کشورهای بی‌صاحب ({counts['quarantined']})", callback_data="admin:queue")],
         [InlineKeyboardButton("🔎 رصد و پایش فعالیت بازیکنان", callback_data="admin:monitor_menu")],
         [InlineKeyboardButton("🚨 رادار ضدتقلب و تراکنش‌های مشکوک", callback_data="admin:anti_cheat_radar")],
     ]
@@ -974,38 +974,26 @@ async def menu_single_asset_item(query, country_id: int, equipment_key: str):
 # ==================== پردازش CallbackQuery های پنل ادمین ====================
 
 async def show_queue_panel(query, context):
-    """نمایش پنل صف انتظار و قرنطینه (مشترک بین روتر و آزادسازی‌ها)."""
+    """پنل کشورهای بی‌صاحب (صف انتظار حذف شده — گرفتن کشور فقط با درخواست /start و تایید ادمین)."""
     import country_queue as cq
-    stats = cq.queue_stats()
-    waiting = cq.get_queue("waiting", 10)
-    quarantined = cq.get_quarantined_countries(10)
+    free_list = cq.get_free_countries(100)
     lines = [
-        "⏳ <b>صف انتظار و قرنطینه</b>",
+        "🌍 <b>کشورهای بی‌صاحب</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"👥 در صف: <b>{stats['waiting']}</b>",
-        f"🎯 پیشنهاد فعال: <b>{stats['offered']}</b>",
-        f"✅ واگذارشده: <b>{stats['done']}</b>",
-        f"🌍 کشور آزاد: <b>{stats['free_countries']}</b>",
-        f"⏳ در قرنطینه: <b>0</b> (سیستم حذف شده)",
+        f"در استخر واگذاری: <b>{len(free_list)}</b> کشور",
+        "",
+        "<i>صف انتظار حذف شده است؛ بازیکن از /start کشور را انتخاب می‌کند و درخواستش برای شما می‌آید (تایید/رد در بخش درخواست‌ها).</i>",
     ]
-    if waiting:
-        lines.append("\n<b>نفرات اول صف</b>")
-        for index, entry in enumerate(waiting, 1):
-            tag = f"@{entry['username']}" if entry.get("username") else str(entry["player_id"])
-            star = " ⭐️" if entry["priority"] > 0 else ""
-            lines.append(f"{index}. {tag}{star}")
-    # قرنطینه لغو شده — خلع = آزاد فوری. آمار قدیمی قرنطینه صفر نمایش داده می‌شود.
-    kb = []
-    free_list = cq.get_free_countries(10)
     if free_list:
-        lines.append("\n<b>🌍 کشورهای بی‌صاحبِ آماده‌ی واگذاری</b>")
+        lines.append("")
+        lines.append("<b>🌍 کشورهای بی‌صاحبِ آماده‌ی واگذاری</b>")
         for country in free_list:
             pid = country.get("player_id") or 0
             lines.append(f"• {country.get('flag','')} {country.get('name','')} (ID: {pid})")
     else:
-        lines.append("\n🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
-    kb.append([InlineKeyboardButton("▶️ اجرای فوری صف", callback_data="admin:queue_run")])
-    kb.append([InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")])
+        lines.append("")
+        lines.append("🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
+    kb = [[InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin:menu")]]
     await safe_edit_or_reply(query, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
@@ -3199,14 +3187,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("سیستم قرنطینه حذف شده است — کشورهای لغوشده بلافاصله آزاد می‌شوند.", show_alert=True)
         return
 
-    elif data == "admin:queue_run":
-        import country_queue as cq
-        result = cq.process_queue()
-        await query.answer(
-            f"آزادشده: {len(result['released'])} | پیشنهاد جدید: {len(result['offered'])} | منقضی: {len(result['expired'])}",
-            show_alert=True,
-        )
-        return
 
     elif data.startswith("admin:quick_approve:"):
         # تأیید سریع بدون باز کردن کارت — وقتی ده‌ها درخواست در صف است

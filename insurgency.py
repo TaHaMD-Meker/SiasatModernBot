@@ -686,12 +686,8 @@ def execute_collapse(country: dict, today_str: str) -> dict:
                 # بازیکن هنوز نهاد دارد (مثلاً بازوی نیابتی) — سوییچ به اولین نهاد
                 db.set_setting(f"active_entity_{int(pid)}", str(remaining[0]["id"]))
             else:
-                import country_queue
-                country_queue.join_queue(
-                    int(pid),
-                    first_name=str(country.get("name") or ""),
-                    username=str(country.get("username") or ""))
-                requeued = True
+                # صف کشور حذف شده — بازیکن مستقیم از /start کشور بعدی را درخواست می‌کند
+                requeued = False
         except Exception:
             pass
     return {"snapshot": snap, "player_id": pid, "requeued": requeued, "date": today_str}

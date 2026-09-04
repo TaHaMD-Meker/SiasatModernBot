@@ -89,15 +89,18 @@ def test_ban_unban_logged(monkeypatch, tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# مسیرهای دریافت کشور همه بسته‌اند
+# مسیرهای دریافت کشور همه بسته‌اند (صف حذف شده — فقط درخواست /start)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_banned_cannot_join_queue(monkeypatch, tmp_path):
+def test_banned_cannot_request_country_in_pick_flow(monkeypatch, tmp_path):
+    """بن‌شده در مسیر مستقیم انتخاب کشور (pick_country) رد می‌شود."""
     _fresh(monkeypatch, tmp_path)
     db.ban_player(96_001)
-    ok, msg, entry = cq.join_queue(96_001, first_name="اسپمر")
-    assert ok is False and entry is None
-    assert "مسدود" in msg
+    assert db.is_banned(96_001)
+    src = open("handlers/start.py", encoding="utf-8").read()
+    pick = src.index("async def pick_country")
+    window = src[pick:pick + 6000]
+    assert "is_banned" in window, "مسیر گرفتن کشور باید کاربر مسدود را رد کند"
 
 
 def test_banned_cannot_reclaim_quarantined_country(monkeypatch, tmp_path):
@@ -106,29 +109,3 @@ def test_banned_cannot_reclaim_quarantined_country(monkeypatch, tmp_path):
     db.ban_player(96_002)
     ok, msg, _row = cq.reclaim_country(96_002)
     assert ok is False and "قرنطینه" in msg  # بازپس‌گیری منسوخ شده
-
-
-def test_banned_cannot_accept_offer(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path, "ban3.db")
-    cid = _country(key="offerland")
-    db.ban_player(96_003)
-    conn = db.get_connection()
-    with conn:
-        conn.execute(
-            "INSERT INTO country_queue (player_id, first_name, preferred_country_key,"
-            " status, offered_country_id, offer_expires_at, joined_at)"
-            " VALUES (96_003, 'اسپمر', 'offerland', 'offered', ?, ?, ?)",
-            (cid, (datetime.datetime.now(datetime.timezone.utc)
-                   + datetime.timedelta(hours=24)).isoformat(),
-             datetime.datetime.now(datetime.timezone.utc).isoformat()))
-    ok, msg, country = cq.accept_offer(96_003)
-    assert ok is False and country is None and "مسدود" in msg
-    assert db.get_country_by_id(cid)["player_id"] == 0, "کشور نباید منتقل شده باشد"
-
-
-def test_unbanned_player_can_join_again(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path, "ban4.db")
-    db.ban_player(96_004)
-    db.unban_player(96_004)
-    ok, _msg, _entry = cq.join_queue(96_004, first_name="بازگشته")
-    assert ok is True
