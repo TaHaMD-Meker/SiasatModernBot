@@ -320,3 +320,26 @@ def test_building_purchase_consumes_iron(monkeypatch, tmp_path):
     ok, msg = db.buy_item_transaction(cid, "large_factory", 1, price, "کارخانه بزرگ")
     assert ok, msg
     assert db.get_country_by_id(cid)["iron_ore"] == 500
+
+
+# ─────────────── واقع‌گرایی مصرف (بالانس نفت) ───────────────
+
+def test_upkeep_oil_is_realistic_not_income_linked():
+    """هیچ سازه‌ای نباید معادل یک نفتکش در روز بسوزاند؛ سقف واقعی = نیروگاه فسیلی."""
+    for key in config.ALL_SHOP_ITEMS:
+        oil = config.get_building_upkeep(key).get("oil", 0)
+        assert oil <= 20_000, f"{key}: {oil:,} بشکه/روز غیرواقعی است (سقف ۲۰هزار = نیروگاه فسیلی)"
+
+
+def test_refinery_is_net_positive_even_for_non_oil_countries():
+    """پالایشگاه نباید خودش نفت‌خور کشور باشد؛ حتی کشور غیرنفتی (تولید ۲۵k) خالص‌مثبت بماند."""
+    use = config.get_building_upkeep("oil_refinery").get("oil", 0)
+    assert use < 25_000, "پالایشگاه در کشور غیرنفتی نباید بیشتر از تولیدش مصرف کند"
+
+
+def test_full_buildout_oil_demand_stays_within_a_major_producer():
+    """جمع مصرف نفت همه‌ی سازه‌ها در سقف مجاز باید کمتر از تولید یک تولیدکننده‌ی
+    بزرگ (عربستان، ۱۰ میلیون بشکه/روز) باشد وگرنه اقتصاد سازه قفل می‌شود."""
+    total = sum(config.get_building_upkeep(k).get("oil", 0) * int(v.get("max_limit", 1))
+                for k, v in config.ALL_SHOP_ITEMS.items())
+    assert total < 10_000_000, f"مصرف سقف {total:,} بشکه/روز از تولید عربستان می‌گذرد"

@@ -2474,44 +2474,47 @@ UPKEEP_RAMP_START_DATE = None  # مثال: "2026-09-05" — تا وقتی None �
 
 # مصرف روزانه‌ی هر واحد سازه (به‌جز پول که از UPKEEP_INCOME_RATIO محاسبه می‌شود)
 BUILDING_UPKEEP = {
+    # مصرف نفت = معادل واقعی سوخت دیزلی/فسیلی هر سازه (بشکه/روز)؛ نه نسبت درآمد.
     # ── ساختمان‌های شهری
-    "house":                {"oil": 10_000,  "grain": 150, "elec": 0.7},
-    "office":               {"oil": 22_000,  "elec": 0.9},
-    "commercial":           {"oil": 60_000,  "elec": 2.2},
-    "hotel":                {"oil": 100_000, "grain": 400, "elec": 3.1},
-    "tower":                {"oil": 140_000, "elec": 4},
-    "skyscraper":           {"oil": 280_000, "elec": 8.1},
-    "media_center":         {"oil": 100_000, "elec": 5.4, "microchips": 15},
-    # ── صنعت
-    "small_factory":        {"oil": 40_000,  "elec": 2.7,  "iron_ore": 200},
-    "medium_factory":       {"oil": 100_000, "elec": 6.3, "iron_ore": 500},
-    "large_factory":        {"oil": 230_000, "elec": 11.7, "iron_ore": 1_200},
-    "industrial_complex":   {"oil": 390_000, "elec": 20.2, "iron_ore": 2_500},
-    "chip_fab":             {"oil": 170_000, "elec": 18},
-    "enrichment_facility":  {"oil": 500_000, "elec": 27, "microchips": 10},
+    "house":                {"oil": 1_000,   "grain": 150, "elec": 0.7},
+    "office":               {"oil": 800,     "elec": 0.9},
+    "commercial":           {"oil": 1_200,   "elec": 2.2},
+    "hotel":                {"oil": 800,     "grain": 400, "elec": 3.1},
+    "tower":                {"oil": 600,     "elec": 4},
+    "skyscraper":           {"oil": 1_000,   "elec": 8.1},
+    "media_center":         {"oil": 300,     "elec": 5.4, "microchips": 15},
+    # ── صنعت (کوره و دیزل صنعتی؛ مجتمع سنگین ~۱۲k = استاندارد فولاد)
+    "small_factory":        {"oil": 1_200,   "elec": 2.7,  "iron_ore": 200},
+    "medium_factory":       {"oil": 2_500,   "elec": 6.3,  "iron_ore": 500},
+    "large_factory":        {"oil": 5_000,   "elec": 11.7, "iron_ore": 1_200},
+    "industrial_complex":   {"oil": 12_000,  "elec": 20.2, "iron_ore": 2_500},
+    "chip_fab":             {"oil": 1_500,   "elec": 18},
+    "enrichment_facility":  {"oil": 2_000,   "elec": 27, "microchips": 10},
     # ── انرژی (نیروگاه پاک هیچ نفتی مصرف نمی‌کند — مزیت عمدی)
-    "fossil_plant":         {"oil": 130_000},
+    # نیروگاه فسیلی ~۵۰۰ مگاوات نفت‌سوز ≈ ۲۰هزار بشکه در روز (معادل واقعی)
+    "fossil_plant":         {"oil": 20_000},
     "solar_plant":          {"iron_ore": 300},
     "wind_plant":           {"iron_ore": 400},
     "hydro_plant":          {"iron_ore": 500},
     "nuclear_plant":        {"nuclear_fuel": 25},
     # ── حمل‌ونقل
-    "highway":              {"oil": 60_000},
-    "railway":              {"oil": 110_000, "elec": 3.6},
-    "train_station":        {"oil": 45_000,  "elec": 1.8},
-    "airport":              {"oil": 260_000, "elec": 9.9},
-    "port":                 {"oil": 200_000, "elec": 7.2},
-    "mega_port":            {"oil": 480_000, "elec": 13.5},
-    # ── معادن و منابع
-    "iron_mine":            {"oil": 100_000, "elec": 8.1},
-    "copper_mine":          {"oil": 100_000, "elec": 7.2},
-    "gold_mine":            {"oil": 350_000, "elec": 12.6},
-    "oil_refinery":         {"oil": 60_000,  "elec": 13.5},
-    "uranium_mine":         {"oil": 240_000, "elec": 13.5, "microchips": 8},
+    "highway":              {"oil": 800},
+    "railway":              {"oil": 3_000,   "elec": 3.6},
+    "train_station":        {"oil": 600,     "elec": 1.8},
+    "airport":              {"oil": 8_000,   "elec": 9.9},
+    "port":                 {"oil": 3_000,   "elec": 7.2},
+    "mega_port":            {"oil": 6_000,   "elec": 13.5},
+    # ── معادن و منابع (دیزیل کامیون‌ها و ماشین‌آلات)
+    "iron_mine":            {"oil": 2_500,   "elec": 8.1},
+    "copper_mine":          {"oil": 2_200,   "elec": 7.2},
+    "gold_mine":            {"oil": 800,     "elec": 12.6},
+    # پالایشگاه: مصرف خودش ~۵٪ ظرفیت تصفیه (۱۰۰k) — غیرنفتی (۲۵k) هم خالص‌مثبت می‌ماند
+    "oil_refinery":         {"oil": 5_000,   "elec": 13.5},
+    "uranium_mine":         {"oil": 1_800,   "elec": 13.5, "microchips": 8},
     # ── کشاورزی
-    "wheat_farm":           {"oil": 30_000,  "elec": 1.4},
-    "agro_complex":         {"oil": 130_000, "elec": 4.5},
-    "grain_silo":           {"oil": 150_000, "elec": 4.5},
+    "wheat_farm":           {"oil": 500,     "elec": 1.4},
+    "agro_complex":         {"oil": 2_000,   "elec": 4.5},
+    "grain_silo":           {"oil": 300,     "elec": 4.5},
 }
 
 # منابعی که از انبار کسر می‌شوند (برق جداست چون ظرفیت است نه انبار)
