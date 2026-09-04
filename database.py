@@ -7328,7 +7328,24 @@ def auto_check_and_reopen_straits_if_navy_destroyed() -> list:
 
         if st_data["status"] in ("blocked", "toll"):
             owner_c = get_country_by_key(owner_key)
-            if not owner_c:
+            # تنگه ابزار اقتدارِ بازیکن است: کشورِ حذف‌شده یا بی‌صاحب (player_id=0)
+            # نمی‌تواند آبراهی را بسته/عوارضی نگه دارد — فوراً بازگشایی شود.
+            if not owner_c or not owner_c.get("player_id"):
+                set_strait_status(s_key, "open", 0)
+                if owner_c:
+                    owner_out = owner_c
+                else:
+                    _meta = config.COUNTRIES.get(owner_key, {})
+                    _name = str(_meta.get("name", owner_key)).replace(str(_meta.get("flag", "")), "").strip()
+                    owner_out = {"id": 0, "name": _name or owner_key,
+                                 "flag": _meta.get("flag", ""), "player_id": 0}
+                reopened.append({
+                    "owner": owner_out,
+                    "strait_info": strait_info,
+                    "prev_status": st_data["status"],
+                    "units": 0,
+                    "val": 0
+                })
                 continue
 
             qualified, units, val = check_strait_navy_qualification(owner_c["id"])

@@ -98,8 +98,18 @@ def detach_country_keep_assets(country_id: int, actor: str = "admin") -> tuple[b
         conn.close()
     db.add_log(f"player:{owner}", "country_detached_keep_assets",
                f"country={country_id} actor={actor}")
+    # تنگه‌های تحت کنترل این کشور بلافاصله بازگشایی می‌شوند — کشور بی‌صاحب
+    # نمی‌تواند آبراه استراتژیک را بسته/عوارضی نگه دارد.
+    try:
+        reopened = db.auto_check_and_reopen_straits_if_navy_destroyed()
+    except Exception:
+        reopened = []
+    extra = ""
+    if reopened:
+        names = "، ".join(r["strait_info"]["name"] for r in reopened)
+        extra = (f"\n🌊 به دلیل بی‌صاحب شدن، کنترل بر {len(reopened)} آبراه استراتژیک لغو و بازگشایی شد: {names}")
     return True, (f"مالکیت کشور {country.get('flag', '')} {country.get('name', '')} حذف شد؛ "
-                  "تجهیزات و مشخصات حفظ ماند و کشور به استخر واگذاری رفت.")
+                  "تجهیزات و مشخصات حفظ ماند و کشور به استخر واگذاری رفت." + extra)
 
 
 def reclaim_country(player_id: int) -> tuple[bool, str, dict | None]:
