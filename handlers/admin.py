@@ -404,11 +404,60 @@ async def admin_locks_menu(query, context):
         [InlineKeyboardButton("🔓 باز کردن پیام‌های دیپلماتیک" if notes_lock else "🔒 قفل کردن پیام‌های دیپلماتیک", callback_data="admin:toggle_lock:diplomatic_notes_locked")],
         [InlineKeyboardButton("🔓 باز کردن ارسال رول" if role_lock else "🔒 قفل کردن ارسال رول", callback_data="admin:toggle_lock:role_submit_locked")],
         [inactivity_btn],
+        [InlineKeyboardButton(
+            f"🛡️ کشورهای معاف از قانون بیانیه ({len(db.get_statement_exempt_countries())})",
+            callback_data="admin:stmt_exempt")],
         [InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")],
     ]
 
     await safe_edit_or_reply(query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+
+
+# ==================== کشورهای معاف از قانون بیانیه ====================
+
+async def admin_stmt_exempt_menu(query, context, page: int = 0):
+    """فهرست کشورهای معاف از حذف ساعت ۰۰:۰۰ + تاگل برای کشورهای صاحب‌دار."""
+    exempt = set(db.get_statement_exempt_countries())
+    countries = [c for c in db.get_all_countries()
+                 if c.get("player_id") and not db.is_militia_country_key(c.get("country_key"))]
+    countries.sort(key=lambda x: (x.get("country_key") or ""))
+    per = 25
+    total = max(1, math.ceil(len(countries) / per))
+    page = max(0, min(page, total - 1))
+    chunk = countries[page * per:(page + 1) * per]
+
+    lines = [f"🛡️ *کشورهای معاف از حذف ساعت ۰۰:۰۰ (قانون بیانیه)* — {len(exempt)} کشور",
+             "━━━━━━━━━━━━━━━━━━", ""]
+    if exempt:
+        for k in sorted(exempt):
+            meta = config.COUNTRIES.get(k, {})
+            nm = str(meta.get("name", k)).replace(str(meta.get("flag", "")), "").strip() or k
+            lines.append(f"✅ {meta.get('flag', '')} {nm}")
+    else:
+        lines.append("_هنوز کشوری معاف نشده است._")
+    lines.append("")
+    lines.append(f"*کشورهای صاحب‌دار* (صفحه {page + 1} از {total}) — روی هر کشور بزن تا معاف/ملزم شود:")
+
+    rows = []
+    for c in chunk:
+        key = c.get("country_key") or ""
+        on = key in exempt
+        mark = "✅" if on else "⬜"
+        rows.append([InlineKeyboardButton(
+            f"{mark} {c.get('flag', '')} {c.get('name', '')}",
+            callback_data=f"admin:stmt_exempt_t:{page}:{key}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("▶️ صفحه قبل", callback_data=f"admin:stmt_exempt_p:{page - 1}"))
+    if page < total - 1:
+        nav.append(InlineKeyboardButton("◀️ صفحه بعد", callback_data=f"admin:stmt_exempt_p:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("🧹 پاک‌سازی فهرست معافیت‌ها", callback_data="admin:stmt_exempt_clear")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت به قفل‌ها", callback_data="admin:locks_menu")])
+    await safe_edit_or_reply(query, "\n".join(lines),
+                             reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
 
 
 # ==================== مدیریت داورها (فقط مالک) ====================
@@ -1429,6 +1478,32 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         db.set_setting(lock_key, new_val)
         await query.answer("وضعیت قفل با موفقیت تغییر یافت!", show_alert=True)
         await admin_locks_menu(query, context)
+
+    elif data == "admin:stmt_exempt":
+        await admin_stmt_exempt_menu(query, context, page=0)
+
+    elif data.startswith("admin:stmt_exempt_p:"):
+        await admin_stmt_exempt_menu(query, context, page=int(data.split(":")[2]))
+
+    elif data.startswith("admin:stmt_exempt_t:"):
+        parts = data.split(":")
+        page = int(parts[2])
+        key = ":".join(parts[3:])
+        exempt = set(db.get_statement_exempt_countries())
+        if key in exempt:
+            exempt.discard(key)
+            ans = f"معافیت {key} حذف شد — مشمول قانون بیانیه"
+        else:
+            exempt.add(key)
+            ans = f"{key} از حذف ساعت ۰۰:۰۰ معاف شد"
+        db.set_statement_exempt_countries(exempt)
+        await query.answer(f"🛡️ {ans}", show_alert=False)
+        await admin_stmt_exempt_menu(query, context, page=page)
+
+    elif data == "admin:stmt_exempt_clear":
+        db.set_statement_exempt_countries([])
+        await query.answer("🧹 فهرست معافیت‌ها پاک شد.", show_alert=True)
+        await admin_stmt_exempt_menu(query, context, page=0)
 
     elif data.startswith("admin:list:"):
         parts = data.split(":")

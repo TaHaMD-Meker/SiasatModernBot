@@ -4432,7 +4432,10 @@ def delete_pending_country_request(request_id: int):
 def get_taken_and_pending_country_keys():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT country_key FROM countries WHERE country_key IS NOT NULL")
+    # فقط کشورهای صاحب‌دار «گرفته‌شده» هستند؛ کشورهای بی‌صاحب (player_id=0 —
+    # خلع‌شده‌ی ساعت ۰۰:۰۰ یا لغو مالکیت ادمین) باید فوراً در منوی گرفتن کشور
+    # آزاد دیده شوند وگرنه برای همیشه قفل نمایش داده می‌شوند.
+    cur.execute("SELECT country_key FROM countries WHERE country_key IS NOT NULL AND player_id > 0")
     taken_rows = cur.fetchall()
 
     cur.execute("SELECT country_key FROM pending_country_requests WHERE status = 'pending'")
@@ -4442,6 +4445,17 @@ def get_taken_and_pending_country_keys():
     keys = {r["country_key"] for r in taken_rows}
     keys.update({r["country_key"] for r in pending_rows})
     return keys
+
+
+def get_statement_exempt_countries() -> list[str]:
+    """کشورهای معاف از حذف خودکار ساعت ۰۰:۰۰ (قانون بیانیه) — انتخاب ادمین."""
+    raw = get_setting("statement_exempt_countries", "")
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
+
+def set_statement_exempt_countries(keys) -> None:
+    clean = sorted({str(k).strip() for k in (keys or []) if str(k).strip()})
+    set_setting("statement_exempt_countries", ",".join(clean))
 
 
 # ---------- سیستم دیپلماسی و معاهدات بین‌المللی ----------

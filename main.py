@@ -675,6 +675,8 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
     req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
     countries = db.get_all_countries()
     counts_map = db.get_all_country_statement_counts_for_date(yesterday_str)
+    # فهرست دستی ادمین: این کشورها با وجود نداشتن بیانیه حذف نمی‌شوند
+    stmt_exempt = set(db.get_statement_exempt_countries())
 
     revoked_count = 0
     for c in countries:
@@ -690,6 +692,10 @@ async def check_daily_inactivity_job(context: ContextTypes.DEFAULT_TYPE, force_d
         # (همه با کلید faction_*) مشمول بیانیه‌ی اجباری روزانه و سلب مالکیت نیستند —
         # این قانون فقط برای کشورهای رسمی است.
         if db.is_militia_country_key(c_key):
+            continue
+
+        # معافیت دستی ادمین (پنل قفل‌ها → کشورهای معاف از قانون بیانیه)
+        if c_key in stmt_exempt:
             continue
 
         # مهلت برای ثبت‌نام‌های تازه: اگر دیروز بعد از ساعت ۱۲ ظهر یا امروز ثبت‌نام کرده، روز اول معاف است
