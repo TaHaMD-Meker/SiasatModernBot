@@ -391,10 +391,12 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
 
     desc_text = item.get("desc", f"🏗️ *پروژه:* {item['name']}\n\n💰 *هزینه احداث:* {format_money(item['price'])}")
     if item_key == "oil_refinery" and country and not config.is_oil_country(country.get("country_key")):
+        _reff = config.REFINERY_BONUS["non_oil_country"]
         desc_text += (
             "\n\n⚠️ *توجه — کشور غیرنفتی:* به دلیل نداشتن میدان نفتی، در کشور شما هر پالایشگاه "
-            "*+۲۵,۰۰۰ بشکه/روز* تولید نفت و *+۶۰۰,۰۰۰ دلار/روز* درآمد دارد "
-            "(به‌جای +۱۰۰,۰۰۰ بشکه و +۷۵۰,۰۰۰ دلار برای کشورهای نفتی)."
+            f"*+{_reff['oil_prod']:,} بشکه/روز* تولید نفت و *+{_reff['income']:,} دلار/روز* درآمد دارد "
+            f"(به‌جای +۱۰۰,۰۰۰ بشکه و +۱,۶۰۰,۰۰۰ دلار برای کشورهای نفتی). "
+            f"خوراک اولیه‌ی احداث هم به‌جای ۱,۰۰۰,۰۰۰ بشکه، *{config.REFINERY_NON_OIL_OIL_REQ:,} بشکه* است."
         )
     elif item_key == "chip_fab" and country:
         fab_eff = config.get_chip_fab_effect(country.get("country_key", ""))
@@ -417,6 +419,9 @@ async def confirm_civilian_purchase(update: Update, context: ContextTypes.DEFAUL
         req_lines = []
         for cfg_key, label, unit, col in build_reqs:
             needed = int(item.get(cfg_key, 0) or 0)
+            if cfg_key == "oil_req" and needed > 0:
+                # خوراک احداث وابسته به کشور است (پالایشگاه غیرنفتی خوراک کمتری می‌خواهد)
+                needed = config.get_construction_oil_req(item_key, country.get("country_key"))
             if needed <= 0:
                 continue
             have = int(country.get(col) or 0)

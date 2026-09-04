@@ -4035,6 +4035,8 @@ def buy_item_transaction(country_id: int, item_key: str, quantity: int, total_pr
             c_key = row["country_key"]
             tech_lvl = row["tech_level"] or 1
             chips_daily_add = 0
+            # خوراک نفت احداث وابسته به کشور است (پالایشگاه غیرنفتی خوراک کمتری می‌خواهد)
+            oil_req = config.get_construction_oil_req(item_key, c_key) * quantity
 
             # بررسی پیش‌نیازهای اختصاصی معادن و صنایع خاص
             if item_key == "oil_refinery" and c_key:
