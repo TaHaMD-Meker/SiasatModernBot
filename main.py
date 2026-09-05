@@ -177,6 +177,17 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         if not eligible:
             continue
 
+        # 🛢️ ضد کسرِ دوبرابر: چرخه‌ی مصرف/تولید روزانه (سوخت نظامی + مصرف
+        # جمعیت و صنایع) فقط یک بار در هر روز تقویمی برای هر کشور اجرا می‌شود.
+        # باگ گزارش بازیکن‌ها: «توزیع فوری» ادمین (force) بعد از نوبت خودکارِ
+        # همان روز، اولین-پرداخت-روز را اجباری می‌کرد و کل مصرف برای بار دوم
+        # سوزانده می‌شد (یک روز = دو روز، و در کسری، کل ذخیره صفر می‌شد).
+        # force فقط پرداخت پول را فوری می‌کند؛ مصرف را دوباره نمی‌سوزاند.
+        if first_of_day and db.get_setting(f"daily_cycle_date:{c['id']}") == today:
+            first_of_day = False
+        if first_of_day:
+            db.set_setting(f"daily_cycle_date:{c['id']}", today)
+
         maint_info = db.calculate_country_maintenance_cost(c["id"])
         tax_income = c.get("tax_income", 0) or 0
         daily_income = c.get("daily_income", 0) or 0
