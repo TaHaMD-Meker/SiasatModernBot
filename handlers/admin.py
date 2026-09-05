@@ -3277,14 +3277,27 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             return
         c_key = req["country_key"]
         c_info = config.COUNTRIES.get(c_key, {})
-        if db.get_country_by_key(c_key):
+        _existing = db.get_country_by_key(c_key)
+        # از زمان حذف صف، کشورِ آزاد یعنی «ردیف با player_id=0» — واگذارشده به دیگری نیست.
+        if _existing and (_existing["player_id"] or 0) != 0:
             db.delete_pending_country_request(req_id)
             await query.answer(f"کشور {c_info.get('name', c_key)} قبلاً واگذار شده است.", show_alert=True)
             return
-        db.create_country(
-            player_id=req["player_id"], name=c_info["name"], flag=c_info["flag"],
-            country_key=c_key, username=req["username"],
-        )
+        if _existing:
+            _ok, _msg = db.admin_transfer_country_ownership(
+                _existing["id"], req["player_id"], req.get("username") or "")
+            if not _ok:
+                db.delete_pending_country_request(req_id)
+                await query.answer(f"❌ {_msg}", show_alert=True)
+                return
+            _meta = config.COUNTRIES.get(c_key) or {}
+            c_info = {"name": _meta.get("name") or _existing["name"],
+                      "flag": _meta.get("flag") or _existing["flag"] or "🏳️"}
+        else:
+            db.create_country(
+                player_id=req["player_id"], name=c_info["name"], flag=c_info["flag"],
+                country_key=c_key, username=req["username"],
+            )
         db.delete_pending_country_request(req_id)
         db.add_log(actor=str(user_id), action="approve_country", details=f"quick {c_key} to {req['player_id']}")
         try:
@@ -3321,18 +3334,32 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         c_key = req["country_key"]
         c_info = config.COUNTRIES.get(c_key, {})
 
-        if db.get_country_by_key(c_key):
+        _existing = db.get_country_by_key(c_key)
+        # از زمان حذف صف، کشورِ آزاد یعنی «ردیف با player_id=0» — این همان
+        # کشوری است که بازیکن دیده و درخواست داده؛ باید به خودش واگذار شود.
+        if _existing and (_existing["player_id"] or 0) != 0:
             db.delete_pending_country_request(req_id)
             await query.edit_message_text(f"❌ کشور {c_info.get('name', c_key)} قبلاً به کاربر دیگری واگذار شده است.", parse_mode="HTML")
             return
 
-        c_id = db.create_country(
-            player_id=req["player_id"],
-            name=c_info["name"],
-            flag=c_info["flag"],
-            country_key=c_key,
-            username=req["username"]
-        )
+        if _existing:
+            _ok, _msg = db.admin_transfer_country_ownership(
+                _existing["id"], req["player_id"], req.get("username") or "")
+            if not _ok:
+                db.delete_pending_country_request(req_id)
+                await query.edit_message_text(f"❌ واگذاری انجام نشد: {_msg}", parse_mode="HTML")
+                return
+            _meta = config.COUNTRIES.get(c_key) or {}
+            c_info = {"name": _meta.get("name") or _existing["name"],
+                      "flag": _meta.get("flag") or _existing["flag"] or "🏳️"}
+        else:
+            c_id = db.create_country(
+                player_id=req["player_id"],
+                name=c_info["name"],
+                flag=c_info["flag"],
+                country_key=c_key,
+                username=req["username"]
+            )
         db.delete_pending_country_request(req_id)
         db.add_log(actor=str(user_id), action="approve_country", details=f"{c_key} to {req['player_id']}")
 
