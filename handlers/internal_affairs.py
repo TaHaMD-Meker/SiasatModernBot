@@ -616,7 +616,9 @@ async def _crises_page(query, country: dict):
 async def _crisis_detail(query, country: dict, crisis_id: int, notice: str = ""):
     crisis = ia.get_crisis(crisis_id)
     if not crisis or crisis["country_id"] != country["id"]:
-        await query.answer("بحران یافت نشد.", show_alert=True)
+        # (بدون answer دوم — روتر قبلاً answer کرده؛ با edit اطلاع بده)
+        await query.edit_message_text("❌ این بحران دیگر فعال نیست.",
+                                      reply_markup=_kb([_back_row()]), parse_mode="HTML")
         return
     spec = ia.CRISIS_CATALOG.get(crisis["crisis_key"], {})
     lines = [
@@ -946,6 +948,8 @@ async def _building_why_page(query, country: dict, key: str):
     entry = next((s_ for s_ in saved.get("shut_down") or [] if s_.get("key") == key), None)
 
     if not entry:
+        # ⚠️ اینجا query.answer() دوم مجاز نیست — روتر قبلاً answer کرده و
+        # تلگرام دومی را با خطا رد می‌کند (دکمه عملاً «کار نمی‌کند»).
         conn = db.get_connection()
         try:
             r = conn.execute("SELECT quantity, COALESCE(inactive_qty, 0) AS inactive_qty"
@@ -953,13 +957,17 @@ async def _building_why_page(query, country: dict, key: str):
                              (cid, key)).fetchone()
         finally:
             conn.close()
+        note = None
         if not r:
-            await query.answer("❌ این سازه در کشور شما ثبت نشده است.", show_alert=True)
-            return
-        if int(r["inactive_qty"] or 0) == 0:
-            await query.answer(f"🟢 «{name}» همین الان روشن است — دلیل خاموشی‌ای ثبت نشده.", show_alert=True)
-            return
-        await query.answer("⏳ برای این سازه هنوز گزارش چرخه‌ای ثبت نشده؛ دوباره چک کن.", show_alert=True)
+            note = f"❌ این سازه در کشور شما ثبت نشده است."
+        elif int(r["inactive_qty"] or 0) == 0:
+            note = f"🟢 «{name}» همین الان روشن است — دلیل خاموشی‌ای ثبت نشده."
+        else:
+            note = "⏳ برای این سازه هنوز گزارش چرخه‌ای ثبت نشده؛ دوباره چک کن."
+        kb = _kb([[InlineKeyboardButton("🔙 بازگشت به فهرست سازه‌ها", callback_data="dom:buildings")],
+                  _back_row()])
+        await query.edit_message_text(f"🏭 <b>{html.escape(name)}</b>\n\n{html.escape(note)}",
+                                      reply_markup=kb, parse_mode="HTML")
         return
 
     lines = [f"🏭 <b>{html.escape(name)}</b>", "━━━━━━━━━━━━━━━━━━"]

@@ -112,6 +112,8 @@ def test_building_why_view_shows_full_reason(monkeypatch, tmp_path):
 def test_building_why_for_running_building_is_polite(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     q = _click("dom:bwhy:wind_plant")
-    non_empty = [a for a in q.alerts if a]
-    assert non_empty, "باید پاسخ بدهد"
-    assert "روشن" in non_empty[0]
+    # روتر یک‌بار answer خالی کرده؛ پیام حالت خاص باید با edit بیاید نه answer دوم
+    assert q.edits, "باید صفحه با پیام حالت خاص رندر شود"
+    text = "\n".join(e["text"] for e in q.edits)
+    assert "روشن" in text and "نیروگاه بادی" in text
+    assert any(cb == "dom:buildings" for _, cb in _buttons(q.edits[-1]["markup"]))
