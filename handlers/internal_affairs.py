@@ -64,6 +64,7 @@ def _menu_keyboard(active_crises: int, doses: int = 0):
         [InlineKeyboardButton("📉 رضایت و ناآرامی", callback_data="dom:unrest")],
         [InlineKeyboardButton(crisis_label, callback_data="dom:crises")],
         [InlineKeyboardButton("🛠️ اقدامات اضطراری", callback_data="dom:actions")],
+        [InlineKeyboardButton("🏭 سازه‌ها (خاموش/روشن)", callback_data="dom:buildings")],
         [InlineKeyboardButton(vaccine_label, callback_data="dom:vaccine")],
         [InlineKeyboardButton("🛡 آمادگی و پیشگیری", callback_data="dom:readiness")],
         [
@@ -890,6 +891,125 @@ async def _history_page(query, country: dict):
     await query.edit_message_text("\n".join(lines), reply_markup=_kb([_back_row()]), parse_mode="HTML")
 
 
+async def _buildings_page(query, country: dict):
+    """فهرست سازه‌های کشور: خاموش‌ها 🔴 (با دکمه‌ی چرا؟) و روشن‌ها 🟢."""
+    cid = country["id"]
+    saved = db.get_saved_upkeep_report(cid) or {}
+    off_keys = {}
+    for s_ in saved.get("shut_down") or []:
+        off_keys[s_["key"]] = off_keys.get(s_["key"], 0) + int(s_["qty"])
+
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT item_key, quantity, COALESCE(inactive_qty, 0) AS inactive_qty"
+            " FROM equipment WHERE country_id = ? AND quantity > 0", (cid,)).fetchall()
+    finally:
+        conn.close()
+
+    items = []
+    for r in rows:
+        key = r["item_key"]
+        item = config.ALL_SHOP_ITEMS.get(key)
+        if not item:
+            continue
+        qty = int(r["quantity"] or 0)
+        off = max(0, int(r["inactive_qty"] or 0))
+        items.append((key, item.get("name", key), qty, off))
+    items.sort(key=lambda x: (-x[3], x[1]))
+
+    lines = ["🏭 <b>سازه‌های کشور — خاموش/روشن</b>", "━━━━━━━━━━━━━━━━━━"]
+    kb_rows = []
+    any_off = False
+    for key, name, qty, off in items:
+        if off > 0:
+            any_off = True
+            lines.append(f"🔴 {name} — <b>{off}</b> از {qty} واحد خاموش")
+            kb_rows.append([InlineKeyboardButton(f"❓ چرا «{name}» خاموش شد؟",
+                                                 callback_data=f"dom:bwhy:{key}")])
+        else:
+            lines.append(f"🟢 {name} — {qty} واحد روشن")
+    if not items:
+        lines.append("هنوز سازه‌ای برای کشور شما ثبت نشده است.")
+    if not any_off:
+        lines.append("\n✅ همه‌ی سازه‌ها روشن‌اند؛ کسری منابعی وجود ندارد.")
+
+    kb_rows.append(_back_row())
+    await query.edit_message_text("\n".join(lines), reply_markup=_kb(kb_rows), parse_mode="HTML")
+
+
+async def _building_why_page(query, country: dict, key: str):
+    """نمای «چرا؟» برای یک سازه — از گزارش ذخیره‌شده‌ی آخرین چرخه."""
+    cid = country["id"]
+    name = config.ALL_SHOP_ITEMS.get(key, {}).get("name", key)
+    saved = db.get_saved_upkeep_report(cid) or {}
+    entry = next((s_ for s_ in saved.get("shut_down") or [] if s_.get("key") == key), None)
+
+    if not entry:
+        conn = db.get_connection()
+        try:
+            r = conn.execute("SELECT quantity, COALESCE(inactive_qty, 0) AS inactive_qty"
+                             " FROM equipment WHERE country_id = ? AND item_key = ?",
+                             (cid, key)).fetchone()
+        finally:
+            conn.close()
+        if not r:
+            await query.answer("❌ این سازه در کشور شما ثبت نشده است.", show_alert=True)
+            return
+        if int(r["inactive_qty"] or 0) == 0:
+            await query.answer(f"🟢 «{name}» همین الان روشن است — دلیل خاموشی‌ای ثبت نشده.", show_alert=True)
+            return
+        await query.answer("⏳ برای این سازه هنوز گزارش چرخه‌ای ثبت نشده؛ دوباره چک کن.", show_alert=True)
+        return
+
+    lines = [f"🏭 <b>{html.escape(name)}</b>", "━━━━━━━━━━━━━━━━━━"]
+    lines.append(f"🔴 وضعیت: <b>{entry['qty']} واحد خاموش</b>")
+    lines.append("")
+    lines.append("<b>❓ چرا؟</b>")
+    scarce = entry.get("scarce") or []
+    labels = config.UPKEEP_RESOURCE_LABELS
+    if scarce:
+        names = " و ".join(labels.get(r_, r_) for r_ in scarce)
+        why = f"انبار {names} کفاف مصرف نمی‌داد"
+        if entry.get("least_eff"):
+            why += ("؛ این سازه <b>کم‌بازده‌ترین</b> مصرف‌کننده بود — قانون: "
+                    "کم‌بازده‌ترین اول خاموش می‌شود تا بقیه روشن بمانند")
+        else:
+            why += "؛ خاموشی تا تأمین منابع ادامه دارد"
+        lines.append(f"   ↳ {why}")
+    else:
+        lines.append("   ↳ منابع ورودی این سازه تمام شده بود.")
+    cons = []
+    units = config.UPKEEP_RESOURCE_UNITS
+    for res, amount in (entry.get("consumption") or {}).items():
+        cons.append(f"{amount:,} {units.get(res, '')} {labels.get(res, res)}")
+    if cons:
+        lines.append("   ↳ <b>مصرف روزانه‌ی هر واحدش:</b> " + " + ".join(cons))
+    if entry.get("income"):
+        lines.append(f"   ↳ درآمد از‌دست‌رفته‌ی همین سازه: <b>{entry['income']:,}</b> دلار/روز")
+    lines.append("")
+    if saved.get("shortages"):
+        lines.append("<b>📊 وضعیت منابع در همان چرخه:</b>")
+        for res, amount in saved.get("shortages", {}).items():
+            sl = (saved.get("supply_line") or {}).get(res) or {}
+            unit = units.get(res, "")
+            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
+            line = f"   {labels.get(res, res)}: کسری <b>{amt} {unit}</b>"
+            if sl:
+                line += f" — انبار: {sl['stock']:,} | نیاز روزانه‌ی همه‌ی سازه‌ها: {sl['need']:,}"
+            lines.append(line)
+        for res, amount in saved.get("shortages", {}).items():
+            unit = units.get(res, "")
+            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
+            lines.append(f"   💡 برای روشن‌ماندن همه: روزانه <b>{amt} {unit}</b> {labels.get(res, res)} بیشتر لازم است.")
+    lines.append("")
+    lines.append("_💡 با تأمین کسری، سازه‌ها در چرخه‌ی بعد خودکار روشن می‌شوند._")
+
+    kb = _kb([[InlineKeyboardButton("🔙 بازگشت به فهرست سازه‌ها", callback_data="dom:buildings")],
+              _back_row()])
+    await query.edit_message_text("\n".join(lines), reply_markup=kb, parse_mode="HTML")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # روتر
 # ─────────────────────────────────────────────────────────────────────────────
@@ -901,7 +1021,14 @@ async def domestic_callback_handler(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     data = query.data
 
-    # رضایت عمومی متعلق به این سیستم نیست؛ صفحه‌اش همیشه باید باز شود.
+    # رضایت عمومی و وضعیت سازه‌ها متعلق به کلید بحران‌ها نیستند؛ همیشه باز باشند.
+    if data == "dom:buildings":
+        await _buildings_page(query, country)
+        return
+    if data.startswith("dom:bwhy:"):
+        await _building_why_page(query, country, data.split(":", 2)[2])
+        return
+
     if data == "dom:unrest":
         await _unrest_page(query, country, ia.get_state(country["id"]) or {} if ia.is_enabled() else {})
         return
@@ -958,6 +1085,10 @@ async def domestic_callback_handler(update: Update, context: ContextTypes.DEFAUL
         await _trend_page(query, country)
     elif data == "dom:history":
         await _history_page(query, country)
+    elif data == "dom:buildings":
+        await _buildings_page(query, country)
+    elif data.startswith("dom:bwhy:"):
+        await _building_why_page(query, country, data.split(":", 2)[2])
     elif data.startswith("dom:setpolicy:"):
         policy = data.split(":", 2)[2]
         ok, message = ia.set_tax_policy(country["id"], policy, actor_id=query.from_user.id)
