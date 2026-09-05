@@ -185,6 +185,308 @@ async def upkeep_why_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.exception("upkeep_why_callback send failed for country %s", cid)
 
 
+async def _payout_one_country(c, context, now, force):
+    """پرداخت و چرخه یک کشور — از حلقه روزانه جدا شده برای حصار خطا."""
+    today = now.date().isoformat()
+    last_raw = c.get("last_income_date") or ""
+    eligible, first_of_day = _payout_due(last_raw, now)
+    if force:
+        eligible = True
+        first_of_day = True
+    if not eligible:
+        return
+
+    # 🛢️ ضد کسرِ دوبرابر: چرخه‌ی مصرف/تولید روزانه (سوخت نظامی + مصرف
+    # جمعیت و صنایع) فقط یک بار در هر روز تقویمی برای هر کشور اجرا می‌شود.
+    # باگ گزارش بازیکن‌ها: «توزیع فوری» ادمین (force) بعد از نوبت خودکارِ
+    # همان روز، اولین-پرداخت-روز را اجباری می‌کرد و کل مصرف برای بار دوم
+    # سوزانده می‌شد (یک روز = دو روز، و در کسری، کل ذخیره صفر می‌شد).
+    # force فقط پرداخت پول را فوری می‌کند؛ مصرف را دوباره نمی‌سوزاند.
+    if first_of_day and db.get_setting(f"daily_cycle_date:{c['id']}") == today:
+        first_of_day = False
+    if first_of_day:
+        db.set_setting(f"daily_cycle_date:{c['id']}", today)
+
+    maint_info = db.calculate_country_maintenance_cost(c["id"])
+    tax_income = c.get("tax_income", 0) or 0
+    daily_income = c.get("daily_income", 0) or 0
+
+    # ⚡ کمبود برق: واحدهای صنعتیِ بی‌برق تولید نمی‌کنند.
+    # درآمد ذخیره‌شده دست نمی‌خورد؛ فقط پرداختِ این دوره کم می‌شود، پس
+    # به‌محض ترمیم شبکه، درآمد خودبه‌خود برمی‌گردد.
+    power_note = ""
+    if internal_affairs.power_penalty_enabled():
+        try:
+            power = internal_affairs.power_status(c)
+            if power["shortage"] and power["income_lost"] > 0:
+                daily_income = max(0, daily_income - power["income_lost"])
+                offline_units = sum(power["offline"].values())
+                power_note = (
+                    f" — ⚡ کمبود برق: {offline_units} واحد صنعتی خاموش "
+                    f"({format_money(power['income_lost'])}/روز از دست رفت)"
+                )
+        except Exception:
+            logger.exception("Power shortage calculation failed for country %s", c["id"])
+
+    gross_income = daily_income + tax_income
+    sanction_note = ""
+    # 🚫 تحریم جامع سازمان ملل: درآمد روزانه کشور تحریمی کاهش می‌یابد
+    if c.get("un_sanctioned") or 0:
+        factor = getattr(config, "UN_SANCTION_INCOME_FACTOR", 0.5)
+        gross_income = int(gross_income * factor)
+        sanction_note = f" — 🚫 درآمد تحت تحریم جامع سازمان ملل ({int(factor * 100)}٪)"
+    # 🚫 تحریم‌های هدفمند سازمان ملل: تحریم مالی ۲۵٪ درآمد را قطع می‌کند
+    if db.has_targeted_sanction(c["id"], "financial"):
+        fin_factor = getattr(config, "UN_TARGETED_FINANCIAL_FACTOR", 0.75)
+        gross_income = int(gross_income * fin_factor)
+        sanction_note += f" — 💰 تحریم مالی سازمان ملل ({int(fin_factor * 100)}٪ درآمد)"
+    net_full = gross_income - maint_info["total_maint"]
+    net_payment = net_full if force else int(net_full / INCOME_PARTS)
+    gold_daily = c.get("gold_daily", 0) or 0
+    gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
+    chips_daily = c.get("microchips_daily", 0) or 0
+    chips_payment = chips_daily if force else int(chips_daily / INCOME_PARTS)
+    iron_daily = c.get("iron_ore_daily", 0) or 0
+    iron_payment = iron_daily if force else int(iron_daily / INCOME_PARTS)
+    u_daily = c.get("uranium_ore_daily", 0) or 0
+    u_payment = u_daily if force else int(u_daily / INCOME_PARTS)
+    fuel_daily = c.get("nuclear_fuel_daily", 0) or 0
+    fuel_payment = fuel_daily if force else int(fuel_daily / INCOME_PARTS)
+    med_daily = c.get("medical_isotopes_daily", 0) or 0
+    med_payment = med_daily if force else int(med_daily / INCOME_PARTS)
+
+    # 🛡 محافظ خزانه: هزینه نگهداری هرگز خزانه را منفی نمی‌کند.
+    # (باقی‌مانده هزینه وقتی خزانه پر شود کسر نمی‌شود — ساده و غیرقابل سوءاستفاده)
+    treasury_now = c.get("treasury", 0) or 0
+    if net_payment < 0 and treasury_now + net_payment < 0:
+        net_payment = -max(treasury_now, 0)
+
+    db.adjust_treasury(c["id"], net_payment)
+    db.adjust_gold(c["id"], gold_payment)
+    if chips_payment > 0:
+        db.adjust_microchips(c["id"], chips_payment)
+    if iron_payment > 0:
+        db.adjust_iron_ore(c["id"], iron_payment)
+    if u_payment > 0:
+        db.adjust_uranium_ore(c["id"], u_payment)
+    if fuel_payment > 0:
+        db.adjust_nuclear_fuel(c["id"], fuel_payment)
+    if med_payment > 0:
+        db.adjust_medical_isotopes(c["id"], med_payment)
+
+    # ── چرخه‌ی ۶ ساعته‌ی شدت بحران، هم‌ضرب با همین نوبت پرداخت
+    # فقط بحران‌هایی که کل سطحشان بالا/پایین شده خبر می‌سازند؛ تغییر درصد مهار
+    # به‌تنهایی ساکت است.
+    try:
+        slot_events = internal_affairs.run_crisis_slot_cycle(db.get_country_by_id(c["id"]) or c, now)
+        if slot_events:
+            fresh_slot = db.get_country_by_id(c["id"]) or c
+            slot_news = internal_affairs.collect_slot_news(fresh_slot, slot_events)
+            if slot_news:
+                crisis_news_batch.extend(slot_news)
+                await _notify_crisis_owner(context, fresh_slot, slot_news)
+    except Exception:
+        logger.exception("Crisis slot cycle failed for country %s", c["id"])
+
+    # ⚔️ حمله‌های دوره‌ای شورش — هم‌ضرب با همین گرید ۶ ساعته‌ی پرداخت خزانه
+    try:
+        if insurgency.is_enabled():
+            _ins_c = db.get_country_by_id(c["id"]) or c
+            _slot_res = insurgency.slot_tick(_ins_c, internal_affairs.slot_key(now))
+            if _slot_res.get("events") and _slot_res.get("news"):
+                _sev = _slot_res["events"][0]
+                if insurgency.news_budget_take_slot(internal_affairs.slot_key(now)):
+                    await news_engine.trigger_insurgency_news(context.bot, _sev)
+    except Exception:
+        logger.exception("Insurgency slot tick failed for country %s", c["id"])
+
+    app_res = None
+    resource_note = ""
+    if first_of_day:
+        app_res = approval_system.process_daily_approval_and_emigration(c)
+        cycle = None
+        # چرخه‌ی جمعیت پویا، مالیات، ناآرامی و بحران‌ها (پشت کلید ادمین، idempotent)
+        try:
+            cycle = internal_affairs.run_daily_cycle(db.get_country_by_id(c["id"]) or c, app_res)
+            if cycle:
+                # 🏭 هشدار نگهداری سازه‌ها (خاموشی بر اثر کسری / بازفعال‌سازی)
+                try:
+                    _up = db.format_upkeep_report(cycle.get("upkeep") or {})
+                    if _up:
+                        resource_note += "\n\n" + _up
+                except Exception:
+                    logger.exception("Upkeep report render failed for country %s", c["id"])
+                # ⚓ شناورهایی که از تعمیرگاه برگشتند
+                try:
+                    _rep = cycle.get("ship_repairs") or []
+                    if _rep:
+                        _lines = ["⚓ <b>شناورهای بازگشته از تعمیرگاه</b>"]
+                        for _r in _rep:
+                            _lines.append(f"   🟢 {_r['qty']} × {_r['equipment_name']}")
+                        _tm = sum(x["money"] for x in _rep)
+                        _ti = sum(x["iron_ore"] for x in _rep)
+                        _lines.append(f"   💵 هزینه تعمیر: {_tm:,} دلار | ⛏️ {_ti:,} تن فولاد")
+                        _wait = sum(x["still_waiting"] for x in _rep)
+                        if _wait:
+                            _lines.append(f"   ⚠️ {_wait} فروند به دلیل کمبود منابع در تعمیرگاه ماند")
+                        resource_note += "\n\n" + "\n".join(_lines)
+                except Exception:
+                    logger.exception("Ship repair report failed for country %s", c["id"])
+                fresh = db.get_country_by_id(c["id"]) or c
+                news_items = internal_affairs.collect_news(fresh, cycle)
+                if news_items:
+                    crisis_news_batch.extend(news_items)
+                    await _notify_crisis_owner(context, fresh, news_items)
+        except Exception:
+            logger.exception("Internal affairs daily cycle failed for country %s", c["id"])
+        # ⚔️ چرخه‌ی شبانه‌ی شورش مسلحانه (کلید سراسری insurgency_enabled — پیش‌فرض خاموش)
+        try:
+            if cycle:
+                _ins_today = cycle.get("date")
+                _ins_fresh = db.get_country_by_id(c["id"]) or c
+                _ins_res = insurgency.nightly_tick(_ins_fresh, _ins_today, cycle)
+                if _ins_res.get("report"):
+                    resource_note += "\n\n" + _ins_res["report"]
+                if _ins_res.get("events") and _ins_res.get("news"):
+                    _evs = _ins_res["events"]
+                    _ev = next((e for e in _evs if e.get("kind") == "finale_win"), _evs[0])
+                    _force = _ev.get("kind") == "finale_win"
+                    if insurgency.news_budget_take(_ins_today, force=_force):
+                        await news_engine.trigger_insurgency_news(context.bot, _ev)
+                if _ins_res.get("collapse"):
+                    _col = insurgency.execute_collapse(_ins_fresh, _ins_today)
+                    try:
+                        if _ins_fresh.get("player_id"):
+                            await context.bot.send_message(
+                                int(_ins_fresh["player_id"]),
+                                "⚫️ سقوط دولت\n\n"
+                                f"با سقوط آخرین دژهای دولتی، حکومت {_ins_fresh.get('flag')} {_ins_fresh.get('name')} "
+                                "پایان یافت و کشور وارد دوران گذار شد.\n\n"
+                                "امکانات مربوط به آن کشور به بایگانی داوری منتقل شد و "
+                                "شما می‌توانید با /start مجدداً وارد صف انتخاب کشور شوید."
+                            )
+                    except Exception:
+                        logger.exception("Insurgency collapse DM failed for player %s", _ins_fresh.get("player_id"))
+                    logger.warning("INSURGENCY COLLAPSE: country %s (%s) fell; requeued=%s",
+                                   _ins_fresh.get("id"), _ins_fresh.get("name"), _col.get("requeued"))
+                    return  # این کشور حذف شده؛ ادامه‌ی پردازش این نوبت بی‌معناست
+        except Exception:
+            logger.exception("Insurgency nightly tick failed for country %s", c["id"])
+        # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
+        try:
+            fuel_need = db.calculate_military_fuel_consumption(c["id"])
+            if fuel_need > 0:
+                oil_now = c.get("oil_reserves") or 0
+                if oil_now >= fuel_need:
+                    db.adjust_oil(c["id"], -fuel_need)
+                else:
+                    # کسری سوخت → تنزل رضایت عمومی و افت آمادگی رزمی نیروهای مسلح
+                    db.adjust_oil(c["id"], -oil_now)
+                    new_app = max(0, (c.get("approval_rating") or 80) - 4)
+                    new_readiness = max(10, (c.get("combat_readiness") or 80) - 5)
+                    db.update_country_field(c["id"], "approval_rating", new_app)
+                    db.update_country_field(c["id"], "combat_readiness", new_readiness)
+        except Exception:
+            pass
+
+        # 🌾🛢 مصرف روزانه منابع توسط جمعیت و صنایع (واریز تولید، کسر نیاز، جریمه کمبود)
+        try:
+            cons = internal_affairs.process_daily_resource_consumption(
+                db.get_country_by_id(c["id"]) or c
+            )
+            if cons.get("grain_shortage") or cons.get("oil_shortage"):
+                _parts = []
+                if cons.get("grain_shortage"):
+                    _parts.append(
+                        f"🌾 کمبود غلات به میزان {cons['grain_shortage']:,} تن — "
+                        f"قحطی! ({cons['grain_pop_loss']:,} نفر از جمعیت کاسته شد، رضایت افت کرد)"
+                    )
+                if cons.get("oil_shortage"):
+                    _parts.append(
+                        f"🛢️ کمبود نفت به میزان {cons['oil_shortage']:,} بشکه — بحران انرژی! (رضایت افت کرد)"
+                    )
+                resource_note = "\n\n⏳ *بحران مصرف منابع:*\n• " + "\n• ".join(_parts)
+        except Exception:
+            logger.exception("Daily resource consumption failed for country %s", c["id"])
+
+    tax_part = tax_income if force else int(tax_income / INCOME_PARTS)
+    daily_part = daily_income if force else int(daily_income / INCOME_PARTS)
+    maint_part = maint_info["total_maint"] if force else int(maint_info["total_maint"] / INCOME_PARTS)
+
+    db.update_country_field(c["id"], "last_income_date", now.isoformat())
+    if force:
+        db.add_transaction(c["id"], "daily_income", f"توزیع فوری درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)})", net_full)
+    else:
+        db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)}){sanction_note}{power_note}", net_payment)
+
+    p_id = c.get("player_id")
+    if p_id:
+        try:
+            # وضعیت بیانیه‌های روزانه و اخطار عدم فعالیت
+            stmt_count = db.get_country_statement_count_today(c["id"])
+            req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
+            inact_paused = db.get_setting("inactivity_revocation_paused") == "1"
+
+            if inact_paused:
+                stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* `{stmt_count} از {req_stmts}` بیانیه (🛡️ سیستم سلب مالکیت ساعت ۰۰:۰۰ موقتاً متوقف و مصونیت فعال است)."
+            elif stmt_count >= req_stmts:
+                stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* ✅ `{stmt_count} از {req_stmts}` بیانیه/توییت ثبت شده (تکمیل شد)."
+            else:
+                needed = req_stmts - stmt_count
+                stmt_status_section = (
+                    f"\n\n⚠️ *هشدار فعالیت و بیانیه روزانه (الزامی):*\n"
+                    f"• بیانیه‌های ثبت‌شده امروز شما: *{stmt_count} از {req_stmts}*\n"
+                    f"⏳ *اخطار مهم:* جهت حفظ حاکمیت کشور، ثبت روزانه حداقل {req_stmts} بیانیه یا توییت رسمی الزامی است. "
+                    f"شما نیاز به ثبت *{needed} بیانیه/توییت دیگر* دارید. در صورت عدم ثبت تا ساعت ۰۰:۰۰ بامداد به وقت ایران، کشور شما سلب مالکیت و آزاد خواهد شد!"
+                )
+
+            if first_of_day and app_res is not None:
+                report_msg = approval_system.build_daily_country_report_message(
+                    db.get_country_by_id(c["id"]),
+                    app_res,
+                    today,
+                    payout={
+                        "net_payment": net_payment,
+                        "tax_part": tax_part,
+                        "daily_part": daily_part,
+                        "maint_part": maint_part,
+                    },
+                )
+                report_msg += resource_note + stmt_status_section
+            else:
+                c2 = db.get_country_by_id(c["id"])
+                chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""
+                iron_line = f"\n• ⛏️ آهن و فولاد: +{iron_payment:,} تن" if iron_payment > 0 else ""
+                u_line = f"\n• ☢️ کیک زرد: +{u_payment:,} تن" if u_payment > 0 else ""
+                fuel_line = f"\n• 🧪 سوخت غنی‌شده: +{fuel_payment:,} ک‌گ" if fuel_payment > 0 else ""
+                report_msg = (
+                    f"💵 *واریز دوره‌ای درآمد و مالیات — {c2['flag']} {c2['name']}*\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• 💰 *مالیات وصول‌شده از شهروندان:* +{format_money(tax_part)}\n"
+                    f"• 🏭 *درآمد پایه و کارخانجات:* +{format_money(daily_part)}\n"
+                    f"• 🪖 *هزینه نگهداری نیروهای مسلح:* -{format_money(maint_part)}\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• 📥 *خالص واریز این نوبت به خزانه:* *{format_money(net_payment)}*\n"
+                    f"• 🏦 *موجودی جدید خزانه:* {format_money(c2['treasury'])}\n"
+                    f"• 🪙 طلا: +{gold_payment}{chips_line}{iron_line}{u_line}{fuel_line}\n\n"
+                    f"_درآمدها در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شوند._"
+                    f"{stmt_status_section}"
+                )
+            _upk = (cycle.get("upkeep") or {}) if cycle else {}
+            if _upk.get("shut_down") or _upk.get("reactivated"):
+                _rm = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🏭 چرا سازه‌ها خاموش شدند؟",
+                                         callback_data=f"upkeep_why:{c['id']}")
+                ]])
+            else:
+                _rm = get_main_keyboard(p_id)
+            await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=_rm, parse_mode="Markdown")
+        except Exception as e:
+            logger.warning(f"Could not send daily report to player {p_id}: {e}")
+
+    updated_count += 1
+
+
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     """پرداخت درآمد به‌صورت تقسیط‌شده: هر ۶ ساعت یک‌چهارم درآمد.
 
@@ -199,303 +501,15 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
     updated_count = 0
     crisis_news_batch = []
     for c in countries:
-        last_raw = c.get("last_income_date") or ""
-        eligible, first_of_day = _payout_due(last_raw, now)
-        if force:
-            eligible = True
-            first_of_day = True
-        if not eligible:
+        # 🛡 حصار هر کشور: کرش یک کشور (داده خراب / خطای شبکه در DM) نباید
+        # پرداخت بقیه کشورها را در این نوبت بکشد (باگ «نوبت ۱۵:۰۰ واریز نشد»);
+        # کشور خطاداده در تیک بعدی ۱۵ دقیقه‌ای جبران می‌شود (slot باز می‌ماند).
+        try:
+            await _payout_one_country(c, context, now, force)
+        except Exception:
+            _cid = c.get("id") if isinstance(c, dict) else "?"
+            logger.exception("daily payout failed for country %s - skip", _cid)
             continue
-
-        # 🛢️ ضد کسرِ دوبرابر: چرخه‌ی مصرف/تولید روزانه (سوخت نظامی + مصرف
-        # جمعیت و صنایع) فقط یک بار در هر روز تقویمی برای هر کشور اجرا می‌شود.
-        # باگ گزارش بازیکن‌ها: «توزیع فوری» ادمین (force) بعد از نوبت خودکارِ
-        # همان روز، اولین-پرداخت-روز را اجباری می‌کرد و کل مصرف برای بار دوم
-        # سوزانده می‌شد (یک روز = دو روز، و در کسری، کل ذخیره صفر می‌شد).
-        # force فقط پرداخت پول را فوری می‌کند؛ مصرف را دوباره نمی‌سوزاند.
-        if first_of_day and db.get_setting(f"daily_cycle_date:{c['id']}") == today:
-            first_of_day = False
-        if first_of_day:
-            db.set_setting(f"daily_cycle_date:{c['id']}", today)
-
-        maint_info = db.calculate_country_maintenance_cost(c["id"])
-        tax_income = c.get("tax_income", 0) or 0
-        daily_income = c.get("daily_income", 0) or 0
-
-        # ⚡ کمبود برق: واحدهای صنعتیِ بی‌برق تولید نمی‌کنند.
-        # درآمد ذخیره‌شده دست نمی‌خورد؛ فقط پرداختِ این دوره کم می‌شود، پس
-        # به‌محض ترمیم شبکه، درآمد خودبه‌خود برمی‌گردد.
-        power_note = ""
-        if internal_affairs.power_penalty_enabled():
-            try:
-                power = internal_affairs.power_status(c)
-                if power["shortage"] and power["income_lost"] > 0:
-                    daily_income = max(0, daily_income - power["income_lost"])
-                    offline_units = sum(power["offline"].values())
-                    power_note = (
-                        f" — ⚡ کمبود برق: {offline_units} واحد صنعتی خاموش "
-                        f"({format_money(power['income_lost'])}/روز از دست رفت)"
-                    )
-            except Exception:
-                logger.exception("Power shortage calculation failed for country %s", c["id"])
-
-        gross_income = daily_income + tax_income
-        sanction_note = ""
-        # 🚫 تحریم جامع سازمان ملل: درآمد روزانه کشور تحریمی کاهش می‌یابد
-        if c.get("un_sanctioned") or 0:
-            factor = getattr(config, "UN_SANCTION_INCOME_FACTOR", 0.5)
-            gross_income = int(gross_income * factor)
-            sanction_note = f" — 🚫 درآمد تحت تحریم جامع سازمان ملل ({int(factor * 100)}٪)"
-        # 🚫 تحریم‌های هدفمند سازمان ملل: تحریم مالی ۲۵٪ درآمد را قطع می‌کند
-        if db.has_targeted_sanction(c["id"], "financial"):
-            fin_factor = getattr(config, "UN_TARGETED_FINANCIAL_FACTOR", 0.75)
-            gross_income = int(gross_income * fin_factor)
-            sanction_note += f" — 💰 تحریم مالی سازمان ملل ({int(fin_factor * 100)}٪ درآمد)"
-        net_full = gross_income - maint_info["total_maint"]
-        net_payment = net_full if force else int(net_full / INCOME_PARTS)
-        gold_daily = c.get("gold_daily", 0) or 0
-        gold_payment = gold_daily if force else int(gold_daily / INCOME_PARTS)
-        chips_daily = c.get("microchips_daily", 0) or 0
-        chips_payment = chips_daily if force else int(chips_daily / INCOME_PARTS)
-        iron_daily = c.get("iron_ore_daily", 0) or 0
-        iron_payment = iron_daily if force else int(iron_daily / INCOME_PARTS)
-        u_daily = c.get("uranium_ore_daily", 0) or 0
-        u_payment = u_daily if force else int(u_daily / INCOME_PARTS)
-        fuel_daily = c.get("nuclear_fuel_daily", 0) or 0
-        fuel_payment = fuel_daily if force else int(fuel_daily / INCOME_PARTS)
-        med_daily = c.get("medical_isotopes_daily", 0) or 0
-        med_payment = med_daily if force else int(med_daily / INCOME_PARTS)
-
-        # 🛡 محافظ خزانه: هزینه نگهداری هرگز خزانه را منفی نمی‌کند.
-        # (باقی‌مانده هزینه وقتی خزانه پر شود کسر نمی‌شود — ساده و غیرقابل سوءاستفاده)
-        treasury_now = c.get("treasury", 0) or 0
-        if net_payment < 0 and treasury_now + net_payment < 0:
-            net_payment = -max(treasury_now, 0)
-
-        db.adjust_treasury(c["id"], net_payment)
-        db.adjust_gold(c["id"], gold_payment)
-        if chips_payment > 0:
-            db.adjust_microchips(c["id"], chips_payment)
-        if iron_payment > 0:
-            db.adjust_iron_ore(c["id"], iron_payment)
-        if u_payment > 0:
-            db.adjust_uranium_ore(c["id"], u_payment)
-        if fuel_payment > 0:
-            db.adjust_nuclear_fuel(c["id"], fuel_payment)
-        if med_payment > 0:
-            db.adjust_medical_isotopes(c["id"], med_payment)
-
-        # ── چرخه‌ی ۶ ساعته‌ی شدت بحران، هم‌ضرب با همین نوبت پرداخت
-        # فقط بحران‌هایی که کل سطحشان بالا/پایین شده خبر می‌سازند؛ تغییر درصد مهار
-        # به‌تنهایی ساکت است.
-        try:
-            slot_events = internal_affairs.run_crisis_slot_cycle(db.get_country_by_id(c["id"]) or c, now)
-            if slot_events:
-                fresh_slot = db.get_country_by_id(c["id"]) or c
-                slot_news = internal_affairs.collect_slot_news(fresh_slot, slot_events)
-                if slot_news:
-                    crisis_news_batch.extend(slot_news)
-                    await _notify_crisis_owner(context, fresh_slot, slot_news)
-        except Exception:
-            logger.exception("Crisis slot cycle failed for country %s", c["id"])
-
-        # ⚔️ حمله‌های دوره‌ای شورش — هم‌ضرب با همین گرید ۶ ساعته‌ی پرداخت خزانه
-        try:
-            if insurgency.is_enabled():
-                _ins_c = db.get_country_by_id(c["id"]) or c
-                _slot_res = insurgency.slot_tick(_ins_c, internal_affairs.slot_key(now))
-                if _slot_res.get("events") and _slot_res.get("news"):
-                    _sev = _slot_res["events"][0]
-                    if insurgency.news_budget_take_slot(internal_affairs.slot_key(now)):
-                        await news_engine.trigger_insurgency_news(context.bot, _sev)
-        except Exception:
-            logger.exception("Insurgency slot tick failed for country %s", c["id"])
-
-        app_res = None
-        resource_note = ""
-        if first_of_day:
-            app_res = approval_system.process_daily_approval_and_emigration(c)
-            cycle = None
-            # چرخه‌ی جمعیت پویا، مالیات، ناآرامی و بحران‌ها (پشت کلید ادمین، idempotent)
-            try:
-                cycle = internal_affairs.run_daily_cycle(db.get_country_by_id(c["id"]) or c, app_res)
-                if cycle:
-                    # 🏭 هشدار نگهداری سازه‌ها (خاموشی بر اثر کسری / بازفعال‌سازی)
-                    try:
-                        _up = db.format_upkeep_report(cycle.get("upkeep") or {})
-                        if _up:
-                            resource_note += "\n\n" + _up
-                    except Exception:
-                        logger.exception("Upkeep report render failed for country %s", c["id"])
-                    # ⚓ شناورهایی که از تعمیرگاه برگشتند
-                    try:
-                        _rep = cycle.get("ship_repairs") or []
-                        if _rep:
-                            _lines = ["⚓ <b>شناورهای بازگشته از تعمیرگاه</b>"]
-                            for _r in _rep:
-                                _lines.append(f"   🟢 {_r['qty']} × {_r['equipment_name']}")
-                            _tm = sum(x["money"] for x in _rep)
-                            _ti = sum(x["iron_ore"] for x in _rep)
-                            _lines.append(f"   💵 هزینه تعمیر: {_tm:,} دلار | ⛏️ {_ti:,} تن فولاد")
-                            _wait = sum(x["still_waiting"] for x in _rep)
-                            if _wait:
-                                _lines.append(f"   ⚠️ {_wait} فروند به دلیل کمبود منابع در تعمیرگاه ماند")
-                            resource_note += "\n\n" + "\n".join(_lines)
-                    except Exception:
-                        logger.exception("Ship repair report failed for country %s", c["id"])
-                    fresh = db.get_country_by_id(c["id"]) or c
-                    news_items = internal_affairs.collect_news(fresh, cycle)
-                    if news_items:
-                        crisis_news_batch.extend(news_items)
-                        await _notify_crisis_owner(context, fresh, news_items)
-            except Exception:
-                logger.exception("Internal affairs daily cycle failed for country %s", c["id"])
-            # ⚔️ چرخه‌ی شبانه‌ی شورش مسلحانه (کلید سراسری insurgency_enabled — پیش‌فرض خاموش)
-            try:
-                if cycle:
-                    _ins_today = cycle.get("date")
-                    _ins_fresh = db.get_country_by_id(c["id"]) or c
-                    _ins_res = insurgency.nightly_tick(_ins_fresh, _ins_today, cycle)
-                    if _ins_res.get("report"):
-                        resource_note += "\n\n" + _ins_res["report"]
-                    if _ins_res.get("events") and _ins_res.get("news"):
-                        _evs = _ins_res["events"]
-                        _ev = next((e for e in _evs if e.get("kind") == "finale_win"), _evs[0])
-                        _force = _ev.get("kind") == "finale_win"
-                        if insurgency.news_budget_take(_ins_today, force=_force):
-                            await news_engine.trigger_insurgency_news(context.bot, _ev)
-                    if _ins_res.get("collapse"):
-                        _col = insurgency.execute_collapse(_ins_fresh, _ins_today)
-                        try:
-                            if _ins_fresh.get("player_id"):
-                                await context.bot.send_message(
-                                    int(_ins_fresh["player_id"]),
-                                    "⚫️ سقوط دولت\n\n"
-                                    f"با سقوط آخرین دژهای دولتی، حکومت {_ins_fresh.get('flag')} {_ins_fresh.get('name')} "
-                                    "پایان یافت و کشور وارد دوران گذار شد.\n\n"
-                                    "امکانات مربوط به آن کشور به بایگانی داوری منتقل شد و "
-                                    "شما می‌توانید با /start مجدداً وارد صف انتخاب کشور شوید."
-                                )
-                        except Exception:
-                            logger.exception("Insurgency collapse DM failed for player %s", _ins_fresh.get("player_id"))
-                        logger.warning("INSURGENCY COLLAPSE: country %s (%s) fell; requeued=%s",
-                                       _ins_fresh.get("id"), _ins_fresh.get("name"), _col.get("requeued"))
-                        continue  # این کشور حذف شده؛ ادامه‌ی پردازش این نوبت بی‌معناست
-            except Exception:
-                logger.exception("Insurgency nightly tick failed for country %s", c["id"])
-            # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
-            try:
-                fuel_need = db.calculate_military_fuel_consumption(c["id"])
-                if fuel_need > 0:
-                    oil_now = c.get("oil_reserves") or 0
-                    if oil_now >= fuel_need:
-                        db.adjust_oil(c["id"], -fuel_need)
-                    else:
-                        # کسری سوخت → تنزل رضایت عمومی و افت آمادگی رزمی نیروهای مسلح
-                        db.adjust_oil(c["id"], -oil_now)
-                        new_app = max(0, (c.get("approval_rating") or 80) - 4)
-                        new_readiness = max(10, (c.get("combat_readiness") or 80) - 5)
-                        db.update_country_field(c["id"], "approval_rating", new_app)
-                        db.update_country_field(c["id"], "combat_readiness", new_readiness)
-            except Exception:
-                pass
-
-            # 🌾🛢 مصرف روزانه منابع توسط جمعیت و صنایع (واریز تولید، کسر نیاز، جریمه کمبود)
-            try:
-                cons = internal_affairs.process_daily_resource_consumption(
-                    db.get_country_by_id(c["id"]) or c
-                )
-                if cons.get("grain_shortage") or cons.get("oil_shortage"):
-                    _parts = []
-                    if cons.get("grain_shortage"):
-                        _parts.append(
-                            f"🌾 کمبود غلات به میزان {cons['grain_shortage']:,} تن — "
-                            f"قحطی! ({cons['grain_pop_loss']:,} نفر از جمعیت کاسته شد، رضایت افت کرد)"
-                        )
-                    if cons.get("oil_shortage"):
-                        _parts.append(
-                            f"🛢️ کمبود نفت به میزان {cons['oil_shortage']:,} بشکه — بحران انرژی! (رضایت افت کرد)"
-                        )
-                    resource_note = "\n\n⏳ *بحران مصرف منابع:*\n• " + "\n• ".join(_parts)
-            except Exception:
-                logger.exception("Daily resource consumption failed for country %s", c["id"])
-
-        tax_part = tax_income if force else int(tax_income / INCOME_PARTS)
-        daily_part = daily_income if force else int(daily_income / INCOME_PARTS)
-        maint_part = maint_info["total_maint"] if force else int(maint_info["total_maint"] / INCOME_PARTS)
-
-        db.update_country_field(c["id"], "last_income_date", now.isoformat())
-        if force:
-            db.add_transaction(c["id"], "daily_income", f"توزیع فوری درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)})", net_full)
-        else:
-            db.add_transaction(c["id"], "daily_income", f"واریز دوره‌ای درآمد و مالیات (صنعتی: {format_money(daily_part)} + مالیات: {format_money(tax_part)} - ارتش: {format_money(maint_part)}){sanction_note}{power_note}", net_payment)
-
-        p_id = c.get("player_id")
-        if p_id:
-            try:
-                # وضعیت بیانیه‌های روزانه و اخطار عدم فعالیت
-                stmt_count = db.get_country_statement_count_today(c["id"])
-                req_stmts = getattr(config, "REQUIRED_DAILY_STATEMENTS", 2)
-                inact_paused = db.get_setting("inactivity_revocation_paused") == "1"
-
-                if inact_paused:
-                    stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* `{stmt_count} از {req_stmts}` بیانیه (🛡️ سیستم سلب مالکیت ساعت ۰۰:۰۰ موقتاً متوقف و مصونیت فعال است)."
-                elif stmt_count >= req_stmts:
-                    stmt_status_section = f"\n\n📢 *وضعیت فعالیت امروز:* ✅ `{stmt_count} از {req_stmts}` بیانیه/توییت ثبت شده (تکمیل شد)."
-                else:
-                    needed = req_stmts - stmt_count
-                    stmt_status_section = (
-                        f"\n\n⚠️ *هشدار فعالیت و بیانیه روزانه (الزامی):*\n"
-                        f"• بیانیه‌های ثبت‌شده امروز شما: *{stmt_count} از {req_stmts}*\n"
-                        f"⏳ *اخطار مهم:* جهت حفظ حاکمیت کشور، ثبت روزانه حداقل {req_stmts} بیانیه یا توییت رسمی الزامی است. "
-                        f"شما نیاز به ثبت *{needed} بیانیه/توییت دیگر* دارید. در صورت عدم ثبت تا ساعت ۰۰:۰۰ بامداد به وقت ایران، کشور شما سلب مالکیت و آزاد خواهد شد!"
-                    )
-
-                if first_of_day and app_res is not None:
-                    report_msg = approval_system.build_daily_country_report_message(
-                        db.get_country_by_id(c["id"]),
-                        app_res,
-                        today,
-                        payout={
-                            "net_payment": net_payment,
-                            "tax_part": tax_part,
-                            "daily_part": daily_part,
-                            "maint_part": maint_part,
-                        },
-                    )
-                    report_msg += resource_note + stmt_status_section
-                else:
-                    c2 = db.get_country_by_id(c["id"])
-                    chips_line = f"\n• 💻 میکروچیپ: +{chips_payment:,} عدد" if chips_payment > 0 else ""
-                    iron_line = f"\n• ⛏️ آهن و فولاد: +{iron_payment:,} تن" if iron_payment > 0 else ""
-                    u_line = f"\n• ☢️ کیک زرد: +{u_payment:,} تن" if u_payment > 0 else ""
-                    fuel_line = f"\n• 🧪 سوخت غنی‌شده: +{fuel_payment:,} ک‌گ" if fuel_payment > 0 else ""
-                    report_msg = (
-                        f"💵 *واریز دوره‌ای درآمد و مالیات — {c2['flag']} {c2['name']}*\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"• 💰 *مالیات وصول‌شده از شهروندان:* +{format_money(tax_part)}\n"
-                        f"• 🏭 *درآمد پایه و کارخانجات:* +{format_money(daily_part)}\n"
-                        f"• 🪖 *هزینه نگهداری نیروهای مسلح:* -{format_money(maint_part)}\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"• 📥 *خالص واریز این نوبت به خزانه:* *{format_money(net_payment)}*\n"
-                        f"• 🏦 *موجودی جدید خزانه:* {format_money(c2['treasury'])}\n"
-                        f"• 🪙 طلا: +{gold_payment}{chips_line}{iron_line}{u_line}{fuel_line}\n\n"
-                        f"_درآمدها در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شوند._"
-                        f"{stmt_status_section}"
-                    )
-                _upk = (cycle.get("upkeep") or {}) if cycle else {}
-                if _upk.get("shut_down") or _upk.get("reactivated"):
-                    _rm = InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🏭 چرا سازه‌ها خاموش شدند؟",
-                                             callback_data=f"upkeep_why:{c['id']}")
-                    ]])
-                else:
-                    _rm = get_main_keyboard(p_id)
-                await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=_rm, parse_mode="Markdown")
-            except Exception as e:
-                logger.warning(f"Could not send daily report to player {p_id}: {e}")
-
-        updated_count += 1
 
     # 3.5. هزینه و اجاره روزانه پایگاه‌های برون‌مرزی — فقط یک بار در هر روز تقویمی (خارج از حلقه کشورها)
     if db.get_setting("base_cost_cycle_date") != today or force:

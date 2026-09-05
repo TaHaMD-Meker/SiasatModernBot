@@ -1734,7 +1734,7 @@ def test_player_is_notified_privately_even_when_channel_is_quiet():
 
     source = inspect.getsource(main_module._notify_crisis_owner)
     assert "player_id" in source and "send_message" in source
-    job = inspect.getsource(main_module.daily_income_job)
+    job = inspect.getsource(main_module._payout_one_country) + inspect.getsource(main_module.daily_income_job)
     assert "_notify_crisis_owner" in job
     assert "crisis_news_batch" in job, "اخبار باید تجمیع شوند نه کشور به کشور ارسال"
 
@@ -1836,7 +1836,7 @@ def test_payout_uses_the_power_penalty_without_touching_stored_income():
     import inspect
     import main as main_module
 
-    source = inspect.getsource(main_module.daily_income_job)
+    source = inspect.getsource(main_module._payout_one_country)
     assert "power_penalty_enabled" in source
     assert "power_status" in source
     assert "daily_income = max(0, daily_income - power[\"income_lost\"])" in source
