@@ -154,7 +154,7 @@ def _admin_summary_line(counts: dict) -> str:
     if counts["roles"]:
         bits.append(f"🎮 {counts['roles']} رول")
     if counts["quarantined"]:
-        bits.append(f"⏳ {counts['quarantined']} قرنطینه")
+        bits.append(f"🌍 {counts['quarantined']} کشور بی‌صاحب")
     if not bits:
         bits.append("✅ همه‌چیز روبه‌راه است")
     return " | ".join(bits)
@@ -257,7 +257,7 @@ async def _bans_submenu(query, notice: str = ""):
         "🚫 *مسدودسازی بازیکنان (فقط مالک)*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "کاربر مسدودشده نمی‌تواند هیچ مسیری برای گرفتن کشور برود:\n"
-        "درخواست از /start، ورود به صف، پذیرش پیشنهاد و استرداد قرنطینه.\n\n"
+        "تنها مسیرِ گرفتن کشور، درخواست از /start و تایید ادمین است.\n\n"
         "✍️ برای مسدودسازی، **آیدی عددی** کاربر را بفرست (دلیل اختیاری، بعد از آیدی)."
     )
     if notice:
@@ -1009,26 +1009,26 @@ async def show_queue_panel(query, context, notice: str = None):
 
     fresh_n = sum(1 for c in free_list if _is_fresh(c))
     lines = [
-        "🌍 <b>کشورهای بی‌صاحب</b>",
+        "🌍 <b>کشورهای آزاد (بی‌صاحب)</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"در استخر واگذاری: <b>{len(free_list)}</b> کشور",
+        f"✅ هر <b>{len(free_list)}</b> کشور این قفسه همین الان در /start برای بازیکن‌ها باز است.",
     ]
     if notice:
         lines += ["", f"<b>{notice}</b>"]
     lines += [
         "",
-        "<i>صف انتظار حذف شده است؛ بازیکن از /start کشور را انتخاب می‌کند و درخواستش برای شما می‌آید (تایید/رد در بخش درخواست‌ها).</i>",
+        "<i>این لیست یعنی «کشورهای روی قفسه»: بازیکن از /start انتخاب و درخواست می‌دهد؛ تایید/رد با شما. "
+        "پاک‌سازی، سابقه‌ی کشور را ریست می‌کند نه اینکه آن را از قفسه بردارد — کشور تا وقتی بازیکنی نگیرد همین‌جا می‌ماند.</i>",
     ]
     if free_list:
         lines.append("")
-        lines.append("<b>🌍 کشورهای بی‌صاحبِ آماده‌ی واگذاری</b>" + (" <i>(🆕 = تازه فکتوری شده)</i>" if fresh_n else ""))
+        lines.append("<b>🌍 روی قفسه</b>" + (" <i>(🆕 = تازه فکتوری شده)</i>" if fresh_n else ""))
         for country in free_list:
-            pid = country.get("player_id") or 0
             fresh = " 🆕" if _is_fresh(country) else ""
-            lines.append(f"• {country.get('flag','')} {country.get('name','')}{fresh} (ID: {pid})")
+            lines.append(f"• {country.get('flag','')} {country.get('name','')}{fresh}")
     else:
         lines.append("")
-        lines.append("🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
+        lines.append("🌍 هیچ کشور بی‌صاحبی روی قفسه نیست.")
     kb = []
     if free_list:
         kb.append([InlineKeyboardButton("🧹 پاک‌سازی کامل همه‌ی بی‌صاحب‌ها (ریست فکتوری)",
@@ -3623,7 +3623,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"• مالکیت بازیکن `{c['player_id']}` حذف می‌شود.\n"
             "• تمام ثروت، طلا، نفت، تجهیزات، ساختمان‌ها و مشخصات کشور *دست‌نخورده می‌ماند*.\n"
             "• کشور بلافاصله به استخر واگذاری می‌رود و نفر بعدی با همان امکانات تحویل می‌گیرد.\n"
-            "• برخلاف قرنطینه، صاحب قبلی حق /reclaim ندارد.\n"
+            "• صاحب قبلی هیچ حق پس‌گرفتنی (/reclaim) ندارد.\n"
             "• انتقال‌های اخیر (۷۲ ساعت) طبق قانون ضدتقلب برگشت می‌خورند."
         )
         keyboard = [

@@ -25,7 +25,7 @@ def test_revoked_country_is_instantly_free(monkeypatch, tmp_path):
 
 def test_panel_shows_free_countries_and_retired_buttons():
     src = open("handlers/admin.py", encoding="utf-8").read()
-    assert "کشورهای بی‌صاحبِ آماده‌ی واگذاری" in src, "پنل باید بی‌صاحب‌ها را نشان دهد"
+    assert "روی قفسه" in src, "پنل باید بی‌صاحب‌ها را نشان دهد (قفسه‌ی کشورهای آزاد)"
     assert "آزادسازی همه‌ی قرنطینه‌ها" not in src.split("def show_queue_panel")[1], \
         "دکمه‌های منسوخ قرنطینه نباید در پنل رندر شوند"
     idx = src.index('data.startswith("admin:q_release:")')
