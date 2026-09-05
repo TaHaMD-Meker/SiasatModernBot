@@ -50,3 +50,35 @@ def test_slot_advance_pays_missed_slot(monkeypatch, tmp_path):
         "نوبت از‌دست‌رفته باید در اولین تیک پرداخت شود"
     # و last_income_date تازه شده باشد
     assert (after["last_income_date"] or "") != last
+
+
+def test_second_slot_sends_payout_dm_and_counts(monkeypatch, tmp_path):
+    """نوبت‌های ۲-۴ روز (first_of_day=False) باید DM واریز بفرستند و شمارنده بزنند.
+
+    باگ واقعی ساعت ۰۹:۵۲: پول واریز می‌شد ولی چون «cycle» فقط در شاخه‌ی
+    اولین-پرداخت-روز تعریف می‌شد، ساخت پیام واریز می‌ترکید و هیچ DM
+    به بازیکن نمی‌رفت + شمارنده‌ی job هم UnboundLocalError می‌داد.
+    """
+    import types
+    import main as main_mod
+    _fresh(monkeypatch, tmp_path, "slot2.db")
+    cid = db.create_country(8401, "بحرین", "🇧🇭", country_key="bahrain")
+    db.update_country_field(cid, "daily_income", 2_000_000)
+    # آخرین پرداخت ۵ ساعت پیش = همان روز ایران → نوبت دوم (first_of_day=False)
+    last = (datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(hours=5)).isoformat()
+    db.update_country_field(cid, "last_income_date", last)
+
+    sent = []
+
+    class _Bot:
+        async def send_message(self, chat_id=None, text=None, **k):
+            sent.append((chat_id, text))
+            return True
+
+    ctx = types.SimpleNamespace(bot=_Bot())
+    n = asyncio.run(main_mod.daily_income_job(ctx, force=False))
+
+    assert n >= 1, "شمارنده باید کشورِ پرداخت‌شده را بشمارد"
+    assert sent, "پیام واریز نوبت دوم باید به بازیکن برود"
+    assert any("واریز" in (t or "") for _c, t in sent), "متن پیام باید واریز دوره‌ای باشد"

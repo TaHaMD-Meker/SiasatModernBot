@@ -318,6 +318,7 @@ async def _payout_one_country(c, context, now, force):
 
     app_res = None
     resource_note = ""
+    cycle = None  # نوبت‌های ۲-۴ روز چرخه‌ی روزانه ندارند؛ خواندنِ بعدی باید امن باشد
     if first_of_day:
         app_res = approval_system.process_daily_approval_and_emigration(c)
         cycle = None
@@ -500,8 +501,6 @@ async def _payout_one_country(c, context, now, force):
         except Exception as e:
             logger.warning(f"Could not send daily report to player {p_id}: {e}")
 
-    updated_count += 1
-
 
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     """پرداخت درآمد به‌صورت تقسیط‌شده: هر ۶ ساعت یک‌چهارم درآمد.
@@ -522,6 +521,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         # کشور خطاداده در تیک بعدی ۱۵ دقیقه‌ای جبران می‌شود (slot باز می‌ماند).
         try:
             await _payout_one_country(c, context, now, force)
+            updated_count += 1
         except Exception:
             _cid = c.get("id") if isinstance(c, dict) else "?"
             logger.exception("daily payout failed for country %s - skip", _cid)
