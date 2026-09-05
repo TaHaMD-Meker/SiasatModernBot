@@ -237,6 +237,26 @@ def _approval_causes(country: dict) -> list[str]:
         lines.append(f"❌ برق و انرژی: <b>کسری {_def_s} واحد</b> (ظرفیت شبکه {elec}٪ | مصرف سازه‌ها {elec_need:g}٪)")
     lines.append(f"   🏭 تولید: <b>{elec}٪</b> ظرفیت شبکه (پایه‌ی ۱۰۰٪ خانگی + نیروگاه‌ها)")
 
+    # 🛢 دفتر نفت امروز — همه‌ی کسرها/واریزهای واقعی شب (جمعیت، صنعت، سازه‌ها، ارتش، ...)
+    try:
+        _led = db.get_oil_ledger(country["id"])
+    except Exception:
+        _led = []
+    if _led:
+        lines.append("")
+        lines.append("<b>🛢 دفتر نفت امروز</b>")
+        _total = sum(int(e.get("delta") or 0) for e in _led)
+        for e in _led[:8]:
+            d = int(e.get("delta") or 0)
+            ln = f"   • {html.escape(str(e.get('reason', '?')))}: <b>{d:+,}</b> بشکه"
+            if e.get("note"):
+                ln += f"\n     <i>{html.escape(str(e['note']))}</i>"
+            lines.append(ln)
+        if len(_led) > 8:
+            lines.append(f"   • و {len(_led) - 8} ردیف دیگر…")
+        lines.append(f"   جمع امروز: <b>{_total:+,}</b> بشکه "
+                     f"(ذخیره فعلی: {int(country.get('oil_reserves') or 0):,})")
+
     oil_res = int(country.get("oil_reserves") or 0)
     oil_prod = int(country.get("oil_production") or 0)
     oil_need = int(reqs["oil_need_daily"])

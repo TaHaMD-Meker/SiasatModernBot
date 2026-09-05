@@ -2655,6 +2655,68 @@ def adjust_gold(country_id: int, delta: int):
     conn.close()
 
 
+def _append_oil_ledger_cur(cur, country_id: int, delta: int, reason: str,
+                           note: str = "", day: str = None):
+    """ثبت یک ردیف در دفتر نفت با curِ موجود (داخل تراکنش باز)."""
+    import json as _json
+    import datetime as _dt
+    day = day or _dt.date.today().isoformat()
+    key = f"oil_ledger_json:{country_id}:{day}"
+    cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = cur.fetchone()
+    try:
+        data = _json.loads(row["value"]) if row else {}
+    except Exception:
+        data = {}
+    events = data.get("events") or []
+    events.append({"delta": int(delta), "reason": str(reason), "note": str(note or ""),
+                   "at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
+    cur.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, _json.dumps({"day": day, "events": events}, ensure_ascii=False)))
+
+
+def record_oil_event(country_id: int, delta: int, reason: str,
+                     note: str = "", day: str = None):
+    """🛢 دفتر نفت: هر کسر/واریز شبانه باید ثبت شود تا «یهو صفر شد» قابل‌توضیح باشد."""
+    conn = get_connection()
+    try:
+        with conn:
+            _append_oil_ledger_cur(conn.cursor(), country_id, delta, reason, note, day)
+    finally:
+        conn.close()
+
+
+def get_oil_ledger(country_id: int, day: str = None) -> list:
+    """ردیف‌های دفتر نفت یک کشور در یک روز (پیش‌فرض امروز) — قدیمی به جدید."""
+    import json as _json
+    import datetime as _dt
+    day = day or _dt.date.today().isoformat()
+    raw = get_setting(f"oil_ledger_json:{country_id}:{day}")
+    if not raw:
+        return []
+    try:
+        return list((_json.loads(raw) or {}).get("events") or [])
+    except Exception:
+        return []
+
+
+def format_oil_ledger(entries: list) -> str:
+    """خطوط خوانای دفتر نفت برای گزارش روزانه/پنل (متن ساده، بدون تگ HTML)."""
+    if not entries:
+        return ""
+    lines = []
+    for e in entries:
+        d = int(e.get("delta") or 0)
+        line = f"• {e.get('reason', '?')}: {d:+,} بشکه"
+        if e.get("note"):
+            line += f" — {e['note']}"
+        lines.append(line)
+    lines.append(f"جمع دفتر: {sum(int(e.get('delta') or 0) for e in entries):+,} بشکه")
+    return "\n".join(lines)
+
+
 def adjust_oil(country_id: int, delta: int):
     conn = get_connection()
     cur = conn.cursor()
@@ -3505,6 +3567,15 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
             """, (consumed.get("money", 0), consumed.get("oil", 0), consumed.get("grain", 0),
                   consumed.get("iron_ore", 0), consumed.get("microchips", 0),
                   consumed.get("nuclear_fuel", 0), country_id))
+            # 🛢 دفتر نفت: سوخت سازه‌ها هم باید در لجر بیاید (با همان تراکنش)
+            if consumed.get("oil", 0) > 0:
+                _unote = ""
+                if shortages.get("oil"):
+                    _unote = (f"نیاز {int(full_need.get('oil', 0)):,} از موجودی "
+                              f"{int(stock.get('oil', 0)):,} بیشتر بود؛ "
+                              f"{int(shortages['oil']):,} بشکه کسری ماند")
+                _append_oil_ledger_cur(cur, country_id, -int(consumed["oil"]),
+                                       "نگهداری روزانه‌ی سازه‌ها", note=_unote)
 
             # ── ثبت خاموشی‌ها
             off = {}
@@ -7531,6 +7602,8 @@ def apply_war_weariness() -> int:
                         WHERE id = ?
                     """, (config.WAR_DAILY_MONEY_COST, config.WAR_DAILY_OIL_COST,
                           config.WAR_WEARINESS_APPROVAL, cid))
+                    _append_oil_ledger_cur(conn.cursor(), cid, -config.WAR_DAILY_OIL_COST,
+                                           "فرسودگی جنگ فعال")
         finally:
             conn.close()
         charged += 1

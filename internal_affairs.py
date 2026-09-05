@@ -2823,6 +2823,7 @@ def process_daily_resource_consumption(country: dict) -> dict:
         db.adjust_grain(cid, grain_prod)
     if oil_prod:
         db.adjust_oil(cid, oil_prod)
+        db.record_oil_event(cid, oil_prod, "تولید روزانه (واریز به ذخیره)")
 
     fresh = db.get_country_by_id(cid) or country
     try:
@@ -2864,6 +2865,13 @@ def process_daily_resource_consumption(country: dict) -> dict:
             db.adjust_oil(cid, -paid)
         out["oil_need"] = o_need
         shortage = o_need - paid
+        # 🛢 دفتر نفت: مصرف جمعیت/صنایع + توضیح صفرشدن در کسری
+        note = ""
+        if shortage > 0:
+            note = (f"نیاز {o_need:,} از موجودی {o_have:,} بیشتر بود؛ "
+                    f"ذخیره صفر شد و کسری {shortage:,} بشکه بی‌پاسخ ماند")
+        if paid or note:
+            db.record_oil_event(cid, -paid, "مصرف جمعیت و صنایع", note=note)
         if shortage > 0:
             out["oil_shortage"] = shortage
             drop = int(pen.get("oil_approval_drop", 3))

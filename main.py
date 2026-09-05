@@ -389,22 +389,11 @@ async def _payout_one_country(c, context, now, force):
                     return  # این کشور حذف شده؛ ادامه‌ی پردازش این نوبت بی‌معناست
         except Exception:
             logger.exception("Insurgency nightly tick failed for country %s", c["id"])
-        # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی)
+        # مصرف سوخت روزانه نیروهای مسلح (واقع‌گرایی اقتصادی) — با ثبت در دفتر نفت
         try:
-            fuel_need = db.calculate_military_fuel_consumption(c["id"])
-            if fuel_need > 0:
-                oil_now = c.get("oil_reserves") or 0
-                if oil_now >= fuel_need:
-                    db.adjust_oil(c["id"], -fuel_need)
-                else:
-                    # کسری سوخت → تنزل رضایت عمومی و افت آمادگی رزمی نیروهای مسلح
-                    db.adjust_oil(c["id"], -oil_now)
-                    new_app = max(0, (c.get("approval_rating") or 80) - 4)
-                    new_readiness = max(10, (c.get("combat_readiness") or 80) - 5)
-                    db.update_country_field(c["id"], "approval_rating", new_app)
-                    db.update_country_field(c["id"], "combat_readiness", new_readiness)
+            military_fuel_step(c)
         except Exception:
-            pass
+            logger.exception("Military fuel step failed for country %s", c["id"])
 
         # 🌾🛢 مصرف روزانه منابع توسط جمعیت و صنایع (واریز تولید، کسر نیاز، جریمه کمبود)
         try:
@@ -502,6 +491,32 @@ async def _payout_one_country(c, context, now, force):
             logger.warning(f"Could not send daily report to player {p_id}: {e}")
 
 
+def military_fuel_step(c: dict):
+    """⛽ سوخت روزانه‌ی نیروهای مسلح: کسر + ثبت در دفتر نفت.
+
+    کسری سوخت → موجودی صفر، تنزل رضایت و افت آمادگی رزمی؛ و در دفتر نفت
+    دقیقاً نوشته می‌شود که چرا کسر کامل نشد (باگ «یهو صفر شد» بی‌توضیح).
+    """
+    fuel_need = db.calculate_military_fuel_consumption(c["id"])
+    if fuel_need <= 0:
+        return
+    oil_now = c.get("oil_reserves") or 0
+    if oil_now >= fuel_need:
+        db.adjust_oil(c["id"], -fuel_need)
+        db.record_oil_event(c["id"], -fuel_need, "سوخت نیروهای مسلح")
+    else:
+        # کسری سوخت → تنزل رضایت عمومی و افت آمادگی رزمی نیروهای مسلح
+        db.adjust_oil(c["id"], -oil_now)
+        new_app = max(0, (c.get("approval_rating") or 80) - 4)
+        new_readiness = max(10, (c.get("combat_readiness") or 80) - 5)
+        db.update_country_field(c["id"], "approval_rating", new_app)
+        db.update_country_field(c["id"], "combat_readiness", new_readiness)
+        db.record_oil_event(
+            c["id"], -oil_now, "سوخت نیروهای مسلح (کسر نشد — نفت ناکافی)",
+            note=f"نیاز {fuel_need:,} بود؛ موجودی {oil_now:,} کمتر بود و صفر شد — "
+                 f"رضایت −۴ و آمادگی رزمی −۵")
+
+
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     """پرداخت درآمد به‌صورت تقسیط‌شده: هر ۶ ساعت یک‌چهارم درآمد.
 
@@ -558,6 +573,8 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                                   (config.TENSION_SCARE_OIL_DAILY, c_row["id"]))
             finally:
                 con_f.close()
+            db.record_oil_event(c_row["id"], -config.TENSION_SCARE_OIL_DAILY,
+                                "پانیک سوخت در تنش بالا (صف پمپ‌بنزین)")
             db.set_setting(f"fuelqueue_news:{c_row['id']}", today)
             try:
                 await post_live_ticker(context.bot, [
@@ -664,6 +681,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         else:
             db.adjust_treasury(b_id, -money_cost)
             db.adjust_oil(b_id, -oil_cost)
+            db.record_oil_event(b_id, -oil_cost, f"سوخت ناوگان محاصره‌ی بنادر {t_c['name']}")
             db.add_transaction(b_id, "blockade_cost", f"هزینه روزانه محاصره بنادر {t_c['name']}", -money_cost)
 
     # 5. بررسی و بازگشایی خودکار تنگه‌ها در صورت انهدام ناوگان کشور کنترل‌کننده
@@ -715,6 +733,7 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                 else:
                     db.adjust_treasury(owner_c["id"], -money_cost)
                     db.adjust_oil(owner_c["id"], -oil_cost)
+                    db.record_oil_event(owner_c["id"], -oil_cost, f"گشت رزمی تنگه‌ی {s_name}")
                     db.add_transaction(
                         owner_c["id"],
                         "strait_blockade_cost",
