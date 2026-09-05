@@ -227,19 +227,19 @@ async def _payout_one_country(c, context, now, force):
     tax_income = c.get("tax_income", 0) or 0
     daily_income = c.get("daily_income", 0) or 0
 
-    # ⚡ کمبود برق: واحدهای صنعتیِ بی‌برق تولید نمی‌کنند.
-    # درآمد ذخیره‌شده دست نمی‌خورد؛ فقط پرداختِ این دوره کم می‌شود، پس
-    # به‌محض ترمیم شبکه، درآمد خودبه‌خود برمی‌گردد.
+    # ⚡ کمبود برق: فقط اطلاع‌رسانی — نه کسر دوم.
+    # درآمد واحدهای خاموش (موتور واقعی: apply_building_upkeep → inactive_qty)
+    # در بازمحاسبه‌ی روزانه از daily_income حذف شده است؛ کسر دوباره از پرداخت
+    # جریمه‌ی دوگانه بود (همان درآمد دو بار نمی‌سوزد).
     power_note = ""
     if internal_affairs.power_penalty_enabled():
         try:
             power = internal_affairs.power_status(c)
-            if power["shortage"] and power["income_lost"] > 0:
-                daily_income = max(0, daily_income - power["income_lost"])
+            if power["offline"]:
                 offline_units = sum(power["offline"].values())
                 power_note = (
-                    f" — ⚡ کمبود برق: {offline_units} واحد صنعتی خاموش "
-                    f"({format_money(power['income_lost'])}/روز از دست رفت)"
+                    f" — ⚡ کمبود برق: {offline_units} واحد به‌دلیل کسری برق خاموش است "
+                    f"(درآمدش در درآمد روزانه لحاظ نشده)"
                 )
         except Exception:
             logger.exception("Power shortage calculation failed for country %s", c["id"])

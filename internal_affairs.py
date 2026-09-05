@@ -39,20 +39,16 @@ SETTING_NEWS_MODE = "crisis_news_mode"
 SETTING_POWER_PENALTY = "power_income_penalty_enabled"
 
 # مصرف برق هر واحد صنعتی (هم‌راستا با approval_system.calculate_country_requirements)
+# تک‌منبع حقیقت مصرف برق: همان ستون elec که موتور واقعی خاموشی
+# (database.apply_building_upkeep) استفاده می‌کند. قبلاً اینجا یک دیکشنری
+# دستیِ کلفتی (۱ تا ۵، با کلیدهای کمتر) بود و پنل رضایت عددی متفاوت از پنل
+# سازه‌ها به بازیکن نشان می‌داد (باگ «تأمین کامل ۱۶۵/۱۳۲ ولی ۲ واحد خاموش»).
 POWER_CONSUMERS = {
-    "small_factory": 1,
-    "medium_factory": 2,
-    "large_factory": 3,
-    "industrial_complex": 5,
-    "oil_refinery": 4,
-    "gold_mine": 3,
-    "chip_fab": 4,
-    "iron_mine": 2,
-    "copper_mine": 2,
-    "uranium_mine": 3,
-    "enrichment_facility": 5,
+    _k: float(_v["elec"])
+    for _k, _v in getattr(config, "BUILDING_UPKEEP", {}).items()
+    if _v.get("elec")
 }
-HOUSEHOLD_POWER_BASE = 100  # پوشش پایه‌ی شبکه‌ی خانگی
+HOUSEHOLD_POWER_BASE = 100  # پوشش پایه‌ی شبکه‌ی خانگی (داخل ظرفیت پایه، نه نیاز جدا)
 
 # چه چیزی به کانال عمومی برود؟
 #   severity → فقط کشورهایی که سطح بحرانشان بالا یا پایین رفت (پیش‌فرض)
@@ -867,61 +863,53 @@ def set_power_penalty(value: bool):
 
 
 def power_status(country: dict) -> dict:
-    """کدام واحدهای صنعتی به‌خاطر کمبود برق خاموش‌اند و چقدر درآمد از دست می‌رود.
+    """وضعیت شبکه برق — گزارش‌خوانِ موتور واقعی، نه یک موتور موازی.
 
-    منطق خاموشی: بودجه‌ی برق صنعتی بین واحدها تقسیم می‌شود و ابتدا واحدهایی
-    روشن می‌مانند که به ازای هر واحد برق، درآمد بیشتری می‌دهند. یعنی شبکه مثل
-    یک اپراتور عاقل، پربازده‌ها را نگه می‌دارد و پرمصرفِ کم‌بازده را خاموش می‌کند.
+    قبلاً این تابع یک شبیه‌سازی دوم با اعداد دستی انجام می‌داد و جدا از
+    apply_building_upkeep خاموشی‌های متفاوتی «حدس» می‌زد (باگ تناقض دو پنل).
+    حالا:
+    • مصرف سازه‌ها = همان BUILDING_UPKEEP.elec × واحدهای فعال (موتور واقعی)
+    • خاموشی‌ها و درآمد ازدست‌رفته = از گزارش ذخیره‌شده‌ی آخرین چرخه‌ی نگهداری
+      (واحدهایی که واقعاً به‌دلیل برق خاموش شده‌اند؛ درآمدشان هم از قبل توسط
+      بازمحاسبه از daily_income حذف شده — پس جای دوباره‌کاری نیست).
     """
     result = {
         "available": int(country.get("electricity") or 0),
         "household": HOUSEHOLD_POWER_BASE,
-        "industrial_need": 0,
+        "industrial_need": 0.0,
         "industrial_budget": 0,
-        "offline": {},
         "online": {},
+        "offline": {},
         "income_lost": 0,
         "shortage": False,
     }
+    cid = country.get("id")
     try:
-        equipment = db.get_equipment_active(country["id"]) or {}
+        equipment = db.get_equipment_active(cid) or {}
     except Exception:
-        return result
-
-    shop = getattr(config, "ALL_SHOP_ITEMS", {}) or {}
-    units = []
+        equipment = {}
+    need = 0.0
     for key, elec_each in POWER_CONSUMERS.items():
         count = int(equipment.get(key) or 0)
-        if count <= 0:
+        if count > 0:
+            result["online"][key] = count
+            need += count * elec_each
+    result["industrial_need"] = round(need, 2)
+    result["industrial_budget"] = result["available"] - HOUSEHOLD_POWER_BASE
+    if result["industrial_need"] > result["available"]:
+        result["shortage"] = True
+    try:
+        report = db.get_saved_upkeep_report(cid) or {}
+    except Exception:
+        report = {}
+    for s_ in report.get("shut_down") or []:
+        if "elec" not in (s_.get("scarce") or []):
             continue
-        income_each = int((shop.get(key) or {}).get("income_add") or 0)
-        units.append({
-            "key": key,
-            "name": (shop.get(key) or {}).get("name", key),
-            "count": count,
-            "elec": elec_each,
-            "income": income_each,
-            "efficiency": income_each / elec_each if elec_each else 0,
-        })
-        result["industrial_need"] += count * elec_each
-
-    budget = max(0, result["available"] - HOUSEHOLD_POWER_BASE)
-    result["industrial_budget"] = budget
-    if not units or result["industrial_need"] <= budget:
-        result["online"] = {u["key"]: u["count"] for u in units}
-        return result
-
-    result["shortage"] = True
-    # پربازده‌ترین‌ها اول روشن می‌مانند
-    for unit in sorted(units, key=lambda u: -u["efficiency"]):
-        affordable = min(unit["count"], budget // unit["elec"]) if unit["elec"] else unit["count"]
-        budget -= affordable * unit["elec"]
-        offline = unit["count"] - affordable
-        if affordable:
-            result["online"][unit["key"]] = affordable
-        if offline:
-            result["offline"][unit["key"]] = offline
-            result["income_lost"] += offline * unit["income"]
+        off = int(s_.get("total_off") or 0)
+        if off <= 0:
+            continue
+        result["offline"][s_.get("key")] = result["offline"].get(s_.get("key"), 0) + off
+        result["income_lost"] += int(s_.get("income") or 0) * off
     return result
 
 

@@ -228,12 +228,14 @@ def _approval_causes(country: dict) -> list[str]:
     lines = ["<b>📋 ارزیابی روزانه منابع حیاتی</b>"]
 
     elec = int(country.get("electricity") or 0)
-    elec_need = int(reqs["elec_need"])
-    if elec >= elec_need:
-        lines.append(f"✅ برق و انرژی: تأمین کامل ({elec}٪ از {elec_need}٪ موردنیاز)")
+    elec_need = float(reqs.get("elec_need") or 0)
+    _deficit = round(elec_need - elec, 2)
+    _def_s = f"{_deficit:g}"
+    if _deficit <= 0:
+        lines.append(f"✅ برق و انرژی: تأمین کامل (ظرفیت شبکه {elec}٪ | مصرف سازه‌ها {elec_need:g}٪)")
     else:
-        lines.append(f"❌ برق و انرژی: <b>کسری</b> ({elec}٪ از {elec_need}٪ موردنیاز)")
-    lines.append(f"   🏭 تولید: <b>{elec}٪</b> ظرفیت شبکه")
+        lines.append(f"❌ برق و انرژی: <b>کسری {_def_s} واحد</b> (ظرفیت شبکه {elec}٪ | مصرف سازه‌ها {elec_need:g}٪)")
+    lines.append(f"   🏭 تولید: <b>{elec}٪</b> ظرفیت شبکه (پایه‌ی ۱۰۰٪ خانگی + نیروگاه‌ها)")
 
     oil_res = int(country.get("oil_reserves") or 0)
     oil_prod = int(country.get("oil_production") or 0)
@@ -735,21 +737,20 @@ async def _readiness_page(query, country: dict, state: dict):
     tech = int(country.get("tech_level") or 1)
 
     power = ia.power_status(country)
-    if power["industrial_need"]:
-        need_total = power["household"] + power["industrial_need"]
+    if power["industrial_need"] or power["offline"]:
         state_icon = "🔴" if power["shortage"] else "✅"
         lines.extend([
             "",
             "<b>⚡ شبکه برق و تولید صنعتی</b>",
-            f"{state_icon} تأمین: {power['available']} از {need_total} واحد موردنیاز",
+            f"{state_icon} ظرفیت شبکه: {power['available']} واحد | مصرف سازه‌ها: {power['industrial_need']:g} واحد",
         ])
-        if power["shortage"]:
-            lines.append(f"🏭 <b>{sum(power['offline'].values())} واحد صنعتی خاموش است</b>")
+        if power["offline"]:
+            lines.append(f"🏭 <b>{sum(power['offline'].values())} واحد به‌دلیل کسری برق خاموش است</b>")
             for key, count in power["offline"].items():
                 name = (getattr(config, "ALL_SHOP_ITEMS", {}).get(key) or {}).get("name", key)
                 lines.append(f"   • {name} × {count}")
             lines.append(f"💸 درآمد ازدست‌رفته: <b>{format_money(power['income_lost'])}/روز</b>")
-            lines.append("<i>با افزایش ظرفیت برق، این واحدها خودکار روشن می‌شوند.</i>")
+            lines.append("<i>با افزایش ظرفیت برق (نیروگاه)، این واحدها در چرخه‌ی بعد خودکار روشن می‌شوند.</i>")
 
     lines.extend(["", "<b>وضعیت ذخایر شما</b>"])
     lines.append(f"{'✅' if grain > 50_000 else '⚠️'} غلات: {format_number(grain)} تن — سپر قحطی و خشکسالی")
@@ -940,6 +941,49 @@ async def _buildings_page(query, country: dict):
     await query.edit_message_text("\n".join(lines), reply_markup=_kb(kb_rows), parse_mode="HTML")
 
 
+def _fmt_qty(x: float) -> str:
+    x = round(float(x), 2)
+    return str(int(x)) if abs(x - int(x)) < 1e-9 else f"{x:g}"
+
+
+def building_why_lines(entry: dict, name: str) -> list[str]:
+    """خطوط صفحه‌ی «چرا این سازه خاموش شد؟» — خالص و قابل‌تست.
+
+    • مصرف: به ازای «هر واحد» (مجموعِ ذخیره‌شده تقسیم بر تعداد خاموش)
+    • درآمد ازدست‌رفته: درآمد هر واحد × تعداد خاموش
+    """
+    total_off = max(1, int(entry.get("total_off") or entry.get("qty") or 1))
+    lines = [f"🏭 <b>{html.escape(name)}</b>", "━━━━━━━━━━━━━━━━━━"]
+    lines.append(f"🔴 وضعیت: <b>{total_off} واحد خاموش</b>")
+    lines.append("")
+    lines.append("<b>❓ چرا؟</b>")
+    scarce = entry.get("scarce") or []
+    labels = config.UPKEEP_RESOURCE_LABELS
+    if scarce:
+        names = " و ".join(labels.get(r_, r_) for r_ in scarce)
+        why = f"انبار {names} کفاف مصرف نمی‌داد"
+        if entry.get("least_eff"):
+            why += ("؛ این سازه <b>کم‌بازده‌ترین</b> مصرف‌کننده بود — قانون: "
+                    "کم‌بازده‌ترین اول خاموش می‌شود تا بقیه روشن بمانند")
+        else:
+            why += "؛ خاموشی تا تأمین منابع ادامه دارد"
+        lines.append(f"   ↳ {why}")
+    else:
+        lines.append("   ↳ منابع ورودی این سازه تمام شده بود.")
+    cons = []
+    units = config.UPKEEP_RESOURCE_UNITS
+    for res, amount in (entry.get("consumption") or {}).items():
+        per_unit = float(amount) / total_off
+        cons.append(f"{_fmt_qty(per_unit)} {units.get(res, '')} {labels.get(res, res)}")
+    if cons:
+        lines.append("   ↳ <b>مصرف روزانه‌ی هر واحدش:</b> " + " + ".join(cons))
+    inc = int(entry.get("income") or 0)
+    if inc:
+        lines.append(f"   ↳ درآمد ازدست‌رفته‌ی همین سازه: <b>{inc * total_off:,}</b> دلار/روز")
+    lines.append("")
+    return lines
+
+
 async def _building_why_page(query, country: dict, key: str):
     """نمای «چرا؟» برای یک سازه — از گزارش ذخیره‌شده‌ی آخرین چرخه."""
     cid = country["id"]
@@ -970,32 +1014,9 @@ async def _building_why_page(query, country: dict, key: str):
                                       reply_markup=kb, parse_mode="HTML")
         return
 
-    lines = [f"🏭 <b>{html.escape(name)}</b>", "━━━━━━━━━━━━━━━━━━"]
-    lines.append(f"🔴 وضعیت: <b>{entry['qty']} واحد خاموش</b>")
-    lines.append("")
-    lines.append("<b>❓ چرا؟</b>")
-    scarce = entry.get("scarce") or []
-    labels = config.UPKEEP_RESOURCE_LABELS
-    if scarce:
-        names = " و ".join(labels.get(r_, r_) for r_ in scarce)
-        why = f"انبار {names} کفاف مصرف نمی‌داد"
-        if entry.get("least_eff"):
-            why += ("؛ این سازه <b>کم‌بازده‌ترین</b> مصرف‌کننده بود — قانون: "
-                    "کم‌بازده‌ترین اول خاموش می‌شود تا بقیه روشن بمانند")
-        else:
-            why += "؛ خاموشی تا تأمین منابع ادامه دارد"
-        lines.append(f"   ↳ {why}")
-    else:
-        lines.append("   ↳ منابع ورودی این سازه تمام شده بود.")
-    cons = []
+    lines = building_why_lines(entry, name)
     units = config.UPKEEP_RESOURCE_UNITS
-    for res, amount in (entry.get("consumption") or {}).items():
-        cons.append(f"{amount:,} {units.get(res, '')} {labels.get(res, res)}")
-    if cons:
-        lines.append("   ↳ <b>مصرف روزانه‌ی هر واحدش:</b> " + " + ".join(cons))
-    if entry.get("income"):
-        lines.append(f"   ↳ درآمد از‌دست‌رفته‌ی همین سازه: <b>{entry['income']:,}</b> دلار/روز")
-    lines.append("")
+    labels = config.UPKEEP_RESOURCE_LABELS
     if saved.get("shortages"):
         lines.append("<b>📊 وضعیت منابع در همان چرخه:</b>")
         for res, amount in saved.get("shortages", {}).items():

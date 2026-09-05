@@ -31,14 +31,16 @@ def calculate_country_requirements(c: dict):
     pop = c.get("population", 10_000_000)
     pop_millions = max(0.1, pop / 1_000_000)
 
-    # 1. برق: پوشش شبکه پایه ۱۰۰٪ + بار مصرفی کارخانجات و صنایع سنگین احداث‌شده
+    # 1. برق: مصرف سازه‌ها در برابر ظرفیت شبکه — همان اعداد موتور واقعی
+    # خاموشی (database.apply_building_upkeep → config.BUILDING_UPKEEP.elec).
+    # قبلاً «100 + اعداد دستی» بود و پنل رضایت می‌گفت «تأمین کامل» در همان
+    # لحظه‌ای که موتور واقعی واحدها را به‌دلیل کسری برق خاموش می‌کرد.
+    # پایه‌ی ۱۰۰٪ خانگی داخل ظرفیت پایه است، نه یک نیاز جدا — پس اینجا
+    # فقط مصرف سازه‌ها می‌آید تا عدد پنل با پنل سازه‌ها یکی باشد.
     cid = c.get("id")
-    ind_elec_need = 0
+    ind_elec_need = 0.0
     if cid:
         try:
-            # تک‌منبع حقیقت: همان POWER_CONSUMERS که موتور خاموشی برق
-            # (internal_affairs.power_status) استفاده می‌کند — وگرنه دو موتور
-            # با دو عدد متفاوت به بازیکن گزارش می‌دادند (باگ «مصرف بالا نمی‌رود»).
             # get_equipment_active: واحدِ خاموشِ نگهداری برق نمی‌خواهد.
             import internal_affairs as ia  # وارد کردن تنبل (اجتناب از وابستگی حلقوی)
             equipment = db.get_equipment_active(cid)
@@ -46,7 +48,7 @@ def calculate_country_requirements(c: dict):
                 ind_elec_need += int(equipment.get(_key, 0) or 0) * _elec
         except Exception:
             pass
-    elec_need = 100 + ind_elec_need
+    elec_need = round(ind_elec_need, 2)
 
     # 2. مصرف سوخت و نفت روزانه (با اعمال ضریب بحران حاد انرژی برای کشورهای صنعتی اروپا — اتمام ذخایر در ۱ تا ۳ روز)
     c_key = c.get("country_key", "")
@@ -91,7 +93,7 @@ def process_daily_approval_and_emigration(c: dict):
 
     # 1. Check Electricity
     current_elec = c.get("electricity", 100)
-    if current_elec < elec_need:
+    if elec_need > 0 and current_elec < elec_need:
         deficit_pct = (elec_need - current_elec) / elec_need
         elec_penalty = -max(1, int(deficit_pct * 5))
         elec_ok = False
@@ -224,9 +226,9 @@ def get_approval_status_message(c: dict):
     # Electricity Status
     current_elec = c.get("electricity", 100)
     if current_elec >= elec_need:
-        elec_status = f"تامین کامل (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)"
+        elec_status = f"تامین کامل (ظرفیت شبکه: {current_elec}٪ | مصرف سازه‌ها: {elec_need}٪)"
     else:
-        elec_status = f"کسری برق (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)"
+        elec_status = f"کسری برق (ظرفیت شبکه: {current_elec}٪ | مصرف سازه‌ها: {elec_need}٪)"
     lines.append(f"• *انرژی و برق:* {elec_status}\n")
 
     # Oil Status
@@ -379,9 +381,9 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str, p
     balance = int(current_elec) - int(elec_need)
     balance_str = f"+{balance}" if balance >= 0 else f"{balance}"
     if app_res["elec_ok"]:
-        lines.append(f"• *تراز انرژی:* {balance_str} واحد (تولید: {current_elec} | مصرف: {elec_need}) — تامین کامل\n")
+        lines.append(f"• *تراز انرژی:* {balance_str} واحد (ظرفیت شبکه: {current_elec} | مصرف سازه‌ها: {elec_need}) — تامین کامل\n")
     else:
-        lines.append(f"• *تراز انرژی:* {balance_str} واحد (تولید: {current_elec} | مصرف: {elec_need}) — ⚠️ کسری برق\n")
+        lines.append(f"• *تراز انرژی:* {balance_str} واحد (ظرفیت شبکه: {current_elec} | مصرف سازه‌ها: {elec_need}) — ⚠️ کسری برق\n")
 
     # Change in approval
     net_chg = app_res["net_change"]

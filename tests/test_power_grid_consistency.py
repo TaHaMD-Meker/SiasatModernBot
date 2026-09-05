@@ -9,7 +9,10 @@
 ۲) «توان برق بالا نمی‌رود»: نیاز باید واحدهای «فعال» را بشمارد نه خاموش‌شده‌های
    نگهداری را — واحد خاموش برق نمی‌خواهد.
 ۳) «تراز انرژی» گمراه‌کننده بود: تولید را به‌عنوان درصد نشان می‌داد. حالا
-   تراز واقعی (تولید − نیاز) نمایش داده می‌شود و در نمای آمادگی هم دیده می‌شود.
+   تراز واقعی (ظرفیت شبکه − مصرف سازه‌ها) نمایش داده می‌شود.
+۴) تک‌منبع حقیقت: اعداد برق همه‌ی پنل‌ها = ستون elec در BUILDING_UPKEEP
+   (همان که موتور واقعی خاموشی مصرف می‌کند)؛ power_status دیگر شبیه‌ساز
+   موازی نیست و خاموشی/درآمد ازدست‌رفته را از گزارش واقعی چرخه می‌خواند.
 """
 import config
 import database as db
@@ -38,7 +41,8 @@ def test_chip_fab_increases_elec_need(monkeypatch, tmp_path):
                             config.ALL_SHOP_ITEMS["chip_fab"]["price"] * 2, "فب")
     after = approval_system.calculate_country_requirements(
         db.get_country_by_id(cid))["elec_need"]
-    assert after - before == 2 * 4, "Chip Fab باید ۴ واحد برق به ازای هر واحد مصرف کند"
+    assert after - before == 2 * config.BUILDING_UPKEEP["chip_fab"]["elec"], \
+        "Chip Fab باید مصرف واقعی‌اش (BUILDING_UPKEEP.elec) را به نیاز اضافه کند"
 
 
 def test_iron_and_uranium_mines_and_enrichment_count_too(monkeypatch, tmp_path):
@@ -52,7 +56,11 @@ def test_iron_and_uranium_mines_and_enrichment_count_too(monkeypatch, tmp_path):
         assert ok, msg
     after = approval_system.calculate_country_requirements(
         db.get_country_by_id(cid))["elec_need"]
-    assert after - before == 2 + 3 + 5, "معدن‌ها و غنی‌سازی هم مصرف‌کننده‌ی برق‌اند"
+    assert after - before == round(
+        config.BUILDING_UPKEEP["iron_mine"]["elec"]
+        + config.BUILDING_UPKEEP["uranium_mine"]["elec"]
+        + config.BUILDING_UPKEEP["enrichment_facility"]["elec"], 2), \
+        "معدن‌ها و غنی‌سازی هم مصرف واقعی برق دارند"
 
 
 def test_offline_units_do_not_consume(monkeypatch, tmp_path):
@@ -67,7 +75,7 @@ def test_offline_units_do_not_consume(monkeypatch, tmp_path):
 
     c = db.get_country_by_id(cid)
     reqs = approval_system.calculate_country_requirements(c)
-    assert reqs["elec_need"] == 100, "واحد خاموش نباید در نیاز برق بیاید"
+    assert reqs["elec_need"] == 0, "واحد خاموش نباید در مصرف سازه‌ها بیاید"
 
     # power_status هم نباید برای واحد خاموش درآمد از‌دست‌رفته حساب کند
     p = ia.power_status(c)
@@ -83,8 +91,8 @@ def test_power_status_sums_complete_consumers(monkeypatch, tmp_path):
         db.buy_item_transaction(cid, key, 1, price, key)
     c = db.get_country_by_id(cid)
     p = ia.power_status(c)
-    expected = sum(ia.POWER_CONSUMERS.values())
+    expected = round(sum(ia.POWER_CONSUMERS.values()), 2)
     assert p["industrial_need"] == expected
     reqs = approval_system.calculate_country_requirements(c)
-    assert reqs["elec_need"] == 100 + expected, \
-        "دو موتور محاسبه‌ی برق باید هم‌عدد باشند"
+    assert reqs["elec_need"] == expected, \
+        "پنل رضایت و پنل شبکه باید هم‌عدد باشند (تک‌منبع حقیقت)"

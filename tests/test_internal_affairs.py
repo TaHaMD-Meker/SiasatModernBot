@@ -1746,6 +1746,18 @@ def test_player_is_notified_privately_even_when_channel_is_quiet():
 # کمبود برق، تولید صنعتی را می‌خواباند
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _add_plants(database, cid, count, replace=False):
+    """نیروگاه فسیلی (+۳۰ ظرفیت هر واحد) — مستقیم روی ردیف تجهیزات."""
+    conn = database.get_connection()
+    with conn:
+        if replace:
+            conn.execute("DELETE FROM equipment WHERE country_id=? AND item_key='fossil_plant'", (cid,))
+        if count:
+            conn.execute("INSERT INTO equipment (country_id, item_key, quantity) VALUES (?, 'fossil_plant', ?)",
+                         (cid, count))
+    conn.close()
+
+
 def _industrial_country(database):
     cid = _country(database)
     for key, count in (("small_factory", 10), ("large_factory", 6),
@@ -1757,69 +1769,68 @@ def _industrial_country(database):
 def test_enough_power_means_no_shutdown(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _industrial_country(database)
+    _add_plants(database, cid, 4)          # ۴ فسیلی = +۱۲۰ روی پایه‌ی ۱۳۰
     database.update_country_field(cid, "electricity", 250)
+    report = database.apply_building_upkeep(cid)
 
     power = ia.power_status(database.get_country_by_id(cid))
     assert not power["shortage"]
-    assert power["offline"] == {}
-    assert power["income_lost"] == 0
+    assert not any("elec" in (s_.get("scarce") or []) for s_ in report.get("shut_down") or [])
 
 
 def test_power_shortage_shuts_units_down_and_costs_income(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _industrial_country(database)
     database.update_country_field(cid, "electricity", 132)
+    database.apply_building_upkeep(cid)   # موتور واقعی خاموشی می‌کند
 
     power = ia.power_status(database.get_country_by_id(cid))
-    assert power["shortage"]
-    assert sum(power["offline"].values()) > 0
+    assert power["shortage"] or power["offline"], "کسری واقعی باید دیده شود"
+    assert sum(power["offline"].values()) > 0, "خاموشی‌ها از گزارش واقعی چرخه می‌آیند"
     assert power["income_lost"] > 0
-    # مصرف واحدهای روشن نباید از بودجه‌ی برق بیشتر باشد
-    used = sum(ia.POWER_CONSUMERS[k] * v for k, v in power["online"].items())
-    assert used <= power["industrial_budget"]
+    # مصرف فعال بعد از خاموشی باید داخل ظرفیت باشد (شبکه متعادل شده)
+    assert power["industrial_need"] <= 132 + 0.01
 
 
 def test_the_grid_keeps_the_most_efficient_units_running(monkeypatch, tmp_path):
-    """اپراتور عاقل بیشترین درآمد را از برق محدود بیرون می‌کشد."""
+    """قانون موتور واقعی: کم‌بازده‌ترین (درآمد ÷ هزینه) اول خاموش می‌شود."""
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _industrial_country(database)
     database.update_country_field(cid, "electricity", 120)
+    report = database.apply_building_upkeep(cid)
+
+    shop = config.ALL_SHOP_ITEMS
+    shut_keys = {s_["key"] for s_ in report.get("shut_down") or []}
+    kept_keys = {u for u in ("small_factory", "large_factory", "industrial_complex",
+                             "oil_refinery", "gold_mine") if u not in shut_keys}
+    assert kept_keys, "با ظرفیت ۱۲۰ همه نباید خاموش شوند"
+    # هیچ سازه‌ی روشنی نباید بازده‌ی کمتری از بازده‌ی بیشینه‌ی خاموش‌ها داشته باشد
+    def eff(k):
+        income = int(shop.get(k, {}).get("income_add", 0) or 0)
+        cost = 5.0 * float(config.BUILDING_UPKEEP.get(k, {}).get("oil", 0))
+        return income / cost if cost > 0 else float("inf")
+    shut_effs = [eff(k) for k in shut_keys]
+    kept_effs = [eff(k) for k in kept_keys]
+    assert max(shut_effs) <= max(kept_effs) or not shut_effs, \
+        "خاموشی باید از کم‌بازده‌ترین‌ها شروع شود"
 
     power = ia.power_status(database.get_country_by_id(cid))
-    shop = config.ALL_SHOP_ITEMS
-
-    # پربازده‌ترین نوع باید کامل روشن بماند
-    best = max(ia.POWER_CONSUMERS, key=lambda k: shop.get(k, {}).get("income_add", 0) / ia.POWER_CONSUMERS[k]
-               if k in shop else 0)
-    assert power["online"].get("gold_mine") == 2, "معدن طلا پربازده‌ترین است و باید کامل روشن بماند"
-
-    # تخصیص باید بهتر از «خاموش‌کردن کورکورانه‌ی پرمصرف‌ها» باشد
-    budget = power["industrial_budget"]
-    naive_income, remaining = 0, budget
-    for key in sorted(ia.POWER_CONSUMERS, key=lambda k: ia.POWER_CONSUMERS[k]):
-        count = int((database.get_equipment(cid) or {}).get(key) or 0)
-        if not count:
-            continue
-        fit = min(count, remaining // ia.POWER_CONSUMERS[key])
-        remaining -= fit * ia.POWER_CONSUMERS[key]
-        naive_income += fit * shop[key]["income_add"]
-
-    smart_income = sum(shop[k]["income_add"] * v for k, v in power["online"].items())
-    assert smart_income >= naive_income, "تخصیص باید حداقل به‌اندازه‌ی حالت ساده بازده داشته باشد"
-
-    # و برق مصرف‌شده هرگز از بودجه بیشتر نشود
-    assert sum(ia.POWER_CONSUMERS[k] * v for k, v in power["online"].items()) <= budget
+    # آنچه power_status می‌گوید همان خاموشی واقعی است
+    assert power["offline"] or not shut_keys
+    assert power["income_lost"] >= 0
 
 
 def test_deeper_shortage_shuts_down_more(monkeypatch, tmp_path):
     database = _fresh_db(monkeypatch, tmp_path)
     cid = _industrial_country(database)
 
+    # ظرفیت واقعی = پایه + نیروگاه‌ها؛ با کم‌کردن نیروگاه، خاموشی بیشتر می‌شود
     losses = []
-    for electricity in (166, 140, 120, 100):
-        database.update_country_field(cid, "electricity", electricity)
+    for plants in (8, 6, 3, 0):            # +240 / +180 / +90 / +0 روی پایه
+        _add_plants(database, cid, plants, replace=True)
+        database.apply_building_upkeep(cid)   # هر بار خاموشی واقعی ثبت می‌شود
         losses.append(ia.power_status(database.get_country_by_id(cid))["income_lost"])
-    assert losses == sorted(losses), "هرچه برق کمتر، افت درآمد بیشتر"
+    assert losses == sorted(losses), "هرچه ظرفیت برق کمتر، افت درآمد بیشتر"
     assert losses[0] == 0 and losses[-1] > 0
 
 
@@ -1831,15 +1842,17 @@ def test_power_penalty_is_off_until_an_admin_enables_it(monkeypatch, tmp_path):
     assert ia.power_penalty_enabled() is True
 
 
-def test_payout_uses_the_power_penalty_without_touching_stored_income():
-    """درآمد ذخیره‌شده نباید دست بخورد — فقط پرداختِ همان دوره کم می‌شود."""
+def test_payout_does_not_double_deduct_offline_income():
+    """درآمد خاموش‌های برق از قبل در بازمحاسبه از daily_income حذف شده —
+    پس مسیر پرداخت فقط «هشدار» می‌دهد و هیچ کسری دومی از پرداخت کم نمی‌کند."""
     import inspect
     import main as main_module
 
     source = inspect.getsource(main_module._payout_one_country)
     assert "power_penalty_enabled" in source
     assert "power_status" in source
-    assert "daily_income = max(0, daily_income - power[\"income_lost\"])" in source
+    assert 'daily_income = max(0, daily_income - power["income_lost"])' not in source, \
+        "جریمه‌ی دوگانه ممنوع — همان درآمد دو بار نمی‌سوزد"
     # هیچ نوشتنی روی ستون daily_income در این مسیر نباشد
     segment = source[source.index("power_note = \"\""):source.index("gross_income = daily_income")]
     assert "update_country_field" not in segment

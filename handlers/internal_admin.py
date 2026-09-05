@@ -72,7 +72,7 @@ def _root_text() -> str:
         f"سیستم جمعیت/مالیات/بحران: <b>{'🟢 فعال' if enabled else '🔴 غیرفعال'}</b>\n"
         f"بحران‌های تصادفی: <b>{'🟢 فعال' if random_on else '🔴 غیرفعال'}</b>\n"
         f"اخبار کانال: <b>{_news_mode_label()}</b>\n"
-        f"قطع تولید بر اثر کمبود برق: <b>{'🟢 فعال' if ia.power_penalty_enabled() else '🔴 غیرفعال'}</b>\n"
+        f"هشدار خاموشی برق در پیام پرداخت: <b>{'🟢 فعال' if ia.power_penalty_enabled() else '🔴 غیرفعال'}</b>\n"
         f"بحران‌های در جریان: <b>{active}</b>\n"
         f"کشورهای در معرض خطر: <b>{at_risk}</b>\n\n"
         "<i>تا وقتی کلید اصلی خاموش است، هیچ تغییری روی جمعیت، مالیات یا خزانه‌ی "
@@ -94,7 +94,7 @@ def _root_keyboard():
         )],
         [InlineKeyboardButton(f"📰 اخبار کانال: {_news_mode_label()}", callback_data="admin:dom_news_mode")],
         [InlineKeyboardButton(
-            f"{'🛑 لغو' if ia.power_penalty_enabled() else '⚡ فعال‌سازی'} قطع تولید با کمبود برق",
+            f"{'🛑 لغو' if ia.power_penalty_enabled() else '⚡ فعال‌سازی'} هشدار خاموشی برق",
             callback_data="admin:dom_power_toggle",
         )],
         [InlineKeyboardButton(
