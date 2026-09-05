@@ -4787,6 +4787,18 @@ def get_diplomatic_relation(c1_id: int, c2_id: int) -> dict:
     return {"status": "normal", "sanctioned_by": 0}
 
 
+def get_relation_status(c1_id: int, c2_id: int) -> str:
+    _a, _b = (c1_id, c2_id) if c1_id <= c2_id else (c2_id, c1_id)
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id=? AND country2_id=?", (_a, _b))
+        row = cur.fetchone()
+        return (row["status"] if row else "") or "normal"
+    finally:
+        conn.close()
+
+
 def set_diplomatic_relation(c1_id: int, c2_id: int, status: str, sanctioned_by: int = 0):
     c_min, c_max = _ordered_pair(c1_id, c2_id)
     conn = get_connection()
@@ -5061,6 +5073,24 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             except (TypeError, ValueError):
                 return False, "اطلاعات عددی قرارداد نامعتبر است."
 
+            # 🚫 ضد کراته: جنگنده/ناو خودمتحرک‌اند و با محموله فرستاده نمی‌شوند
+            # (قرارداد رسمیِ دارای مجوز صادرات = تسویه‌ی کارخانه‌ای — استثنا)
+            _lic_ok = (str(c.get("license_status") or "") == "approved" and c.get("license_country_id") is not None)
+            if off_type == "military_asset" and off_key and not _lic_ok:
+                import combat_model as _mob
+                try:
+                    cur2 = conn.cursor()
+                    cur2.execute("SELECT equipment_name FROM country_assets WHERE country_id=? AND equipment_key=?", (p_id, off_key))
+                    _nm = cur2.fetchone()
+                    _mob_cls = _mob.classify_mobility((_nm["equipment_name"] if _nm else ""), off_key)
+                except Exception:
+                    _mob_cls = "cargo"
+                if _mob_cls == "flyaway":
+                    return False, ("⛔ «جنگنده/پهپاد/آواکس» خودمتحرک است و با محموله‌ی تجاری ارسال نمی‌شود — "
+                                   "از 🎖 تحرکات نظامی → «اعزام یگان» استفاده کنید.")
+                if _mob_cls == "seagoing":
+                    return False, ("⛔ «شناور جنگی» دریرو است و در محموله جا نمی‌شود — "
+                                   "از 🎖 تحرکات نظامی → «اعزام یگان» (مسیر دریایی و تنگه‌ها) استفاده کنید.")
             if off_type != "military_asset" and off_type not in trade_resource_cols:
                 return False, "نوع کالای پیشنهادی قرارداد نامعتبر است."
             if req_type not in trade_resource_cols:
@@ -5169,6 +5199,19 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
                     return False, f"کشور پیشنهاددهنده ({p_c['name']}) موجودی کافی از این تجهیز برای انتقال ندارد."
 
                 asset_dict = dict(asset_row)
+
+                # 🚫 ضد کراته (ضدتقلب نهایی هنگام اجرا)
+                import combat_model as _mob2
+                _mc = _mob2.classify_mobility(asset_dict.get("equipment_name"), asset_dict.get("equipment_key"))
+                # استثنای واقع‌گرایانه: قرارداد رسمی با مجوز صادرات کشور سازنده =
+                # تسویه‌ی قرارداد کارخانه‌ای (delivery از مبدا سازنده/سازنده‌ی لایسنس)
+                _license_state = str(asset_dict.get("license_status") or c.get("license_status") or "")
+                _licensed_delivery = (_license_state == "approved"
+                                      and (c.get("license_country_id") is not None))
+                if _mc == "flyaway" and not _licensed_delivery:
+                    return False, "⛔ این تجهیز پروازی خودمتحرک است — انتقال فقط با «اعزام یگان» یا قرارداد رسمی دارای مجوز صادرات."
+                if _mc == "seagoing" and not _licensed_delivery:
+                    return False, "⛔ این تجهیز شناور دریرو است — انتقال فقط با «اعزام یگان» یا قرارداد رسمی دارای مجوز صادرات."
 
                 # ضدتقلب: سقف وزن تجهیزات در هر محموله، وابسته به روش ترابری
                 if transfer_weight_enabled():
@@ -5347,6 +5390,80 @@ def execute_trade_contract_transaction(contract_id: int, actor_country_id: int |
             return True, "قرارداد تجاری با موفقیت اجرا شد."
     except Exception as e:
         return False, f"خطا در اجرای قرارداد: {e}"
+
+
+def _are_allied(c1_id: int, c2_id: int) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        _a, _b = (c1_id, c2_id) if c1_id <= c2_id else (c2_id, c1_id)
+        cur.execute("SELECT status FROM diplomatic_relations WHERE country1_id=? AND country2_id=?", (_a, _b))
+        row = cur.fetchone()
+        return bool(row and row["status"] == "allied")
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def execute_aid_equipment(donor_id: int, recipient_id: int, equipment_key: str, amount: int,
+                          transport_mode: str = "land") -> tuple[bool, str]:
+    """بند تجهیز در کمک خارجی — فقط بارِ بجا؛ خودمتحرک‌ها به «اعزام یگان» ارجاع می‌شوند."""
+    import combat_model as _cm
+    if donor_id == recipient_id:
+        return False, "ارسال به همان کشور امکان‌پذیر نیست."
+    if are_sanctioned(donor_id, recipient_id):
+        return False, "امکان ارسال کمک به کشور تحریم‌شده یا کشوری که شما را تحریم کرده وجود ندارد."
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT equipment_name, amount FROM country_assets WHERE country_id=? AND equipment_key=?",
+                    (donor_id, equipment_key))
+        row = cur.fetchone()
+        if not row or (row["amount"] or 0) < int(amount) or int(amount) <= 0:
+            return False, "این تجهیز به این مقدار در انبار شما موجود نیست."
+        name = row["equipment_name"]
+        mob = _cm.classify_mobility(name, equipment_key)
+        if mob == "flyaway":
+            return False, ("⛔ جنگنده/پهپاد/آواکس «خودمتحرک» است و با کارگو فرستاده نمی‌شود — "
+                           "از بخش 🎖 تحرکات نظامی → «اعزام یگان» استفاده کنید (پرواز مستقیم به پایگاه).")
+        if mob == "seagoing":
+            return False, ("⛔ شناور «دریرو» است و با محموله فرستاده نمی‌شود — "
+                           "از بخش 🎖 تحرکات نظامی → «اعزام یگان» (عبور از تنگه‌ها) استفاده کنید.")
+        if not _are_allied(donor_id, recipient_id):
+            # بار جنگی فقط به متحد یا کشور بدون تنش بالا
+            if get_tension(donor_id, recipient_id) >= config.TENSION_ATTACK_THRESHOLD:
+                return False, "ارسال تجهیزات جنگی به کشوری با تنش بالا ممنوع است."
+        with conn:
+            conn.execute("UPDATE country_assets SET amount = MAX(0, amount - ?) WHERE country_id=? AND equipment_key=?",
+                         (int(amount), donor_id, equipment_key))
+            conn.execute("""
+                INSERT INTO country_assets (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+                SELECT ?, country_key, category, equipment_name, ?, ?, 0, 0, 0 FROM country_assets WHERE country_id=? AND equipment_key=?
+                ON CONFLICT(country_id, equipment_key) DO UPDATE SET amount = MAX(0, country_assets.amount + excluded.amount)
+            """, (recipient_id, equipment_key, int(amount), donor_id, equipment_key))
+            # هزینه ترابری خزانه اهداکننده
+            t_cost = {"air": 2_000_000, "land": 1_000_000, "sea": 300_000, "caspian": 500_000}.get(transport_mode, 300_000)
+            conn.execute("UPDATE countries SET treasury = MAX(0, treasury - ?) WHERE id = ?", (t_cost, donor_id))
+        return True, f"✅ {int(amount)} واحد «{name}» با محموله ارسال شد."
+    finally:
+        conn.close()
+
+
+def create_base_record(owner_id: int, host_id: int, name: str, capacity: int = 20, daily_rent: int = 0) -> int:
+    """ثبت مستقیم پایگاه پیشروی (برای جریان اعزام یگان و تست)."""
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO foreign_bases (owner_id, host_id, name, capacity, level, daily_rent, unpaid_days, created_at)
+                VALUES (?, ?, ?, ?, 1, ?, 0, ?)
+            """, (owner_id, host_id, name, int(capacity), int(daily_rent),
+                  datetime.datetime.now(datetime.timezone.utc).isoformat()))
+            return cur.lastrowid
+    finally:
+        conn.close()
 
 
 def execute_foreign_aid_transaction(donor_id: int, recipient_id: int, resource_type: str, amount: int,

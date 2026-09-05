@@ -255,3 +255,28 @@ def _pick_defender_casualties(defender_id: int, sam_profile: dict, penetrated_un
                 take_cap -= take
 
     return [(k, q) for (k, q) in losses if q > 0]
+
+
+# ─────────── 🚚 کلاس‌بندی تحرک تجهیزات — «هر چی پروازه کراته نمی‌شه» ───────────
+_FLYAWAY_PATTERNS = (
+    "جنگنده", "بمب‌افکن", "اف- ", "f-", "ف-۱۶", "mig", "میگ", "su-", "سو-", "رافال", "rafale",
+    "تایفون", "typhoon", "گرپن", "gripen", "آواکس", "awacs", "e-3", "e-7", "تانکر", "tanker",
+    "ترابری", "ترانزیت هوایی", "c-130", "c-17", "a400", "il-76", "ایلیوشین", "پهپاد", "drone",
+    "uav", "شاهد", "ابابیل", "مهاجر", "هرون", "heron", "هرمس", "hermes", "predator", "reaper",
+    "بالگرد", "helicopter", "ah-64", "mi-24", "mi-8", "بل- ", "هلیکوپتر",
+)
+_SEAGOING_PATTERNS = (
+    "ناو", "هواپیمابر", "ناوشکن", "ناوچه", "زیردریایی", "submarine", "فراگیت", "frequatable",
+    "frigate", "corvette", "cruiser", "کرزر", "ام‌دی‌کی", "لندینگ", "amphibious", "مین‌روب",
+    "گشتی", "patrol vessel", "پاترول",
+)
+
+
+def classify_mobility(name, key=None) -> str:
+    """flyaway (خودگردان هوایی) | seagoing (خودگردان دریایی) | cargo (بار بجا)."""
+    blob = _norm(f"{name or ''} {key or ''}")
+    if any(_norm(p) in blob for p in _SEAGOING_PATTERNS):
+        return "seagoing"
+    if any(_norm(p) in blob for p in _FLYAWAY_PATTERNS):
+        return "flyaway"
+    return "cargo"

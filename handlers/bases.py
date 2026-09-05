@@ -520,6 +520,27 @@ def _base_info_text(b):
 # ==================== ورودی‌های متنی ====================
 
 async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 🎖 تعداد اعزام یگان
+    if (context.user_data.get("mv_input") or {}).get("type") == "deploy_qty":
+        context.user_data.pop("mv_input", None)
+        user_id = update.effective_user.id
+        country = _player_country(user_id)
+        if not country:
+            return
+        draft = context.user_data.pop("deploy_draft", None)
+        if not draft:
+            await update.message.reply_text("پیش‌نویس اعزام منقضی شد — دوباره شروع کن.")
+            return
+        try:
+            qty = int((update.message.text or "0").replace(",", "").strip())
+        except ValueError:
+            await update.message.reply_text("عدد نامعتبر است.")
+            return
+        ok, msg, meta = deploy_units(country, draft["base_id"], [(draft["equipment_key"], qty)],
+                                     bot=context.bot)
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        return
+
     # پردازش جستجوی کشور میزبان
     if context.user_data.get("mv_search_host"):
         del context.user_data["mv_search_host"]
@@ -643,6 +664,132 @@ async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return True
 
     return False
+
+
+# ==================== 🎖 اعزام یگان (انتقال خودگردان تجهیزات) ====================
+
+DEPLOY_FLYAWAY_OIL_PER_UNIT = 90      # سوخت فراز پرواز مستقیم
+DEPLOY_FLYAWAY_MONEY_PER_UNIT = 150_000
+DEPLOY_SEAGOING_OIL_PER_UNIT = 250
+DEPLOY_SEAGOING_MONEY_PER_UNIT = 600_000
+DEPLOY_HOURS_FLYAWAY = 6
+DEPLOY_HOURS_SEAGOING = 72
+
+
+def deploy_units(owner_country: dict, base_id: int, units: list, bot=None) -> tuple[bool, str, dict]:
+    """انتقال یگان به پایگاه پیشروی — خودمتحرک‌ها خودشان می‌روند، بقیه با لجستیک.
+
+    units: [(equipment_key, qty)]
+    - مقصد باید پایگاه خودِ کشور یا پایگاه در خاک «متحد» باشد؛ خاک دشمن ممنوع
+    - کسر از انبار مبدأ + هزینه؛ افزودن به base_assets (ضد دوقلو شدن نیرو)
+    """
+    owner_id = owner_country["id"] if isinstance(owner_country, dict) else owner_country
+    conn = db.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM foreign_bases WHERE id = ?", (base_id,))
+        brow = cur.fetchone()
+    finally:
+        conn.close()
+    if not brow:
+        return False, "پایگاه یافت نشد.", {}
+    base = dict(brow)
+    if base["owner_id"] != owner_id:
+        return False, "این پایگاه متعلق به شما نیست.", {}
+    host_id = base["host_id"]
+
+    # قاعده‌ی مقصد: خاک خودی (base در داخل) یا خاک متحد — دشمن ممنوع
+    if host_id != owner_id:
+        if db.get_relation_status(owner_id, host_id) == "war" or db.get_tension(owner_id, host_id) >= config.TENSION_ATTACK_THRESHOLD:
+            return False, "⛔ اعزام یگان به خاک کشور دشمن/تنش‌دار ممنوع است — اول جنگ تمام شود.", {}
+        if not db._are_allied(owner_id, host_id):
+            return False, "⛔ انتقال به پایگاه در خاک غیرمتحد فقط با اتحاد رسمی ممکن است.", {}
+
+    moved, oil_cost, money_cost, hours = [], 0, 0, 0
+    src_assets = {r["equipment_key"]: r for r in db.get_country_assets(owner_id)}
+    for (key, qty) in units:
+        row = src_assets.get(key)
+        if not row or (row["amount"] or 0) < int(qty) or int(qty) <= 0:
+            return False, f"موجودی کافی برای «{row['equipment_name'] if row else key}» ندارید.", {}
+        import combat_model as _cm
+        mob = _cm.classify_mobility(row["equipment_name"], key)
+        if mob == "flyaway":
+            oil_cost += DEPLOY_FLYAWAY_OIL_PER_UNIT * int(qty)
+            money_cost += DEPLOY_FLYAWAY_MONEY_PER_UNIT * int(qty)
+            hours = max(hours, DEPLOY_HOURS_FLYAWAY)
+        else:
+            oil_cost += DEPLOY_SEAGOING_OIL_PER_UNIT * int(qty)
+            money_cost += DEPLOY_SEAGOING_MONEY_PER_UNIT * int(qty)
+            hours = max(hours, DEPLOY_HOURS_SEAGOING)
+        moved.append((key, row["equipment_name"], int(qty)))
+
+    # ظرفیت پایگاه
+    current = sum(int(r["amount"]) for r in (db.get_base_assets(base_id) or []))
+    total_move = sum(q for (_k, _n, q) in moved)
+    if current + total_move > int(base.get("capacity") or 20):
+        return False, f"ظرفیت پایگاه پر است ({current}/{base.get('capacity')}).", {}
+
+    c = db.get_country_by_id(owner_id)
+    if (c["oil_reserves"] or 0) < oil_cost or (c["treasury"] or 0) < money_cost:
+        return False, "⛔ نفت یا پول لجستیک اعزام کافی نیست.", {}
+
+    con = db.get_connection()
+    try:
+        with con:
+            for (key, _name, qty) in moved:
+                con.execute("UPDATE country_assets SET amount = MAX(0, amount - ?) WHERE country_id=? AND equipment_key=?", (qty, owner_id, key))
+            for (key, name, qty) in moved:
+                con.execute("""
+                    INSERT INTO base_assets (base_id, equipment_key, equipment_name, amount)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(base_id, equipment_key) DO UPDATE SET amount = MAX(0, base_assets.amount + excluded.amount)
+                """, (base_id, key, name, qty))
+            con.execute("UPDATE countries SET oil_reserves = MAX(0, oil_reserves - ?), treasury = MAX(0, treasury - ?) WHERE id = ?",
+                        (oil_cost, money_cost, owner_id))
+    finally:
+        con.close()
+
+    summary = "، ".join(f"{name} ×{q}" for (_k, name, q) in moved)
+    msg = (f"🎖 *اعزام یگان تایید شد.*\n\n{summary}\n"
+           f"📍 مقصد: {base['name']} | زمان رسیدن: ~{hours} ساعت\n"
+           f"🛢 سوخت: {oil_cost:,} بشکه | 💵 لجستیک: {money_cost:,} دلار\n"
+           "⚠️ یگان اعزامی تا بازگشت، از عملیات داخلی مبدأ حذف است.")
+    return True, msg, {"hours": hours, "oil": oil_cost, "money": money_cost, "moved": moved}
+
+
+def on_host_under_attack(host_id: int, attacker_id: int, bot=None) -> list:
+    """حمله به خاک میزبان → یگان‌های خارجی مستقر در معرض خطر (⅓ قانون داکتورین)."""
+    import math
+    at_risk = []
+    conn = db.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM foreign_bases WHERE host_id = ? AND owner_id != ?", (host_id, attacker_id))
+        bases = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    for b in bases:
+        units = db.get_base_assets(b["id"])
+        total = sum(int(r["amount"]) for r in units)
+        if total <= 0:
+            continue
+        risk_n = max(1, int(math.ceil(total / 3)))
+        at_risk.append({
+            "base_id": b["id"], "owner_id": b["owner_id"], "base_name": b["name"],
+            "at_risk_units": risk_n, "total": total,
+        })
+        try:
+            if bot and b["owner_id"]:
+                from news_engine import post_breaking_news
+                import asyncio
+                owner_c = db.get_country_by_id(b["owner_id"])
+                asyncio.get_event_loop().create_task(post_breaking_news(
+                    bot,
+                    f"یگان‌های {owner_c['name']} در خاک میزبان در معرض خطر قرار گرفتند",
+                    f"با آغاز درگیری در خاک میزبان، دست‌کم {risk_n} واحد از یگان‌های اعزامی {owner_c['name']} در پایگاه «{b['name']}» در معرض آتش است."))
+        except Exception:
+            pass
+    return at_risk
 
 
 def get_bases_handlers():
