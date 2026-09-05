@@ -2777,8 +2777,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif data == "admin:addinv:root":
         from handlers.auto_ops import build_plain_continent_selector
-        text, kb = build_plain_continent_selector("admin:addinv")
-        kb.inline_keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")])
+        text, kb = build_plain_continent_selector(
+            "admin:addinv",
+            extra_rows=[[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")]],
+        )
         await query.edit_message_text(
             "➕ *افزودن تجهیزات و منابع (جبران خسارت)*\n\n" + text,
             reply_markup=kb, parse_mode="Markdown"
@@ -2863,8 +2865,10 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "admin:defplan:root":
         # 🌍 قاره‌ها با برچسب متنی بدون ایموجی + جستجو
         from handlers.auto_ops import build_plain_continent_selector
-        text, kb = build_plain_continent_selector("admin:defplan")
-        kb.inline_keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")])
+        text, kb = build_plain_continent_selector(
+            "admin:defplan",
+            extra_rows=[[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")]],
+        )
         await query.edit_message_text(
             "🛡 *رول‌های دفاعی ثبت‌شده*\n\n" + text,
             reply_markup=kb, parse_mode="Markdown"

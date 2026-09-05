@@ -20,14 +20,20 @@ from utils import format_money
 
 # ────────────────── منوی قاره‌ای بدون ایموجی + جستجو ──────────────────
 
-def build_plain_continent_selector(prefix: str):
-    """انتخابگر قاره با برچسب متنی خالص (بدون ایموجی) + دکمه‌ی جستجو."""
+def build_plain_continent_selector(prefix: str, extra_rows=None):
+    """انتخابگر قاره با برچسب متنی خالص (بدون ایموجی) + دکمه‌ی جستجو.
+
+    extra_rows: ردیف‌های اضافی (مثل دکمه‌ی بازگشت) — tuple داخلیِ
+    InlineKeyboardMarkup تغییرناپذیر است؛ باید همین‌جا اضافه شود.
+    """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     buttons = []
     for cont_key, info in config.CONTINENTS.items():
         label = (info.get("short_name") or info.get("name") or cont_key).strip()
         buttons.append([InlineKeyboardButton(label, callback_data=f"{prefix}:cont:{cont_key}")])
     buttons.append([InlineKeyboardButton("جستجوی تایپی کشور", callback_data=f"{prefix}:search")])
+    for row in (extra_rows or []):
+        buttons.append(list(row))
     text = "قاره‌ی کشور را انتخاب کنید یا از جستجوی تایپی استفاده کنید:"
     return text, InlineKeyboardMarkup(buttons)
 

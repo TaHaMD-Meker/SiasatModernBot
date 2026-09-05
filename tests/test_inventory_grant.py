@@ -152,3 +152,17 @@ def test_addinv_continent_selector_plain(monkeypatch):
     assert labels
     for lab in labels:
         assert not any(ord(ch) > 0x2500 and not ch.isalnum() for ch in lab), f"ایموجی ممنوع: {lab}"
+
+
+def test_continent_selector_accepts_extra_rows(monkeypatch):
+    """بازگشت باید همان‌جا ساخته شود — tuple تغییرناپذیر PTB نباید append بخورد."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from handlers import auto_ops
+    text, kb = auto_ops.build_plain_continent_selector(
+        "admin:addinv", extra_rows=[[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")]]
+    )
+    assert isinstance(kb, InlineKeyboardMarkup)
+    last = kb.inline_keyboard[-1]
+    assert last[0].callback_data == "admin:menu_war"
+    # دکمه‌های قاره سالم مانده باشند
+    assert any(":cont:" in r[0].callback_data for r in kb.inline_keyboard)
