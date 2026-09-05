@@ -333,6 +333,13 @@ def _execute_auto(attacker, target, text, role_id, committed, targets, bot=None)
     if war_opened:
         _announce_war(attacker, target, bot)
 
+    # 🎖 حمله به خاک میزبان → ⅓ یگان خارجی مستقر واقعاً از بین می‌رود
+    try:
+        from handlers.bases import on_host_under_attack
+        on_host_under_attack(target["id"], attacker_id=att_id, bot=bot, apply_losses=True)
+    except Exception:
+        pass
+
     return {
         "verdict": "auto",
         "role_id": role_id,

@@ -633,6 +633,87 @@ async def mv_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(msg, parse_mode="Markdown")
         return
 
+    # 🛬 تعداد بازگشت یگان
+    if (context.user_data.get("mv_input") or {}).get("type") == "return_qty":
+        context.user_data.pop("mv_input", None)
+        user_id = update.effective_user.id
+        country = _player_country(user_id)
+        if not country:
+            return
+        draft = context.user_data.pop("return_draft", None)
+        if not draft:
+            await update.message.reply_text("پیش‌نویس منقضی شد — دوباره شروع کن.")
+            return
+        try:
+            qty = int((update.message.text or "0").replace(",", "").strip())
+        except ValueError:
+            await update.message.reply_text("عدد نامعتبر است.")
+            return
+        ok, msg, meta = return_units(country, draft["base_id"], [(draft["equipment_key"], qty)], bot=context.bot)
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        return
+
+    # ⚔️ حمله از پایگاه: جستجوی هدف
+    if (context.user_data.get("mv_input") or {}).get("type") == "base_attack_search":
+        context.user_data.pop("mv_input", None)
+        user_id = update.effective_user.id
+        country = _player_country(user_id)
+        draft = context.user_data.get("base_attack_draft") or {}
+        from handlers.losses import match_country_by_name as _mcn
+        target = _mcn((update.message.text or "").strip())
+        if not target or not country:
+            await update.message.reply_text("❌ کشور هدف پیدا نشد — دوباره تایپ کن.")
+            return
+        if target["id"] == country["id"]:
+            await update.message.reply_text("❌ پایگاه روی خاک خودت حمله معنی ندارد!")
+            return
+        draft["target_id"] = target["id"]
+        context.user_data["base_attack_draft"] = draft
+        ba = db.get_base_assets(draft.get("base_id")) or []
+        buttons = []
+        for r in ba:
+            if int(r["amount"] or 0) > 0:
+                buttons.append([InlineKeyboardButton(
+                    f"{r['equipment_name']} ({r['amount']:,})",
+                    callback_data=f"mv:bat3:{draft['base_id']}:{r['equipment_key']}")])
+        if not buttons:
+            await update.message.reply_text("پایگاه خالی است — اول یگان اعزام کن.")
+            return
+        await update.message.reply_text(
+            f"🎯 هدف: {target['flag']} {target['name']}\n\nکدام یگان‌ها؟ (یکی‌یکی اضافه کن)",
+            reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
+    # ⚔️ حمله از پایگاه: تعداد
+    if (context.user_data.get("mv_input") or {}).get("type") == "base_attack_qty":
+        context.user_data.pop("mv_input", None)
+        user_id = update.effective_user.id
+        country = _player_country(user_id)
+        draft = context.user_data.get("base_attack_draft") or {}
+        try:
+            qty = int((update.message.text or "0").replace(",", "").strip())
+        except ValueError:
+            await update.message.reply_text("عدد نامعتبر است.")
+            return
+        ekey = draft.get("pending_key")
+        ba = {r["equipment_key"]: r for r in (db.get_base_assets(draft.get("base_id")) or [])}
+        row = ba.get(ekey)
+        if not row or qty <= 0 or qty > int(row["amount"] or 0):
+            await update.message.reply_text(f"⛔ تعداد نامعتبر — مستقر: {row['amount'] if row else 0:,}")
+            return
+        draft.setdefault("units", []).append((ekey, row["equipment_name"], qty,
+            "aircraft" if _cls_air(row["equipment_name"]) else "missile"))
+        draft["pending_key"] = None
+        context.user_data["base_attack_draft"] = draft
+        sel = " + ".join(f"{n}×{q}" for (_k, n, q, _t) in draft["units"])
+        await update.message.reply_text(
+            f"✅ انتخاب شد: {sel}\n\nیگان دیگری اضافه می‌کنی یا حمله بزنیم؟",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("⚔️ حمله بزن", callback_data="mv:batgo"),
+                InlineKeyboardButton("➕ یگان دیگر", callback_data=f"mv:bat2:{draft['base_id']}"),
+            ]]))
+        return
+
     # پردازش جستجوی کشور میزبان
     if context.user_data.get("mv_search_host"):
         del context.user_data["mv_search_host"]
@@ -905,8 +986,135 @@ def return_units(owner_country, base_id: int, units: list, bot=None) -> tuple[bo
                   f"🛢 سوخت: {oil_cost:,} | 💵 لجستیک: {money_cost:,}"), {"moved": moved}
 
 
-def on_host_under_attack(host_id: int, attacker_id: int, bot=None) -> list:
-    """حمله به خاک میزبان → یگان‌های خارجی مستقر در معرض خطر (⅓ قانون داکتورین)."""
+BASE_ATTACK_MONEY_PER_SHOT = 120_000
+BASE_ATTACK_OIL_PER_SHOT = 150
+
+
+def attack_from_base(owner_country, base_id: int, target_country, committed: list, bot=None) -> tuple[bool, str, dict]:
+    """عملیات محدود از پایگاه پیشروی — مهمات/جنگنده از base_assets، تراشه از خزانه‌ی ملی.
+
+    committed: [(equipment_key, name, qty, kind)]
+    - دروازه‌ی تنش مثل حمله‌ی عادی
+    - موج جنگنده بدون مهماتِ مستقر در پایگاه = رد
+    - تلفات پلتفرم از پایگاه کسر می‌شود؛ تلفات مدافع از انبار ملی مدافع
+    """
+    owner_id = owner_country["id"] if isinstance(owner_country, dict) else owner_country
+    target = target_country if isinstance(target_country, dict) else db.get_country_by_id(target_country)
+    if not target:
+        return False, "کشور هدف یافت نشد.", {}
+    conn = db.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM foreign_bases WHERE id = ?", (base_id,))
+        brow = cur.fetchone()
+    finally:
+        conn.close()
+    if not brow:
+        return False, "پایگاه یافت نشد.", {}
+    base = dict(brow)
+    if base["owner_id"] != owner_id:
+        return False, "این پایگاه متعلق به شما نیست.", {}
+
+    # دروازه‌ی تنش
+    tension_now = db.get_tension(owner_id, target["id"])
+    if tension_now < config.TENSION_ATTACK_THRESHOLD:
+        return False, (f"⛔ تنش با {target['flag']} {target['name']} فقط {tension_now}/۱۰۰ است — "
+                       f"حمله نیاز به {config.TENSION_ATTACK_THRESHOLD} دارد."), {}
+
+    ba = {r["equipment_key"]: r for r in (db.get_base_assets(base_id) or [])}
+    total_munitions = sum(q for (k, n, q, kind) in committed if kind in ("missile", "drone"))
+    total_air = sum(q for (k, n, q, kind) in committed if kind == "aircraft")
+    if total_munitions + total_air == 0:
+        return False, "هیچ یگانی انتخاب نشده.", {}
+    if total_air > 0 and total_munitions == 0:
+        return False, "⛔ مهمات در پایگاه مستقر نیست — اول با «اعزام یگان» موشک/مهمات بفرست.", {}
+    if total_munitions + total_air > config.AUTO_OP_MAX_MUNITIONS:
+        return False, (f"⛔ موج بزرگ‌تر از سقف عملیات خودکار است ({total_munitions + total_air} > "
+                       f"{config.AUTO_OP_MAX_MUNITIONS}) — برای موج سنگین از رول گسترده استفاده کن."), {}
+    # اعتبارسنجی موجودی پایگاه
+    for (k, n, q, kind) in committed:
+        row = ba.get(k)
+        if not row or (row["amount"] or 0) < int(q):
+            return False, f"«{n}» به این تعداد در پایگاه مستقر نیست.", {}
+
+    # اجرای موج
+    import combat_model as _cm
+    resolution = _cm.resolve_strike(owner_id, target["id"], committed,
+                                    plan_active=bool((db.get_defense_plan(target["id"]) or {}).get("active")))
+
+    # هزینه‌ی عملیاتی + تراشه از خزانه‌ی ملی
+    chips_burn = 0
+    for (k, n, q, kind) in committed:
+        if kind in ("missile", "drone"):
+            chips_burn += _cm.classify_munition(n) and {"hypersonic": 30, "cruise": 15, "ballistic": 15,
+                                                        "supersonic_cruise": 15, "drone": 3,
+                                                        "drone_loitering": 3}.get(_cm.classify_munition(n), 15) or 15 * q
+    chips_burn = sum(
+        ({"hypersonic": 30}.get(_cm.classify_munition(n), 15) if kind in ("missile", "drone") else 0) * q
+        for (k, n, q, kind) in committed
+    )
+    money_cost = BASE_ATTACK_MONEY_PER_SHOT * (total_munitions + total_air)
+    oil_cost = BASE_ATTACK_OIL_PER_SHOT * (total_munitions + total_air)
+    c = db.get_country_by_id(owner_id)
+    if (c["microchips"] or 0) < chips_burn or (c["treasury"] or 0) < money_cost or (c["oil_reserves"] or 0) < oil_cost:
+        return False, "⛔ تراشه/پول/نفت کافی برای این موج نداری.", {}
+
+    con = db.get_connection()
+    try:
+        with con:
+            # مصرف مهمات و تلفات پلتفرم از پایگاه
+            for (k, n, q, kind) in committed:
+                if kind in ("missile", "drone"):
+                    con.execute("UPDATE base_assets SET amount = MAX(0, amount - ?) WHERE base_id=? AND equipment_key=?", (q, base_id, k))
+            for (k, lost) in resolution["attacker_aircraft_losses"].items():
+                con.execute("UPDATE base_assets SET amount = MAX(0, amount - ?) WHERE base_id=? AND equipment_key=?", (lost, base_id, k))
+            con.execute("UPDATE countries SET microchips = MAX(0, microchips - ?), treasury = MAX(0, treasury - ?), oil_reserves = MAX(0, oil_reserves - ?) WHERE id = ?",
+                        (chips_burn, money_cost, oil_cost, owner_id))
+    finally:
+        con.close()
+
+    # تلفات مدافع از انبار ملی مدافع (اتمیک)
+    defender_items = []
+    for (key, qty) in resolution["defender_asset_losses"]:
+        a_row = next((x for x in db.get_country_assets(target["id"]) if x["equipment_key"] == key), None)
+        if a_row:
+            defender_items.append({"key": key, "name": a_row["equipment_name"], "qty": qty, "special": None})
+    human = resolution["human"]
+    if human["mil_kia"]:
+        defender_items.append({"special": "mil_kia", "qty": human["mil_kia"]})
+    if human["wounded"]:
+        defender_items.append({"special": "wounded", "qty": human["wounded"]})
+    if human["civilians"]:
+        defender_items.append({"special": "civ_kia", "qty": human["civilians"]})
+    if defender_items:
+        db.create_loss_report(target["id"], defender_items, "عملیات از پایگاه", f"حمله از {base['name']}")
+
+    db.add_tension(owner_id, target["id"], config.TENSION_AUTO_ATTACK_DELTA, "حمله از پایگاه پیشروی")
+    try:
+        war, war_opened = db.get_or_create_war(owner_id, target["id"])
+        d_loses = sum(q for (_k, q) in resolution["defender_asset_losses"])
+        a_air = sum(resolution["attacker_aircraft_losses"].values())
+        delta = 3 + int(round(6 * resolution["penetration"]))
+        if a_air > 0 and d_loses == 0:
+            delta = -4
+        db.advance_war_front(war["id"], delta)
+    except Exception:
+        war_opened = False
+
+    units_lost = sum(q for (_k, q) in resolution["defender_asset_losses"])
+    msg = (f"⚔️ *عملیات از {base['name']} اجرا شد.*\n\n"
+           f"🎯 هدف: {target['flag']} {target['name']}\n"
+           f"🎖 تلفات مدافع: {units_lost} تجهیز | {human['mil_kia']} کشته\n"
+           f"🛬 تلفات هوایی شما: {sum(resolution['attacker_aircraft_losses'].values())}\n"
+           f"💻 تراشه: -{chips_burn:,} | 💵 {money_cost:,}")
+    return True, msg, {"resolution": resolution, "war_opened": war_opened}
+
+
+def on_host_under_attack(host_id: int, attacker_id: int, bot=None, apply_losses: bool = False) -> list:
+    """حمله به خاک میزبان → یگان‌های خارجی مستقر در معرض خطر (⅓ قانون داکتورین).
+
+    apply_losses=True: همان ⅓ واقعاً از پایگاه کسر می‌شود و به صاحب یگان خبر می‌رود.
+    """
     import math
     at_risk = []
     conn = db.get_connection()
@@ -916,16 +1124,32 @@ def on_host_under_attack(host_id: int, attacker_id: int, bot=None) -> list:
         bases = [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
-    for b in bases:
-        units = db.get_base_assets(b["id"])
-        total = sum(int(r["amount"]) for r in units)
-        if total <= 0:
-            continue
-        risk_n = max(1, int(math.ceil(total / 3)))
-        at_risk.append({
-            "base_id": b["id"], "owner_id": b["owner_id"], "base_name": b["name"],
-            "at_risk_units": risk_n, "total": total,
-        })
+    con_all = db.get_connection()
+    try:
+        with con_all:
+            for b in bases:
+                units = db.get_base_assets(b["id"])
+                total = sum(int(r["amount"]) for r in units)
+                if total <= 0:
+                    continue
+                risk_n = max(1, int(math.ceil(total / 3)))
+                if apply_losses:
+                    # کسر ⅓ واقعی — از یگان‌های پرتعدادتر اول (بی‌تفاوت به نوع)
+                    remaining = risk_n
+                    for r in sorted(units, key=lambda x: -int(x["amount"])):
+                        if remaining <= 0:
+                            break
+                        take = min(remaining, int(r["amount"]))
+                        con_all.execute("UPDATE base_assets SET amount = MAX(0, amount - ?) WHERE base_id=? AND equipment_key=?",
+                                        (take, b["id"], r["equipment_key"]))
+                        remaining -= take
+                at_risk.append({
+                    "base_id": b["id"], "owner_id": b["owner_id"], "base_name": b["name"],
+                    "at_risk_units": risk_n, "total": total,
+                    "lost_units": risk_n if apply_losses else 0,
+                })
+    finally:
+        con_all.close()
         try:
             if bot and b["owner_id"]:
                 from news_engine import post_breaking_news
@@ -934,6 +1158,7 @@ def on_host_under_attack(host_id: int, attacker_id: int, bot=None) -> list:
                 asyncio.get_event_loop().create_task(post_breaking_news(
                     bot,
                     f"یگان‌های {owner_c['name']} در خاک میزبان در معرض خطر قرار گرفتند",
+                    f"با درگیری در خاک میزبان، {risk_n} واحد از یگان‌های اعزامی {owner_c['name']} در پایگاه «{b['name']}» از دست رفت." if apply_losses else
                     f"با آغاز درگیری در خاک میزبان، دست‌کم {risk_n} واحد از یگان‌های اعزامی {owner_c['name']} در پایگاه «{b['name']}» در معرض آتش است."))
         except Exception:
             pass
