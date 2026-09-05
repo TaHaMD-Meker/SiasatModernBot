@@ -108,6 +108,7 @@ class _FakeQuery:
         self.message = types.SimpleNamespace(photo=None)
         self.alerts = []
         self.edits = 0
+        self.edit_texts = []
 
     async def answer(self, text=None, show_alert=False):
         self.alerts.append(text or "")
@@ -117,6 +118,7 @@ class _FakeQuery:
 
     async def edit_message_text(self, *a, **k):
         self.edits += 1
+        self.edit_texts.append(k.get("text") or (a[0] if a else ""))
         return True
 
 
@@ -150,6 +152,12 @@ def test_wipe_run_button_always_answers_within_telegram_limit(monkeypatch, tmp_p
         assert len(text) <= 200, f"پاسخ {len(text)} کاراکتری سقف تلگرام را می‌شکند"
     assert any(text.startswith("✅") and "25" in text for text in query.alerts)
     assert query.edits >= 1, "پنل باید بعد از پاک‌سازی رفرش شود"
+
+    # پنلِ بعد از پاک‌سازی نباید همان پنل قبل باشد: باید بنر موفقیت داشته باشد و
+    # کشورهای تازه‌فکتوری با 🆕 مشخص شوند — وگرنه ادمین فکر می‌کند دکمه کار نکرد.
+    panel = "\n".join(query.edit_texts)
+    assert "پاک‌سازی کامل انجام شد" in panel, "پنل باید بنر موفقیت پاک‌سازی را نشان دهد"
+    assert "25" in panel and "🆕" in panel, "کشورهای تازه‌ریست‌شده باید علامت 🆕 داشته باشند"
 
     # هر ۲۵ کشور فکتوری بازسازی شده‌اند و باز هم «باز» هستند (player_id=0)
     for k in catalog_keys + list(custom_names):

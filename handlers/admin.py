@@ -973,23 +973,47 @@ async def menu_single_asset_item(query, country_id: int, equipment_key: str):
 
 # ==================== پردازش CallbackQuery های پنل ادمین ====================
 
-async def show_queue_panel(query, context):
-    """پنل کشورهای بی‌صاحب (صف انتظار حذف شده — گرفتن کشور فقط با درخواست /start و تایید ادمین)."""
+async def show_queue_panel(query, context, notice: str = None):
+    """پنل کشورهای بی‌صاحب (صف انتظار حذف شده — گرفتن کشور فقط با درخواست /start و تایید ادمین).
+
+    notice: بنر اختیاری نتیجه‌ی آخرین عملیات (مثلاً پاک‌سازی کامل) بالای لیست.
+    کشورهای بازسازی‌شده‌ی ۳۰ دقیقه‌ی اخیر با 🆕 مشخص می‌شوند تا نتیجه‌ی دکمه
+    «پاک‌سازی کامل» دیده شود — این کشورها عمداً بی‌صاحب بازمی‌گردند تا در /start باز باشند.
+    """
     import country_queue as cq
     free_list = cq.get_free_countries(100)
+
+    def _is_fresh(c):
+        ca = c.get("created_at")
+        if not ca:
+            return False
+        try:
+            t = datetime.datetime.fromisoformat(str(ca))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=datetime.timezone.utc)
+            return (datetime.datetime.now(datetime.timezone.utc) - t).total_seconds() < 30 * 60
+        except Exception:
+            return False
+
+    fresh_n = sum(1 for c in free_list if _is_fresh(c))
     lines = [
         "🌍 <b>کشورهای بی‌صاحب</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"در استخر واگذاری: <b>{len(free_list)}</b> کشور",
+    ]
+    if notice:
+        lines += ["", f"<b>{notice}</b>"]
+    lines += [
         "",
         "<i>صف انتظار حذف شده است؛ بازیکن از /start کشور را انتخاب می‌کند و درخواستش برای شما می‌آید (تایید/رد در بخش درخواست‌ها).</i>",
     ]
     if free_list:
         lines.append("")
-        lines.append("<b>🌍 کشورهای بی‌صاحبِ آماده‌ی واگذاری</b>")
+        lines.append("<b>🌍 کشورهای بی‌صاحبِ آماده‌ی واگذاری</b>" + (" <i>(🆕 = تازه فکتوری شده)</i>" if fresh_n else ""))
         for country in free_list:
             pid = country.get("player_id") or 0
-            lines.append(f"• {country.get('flag','')} {country.get('name','')} (ID: {pid})")
+            fresh = " 🆕" if _is_fresh(country) else ""
+            lines.append(f"• {country.get('flag','')} {country.get('name','')}{fresh} (ID: {pid})")
     else:
         lines.append("")
         lines.append("🌍 هیچ کشور بی‌صاحبی در صف واگذاری نیست.")
@@ -1507,11 +1531,16 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             ok, count, msg = db.hard_reset_ownerless_countries(actor=f"admin:{user_id}")
             if not ok:
                 await query.answer("❌ " + msg[:180], show_alert=True)
+                await show_queue_panel(query, context)
             elif count:
                 await query.answer(f"✅ {count} کشور بی‌صاحب پاک و فکتوری بازسازی شد.", show_alert=True)
+                await show_queue_panel(
+                    query, context,
+                    notice=(f"🧹 پاک‌سازی کامل انجام شد! {count} کشور پاک و فکتوری بازسازی شد "
+                            "— همین الان در /start باز هستند (🆕)."))
             else:
                 await query.answer("✅ پاک‌سازی انجام شد؛ کشور بی‌صاحبی باقی نماند.", show_alert=True)
-            await show_queue_panel(query, context)
+                await show_queue_panel(query, context)
         except Exception:
             try:
                 await query.answer("❌ خطا در پاک‌سازی! جزئیات در لاگ سرور.", show_alert=True)
