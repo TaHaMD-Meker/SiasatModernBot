@@ -321,7 +321,7 @@ async def _economy_submenu(query):
     rows = [
         [InlineKeyboardButton("🛒 قیمت و تخفیف فروشگاه ویژه", callback_data="admin:vip_price")],
         [InlineKeyboardButton("🎁 جبران و بازیابی درآمد بازیکنان", callback_data="admin:income_recovery_hub")],
-        [InlineKeyboardButton("⚡ توزیع فوری درآمد روزانه", callback_data="admin:daily_income")],
+        [InlineKeyboardButton("⚡ واریز فوری درآمد روزانه‌ی کشور من", callback_data="admin:daily_income")],
         [InlineKeyboardButton("💰 واریز بسته حمایتی انرژی به واردکنندگان", callback_data="admin:energy_aid_prompt")],
     ]
     await _admin_submenu(
@@ -3427,13 +3427,24 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data == "admin:daily_income":
-        from main import daily_income_job
-        count = await daily_income_job(context, force=True)
-        await query.edit_message_text(
-            f"⚡ *درآمد روزانه و گزارش کشورها با موفقیت برای {count} کشور واریز و ارسال شد!*",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]),
-            parse_mode="Markdown"
-        )
+        # ⚡ واریز فوری فقط برای کشور خودِ ادمین — نباید ربطی به بقیه‌ی کشورها
+        # داشته باشد (قرارداد مالک). کل سرور پرداخت نمی‌شود؛ گرید ۶ساعته‌ی
+        # بازیکنان هم به ساعت این کلیک کشیده نمی‌شود.
+        from main import instant_payout_for
+        mine = db.get_country_by_player(query.from_user.id)
+        if not mine:
+            await query.edit_message_text(
+                "❌ کشوری به حساب شما تخصیص نیافته است — واریز فوری فقط برای کشور خودتان است.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]),
+                parse_mode="Markdown",
+            )
+        else:
+            _res = await instant_payout_for(mine["id"], context)
+            await query.edit_message_text(
+                _res,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu")]]),
+                parse_mode="Markdown",
+            )
 
     elif data == "admin:queue":
         await show_queue_panel(query, context)

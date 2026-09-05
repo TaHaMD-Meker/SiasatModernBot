@@ -533,6 +533,30 @@ def military_fuel_step(c: dict):
                  f"رضایت −۴ و آمادگی رزمی −۵")
 
 
+async def instant_payout_for(country_id: int, context: ContextTypes.DEFAULT_TYPE) -> str:
+    """⚡ واریز فوری درآمدِ فقط و فقط یک کشور (دکمه‌ی ادمین).
+
+    قبلاً دکمه‌ی ادمین کل daily_income_job را با force=True اجرا می‌کرد:
+    درآمد کامل همه‌ی کشورها یک‌جا واریز می‌شد، برای همه‌ی رهبران پیام می‌رفت و
+    گرید ۶ساعته‌ی کل سرور به ساعت کلیک ادمین کشیده می‌شد. قرارداد مالک:
+    واریز فوری نباید ربطی به بقیه‌ها داشته باشد — فقط کشور خودش.
+    خروجی: متن نتیجه برای پنل ادمین.
+    """
+    c = db.get_country_by_id(int(country_id))
+    if not c:
+        return "❌ کشوری به حساب شما تخصیص نیافته است."
+    try:
+        await _payout_one_country(c, context,
+                                  datetime.datetime.now(datetime.timezone.utc),
+                                  force=True)
+        c2 = db.get_country_by_id(int(country_id)) or c
+        return (f"⚡ *واریز فوری انجام شد — {c2['flag']} {c2['name']}*\n"
+                f"🏦 موجودی خزانه: {format_money(c2['treasury'])}")
+    except Exception:
+        logger.exception("instant payout failed for country %s", country_id)
+        return "❌ واریز فوری با خطا مواجه شد — لاگ سرور را ببینید."
+
+
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False) -> int:
     """⚖️ تک‌نمونه: اگر اجرای قبلی هنوز تمام نشده باشد این تیک رد می‌شود؛
     نوبتِ باز (_payout_due) در تیک بعدی — یک دقیقه بعد — جبران می‌شود."""
