@@ -3292,8 +3292,13 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
                 return need, elec_need, elec_cap
 
             shortages = {}
+            cut_reasons = {}  # key → {scarce:[..], consumption:{res:amt}, least_eff:bool}
+            full_need = None  # نیاز روزانه با همه‌ی سازه‌های فعال (قبل از خاموشی‌ها)
             for _ in range(len(units) + 1):
                 need, elec_need, elec_cap = totals()
+                if full_need is None:
+                    full_need = dict(need)
+                    full_need["elec"] = elec_need
                 lacking = {res: need[res] - stock[res] for res in need if need[res] > stock[res]}
                 if elec_need > elec_cap:
                     lacking["elec"] = round(elec_need - elec_cap, 2)
@@ -3314,6 +3319,17 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
                 if victim is None:
                     break
                 active[victim] = False
+                # ثبت دلیل خاموشی: منابعِ کسری که این واحد می‌خورد + مصرف روزانه‌اش
+                vu = units[victim]
+                _cr = cut_reasons.setdefault(vu["key"], {"scarce": [], "consumption": {}})
+                for res in lacking:
+                    if scaled(vu, res) > 0 and res not in _cr["scarce"]:
+                        _cr["scarce"].append(res)
+                for res in ("money", "oil", "grain", "iron_ore", "microchips", "nuclear_fuel"):
+                    if scaled(vu, res) > 0:
+                        _cr["consumption"][res] = _cr["consumption"].get(res, 0) + scaled(vu, res)
+                if not cut_reasons[vu["key"]].get("least_eff"):
+                    cut_reasons[vu["key"]]["least_eff"] = (victim == 0)
 
             need, elec_need, elec_cap = totals()
 
@@ -3350,10 +3366,18 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
                 inc = int(config.ALL_SHOP_ITEMS.get(key, {}).get("income_add", 0) or 0)
                 income_lost += inc * now_off
                 if now_off > was_off:
+                    _cr = cut_reasons.get(key) or {}
                     shut_down.append({"key": key, "name": name, "qty": now_off - was_off,
-                                      "total_off": now_off, "income": inc})
+                                      "total_off": now_off, "income": inc,
+                                      "scarce": _cr.get("scarce") or [],
+                                      "consumption": _cr.get("consumption") or {},
+                                      "least_eff": bool(_cr.get("least_eff"))})
                 elif now_off < was_off:
                     reactivated.append({"key": key, "name": name, "qty": was_off - now_off, "income": inc})
+
+            # خط تأمین هر منبعِ کسری: انبار در لحظه + نیاز روزانه‌ی کل سازه‌ها (همه‌فعال)
+            supply_line = {res: {"stock": int(stock.get(res, 0)), "need": int(full_need.get(res, 0))}
+                           for res in shortages if res in stock and res in full_need}
 
             return {
                 "ok": not shortages,
@@ -3363,6 +3387,7 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
                 "consumed": consumed,
                 "income_lost": income_lost,
                 "ramp": ramp,
+                "supply_line": supply_line,
             }
     except Exception as e:
         print(f"[building-upkeep] error for country {country_id}: {e}")
@@ -3372,22 +3397,52 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
 
 
 def format_upkeep_report(result: dict) -> str:
-    """متن هشدار نگهداری برای گزارش روزانه. اگر چیزی برای گفتن نبود، رشته‌ی خالی."""
+    """متن هشدار نگهداری برای گزارش روزانه. اگر چیزی برای گفتن نبود، رشته‌ی خالی.
+
+    خروجی Markdown است (این بلوک داخل پیام Markdown گزارش روزانه تزریق می‌شود —
+    تگ HTML اینجا عیناً نمایش داده می‌شد). هر خاموشی «چرا» را هم توضیح می‌دهد:
+    علت کسری، انتخاب کم‌بازده‌ترین، مصرف روزانه‌ی سازه و دوز لازم برای رفع کسری.
+    """
     if not result:
         return ""
     lines = []
     labels, units = config.UPKEEP_RESOURCE_LABELS, config.UPKEEP_RESOURCE_UNITS
 
+    def _res_label(res):
+        return labels.get(res, res)
+
+    def _res_unit(res):
+        return units.get(res, "")
+
+    def _amt(res, amount):
+        return f"{amount:,}" if res != "elec" else f"{amount:g}"
+
+    def _cons_part(cons):
+        parts = []
+        for res, amount in (cons or {}).items():
+            parts.append(f"{_amt(res, amount)} {_res_unit(res)} {_res_label(res)}")
+        return " + ".join(parts)
+
     if result.get("shut_down"):
         total = sum(s["qty"] for s in result["shut_down"])
-        lines.append(f"⚠️ <b>کمبود منابع — {total} سازه از کار افتاد</b>")
+        lines.append(f"⚠️ *کمبود منابع — {total} سازه از کار افتاد*")
         for res, amount in result.get("shortages", {}).items():
-            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
-            lines.append(f"\n{labels.get(res, res)} کسری: <b>{amt} {units.get(res, '')}</b>")
+            base = f"\n{_res_label(res)} کسری: *{_amt(res, amount)} {_res_unit(res)}*"
+            sl = (result.get("supply_line") or {}).get(res) or {}
+            if sl:
+                base += f" — انبار: {sl['stock']:,} | نیاز روزانه‌ی سازه‌ها: {sl['need']:,}"
+            lines.append(base)
+        lines.append("")
         for s in result["shut_down"]:
             lines.append(f"   🔴 {s['qty']} × {s['name']} — خاموش")
+            lines.append("      ↳ *چرا؟* " + _why_line(s, labels))
+            cons_txt = _cons_part(s.get("consumption"))
+            if cons_txt:
+                lines.append(f"      ↳ مصرف روزانه‌ی هر واحدش: {cons_txt}")
         if result.get("income_lost"):
-            lines.append(f"   💸 درآمد از‌دست‌رفته: <b>{result['income_lost']:,}</b> دلار/روز")
+            lines.append(f"   💸 درآمد از‌دست‌رفته: *{result['income_lost']:,}* دلار/روز")
+        for res, amount in result.get("shortages", {}).items():
+            lines.append(f"   💡 برای روشن‌ماندن همه: روزانه *{_amt(res, amount)} {_res_unit(res)}* {_res_label(res)} بیشتر لازم است.")
         lines.append("\n💡 با تأمین کسری، سازه‌ها در چرخه‌ی بعد خودکار روشن می‌شوند.")
 
     if result.get("reactivated"):
@@ -3395,15 +3450,29 @@ def format_upkeep_report(result: dict) -> str:
         gained = sum(s["qty"] * s["income"] for s in result["reactivated"])
         if lines:
             lines.append("")
-        lines.append(f"✅ <b>{total} سازه دوباره وارد مدار شدند</b>")
+        lines.append(f"✅ *{total} سازه دوباره وارد مدار شدند*")
         for s in result["reactivated"]:
             lines.append(f"   🟢 {s['qty']} × {s['name']}")
         if gained:
-            lines.append(f"   💰 درآمد بازگشته: <b>+{gained:,}</b> دلار/روز")
+            lines.append(f"   💰 درآمد بازگشته: *+{gained:,}* دلار/روز")
 
     if lines and result.get("ramp", 1.0) < 1.0:
-        lines.append(f"\n<i>ℹ️ دوره‌ی گذار نگهداری: هزینه‌ها فعلاً {int(result['ramp'] * 100)}٪ اعمال می‌شود.</i>")
+        lines.append(f"\n_ℹ️ دوره‌ی گذار نگهداری: هزینه‌ها فعلاً {int(result['ramp'] * 100)}٪ اعمال می‌شود._")
     return "\n".join(lines)
+
+
+def _why_line(s: dict, labels: dict) -> str:
+    """توضیح یک‌خطی دلیل خاموشی یک سازه برای format_upkeep_report."""
+    scarce = s.get("scarce") or []
+    if not scarce:
+        return "منابع ورودی این سازه تمام شده بود."
+    names = " و ".join(labels.get(r, r) for r in scarce)
+    why = f"انبار {names} کفاف نمی‌داد"
+    if s.get("least_eff"):
+        why += " و این سازه کم‌بازده‌ترین مصرف‌کننده بود — قانون: کم‌بازده‌ترین اول خاموش می‌شود تا بقیه روشن بمانند"
+    else:
+        why += "؛ خاموشی تا تأمین منابع ادامه دارد"
+    return why
 
 
 def recalc_country_civ_effects(country_id: int) -> dict:
