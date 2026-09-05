@@ -227,6 +227,7 @@ async def _war_submenu(query):
     rows = [
         [InlineKeyboardButton(f"📥 رول‌های دریافتی ({counts['roles']})", callback_data="admin:roleplays_hub")],
         [InlineKeyboardButton("🛡 رول‌های دفاعی ثبت‌شده", callback_data="admin:defplan:root")],
+        [InlineKeyboardButton("➕ افزودن تجهیزات و منابع (جبران خسارت)", callback_data="admin:addinv:root")],
         [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
     ]
     await _admin_submenu(
@@ -2774,6 +2775,91 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:view_req:{req_id}")]])
         )
 
+    elif data == "admin:addinv:root":
+        from handlers.auto_ops import build_plain_continent_selector
+        text, kb = build_plain_continent_selector("admin:addinv")
+        kb.inline_keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")])
+        await query.edit_message_text(
+            "➕ *افزودن تجهیزات و منابع (جبران خسارت)*\n\n" + text,
+            reply_markup=kb, parse_mode="Markdown"
+        )
+
+    elif data.startswith("admin:addinv:cont:"):
+        cont_key = data.split(":")[2]
+        cont_info = config.CONTINENTS.get(cont_key, {})
+        keys = cont_info.get("keys", [])
+        buttons = []
+        for c in db.get_all_countries():
+            if c.get("country_key") in keys:
+                buttons.append([InlineKeyboardButton(
+                    f"{c['flag']} {c['name']}", callback_data=f"admin:addinv:pick:{c['id']}"
+                )])
+        if not buttons:
+            buttons.append([InlineKeyboardButton("(کشور بازیکن‌داری در این قاره نیست)", callback_data="ignore")])
+        buttons.append([InlineKeyboardButton("🔎 جستجوی تایپی", callback_data="admin:addinv:search")])
+        buttons.append([InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="admin:addinv:root")])
+        await query.edit_message_text(
+            f"➕ *افزودن به کشور — {cont_info.get('short_name', 'قاره')}*\n\nکشور را انتخاب کن:",
+            reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown"
+        )
+
+    elif data == "admin:addinv:search":
+        context.user_data["admin_addinv_search"] = True
+        await query.edit_message_text(
+            "🔎 *جستجوی تایپی کشور*\n\nنام کشور را بفرست:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:addinv:root")]]),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("admin:addinv:pick:"):
+        cid = int(data.split(":")[3])
+        c = db.get_country_by_id(cid)
+        if not c:
+            await query.answer("کشور یافت نشد!", show_alert=True)
+            return
+        context.user_data["admin_awaiting_input"] = {"type": "add_inventory", "country_id": cid}
+        await query.edit_message_text(
+            f"➕ *افزودن به {c['flag']} {c['name']}*\n━━━━━━━━━━━━━━━━━━\n\n"
+            "متن لیست تجهیزات و منابع را بفرست — هر فرمتی که راحتی:\n\n"
+            "• <code>رادارگریز F-35A Lightning II: 15</code>\n"
+            "• <code>Leopard 2A6M CAN: 20</code>\n"
+            "• <code>💵 15 میلیون دلار | 🪙 300 سکه طلا | 🌾 15٬000 تن غلات | 🛢️ 1٬000٬000 بشکه نفت</code>\n\n"
+            "✅ نام‌های موجود در کاتالوگ کشور تطبیق و تجمیع می‌شوند؛ نام‌های جدید "
+            "به‌صورت ردیف اختصاصی با دسته‌ی بخش (هواپیما/پدافند/توپخانه/موشک/پهپاد/زمینی/دریایی) ساخته می‌شوند.\n"
+            "➖ عدد منفی = کسر (تا کف صفر).\n\n"
+            "پیش از اعمال، پیش‌نمایش کامل با دکمه‌ی تایید نشان داده می‌شود.",
+            parse_mode="HTML"
+        )
+
+    elif data.startswith("admin:addinv:do:"):
+        draft = context.user_data.get("addinv_draft") or {}
+        cid = draft.get("country_id")
+        if not cid or int(data.split(":")[3]) != cid:
+            await query.answer("پیش‌نویس منقضی شده — دوباره شروع کن.", show_alert=True)
+            return
+        c = db.get_country_by_id(cid)
+        ok, err = db.admin_add_assets(cid, draft.get("items") or [], draft.get("resources") or {})
+        if not ok:
+            await query.edit_message_text(f"⛔ اعمال نشد: {err}", parse_mode="Markdown")
+            return
+        db.add_log(f"admin:{user_id}", "inventory_grant",
+                   f"country_id={cid} items={len(draft.get('items') or [])} res={draft.get('resources') or {}}")
+        context.user_data.pop("addinv_draft", None)
+        items = draft.get("items") or []
+        res = draft.get("resources") or {}
+        res_labels = {"treasury": "💵 پول", "gold": "🪙 طلا", "grain": "🌾 غلات", "oil_reserves": "🛢 نفت",
+                      "microchips": "💻 تراشه", "iron_ore": "⛏ آهن", "uranium_ore": "☢ کیک زرد",
+                      "nuclear_fuel": "🧪 سوخت غنی‌شده"}
+        lines = [f"✅ *به {c['flag']} {c['name']} اضافه شد:*\n"]
+        for it in items[:20]:
+            lines.append(f"• {it['name']}: {it['qty']:+,} ({it['category']})")
+        if len(items) > 20:
+            lines.append(f"• … و {len(items) - 20} قلم دیگر")
+        if res:
+            lines.append("")
+            lines.append(" | ".join(f"{res_labels.get(k, k)} {v:+,}" for k, v in res.items()))
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
+
     elif data == "admin:defplan:root":
         # 🌍 قاره‌ها با برچسب متنی بدون ایموجی + جستجو
         from handlers.auto_ops import build_plain_continent_selector
@@ -3748,6 +3834,124 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 
 # ==================== دریافت ورودی‌های تایپی ادمین ====================
+
+# ==================== ➕ جبران خسارت: افزودن تجهیزات/منابع با متن آزاد ====================
+
+_GRANT_SECTION_CATEGORIES = (
+    ("هواپیما", "Aircraft"), ("پدافند", "Air Defense"), ("توپخانه", "Artillery"),
+    ("موشک", "Missiles"), ("پهپاد", "UAV"), ("زمینی", "Ground Forces"),
+    ("دریایی", "Navy"), ("ناو", "Navy"),
+)
+_GRANT_RESOURCES = (
+    ("دلار", "treasury"), ("طلا", "gold"), ("غلات", "grain"), ("گندم", "grain"),
+    ("نفت", "oil_reserves"), ("تراشه", "microchips"), ("میکروچیپ", "microchips"),
+    ("آهن", "iron_ore"), ("کیک زرد", "uranium_ore"), ("اورانیوم", "uranium_ore"),
+    ("سوخت غنی", "nuclear_fuel"), ("ایزوتوپ", "medical_isotopes"),
+    ("واکسن", "vaccine_doses"),
+)
+
+
+def _grant_slug(name: str) -> str:
+    import re as _re
+    lat = _re.findall(r"[A-Za-z0-9]+", name)
+    slug = "_".join(t.lower() for t in lat if t)[:48]
+    if not slug:
+        import hashlib as _h
+        slug = "item_" + _h.md5(name.encode()).hexdigest()[:8]
+    return "cx_" + slug
+
+
+def parse_inventory_grant_text(text: str, catalog: list) -> dict:
+    """پارس متن آزاد لیست تجهیزات/منابع برای جبران خسارت.
+
+    catalog: [{"equipment_key","equipment_name","category"}] (کاتالوگ کشور)
+    - «نام: تعداد» → تطبیق فازی با کاتالوگ؛ تکراری‌ها جمع می‌شوند
+    - نام خارج از کاتالوگ → ردیف اختصاصی cx_* با دسته‌ی آخرین سرصفحه‌ی بخش
+    - خطوط منابع (دلار/طلا/غلات/نفت/...) با ضریب میلیون/هزار
+    """
+    from handlers.losses import match_asset_by_name, to_english_digits
+    # نرمال‌سازی کاتالوگ (key/name یا equipment_key/equipment_name)
+    catalog = [
+        {
+            "equipment_key": c.get("equipment_key") or c.get("key") or "",
+            "equipment_name": c.get("equipment_name") or c.get("name") or "",
+            "category": c.get("category") or "",
+        }
+        for c in (catalog or [])
+    ]
+    t = to_english_digits(str(text))
+    items, by_key = [], {}
+    resources, unmatched = {}, []
+    current_category = "Ground Forces"
+
+    for raw in t.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        clean = line.strip("•*-· ").strip()
+        if not clean:
+            continue
+        # خط منابع؟ (کلیدواژه‌ی منبع دارد)
+        low = clean.lower()
+        if any(kw in clean for kw, _c in _GRANT_RESOURCES) and not any(ch.isdigit() for ch in clean.split(":")[0][:20]) or "دلار" in clean or "سکه" in clean:
+            for seg in clean.split("|"):
+                import re as _re
+                nums = _re.findall(r"([\d][\d,٬]*(?:\.\d+)?)", seg)
+                if not nums:
+                    continue
+                num = float(nums[0].replace(",", "").replace("٬", ""))
+                if "میلیون" in seg or "م" == seg.strip()[-1:]:
+                    num *= 1_000_000
+                elif "هزار" in seg:
+                    num *= 1_000
+                for kw, col in _GRANT_RESOURCES:
+                    if kw in seg:
+                        resources[col] = resources.get(col, 0) + int(round(num))
+                        break
+            continue
+        # سرصفحه‌ی بخش؟ (بدون رقم؛ با یا بدون : پایانی — مثل «پدافند :»)
+        head = clean.rstrip(":：").strip()
+        if head and not any(ch.isdigit() for ch in head) and len(head.split()) <= 4 and any(ch.isalpha() for ch in head):
+            for kw, cat in _GRANT_SECTION_CATEGORIES:
+                if kw in head:
+                    current_category = cat
+                    break
+            continue
+        # قلم: «نام : تعداد»
+        import re as _re
+        m = _re.match(r"^(.+?)\s*[:：]\s*(-?[\d][\d,٬]*)\s*$", clean)
+        if not m:
+            # شکل «تعداد نام»
+            m2 = _re.match(r"^(-?[\d][\d,٬]*)\s+[\u0600-\u06FFA-Za-z].+$", clean)
+            if m2:
+                name_part, qty_s = clean[len(m2.group(1)):].strip(), m2.group(1)
+            else:
+                unmatched.append(clean[:60])
+                continue
+        else:
+            name_part, qty_s = m.group(1).strip("•*-· "), m.group(2)
+        try:
+            qty = int(qty_s.replace(",", "").replace("٬", ""))
+        except ValueError:
+            unmatched.append(clean[:60])
+            continue
+        name_part = name_part.lstrip("•*-· ").strip()
+        if not name_part:
+            unmatched.append(clean[:60])
+            continue
+        a = match_asset_by_name(name_part, catalog)
+        if a:
+            key, name, cat = a["equipment_key"], a["equipment_name"], (a.get("category") or current_category)
+        else:
+            key, name, cat = _grant_slug(name_part), name_part, current_category
+        if key in by_key:
+            by_key[key]["qty"] += qty
+        else:
+            it = {"key": key, "name": name, "category": cat, "qty": qty}
+            by_key[key] = it
+            items.append(it)
+    return {"items": items, "resources": resources, "unmatched": unmatched}
+
 
 async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id

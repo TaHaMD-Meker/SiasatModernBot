@@ -4112,6 +4112,67 @@ def seed_country_assets(country_id: int, country_key: str):
     conn.close()
 
 
+# ستون‌های مجاز برای جبران/افزودن منابع توسط ادمین
+ADMIN_GRANT_RESOURCE_COLUMNS = {
+    "treasury", "gold", "grain", "oil_reserves", "microchips", "iron_ore",
+    "uranium_ore", "nuclear_fuel", "medical_isotopes", "enriched_60",
+    "weapons_grade_90", "warheads", "electricity", "vaccine_doses",
+}
+
+
+def admin_add_assets(country_id: int, items: list, resources: dict) -> tuple[bool, str]:
+    """افزودن تجمیعی تجهیزات/منابع (جبران خسارت ادمین) — اتمیک، کف صفر.
+
+    items: [{"key","name","category","qty"}] — ردیف موجود جمع می‌شود،
+    ردیف جدید ساخته می‌شود؛ qty منفی تا کف صفر (ردیف جدید صفر ساخته نمی‌شود).
+    resources: {ستون_کشور: دلتا} فقط از ADMIN_GRANT_RESOURCE_COLUMNS.
+    """
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT country_key FROM countries WHERE id = ?", (country_id,))
+            crow = cur.fetchone()
+            if not crow:
+                return False, "کشور یافت نشد"
+            ckey = crow["country_key"] or ""
+            added = 0
+            for it in items:
+                qty = int(it.get("qty") or 0)
+                if qty == 0:
+                    continue
+                key = it.get("key")
+                cur.execute(
+                    "SELECT amount FROM country_assets WHERE country_id = ? AND equipment_key = ?",
+                    (country_id, key),
+                )
+                row = cur.fetchone()
+                if row:
+                    cur.execute(
+                        "UPDATE country_assets SET amount = MAX(0, amount + ?) WHERE country_id = ? AND equipment_key = ?",
+                        (qty, country_id, key),
+                    )
+                    added += 1
+                elif qty > 0:
+                    cur.execute("""
+                        INSERT INTO country_assets
+                        (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+                        VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0)
+                    """, (country_id, ckey, it.get("category") or "Ground Forces",
+                          it.get("name") or key, key, qty))
+                    added += 1
+            for col, delta in (resources or {}).items():
+                if col not in ADMIN_GRANT_RESOURCE_COLUMNS:
+                    return False, f"ستون مجاز نیست: {col}"
+                cur.execute(
+                    f"UPDATE countries SET {col} = MAX(0, {col} + ?) WHERE id = ?",
+                    (int(delta or 0), country_id),
+                )
+        return True, None
+    finally:
+        conn.close()
+
+
 def get_country_assets(country_id: int, category: str = None, producible_only: bool = False):
     conn = get_connection()
     cur = conn.cursor()

@@ -1096,6 +1096,18 @@ def main():
             await un_text_input_handler(update, context)
         elif context.user_data.get("roleplay_text_input") or context.user_data.get("defense_text_input") or context.user_data.get("op_target_search"):
             await operations_text_input_handler(update, context)
+        elif context.user_data.get("admin_addinv_search"):
+            context.user_data.pop("admin_addinv_search", None)
+            from handlers.losses import match_country_by_name as _mcn
+            c_found = _mcn((update.message.text or "").strip())
+            if c_found:
+                from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+                await update.message.reply_text(
+                    f"➕ افزودن به {c_found['flag']} {c_found['name']}:",
+                    reply_markup=_IKM([[ _IKB("شروع افزودن", callback_data=f"admin:addinv:pick:{c_found['id']}") ]])
+                )
+            else:
+                await update.message.reply_text("❌ کشوری با این نام پیدا نشد.")
         elif context.user_data.get("admin_defplan_search"):
             context.user_data.pop("admin_defplan_search", None)
             from handlers.losses import match_country_by_name as _mcn
