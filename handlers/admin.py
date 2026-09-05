@@ -565,8 +565,18 @@ async def admin_referee_scores(query, context):
 
 # ==================== لیست کشورها با صفحه‌بندی و فیلتر قاره‌ها ====================
 
+def _owned_countries_only(countries: list) -> list:
+    """کشورهای بی‌صاحب (player_id=0 — فکتوری‌شده‌های پاک‌سازی) از لیست مدیریت حذف
+    می‌شوند تا مثل کشورِ دارای بازیکن دیده نشوند؛ جای آن‌ها فقط پنل اختصاصی
+    «🌍 کشورهای بی‌صاحب» است. سازمان ملل مستثناست."""
+    return [c for c in countries
+            if (c.get("player_id") or 0) > 0 or c.get("country_key") == "un"]
+
+
 async def show_countries_list(query, context, page: int = 0, filter_continent: str = None):
-    all_countries = db.get_all_countries()
+    _all_rows = db.get_all_countries()
+    all_countries = _owned_countries_only(_all_rows)
+    ownerless_n = len(_all_rows) - len(all_countries)
     if not all_countries:
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل ادمین", callback_data="admin:menu")]]
         await query.edit_message_text("❌ هنوز هیچ کشوری در بازی ساخته نشده است.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -623,6 +633,8 @@ async def show_countries_list(query, context, page: int = 0, filter_continent: s
 
     cont_title = f" (فیلتر: {config.CONTINENTS.get(filter_continent, {}).get('short_name', filter_continent)})" if filter_continent and filter_continent != "all" else ""
     text = f"📋 *لیست کشورهای فعال (نمایش {len(filtered)} از مجموع {len(all_countries)} کشور)*{cont_title}\n\nبرای مشاهده یا تغییر جزئیات، روی کشور مورد نظر کلیک کنید:"
+    if ownerless_n:
+        text += f"\n\n🌍 {ownerless_n} کشور بی‌صاحب در این لیست نیست — پنل «🌍 کشورهای بی‌صاحب»."
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     except Exception:
@@ -3797,11 +3809,18 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         clean_q = _clean_persian_str(user_query)
 
         all_countries = db.get_all_countries()
-        matches = [c for c in all_countries if clean_q in _clean_persian_str(c.get("name", "")) or clean_q in _clean_persian_str(c.get("country_key", "")) or str(c.get("player_id", "")) == user_query]
+        matches = [c for c in _owned_countries_only(all_countries)
+                   if clean_q in _clean_persian_str(c.get("name", "")) or clean_q in _clean_persian_str(c.get("country_key", "")) or str(c.get("player_id", "")) == user_query]
+        ownerless_hits = sum(1 for c in all_countries
+                             if c not in matches
+                             and (c.get("player_id") or 0) == 0 and c.get("country_key") != "un"
+                             and (clean_q in _clean_persian_str(c.get("name", "")) or clean_q in _clean_persian_str(c.get("country_key", ""))))
 
         if not matches:
+            hint = ("\nℹ️ اگر کشور موردنظرت «بی‌صاحب» است، در این جستجو نمی‌آید — "
+                    "از پنل «🌍 کشورهای بی‌صاحب» استفاده کن." if ownerless_hits else "")
             await update.message.reply_text(
-                f"❌ کشوری با مشخصات «{user_query}» در پایگاه داده یافت نشد.",
+                f"❌ کشوری با مشخصات «{user_query}» در پایگاه داده یافت نشد.{hint}",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔁 جستجوی دوباره", callback_data="admin:search_country_prompt")],
                     [InlineKeyboardButton("🔙 لیست کشورها", callback_data="admin:list:0")]
