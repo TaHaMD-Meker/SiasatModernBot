@@ -83,5 +83,79 @@ def test_panel_has_wipe_button_with_confirm_step():
     assert "غیرقابل بازگشت" in src[confirm:confirm + 1500], "تایید مخرب بودن الزامی است"
     assert "admin:wipe_free_run" in src
     run_idx = src.index('data == "admin:wipe_free_run"')
-    window = src[run_idx:run_idx + 300]
+    window = src[run_idx:run_idx + 700]
     assert "hard_reset_ownerless_countries" in window, "اجرای واقعی باید تابع ریست را صدا بزند"
+
+
+# ----------------------------------------------------------------------------
+# رگرسیون: «دکمه بله همه را پاک و بازسازی کن کار نمیکنه»
+# علت: متن query.answer بلندتر از سقف ۲۰۰ کاراکتری تلگرام (لیست نام کشورها)
+# → BadRequest → هیچ بازخوردی به ادمین نمی‌رسید. دکمه باید همیشه پاسخ کوتاه
+# بدهد و کشورهای با کلید خارج از کاتالوگ هم باید فکتوری بازسازی شوند.
+import asyncio
+import types
+
+import pytest
+from telegram.error import BadRequest
+
+
+class _FakeQuery:
+    """کوئری تقلبی که قانون سخت تلگرام را رعایت می‌کند: پاسخ حداکثر ۲۰۰ کاراکتر."""
+
+    def __init__(self):
+        self.from_user = types.SimpleNamespace(id=999001)
+        self.data = "admin:wipe_free_run"
+        self.message = types.SimpleNamespace(photo=None)
+        self.alerts = []
+        self.edits = 0
+
+    async def answer(self, text=None, show_alert=False):
+        self.alerts.append(text or "")
+        if text and len(text) > 200:
+            raise BadRequest("MESSAGE_TOO_LONG: text is too long")
+        return True
+
+    async def edit_message_text(self, *a, **k):
+        self.edits += 1
+        return True
+
+
+def test_wipe_run_button_always_answers_within_telegram_limit(monkeypatch, tmp_path):
+    from handlers import admin as admin_mod
+
+    _fresh(monkeypatch, tmp_path, "wipe_btn.db")
+    monkeypatch.setattr(admin_mod, "is_admin", lambda uid: True)
+
+    # ۲۰ کشور کاتالوگی + ۵ کشور با کلید خارج از کاتالوگ (سفارشیِ ادمین)
+    catalog_keys = [k for k in config.COUNTRIES if k != "un"][:20]
+    assert len(catalog_keys) == 20
+    for k in catalog_keys:
+        db.create_country(0, "موقت", "🏳️", country_key=k)
+    custom_names = {}
+    for i in range(1, 6):
+        key = f"custom_admin_country_{i}"
+        name = f"شاهنشاهی سفارشیِ آزمایشی شماره‌ی {i} با نام بلند"
+        custom_names[key] = name
+        db.create_country(0, name, "🏳️", country_key=key)
+
+    query = _FakeQuery()
+    update = types.SimpleNamespace(callback_query=query)
+    context = types.SimpleNamespace()
+
+    # نباید هیچ استثنایی بالا بیاید (قبلاً BadRequest از query.answer می‌آمد)
+    asyncio.run(admin_mod.admin_callback_handler(update, context))
+
+    assert query.alerts, "ادمین باید بلافاصله بازخورد بگیرد"
+    for text in query.alerts:
+        assert len(text) <= 200, f"پاسخ {len(text)} کاراکتری سقف تلگرام را می‌شکند"
+    assert any(text.startswith("✅") and "25" in text for text in query.alerts)
+    assert query.edits >= 1, "پنل باید بعد از پاک‌سازی رفرش شود"
+
+    # هر ۲۵ کشور فکتوری بازسازی شده‌اند و باز هم «باز» هستند (player_id=0)
+    for k in catalog_keys + list(custom_names):
+        row = db.get_country_by_key(k)
+        assert row is not None, f"{k} باید بازسازی می‌شد"
+        assert (row["player_id"] or 0) == 0
+    # کشورهای خارج از کاتالوگ هم با نام اصلی خودشان بازسازی می‌شوند
+    for key, name in custom_names.items():
+        assert db.get_country_by_key(key)["name"] == name

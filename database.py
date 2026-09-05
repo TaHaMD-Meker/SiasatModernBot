@@ -9711,7 +9711,7 @@ def hard_reset_ownerless_countries(actor: str = "admin") -> tuple[bool, int, str
         with conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT id, country_key FROM countries"
+                "SELECT id, country_key, name, flag FROM countries"
                 " WHERE (player_id = 0 OR player_id IS NULL)"
                 " AND country_key != 'un' AND country_key NOT LIKE 'faction_%'")
             rows = cur.fetchall()
@@ -9719,6 +9719,7 @@ def hard_reset_ownerless_countries(actor: str = "admin") -> tuple[bool, int, str
                 return True, 0, "هیچ کشور بی‌صاحبی برای پاک‌سازی کامل وجود ندارد."
             ids = [r["id"] for r in rows]
             keys = [r["country_key"] for r in rows]
+            keys_info = [(r["country_key"], r["name"], r["flag"]) for r in rows]
             ph = ",".join("?" * len(ids))
 
             # پاک‌سازی تمام ردیف‌های وابسته به این کشورها (نسخه‌ی هدفمند ریست فصل)
@@ -9746,18 +9747,25 @@ def hard_reset_ownerless_countries(actor: str = "admin") -> tuple[bool, int, str
 
         rebuilt = 0
         names = []
-        for key in keys:
-            meta = config.COUNTRIES.get(key)
-            if not meta:
-                continue
-            flag = meta.get("flag", "🏳️")
-            name = str(meta.get("name", key))
-            if flag and flag in name:
-                name = name.replace(flag, "").strip()
-            new_id = create_country(0, name, flag, country_key=key)
-            if new_id:
-                rebuilt += 1
-                names.append(f"{flag} {name}")
+        for key, old_name, old_flag in keys_info:
+            # کشورهای سفارشیِ خارج از کاتالوگ هم باید باز شوند: از نام/پرچم خود ردیف
+            try:
+                meta = config.COUNTRIES.get(key)
+                if meta:
+                    flag = meta.get("flag", old_flag or "🏳️")
+                    name = str(meta.get("name", old_name or key))
+                else:
+                    flag = old_flag or "🏳️"
+                    name = old_name or key
+                if flag and flag in name:
+                    name = name.replace(flag, "").strip()
+                new_id = create_country(0, name, flag, country_key=key)
+                if new_id:
+                    rebuilt += 1
+                    names.append(f"{flag} {name}")
+            except Exception as e:
+                logger.warning(f"Ownerless rebuild failed for {key}: {e}")
+                names.append(f"⚠️ {key}")
 
         # ناوگان‌های تازه‌ریست ممکن است کنترل تنگه‌ای را که باز مانده دوباره واجد کنند؛
         # برعکس، وضعیت‌های بسته‌ی میراثی هم اینجا تمیز می‌شوند.
@@ -9771,8 +9779,14 @@ def hard_reset_ownerless_countries(actor: str = "admin") -> tuple[bool, int, str
                     f"count={rebuilt} | countries={','.join(keys)}")
         except Exception:
             pass
-        return True, rebuilt, (f"{rebuilt} کشور بی‌صاحب کاملاً پاک و فکتوری بازسازی شد: "
-                               + "، ".join(names[:20]) + ("…" if len(names) > 20 else ""))
+        msg = (f"{rebuilt} کشور بی‌صاحب کاملاً پاک و فکتوری بازسازی شد: "
+               + "، ".join(names[:10]))
+        if len(names) > 10:
+            msg += f" و {len(names) - 10} کشور دیگر"
+        failed = len(keys) - rebuilt
+        if failed > 0:
+            msg += f" | ⚠️ {failed} مورد بازسازی نشد"
+        return True, rebuilt, msg
     except Exception as e:
         logger.warning(f"Error in hard_reset_ownerless_countries: {e}")
         return False, 0, f"خطا در پاک‌سازی کامل بی‌صاحب‌ها: {e}"

@@ -1500,9 +1500,23 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await wipe_free_confirm(query, context)
 
     elif data == "admin:wipe_free_run":
-        ok, count, msg = db.hard_reset_ownerless_countries(actor=f"admin:{user_id}")
-        await query.answer(("✅ " if ok else "❌ ") + msg, show_alert=True)
-        await show_queue_panel(query, context)
+        # سقف متن query.answer در تلگرام ۲۰۰ کاراکتر است؛ لیست نام کشورها اینجا
+        # نمی‌آید (پیام ۲۵۰+ کاراکتری BadRequest می‌داد و دکمه «کار نمی‌کرد»).
+        # فهرست کامل کشورها بعد از رفرش، خودِ پنل نشان می‌دهد.
+        try:
+            ok, count, msg = db.hard_reset_ownerless_countries(actor=f"admin:{user_id}")
+            if not ok:
+                await query.answer("❌ " + msg[:180], show_alert=True)
+            elif count:
+                await query.answer(f"✅ {count} کشور بی‌صاحب پاک و فکتوری بازسازی شد.", show_alert=True)
+            else:
+                await query.answer("✅ پاک‌سازی انجام شد؛ کشور بی‌صاحبی باقی نماند.", show_alert=True)
+            await show_queue_panel(query, context)
+        except Exception:
+            try:
+                await query.answer("❌ خطا در پاک‌سازی! جزئیات در لاگ سرور.", show_alert=True)
+            except Exception:
+                pass
 
     elif data == "admin:stmt_exempt":
         await admin_stmt_exempt_menu(query, context, page=0)
