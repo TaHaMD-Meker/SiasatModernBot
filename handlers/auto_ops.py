@@ -195,8 +195,9 @@ _TENSION_GUIDE = (
     f"• بیانیه تند یا اولتیماتوم ← +{config.TENSION_STATEMENT_DELTA}\n"
     f"• عملیات اطلاعات/سایبری موفق ← +{config.TENSION_INTEL_SUCCESS_DELTA}\n"
     f"• تحریم تجاری ← +{config.TENSION_SANCTION_DELTA}\n"
-    f"• حمله‌ی محدود موفق ← +{config.TENSION_AUTO_ATTACK_DELTA}\n"
-    f"⚠️ تنش هر روز {config.TENSION_DAILY_DECAY} واحد سرد می‌شود — سریع حرکت کن!"
+    f"⚠️ روزانه حداکثر {config.TENSION_MAX_GAIN_PER_DAY} واحد می‌توانی بسازی و هر روز "
+    f"{config.TENSION_DAILY_DECAY} واحد هم سرد می‌شود — جنگ ۲-۳ روز تنش می‌خواهد، نه یک دکمه!\n"
+    f"😱 از تنش {config.TENSION_FEAR_LEVEL} به بالا، هر تنش‌سازی رضایت عمومی دو کشور را می‌سوزاند."
 )
 
 
@@ -314,7 +315,7 @@ def _execute_auto(attacker, target, text, role_id, committed, targets, bot=None)
     try:
         war, war_opened = db.get_or_create_war(att_id, dfn_id)
         if war_opened:
-            db.add_tension(att_id, dfn_id, 20, "آغاز جنگ فعال")
+            db.add_tension(att_id, dfn_id, 20, "آغاز جنگ فعال", bypass_daily_cap=True)
         # دلتای جبهه: نفوذ مؤثر + نسبت تلفات (پیشروی برنده، توقف در setbacks)
         d_loses = sum(q for (_k, q) in resolution["defender_asset_losses"])
         a_air = sum(resolution["attacker_aircraft_losses"].values())
@@ -352,12 +353,13 @@ def _execute_auto(attacker, target, text, role_id, committed, targets, bot=None)
 
 
 async def _announce_war_async(bot, attacker, target):
-    from news_engine import post_breaking_news
-    await post_breaking_news(
-        bot,
-        f"جنگ فعال میان {attacker['name']} و {target['name']} آغاز شد",
-        f"با اجرای عملیات محدود {attacker['flag']}، جبهه‌ی جنگ میان دو کشور رسماً گشوده شد. "
-        "ناظران نظامی از ادامه‌ی درگیری‌ها در ساعات آینده سخن می‌گویند.")
+    from news_engine import post_live_ticker
+    await post_live_ticker(bot, [
+        f"خبر فوری: منابع دیپلماتیک از آغاز رسمی وضعیت جنگی میان {attacker['name']} و {target['name']} خبر می‌دهند.",
+        f"ستادهای نظامی دو کشور آماده‌باش عمومی اعلام کرده‌اند؛ تحرکات هوایی در مرزها بالا رفته است.",
+        f"بازارهای مالی {attacker['name']} و {target['name']} واکنش تند نشان داده‌اند و شهروندان برای تأمین مایحتاج به مغازه‌ها هجوم آورده‌اند.",
+        "دبیرکل سازمان ملل خواستار فوران خون و بازگشت به میز مذاکره شده است.",
+    ])
     for c in (attacker, target):
         if c.get("player_id"):
             try:
@@ -410,20 +412,30 @@ def _notify_players(attacker, target, resolution, units_lost, bot):
 
 
 def _post_news(attacker, target, resolution, bot):
+    """📡 پخش زنده‌ی عملیات محدود — همان تم خبرهای دستی، بی‌عدد و در لحظه."""
     if not bot:
         return
     import asyncio
-    from news_engine import post_breaking_news
-    title = f"درگیری نظامی محدود میان {attacker['name']} و {target['name']}"
-    body = (
-        f"منابع نظامی از اجرای یک عملیات محدود {attacker['flag']} علیه اهداف نظامی "
-        f"{target['name']} خبر می‌دهند. پدافند {target['name']} واکنش نشان داده؛ "
-        "جزئیات و ارقام رسمی منتشر نشده است."
-    )
+    from news_engine import post_live_ticker
+    jets = sum(resolution["attacker_aircraft_losses"].values())
+    blocks = [
+        f"خبر فوری: منابع نظامی از آغاز یک عملیات محدود هوایی از سوی {attacker['name']} علیه اهداف نظامی {target['name']} خبر می‌دهند.",
+        f"در همین لحظه‌ها شاهدها در پایگاه‌های هوایی {attacker['name']} از برخاستن دسته‌جمعی جنگنده‌ها و صدای روشن‌شدن موتورها می‌گویند.",
+        f"آژیرهای پدافندی در چند نقطه از خاک {target['name']} به صدا درآمده؛ رادارها ورودی‌های هوایی را رصد می‌کنند.",
+        f"پدافند {target['name']} اعلام کرده چند هدف ورودی را رهگیری یا گمراه کرده — {attacker['name']} این ادعا را تأیید نکرده.",
+        "انفجارهای پراکنده در مناطق عملیات گزارش می‌شود؛ ستون دود در افق دیده می‌شود.",
+        f"از بیمارستان‌های اطراف منطقه خبر می‌رسد مجروحان منتقل شده‌اند؛ آمار دقیق تلفات هنوز اعلام نشده است.",
+        f"قیادات نظامی دو کشور یکدیگر را به تهاجم متهم می‌کنند؛ {attacker['name']} از موفقیت مأموریت می‌گوید، {target['name']} از شکست نفوذ دشمن.",
+        "در همین دقیقه‌ها سکوت مخابراتی نسبی روی مسیر پروازی حاکم است؛ ناظران از احتمال موج بعدی خبر می‌دهند.",
+    ]
+    if jets > 0:
+        blocks.append(f"منابع نزدیک به {attacker['name']} از ازدست‌رفتن چند فروند هواگرد در جریان مأموریت خبر می‌دهند؛ ستاد نظامی این خبر را بی‌پاسخ گذاشته است.")
+    blocks.append(f"ناظران بین‌المللی از گسترش تنش میان {attacker['name']} و {target['name']} ابراز نگرانی کرده‌اند؛ شورای امنیت خواستار خویشتنداری است.")
     try:
-        asyncio.get_event_loop().create_task(post_breaking_news(bot, title, body))
-    except Exception:
-        pass
+        loop = asyncio.get_running_loop()
+        loop.create_task(post_live_ticker(bot, blocks))
+    except RuntimeError:
+        asyncio.run(post_live_ticker(bot, blocks))
 
 
 # ────────────────── قلاب‌های تنش ──────────────────
@@ -455,7 +467,7 @@ def _find_named_country(text: str, exclude_id: int):
 
 
 def tension_from_statement(country_id: int, text: str) -> int:
-    """بیانیه‌ی تند با نام (یا نام‌ریز) کشور دیگر در متن → +۱۰ تنش دوسویه."""
+    """بیانیه‌ی تند با نام (یا نام‌ریز) کشور دیگر در متن → تنش دوسویه (با سقف روزانه)."""
     t = str(text or "")
     hits = [w for w in _THREAT_WORDS if w in t]
     if not hits:

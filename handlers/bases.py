@@ -1089,7 +1089,7 @@ def attack_from_base(owner_country, base_id: int, target_country, committed: lis
     if defender_items:
         db.create_loss_report(target["id"], defender_items, "عملیات از پایگاه", f"حمله از {base['name']}")
 
-    db.add_tension(owner_id, target["id"], config.TENSION_AUTO_ATTACK_DELTA, "حمله از پایگاه پیشروی")
+    db.add_tension(owner_id, target["id"], config.TENSION_AUTO_ATTACK_DELTA, "حمله محدود از پایگاه")
     try:
         war, war_opened = db.get_or_create_war(owner_id, target["id"])
         d_loses = sum(q for (_k, q) in resolution["defender_asset_losses"])

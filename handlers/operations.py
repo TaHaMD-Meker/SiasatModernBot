@@ -269,8 +269,8 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             oname = f"{other['flag']} {other['name']}" if other else "؟"
             front = w["front"] if w["attacker_id"] == country["id"] else -w["front"]
             bar = "▓" * (abs(front) // 10) + "░" * (10 - abs(front) // 10)
-            side = "پیشروی ✅" if front > 0 else ("عقب‌نشینی ⚠️" if front < 0 else "خط مقدم ثابت")
-            lines.append(f"🔥 {oname} — جبهه: `{bar}` ({front:+d}) {side}")
+            side = "غلبه‌ی میدانی ▲" if front > 0 else ("داشتیم می‌باختیم ▼" if front < 0 else "توازن قدرت")
+            lines.append(f"🔥 {oname} — غلبه‌ی میدانی: `{bar}` ({front:+d}) {side}")
             lines.append(f"   امتیاز جنگ: {w['warscore']}")
             if w.get("ceasefire_requested_by") and w["ceasefire_requested_by"] == other_id:
                 lines.append("   🕊 طرف مقابل آتش‌بس خواسته — تصمیم تو:")
@@ -279,7 +279,7 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
                     InlineKeyboardButton("❌ رد", callback_data=f"op:cfdec:{w['id']}"),
                 ])
             elif front >= config.WAR_PEACE_FRONT_THRESHOLD and w["attacker_id"] == country["id"]:
-                lines.append(f"   💰 حق مطالبه‌ی غرامت داری (جبهه ≥ {config.WAR_PEACE_FRONT_THRESHOLD})")
+                lines.append(f"   💰 غلبه‌ی میدانی کافی برای صلح غرامتی ({config.WAR_PEACE_FRONT_THRESHOLD}+)")
                 buttons.append([InlineKeyboardButton(f"💰 صلح با غرامت از {other['name']}", callback_data=f"op:rep:{w['id']}")])
             if not (w.get("ceasefire_requested_by") and w["ceasefire_requested_by"] != country["id"]):
                 buttons.append([
@@ -362,12 +362,14 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             "📖 *راهنمای عملیات نظامی*\n━━━━━━━━━━━━━━━━━━\n\n"
             f"⚔️ حمله به هر کشوری *تنش* می‌خواهد — جنگ از آسمان نمی‌آید!\n"
             f"حداقل تنش برای حمله: *{config.TENSION_ATTACK_THRESHOLD} از ۱۰۰*\n\n"
-            "🌡 *تنش را چطور بسازم؟*\n"
+            "🌡 *تنش را چطور بسازم؟* (کند و سخت — همانند واقعیت)\n"
             f"• بیانیه تند یا اولتیماتوم ← +{config.TENSION_STATEMENT_DELTA}\n"
             f"• عملیات اطلاعات/سایبری موفق ← +{config.TENSION_INTEL_SUCCESS_DELTA}\n"
             f"• تحریم تجاری ← +{config.TENSION_SANCTION_DELTA}\n"
-            f"• حمله‌ی محدود موفق ← +{config.TENSION_AUTO_ATTACK_DELTA}\n"
-            f"⚠️ تنش هر روز {config.TENSION_DAILY_DECAY} واحد سرد می‌شود — سریع عمل کن!\n\n"
+            f"⚠️ روزانه حداکثر +{config.TENSION_MAX_GAIN_PER_DAY} ساختنی است و هر روز "
+            f"{config.TENSION_DAILY_DECAY} سرد می‌شود ⇒ تا آستانه‌ی جنگ ~۲-۳ روز بازی مداوم لازم است.\n"
+            f"😱 از تنش {config.TENSION_FEAR_LEVEL} به بالا: رضایت عمومی دو طرف می‌سوزد و از "
+            f"{config.TENSION_FUEL_QUEUE_LEVEL} صف پمپ‌بنزین و مصرف غیرعادی نفت می‌آید.\n\n"
             "⚙️ *عملیات عادی* (مهمات ≤۲۵، تک‌هدف، بدون هدف راهبردی) به‌صورت "
             "خودکار اجرا می‌شود: تلفات، خبر و گزارش همه توسط ستاد بات.\n\n"
             "📤 *عملیات گسترده* (موج سنگین، هدف راهبردی مثل نفت/برق/غلات/طلا، "

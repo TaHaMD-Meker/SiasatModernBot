@@ -50,6 +50,30 @@ async def post_breaking_news(
             return False
 
 
+async def post_live_ticker(bot, blocks: list[str]) -> int:
+    """پخش زنده به سبک اخبار دستی — هر بلوک یک پیام جدا با پانوشت 📻 @SiasatModern.
+
+    قوانین سبک‌نامه: تناوب 🚨/🔴، زمان حال، بی‌عدد، جهت با نام کشور.
+    خروجی: تعداد بلوک‌های پست‌شده.
+    """
+    channel_id = config.get_channel_id()
+    if not channel_id or not bot or not blocks:
+        return 0
+    sent = 0
+    for i, body in enumerate(blocks):
+        emoji = "🚨" if i % 2 == 0 else "🔴"
+        card = f"{emoji} {body}\n\n📻 @SiasatModern"
+        try:
+            try:
+                await bot.send_message(chat_id=channel_id, text=card, parse_mode="Markdown")
+            except Exception:
+                await bot.send_message(chat_id=channel_id, text=f"{emoji} {body}\n\n📻 @SiasatModern")
+            sent += 1
+        except Exception:
+            break
+    return sent
+
+
 async def trigger_general_broadcast(bot, message_text: str):
     """ارسال بیانیه یا پیام عمومی به کانال اخبار."""
     channel_id = config.get_channel_id()

@@ -541,6 +541,34 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
     except Exception:
         logger.exception("war weariness failed")
 
+    # 😱 تنش بالا: صف پمپ‌بنزین — مصرف نفت غیرعادی + خبر زنده (یک‌بار در روز هر کشور)
+    try:
+        from news_engine import post_live_ticker
+        for c_row in db.get_all_countries():
+            _rows = db.get_tension_rows(c_row["id"])
+            _max_t = max((r["value"] for r in _rows), default=0)
+            if _max_t < config.TENSION_FUEL_QUEUE_LEVEL:
+                continue
+            if db.get_setting(f"fuelqueue_news:{c_row['id']}") == today:
+                continue  # امروز قبلاً اعمال شده (اجرای force ادمین دوباره نمی‌سوزاند)
+            con_f = db.get_connection()
+            try:
+                with con_f:
+                    con_f.execute("UPDATE countries SET oil_reserves = MAX(0, oil_reserves - ?) WHERE id = ?",
+                                  (config.TENSION_SCARE_OIL_DAILY, c_row["id"]))
+            finally:
+                con_f.close()
+            db.set_setting(f"fuelqueue_news:{c_row['id']}", today)
+            try:
+                await post_live_ticker(context.bot, [
+                    f"در چند شهر {c_row['name']} صف‌های طولانی مقابل پمپ‌بنزین‌ها شکل گرفته؛ رانندگان از کمبود سوخت در برخی جایگاه‌ها می‌گویند.",
+                    f"مقام‌های {c_row['name']} از مردم خواسته‌اند بی‌پایه ذخیره‌سازی نکنند؛ منابع آگاه از افزایش مصرف سوخت در روزهای اخیر خبر می‌دهند.",
+                ])
+            except Exception:
+                logger.exception("fuel queue news failed for %s", c_row.get("id"))
+    except Exception:
+        logger.exception("fuel queue scare failed")
+
     # 3.5. هزینه و اجاره روزانه پایگاه‌های برون‌مرزی — فقط یک بار در هر روز تقویمی (خارج از حلقه کشورها)
     if db.get_setting("base_cost_cycle_date") != today or force:
         db.set_setting("base_cost_cycle_date", today)

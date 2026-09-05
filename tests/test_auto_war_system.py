@@ -46,13 +46,21 @@ def test_tension_pair_symmetry_and_clamp(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "t.db")
     a, b = _mk("عربستان", "🇸🇦", "saudi"), _mk("ونزوئلا", "🇻🇪", "venezuela")
     v = db.add_tension(a, b, 50, "بیانیه تند")
-    assert v == 50
-    assert db.get_tension(b, a) == 50, "تنش باید دوسویه باشد"
-    assert db.add_tension(a, b, 60, "حمله") == 100, "سقف ۱۰۰"
-    assert db.add_tension(a, b, -200, "آشتی") == 0, "کف صفر"
-    db.add_tension(a, b, 40, "جنگ")
-    db.decay_all_tensions(5)
-    assert db.get_tension(a, b) == 35, "سردشدن روزانه"
+    assert v == config.TENSION_MAX_GAIN_PER_DAY, "🚧 سقف روزانه — یک دکمه تا ۱۰۰ ممنوع"
+    assert db.get_tension(b, a) == v, "تنش باید دوسویه باشد"
+    assert db.add_tension(a, b, 60, "حمله") == config.TENSION_MAX_GAIN_PER_DAY, "اسپمِ همان روز بیشتر نمی‌سازد"
+    assert db.add_tension(a, b, -200, "آشتی", bypass_daily_cap=True) == 0, "کف صفر"
+    db.add_tension(a, b, 40, "جنگ", bypass_daily_cap=True)
+    db.decay_all_tensions(config.TENSION_DAILY_DECAY)
+    assert db.get_tension(a, b) == 40 - config.TENSION_DAILY_DECAY, "سردشدن روزانه"
+    # روز بعد: سهمیه ریست می‌شود
+    import sqlite3 as _sq
+    con = db.get_connection()
+    with con:
+        con.execute("UPDATE country_tensions SET gain_date='2000-01-01', gained_today=99 WHERE c1_id=? AND c2_id=?", (min(a,b), max(a,b)))
+    con.close()
+    v2 = db.add_tension(a, b, 10, "روز جدید")
+    assert v2 == 40 - config.TENSION_DAILY_DECAY + 10, "روز جدید سهمیه‌ی تازه"
 
 
 def test_attack_below_tension_rejected_without_any_deduction(monkeypatch, tmp_path):
@@ -62,7 +70,7 @@ def test_attack_below_tension_rejected_without_any_deduction(monkeypatch, tmp_pa
     dfn = _mk("ونزوئلا", "🇻🇪", "venezuela")
     _asset(att, "kfir_c12", "جنگنده Kfir C.12", 10)
     _asset(dfn, "zu23", "توپ ۲۳ م‌م ZU-23-2", 8, "air_defense")
-    db.add_tension(att, dfn, 15, "بد")
+    db.add_tension(att, dfn, 15, "بد", bypass_daily_cap=True)
 
     before_d = db.get_country_by_id(dfn)["treasury"]
     result = auto_ops.process_attack_submission(att, dfn, "حمله با ۵ جنگنده Kfir به کاراکاس", bot=None)
@@ -110,7 +118,7 @@ def test_auto_attack_full_pipeline(monkeypatch, tmp_path):
     _asset(att, "storm_shadow", "Storm Shadow", 200)
     _asset(dfn, "pantsir", "Pantsir-S1", 20, "air_defense")
     _asset(dfn, "zu23", "توپ ۲۳ م‌م ZU-23-2", 200, "air_defense")
-    db.add_tension(att, dfn, 50, "تنش مرزی")
+    db.add_tension(att, dfn, 50, "تنش مرزی", bypass_daily_cap=True)
     import combat_model as _cm
     def _ad_total(cid):
         return sum(r["amount"] for r in db.get_country_assets(cid) if _cm.classify_sam(r["equipment_name"], r["equipment_key"]))
@@ -133,7 +141,8 @@ def test_auto_attack_full_pipeline(monkeypatch, tmp_path):
     assert c["active_personnel_loss"] if False else True
     human = result["human"]
     assert human["mil_kia"] <= 150 and human["wounded"] >= human["mil_kia"] * 2 and human["civilians"] < 50
-    assert db.get_tension(att, dfn) == 95, "حمله‌ی خودکار +۲۵ و آغاز جنگ +۲۰ تنش"
+    # 🚧 تنشِ کند: حمله‌ی خودکار +15 (زیر سقف روزانه ۲۰) و آغاز جنگ +20 (bypass) روی تنش ۵۰ آماده‌شده
+    assert db.get_tension(att, dfn) == 85, "حمله‌ی خودکار +۱۵ و آغاز جنگ +۲۰ تنش"
     row = db.get_roleplay_by_id(result["role_id"])
     assert row["status"] == "auto_executed"
 
@@ -144,7 +153,7 @@ def test_large_scale_escalates_to_admin_without_deduction(monkeypatch, tmp_path)
     att = _mk("عربستان", "🇸🇦", "saudi")
     dfn = _mk("سوریه", "🇸🇾", "syria")
     _asset(att, "storm_shadow", "Storm Shadow", 200)
-    db.add_tension(att, dfn, 80, "جنگ")
+    db.add_tension(att, dfn, 80, "جنگ", bypass_daily_cap=True)
     before = {r["equipment_key"]: r["amount"] for r in db.get_country_assets(att)}
 
     text = "موج کامل: ۳۰ موشک کروز Storm Shadow به ستاد فرماندهی دمشق و شبکه برق سوریه"
@@ -163,7 +172,7 @@ def test_unparseable_role_escalates_without_deduction(monkeypatch, tmp_path):
     att = _mk("عراق", "🇮🇶", "iraq")
     dfn = _mk("کویت", "🇰🇼", "kuwait")
     _asset(att, "t72", "T-72AV", 400, "army")
-    db.add_tension(att, dfn, 90, "جنگ")
+    db.add_tension(att, dfn, 90, "جنگ", bypass_daily_cap=True)
     before = db.get_country_by_id(att)["treasury"]
 
     result = auto_ops.process_attack_submission(att, dfn, "سپاه شبح مرگ حمله‌ی همه‌جانبه می‌کند", bot=None)
@@ -179,7 +188,7 @@ def test_coalition_role_escalates(monkeypatch, tmp_path):
     ally = _mk("آمریکا", "🇺🇸", "usa")
     dfn = _mk("روسیه", "🇷🇺", "russia")
     _asset(att, "typhoon2", "Eurofighter Typhoon", 20)
-    db.add_tension(att, dfn, 100, "جنگ")
+    db.add_tension(att, dfn, 100, "جنگ", bypass_daily_cap=True)
 
     result = auto_ops.process_attack_submission(
         att, dfn, "حمله محدود با ۴ جنگنده تایفون همراه آمریکا علیه پایگاه هوایی روسیه", bot=None)
@@ -243,7 +252,7 @@ def test_active_defense_plan_reduces_defender_losses(monkeypatch, tmp_path):
     _asset(att, "f16i", "F-16I Sufa", 30)
     _asset(att, "spice1000", "موشک Spice-1000", 40)
     _asset(dfn, "strela10", "Strela-10", 12, "air_defense")
-    db.add_tension(att, dfn, 60, "جنگ")
+    db.add_tension(att, dfn, 60, "جنگ", bypass_daily_cap=True)
     text = "حمله محدود: ۶ جنگنده F-16I با ۱۰ موشک Spice-1000 به زرادخانه جنوب"
 
     _make_plan(dfn, {"money": 50_000, "oil": 100, "microchips": 10, "grain": 50})
@@ -256,7 +265,7 @@ def test_active_defense_plan_reduces_defender_losses(monkeypatch, tmp_path):
     r_active = auto_ops.process_attack_submission(att, dfn, text, bot=None)
 
     db.set_defense_plan_active(dfn, 0, "آزمون")
-    db.add_tension(att, dfn, 25, "دوباره")
+    db.add_tension(att, dfn, 25, "دوباره", bypass_daily_cap=True)
     r_off = auto_ops.process_attack_submission(att, dfn, text, bot=None)
 
     assert r_active["defender_units_lost"] < r_off["defender_units_lost"], \
@@ -282,8 +291,8 @@ def test_statement_threat_builds_tension(monkeypatch, tmp_path):
     a = _mk("ایران", "🇮🇷", "iran")
     b = _mk("اسرائیل", "🇮🇱", "israel")
     v = auto_ops.tension_from_statement(a, "به رژیم صهیونیستی اولتیماتوم می‌دهیم؛ پاسخ کوبنده خواهد بود")
-    assert v >= 10, "بیانیه تند باید تنش بسازد"
-    assert db.get_tension(a, b) >= 10
+    assert v == config.TENSION_STATEMENT_DELTA, "بیانیه تند باید تنش بسازد (کند — سقف روزانه دارد)"
+    assert db.get_tension(a, b) == config.TENSION_STATEMENT_DELTA
 
 
 def test_sanction_builds_tension(monkeypatch, tmp_path):
@@ -292,7 +301,7 @@ def test_sanction_builds_tension(monkeypatch, tmp_path):
     a = _mk("آمریکا", "🇺🇸", "usa")
     b = _mk("ونزوئلا", "🇻🇪", "venezuela")
     auto_ops.tension_from_sanction(a, b)
-    assert db.get_tension(a, b) == 10
+    assert db.get_tension(a, b) == config.TENSION_SANCTION_DELTA
 
 
 def test_intel_success_builds_tension(monkeypatch, tmp_path):

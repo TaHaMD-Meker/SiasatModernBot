@@ -5951,11 +5951,15 @@ WAR_WEARINESS_APPROVAL = 1        # افت رضایت روزانه‌ی هر ط�
 
 TENSION_ATTACK_THRESHOLD = 40      # حداقل تنش برای پذیرش رول حمله
 TENSION_DAILY_DECAY = 5            # سردشدن روزانه‌ی همه‌ی جفت‌تنش‌ها
-TENSION_STATEMENT_DELTA = 10       # بیانیه‌ی تند/اولتیماتوم
-TENSION_INTEL_SUCCESS_DELTA = 15   # عملیات اطلاعات/سایبری موفق
-TENSION_INTEL_FOILED_DELTA = 5     # کشف عملیات جاسوسی
-TENSION_SANCTION_DELTA = 10        # تحریم یک‌طرفه
-TENSION_AUTO_ATTACK_DELTA = 25     # حمله‌ی محدودِ اجراشده
+TENSION_MAX_GAIN_PER_DAY = 20      # 🚧 سقف روزانه‌ی ساخت تنش هر جفت — با سرمای ۵/day، آستانه‌ی جنگ ~۳ روز بازی می‌خواهد
+TENSION_STATEMENT_DELTA = 5        # بیانیه‌ی تند/اولتیماتوم
+TENSION_INTEL_SUCCESS_DELTA = 6    # عملیات اطلاعات/سایبری موفق
+TENSION_INTEL_FOILED_DELTA = 2     # کشف عملیات جاسوسی
+TENSION_SANCTION_DELTA = 5         # تحریم یک‌طرفه
+TENSION_AUTO_ATTACK_DELTA = 15     # حمله‌ی محدودِ اجراشده
+TENSION_FEAR_LEVEL = 40            # از این به بالا هر رویداد تنش‌ساز = -۱ رضایت دو طرف (ترس عمومی)
+TENSION_FUEL_QUEUE_LEVEL = 70      # از این به بالا = صف پمپ‌بنزین و مصرف نفت غیرعادی
+TENSION_SCARE_OIL_DAILY = 12_000   # مصرف نفت اضافه‌ی روزانه در تنش بالا (ذخیره‌سازی/پانیک)
 
 AUTO_OP_MAX_MUNITIONS = 25         # مهمات جنگی بیشتر = ارجاع به مدیریت
 AUTO_OP_MONEY_PER_ITEM = 80_000    # هزینه‌ی مالی هر قلم مهمات در عملیات خودکار

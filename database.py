@@ -178,6 +178,14 @@ def init_db():
             cur.execute("ALTER TABLE pending_roleplays ADD COLUMN status_note TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        try:
+            cur.execute("ALTER TABLE country_tensions ADD COLUMN gained_today INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cur.execute("ALTER TABLE country_tensions ADD COLUMN gain_date TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     except sqlite3.OperationalError:
         pass
 
@@ -495,6 +503,8 @@ def init_db():
         value INTEGER DEFAULT 0,
         reason TEXT DEFAULT '',
         updated_at TEXT,
+        gained_today INTEGER DEFAULT 0,
+        gain_date TEXT DEFAULT '',
         UNIQUE(c1_id, c2_id),
         FOREIGN KEY(c1_id) REFERENCES countries(id) ON DELETE CASCADE,
         FOREIGN KEY(c2_id) REFERENCES countries(id) ON DELETE CASCADE
@@ -7558,22 +7568,53 @@ def get_tension(c1_id: int, c2_id: int) -> int:
         conn.close()
 
 
-def add_tension(c1_id: int, c2_id: int, delta: int, reason: str = "") -> int:
-    """تغییر دوسویه‌ی تنش جفت‌کشور با کف ۰ و سقف ۱۰۰؛ مقدار جدید را برمی‌گرداند."""
+def add_tension(c1_id: int, c2_id: int, delta: int, reason: str = "",
+                bypass_daily_cap: bool = False) -> int:
+    """تغییر دوسویه‌ی تنش با کف ۰ و سقف ۱۰۰.
+
+    🚧 قانون «جنگ کند ساخته می‌شود»: افزایش مثبت روزانه از
+    TENSION_MAX_GAIN_PER_DAY برای هر جفت بیشتر نمی‌رود — اسپمِ بیانیه/عملیات
+    یک‌شبه تنش ۱۰۰ نمی‌سازد (قرارداد مالک: ~۲-۳ روز تا آستانه‌ی جنگ).
+    🧠 ترس عمومی: هر رویداد تنش‌ساز وقتی تنش ≥ TENSION_FEAR_LEVEL است،
+    یک واحد رضایت از هر دو کشور می‌سوزاند.
+    """
     a, b = _tension_pair(c1_id, c2_id)
+    today = datetime.date.today().isoformat()
     conn = get_connection()
     try:
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT value FROM country_tensions WHERE c1_id=? AND c2_id=?", (a, b))
+            cur.execute("SELECT value, gained_today, gain_date FROM country_tensions WHERE c1_id=? AND c2_id=?", (a, b))
             row = cur.fetchone()
-            new_val = max(0, min(100, (int(row["value"]) if row else 0) + int(delta)))
+            old_val = int(row["value"]) if row else 0
+            if int(delta) <= 0:
+                new_val = max(0, old_val + int(delta))
+                cur.execute("""
+                    INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at, gained_today, gain_date)
+                    VALUES (?, ?, ?, ?, ?, 0, ?)
+                    ON CONFLICT(c1_id, c2_id) DO UPDATE SET
+                    value = excluded.value, reason = excluded.reason, updated_at = excluded.updated_at
+                """, (a, b, new_val, reason or "", datetime.datetime.now(datetime.timezone.utc).isoformat(), today))
+                return new_val
+            gained_before = int(row["gained_today"] or 0) if (row and row["gain_date"] == today) else 0
+            if bypass_daily_cap:
+                applied = int(delta)          # ساختاری/ابزاری — سهمیه‌ی روزانه را هم نمی‌سوزاند
+            else:
+                applied = min(int(delta), max(0, config.TENSION_MAX_GAIN_PER_DAY - gained_before))
+            new_val = max(0, min(100, old_val + applied))
             cur.execute("""
-                INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at, gained_today, gain_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(c1_id, c2_id) DO UPDATE SET
-                value = excluded.value, reason = excluded.reason, updated_at = excluded.updated_at
-            """, (a, b, new_val, reason or "", datetime.datetime.now(datetime.timezone.utc).isoformat()))
+                value = excluded.value, reason = excluded.reason, updated_at = excluded.updated_at,
+                gained_today = excluded.gained_today, gain_date = excluded.gain_date
+            """, (a, b, new_val, reason or "", datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  (gained_before if bypass_daily_cap else gained_before + applied), today))
+        # 🧠 ترس عمومی
+        if applied > 0 and new_val >= config.TENSION_FEAR_LEVEL:
+            with conn:
+                for cid in (a, b):
+                    conn.execute("UPDATE countries SET approval_rating = MAX(0, approval_rating - 1) WHERE id = ?", (cid,))
         return new_val
     finally:
         conn.close()

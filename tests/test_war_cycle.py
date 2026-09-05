@@ -37,7 +37,7 @@ def _asset(cid, key, name, amount, category="Air Force"):
 
 
 def _tension_up(a, b, n=50):
-    db.add_tension(a, b, n, "تنش آزمون")
+    db.add_tension(a, b, n, "تنش آزمون", bypass_daily_cap=True)
 
 
 def test_first_auto_attack_opens_war_with_news(monkeypatch, tmp_path):
@@ -80,7 +80,7 @@ def test_repeated_attacks_advance_front_and_no_decay_at_war(monkeypatch, tmp_pat
     auto_ops.process_attack_submission(a, d,
         "عملیات محدود: ۸ جنگنده تایفون با ۱۲ موشک کروز Storm Shadow علیه پدافند حومه دمشق", bot=None)
     w1 = db.get_active_war(a, d)
-    db.add_tension(a, d, -10, "خنک‌سازی مصنوعی")
+    db.add_tension(a, d, -10, "خنک‌سازی مصنوعی", bypass_daily_cap=True)
 
     # سردشدن روزانه باید جنگ‌دارها را رد کند
     db.decay_all_tensions(config.TENSION_DAILY_DECAY)

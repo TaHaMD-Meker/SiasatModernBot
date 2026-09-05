@@ -130,7 +130,7 @@ def test_deployed_units_vulnerable_when_host_at_war(monkeypatch, tmp_path):
     ok, msg, meta = bases_mod.deploy_units(a, base_id, [("f16_tr", 10)], bot=None)
     assert ok, msg
     # میزبان (قطر) مورد حمله قرار می‌گیرد → ⅓ یگان اعزامی ترکیه در خطر است
-    db.add_tension(e, h, 80, "جنگ")
+    db.add_tension(e, h, 80, "جنگ", bypass_daily_cap=True)
     res = bases_mod.on_host_under_attack(h, attacker_id=e, bot=None)
     assert res, "هشدار یگان‌های مستقر تولید شود"
     at_risk = [x for x in res if x["owner_id"] == a]
@@ -150,7 +150,7 @@ def test_base_attack_uses_base_inventory_not_home(monkeypatch, tmp_path):
     base_id = db.create_base_record(owner_id=a, host_id=h, name="Aliem")
     _asset(a, "f22_us", "F-22 Raptor", 20)
     _asset(d, "sa8_iq", "Osa-AKM", 10, "Air Defense")
-    db.add_tension(a, d, 80, "جنگ")
+    db.add_tension(a, d, 80, "جنگ", bypass_daily_cap=True)
     # اعزام ۶ جنگنده + ۸ موشک کروز به پایگاه
     con = db.get_connection()
     with con:
@@ -193,13 +193,13 @@ def test_base_attack_requires_munitions_and_tension(monkeypatch, tmp_path):
     con.close()
 
     # بدون مهمات، تنش هم پایین — پیام باید مهمات یا تنش باشد؛ ترتیب کد: تنش اول
-    db.add_tension(a, d, 80, "جنگ")
+    db.add_tension(a, d, 80, "جنگ", bypass_daily_cap=True)
     ok, msg, meta = bases_mod.attack_from_base(a, base_id, d,
         [("f16_us3", "F-16", 8, "aircraft")], bot=None)
     assert not ok and "مهمات" in msg, "بدون مهمات پایگاه، حمله رد شود"
 
     # حالا مهمات بگذار ولی تنش را بیاور پایین
-    db.add_tension(a, d, -80, "ریست")
+    db.add_tension(a, d, -80, "ریست", bypass_daily_cap=True)
     con = db.get_connection()
     with con:
         con.execute("INSERT INTO base_assets (base_id, equipment_key, equipment_name, amount) VALUES (?, 'tlam2', 'موشک کروز Tomahawk', 4)", (base_id,))
