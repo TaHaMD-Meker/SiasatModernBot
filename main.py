@@ -206,6 +206,22 @@ async def _payout_one_country(c, context, now, force):
         first_of_day = False
     if first_of_day:
         db.set_setting(f"daily_cycle_date:{c['id']}", today)
+        # 🛡 هزینه‌ی روزانه‌ی طرح دفاعی — کمبود حتی یک منبع = غیرفعالی کامل + پیام
+        try:
+            _plan_now = db.get_defense_plan(c["id"])
+            if _plan_now:
+                _was = bool(_plan_now.get("active"))
+                _charged, _missing = db.charge_defense_plan(c["id"])
+                _is = bool((db.get_defense_plan(c["id"]) or {}).get("active"))
+                if c.get("player_id") and _was != _is:
+                    _fa = {"treasury": "پول", "oil_reserves": "نفت", "microchips": "تراشه", "grain": "غلات"}
+                    if not _is:
+                        _dmsg = f"⛔ طرح دفاعی شما به دلیل کمبود {_fa.get(_missing, _missing)} غیرفعال شد — تا پرداخت موفق روزانه، اثر دفاعی ندارید."
+                    else:
+                        _dmsg = "✅ طرح دفاعی شما با پرداخت موفق هزینه‌ی روزانه دوباره فعال شد."
+                    await context.bot.send_message(chat_id=c["player_id"], text=_dmsg)
+        except Exception:
+            logger.exception("defense plan charge failed for %s", c.get("id"))
 
     maint_info = db.calculate_country_maintenance_cost(c["id"])
     tax_income = c.get("tax_income", 0) or 0
@@ -510,6 +526,14 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
             _cid = c.get("id") if isinstance(c, dict) else "?"
             logger.exception("daily payout failed for country %s - skip", _cid)
             continue
+
+    # 🌡 سردشدن روزانه‌ی تنش همه‌ی جفت‌کشورها — فقط یک‌بار در هر روز تقویمی
+    if db.get_setting("tension_decay_date") != today:
+        try:
+            db.decay_all_tensions(config.TENSION_DAILY_DECAY)
+            db.set_setting("tension_decay_date", today)
+        except Exception:
+            logger.exception("tension decay failed")
 
     # 3.5. هزینه و اجاره روزانه پایگاه‌های برون‌مرزی — فقط یک بار در هر روز تقویمی (خارج از حلقه کشورها)
     if db.get_setting("base_cost_cycle_date") != today or force:
@@ -1070,8 +1094,20 @@ def main():
             await market_text_input_handler(update, context)
         elif context.user_data.get("un_draft") or context.user_data.get("un_sanc_search"):
             await un_text_input_handler(update, context)
-        elif context.user_data.get("roleplay_text_input"):
+        elif context.user_data.get("roleplay_text_input") or context.user_data.get("defense_text_input") or context.user_data.get("op_target_search"):
             await operations_text_input_handler(update, context)
+        elif context.user_data.get("admin_defplan_search"):
+            context.user_data.pop("admin_defplan_search", None)
+            from handlers.losses import match_country_by_name as _mcn
+            c_found = _mcn((update.message.text or "").strip())
+            if c_found and db.get_defense_plan(c_found["id"]):
+                from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+                await update.message.reply_text(
+                    f"🛡 طرح دفاعی {c_found['flag']} {c_found['name']}:",
+                    reply_markup=_IKM([[ _IKB("مشاهده طرح", callback_data=f"admin:defplan:show:{c_found['id']}") ]])
+                )
+            else:
+                await update.message.reply_text("❌ کشوری با طرح دفاعی ثبت‌شده با این نام پیدا نشد.")
         elif context.user_data.get("statement_input"):
             await statements_text_input_handler(update, context)
 

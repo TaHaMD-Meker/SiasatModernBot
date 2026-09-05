@@ -2865,6 +2865,11 @@ async def diplomacy_callback_handler(update: Update, context: ContextTypes.DEFAU
 
         elif act == "sanction":
             db.set_diplomatic_relation(country["id"], target_id, "sanctioned", country["id"])
+            try:
+                from handlers.auto_ops import tension_from_sanction
+                tension_from_sanction(country["id"], target_id)
+            except Exception:
+                pass
             if target_c and target_c.get("player_id"):
                 try:
                     await context.bot.send_message(chat_id=target_c["player_id"], text=f"🚫 **کشور {country['name']} کشور شما را زیر تحریم‌های یک‌طرفه قرار داد.**", parse_mode="Markdown")

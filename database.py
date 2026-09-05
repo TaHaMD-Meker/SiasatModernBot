@@ -174,6 +174,10 @@ def init_db():
 
     try:
         cur.execute("ALTER TABLE countries ADD COLUMN un_sanctioned INTEGER DEFAULT 0")
+        try:
+            cur.execute("ALTER TABLE pending_roleplays ADD COLUMN status_note TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     except sqlite3.OperationalError:
         pass
 
@@ -478,6 +482,35 @@ def init_db():
         status TEXT DEFAULT 'pending',
         created_at TEXT,
         created_date TEXT,
+        FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 🌡 تنش دوسویه بین جفت‌کشورها (مقیاس ۰-۱۰۰)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS country_tensions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        c1_id INTEGER NOT NULL,
+        c2_id INTEGER NOT NULL,
+        value INTEGER DEFAULT 0,
+        reason TEXT DEFAULT '',
+        updated_at TEXT,
+        UNIQUE(c1_id, c2_id),
+        FOREIGN KEY(c1_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(c2_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
+    # 🛡 طرح دفاعی ثبت‌شده‌ی هر کشور (جانشین رول دفاعی دستی)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS defense_plans (
+        country_id INTEGER PRIMARY KEY,
+        role_text TEXT NOT NULL,
+        items_json TEXT DEFAULT '{}',
+        active INTEGER DEFAULT 1,
+        deact_reason TEXT DEFAULT '',
+        created_at TEXT,
+        updated_at TEXT,
         FOREIGN KEY(country_id) REFERENCES countries(id) ON DELETE CASCADE
     )
     """)
@@ -7059,6 +7092,173 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
 
 # ---------- سیستم ثبت و بررسی رول‌های نظامی (Roleplay System) ----------
 
+# ==================== 🌡 تنش دوسویه ====================
+
+
+def _tension_pair(c1_id: int, c2_id: int):
+    return (c1_id, c2_id) if c1_id <= c2_id else (c2_id, c1_id)
+
+
+def get_tension(c1_id: int, c2_id: int) -> int:
+    a, b = _tension_pair(c1_id, c2_id)
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM country_tensions WHERE c1_id=? AND c2_id=?", (a, b))
+        row = cur.fetchone()
+        return int(row["value"]) if row else 0
+    finally:
+        conn.close()
+
+
+def add_tension(c1_id: int, c2_id: int, delta: int, reason: str = "") -> int:
+    """تغییر دوسویه‌ی تنش جفت‌کشور با کف ۰ و سقف ۱۰۰؛ مقدار جدید را برمی‌گرداند."""
+    a, b = _tension_pair(c1_id, c2_id)
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM country_tensions WHERE c1_id=? AND c2_id=?", (a, b))
+            row = cur.fetchone()
+            new_val = max(0, min(100, (int(row["value"]) if row else 0) + int(delta)))
+            cur.execute("""
+                INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(c1_id, c2_id) DO UPDATE SET
+                value = excluded.value, reason = excluded.reason, updated_at = excluded.updated_at
+            """, (a, b, new_val, reason or "", datetime.datetime.now(datetime.timezone.utc).isoformat()))
+        return new_val
+    finally:
+        conn.close()
+
+
+def decay_all_tensions(amount: int = 5):
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE country_tensions SET value = MAX(0, value - ?)", (int(amount),))
+    finally:
+        conn.close()
+
+
+def get_tension_rows(country_id: int) -> list:
+    """همه‌ی ردیف‌های تنش یک کشور با نام طرف مقابل، مرتب نزولی."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.value, t.reason, t.updated_at,
+                   CASE WHEN t.c1_id = ? THEN t.c2_id ELSE t.c1_id END AS other_id
+            FROM country_tensions t WHERE t.c1_id = ? OR t.c2_id = ?
+            ORDER BY t.value DESC
+        """, (country_id, country_id, country_id))
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            c = get_country_by_id(r["other_id"])
+            r["other_name"] = (f"{c['flag']} {c['name']}" if c else "؟")
+        return rows
+    finally:
+        conn.close()
+
+
+# ==================== 🛡 طرح دفاعی ====================
+
+
+def save_defense_plan(country_id: int, role_text: str, costs: dict) -> None:
+    """ثبت/جایگزینی طرح دفاعی — طرح جدید جای قبلی را می‌گیرد و فعال می‌شود."""
+    import json as _json
+    conn = get_connection()
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO defense_plans (country_id, role_text, items_json, active, deact_reason, created_at, updated_at)
+                VALUES (?, ?, ?, 1, '', ?, ?)
+                ON CONFLICT(country_id) DO UPDATE SET
+                role_text = excluded.role_text, items_json = excluded.items_json,
+                active = 1, deact_reason = '', updated_at = excluded.updated_at
+            """, (country_id, role_text, _json.dumps(costs or {}, ensure_ascii=False), now_str, now_str))
+    finally:
+        conn.close()
+
+
+def get_defense_plan(country_id: int):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM defense_plans WHERE country_id = ?", (country_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_all_defense_plans() -> list:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM defense_plans ORDER BY country_id")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def set_defense_plan_active(country_id: int, active: bool, reason: str = "") -> None:
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE defense_plans SET active = ?, deact_reason = ?, updated_at = ? WHERE country_id = ?",
+                (1 if active else 0, reason or "", datetime.datetime.now(datetime.timezone.utc).isoformat(), country_id),
+            )
+    finally:
+        conn.close()
+
+
+def charge_defense_plan(country_id: int) -> tuple[bool, str]:
+    """کسر هزینه‌ی روزانه‌ی طرح دفاعی — همه‌منابع یا هیچ.
+
+    اگر حتی یکی از منابع کم باشد: هیچ کسری انجام نمی‌شود و طرح غیرفعال می‌شود.
+    اگر طرح غیرفعال بود و امروز توان پرداخت داشت، خودش دوباره فعال می‌شود.
+    خروجی: (موفق؟، کلید منبع کم‌بوده در صورت شکست)
+    """
+    plan = get_defense_plan(country_id)
+    if not plan:
+        return True, None
+    import json as _json
+    costs = _json.loads(plan["items_json"] or "{}")
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT treasury, oil_reserves, microchips, grain FROM countries WHERE id = ?", (country_id,))
+        crow = dict(cur.fetchone())
+        column_of = {"money": "treasury", "oil": "oil_reserves", "microchips": "microchips", "grain": "grain"}
+        need = {}
+        for src, col in column_of.items():
+            want = int(float(costs.get(src, 0) or 0))
+            if want > 0:
+                need[col] = want
+        missing_key = None
+        persian = {"treasury": "پول", "oil_reserves": "نفت", "microchips": "تراشه", "grain": "غلات"}
+        for col, want in need.items():
+            if (crow.get(col) or 0) < want:
+                missing_key = col
+                break
+        if missing_key:
+            if plan["active"]:
+                set_defense_plan_active(country_id, False, f"کمبود {persian[missing_key]} — هزینه‌ی روزانه‌ی طرح پرداخت نشد")
+            return False, missing_key
+        if need:
+            with conn:
+                for col, want in need.items():
+                    conn.execute(f"UPDATE countries SET {col} = MAX(0, {col} - ?) WHERE id = ?", (want, country_id))
+        if not plan["active"]:
+            set_defense_plan_active(country_id, True, "")
+        return True, None
+    finally:
+        conn.close()
+
+
 def create_pending_roleplay(country_id: int, player_id: int, role_type: str, role_text: str) -> int:
     conn = get_connection()
     cur = conn.cursor()
@@ -7168,6 +7368,15 @@ def get_country_roleplays(country_id: int) -> list:
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def set_roleplay_status_note(role_id: int, note: str):
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE pending_roleplays SET status_note = ? WHERE id = ?", (note or "", role_id))
+    finally:
+        conn.close()
 
 
 def update_roleplay_status(role_id: int, status: str):
@@ -8436,6 +8645,16 @@ def execute_intel_operation(attacker_id: int, target_id: int, op_type: str, chip
                         meta["killed_commander"] = chosen_cmd
 
                 meta["result"] = result_code
+                try:
+                    _ta, _tb = _tension_pair(attacker_id, target_id)
+                    cur.execute("""
+                        INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(c1_id, c2_id) DO UPDATE SET
+                        value = MIN(100, MAX(0, country_tensions.value + ?)), reason = excluded.reason, updated_at = excluded.updated_at
+                    """, (_ta, _tb, config.TENSION_INTEL_SUCCESS_DELTA, "عملیات اطلاعات/سایبری موفق", now_str, config.TENSION_INTEL_SUCCESS_DELTA))
+                except Exception:
+                    pass
                 cur.execute("""
                     INSERT INTO intel_operations_history (attacker_id, target_id, op_type, result, details, created_at)
                     VALUES (?, ?, ?, ?, 'موفقیت کامل و گمنام', ?)
@@ -8448,6 +8667,16 @@ def execute_intel_operation(attacker_id: int, target_id: int, op_type: str, chip
                 if expose_roll <= 35:
                     # رسوایی بین‌المللی (Busted & Exposed)
                     result_code = "busted_exposed"
+                    try:
+                        _ta, _tb = _tension_pair(attacker_id, target_id)
+                        cur.execute("""
+                            INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(c1_id, c2_id) DO UPDATE SET
+                            value = MIN(100, MAX(0, country_tensions.value + ?)), reason = excluded.reason, updated_at = excluded.updated_at
+                        """, (_ta, _tb, config.TENSION_INTEL_FOILED_DELTA, "کشف عملیات جاسوسی", now_str, config.TENSION_INTEL_FOILED_DELTA))
+                    except Exception:
+                        pass
                     cur.execute("UPDATE countries SET approval_rating = MAX(0, approval_rating - 5) WHERE id = ?", (attacker_id,))
                     meta["result"] = result_code
                     cur.execute("""

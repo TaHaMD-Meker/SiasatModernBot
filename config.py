@@ -5937,6 +5937,66 @@ ENRICHMENT_FACILITY_GOLD = 150
 # ─── اقتصاد تراشه: «نرخ آتش» — سینک رویدادمحور (بدون مالیات روزانه جدید) ───
 # مصرف تراشه به‌ازای هر شلیک/پرواز عملیاتی. کسری هرگز عملیات را رد نمی‌کند؛
 # فقط سقف تعداد تا سقف تراشه موجود است (MAX(0,...) در consume_launch_chips).
+# ─────────────── 🌡 سیستم تنش و عملیات خودکار (لایه‌ی منطق رول‌ها) ───────────────
+TENSION_ATTACK_THRESHOLD = 40      # حداقل تنش برای پذیرش رول حمله
+TENSION_DAILY_DECAY = 5            # سردشدن روزانه‌ی همه‌ی جفت‌تنش‌ها
+TENSION_STATEMENT_DELTA = 10       # بیانیه‌ی تند/اولتیماتوم
+TENSION_INTEL_SUCCESS_DELTA = 15   # عملیات اطلاعات/سایبری موفق
+TENSION_INTEL_FOILED_DELTA = 5     # کشف عملیات جاسوسی
+TENSION_SANCTION_DELTA = 10        # تحریم یک‌طرفه
+TENSION_AUTO_ATTACK_DELTA = 25     # حمله‌ی محدودِ اجراشده
+
+AUTO_OP_MAX_MUNITIONS = 25         # مهمات جنگی بیشتر = ارجاع به مدیریت
+AUTO_OP_MONEY_PER_ITEM = 80_000    # هزینه‌ی مالی هر قلم مهمات در عملیات خودکار
+AUTO_OP_OIL_PER_ITEM = 170         # سوخت هر قلم مهمات
+AUTO_OP_MIN_UNDERSTAND_RATIO = 0.7 # اگر کمتر از این نسبتِ اقلام فهمیده شود → ارجاع
+AUTO_OP_MAX_DEPLOYED_AIRCRAFT = 8  # سقف جنگنده‌ی درگیر در یک عملیات خودکار
+
+# هزینه‌ی روزانه‌ی طرح دفاعی — ضریب روی نرخ واقعی نگهداری تجهیزات معرفی‌شده
+DEFENSE_PLAN_COST_FACTORS = {"money": 1.0, "oil": 1.0, "microchips": 1.0, "grain": 1.0}
+DEFENSE_PLAN_OIL_PER_AIRCRAFT = 5
+DEFENSE_PLAN_OIL_PER_SAM = 3
+DEFENSE_PLAN_CHIPS_PER_SAM = 2
+DEFENSE_PLAN_CHIPS_PER_RADAR = 1
+DEFENSE_PLAN_GRAIN_PER_UNIT = 4
+
+# 🎯 ماتریس تقابل واقعی — «تحلیلگر جنگ»
+# کلاس‌بندی پدافند با الگوی نام/کلید (کوچک‌نویس)
+SAM_CLASS_PATTERNS = {
+    "modern_long": ("s-300", "s300", "s-400", "s400", "patriot", "پاتریوت", "thaad", "س-300", "hq-9", "bavar", "باور"),
+    "legacy_long": ("s-200", "s200", "س-200", "angara", "انگارا"),
+    "mid": ("buk", "بوک", "kub", "کاب", "2k12", "hawk", "هاک", "tor", "تور", "osa", "اوسا", "osa-akm", "panstsir", "pantsir", "پنجه", "پانتسیر"),
+    "aaa": ("zu-23", "zu23", "zsu", "strela", "سترلا", "sa-7", "sa-14", "igla", "ایگلا", "ks-19", "s-60", "توپ ۲۳", "توپ ۲۵", "misagh", "میساغ", "majid", "مجید"),
+}
+# کلاس‌بندی جنگنده‌ی مهاجم
+AIRCRAFT_CLASS_PATTERNS = {
+    "stealth5": ("f-35", "f35", "f-22", "f22", "b-2", "b2 ", "b-21", "su-57", "su57", "j-20", "j20", "kaan"),
+    "gen45": ("typhoon", "eurofighter", "تایفون", "rafale", "رافال", "su-35", "f-15sa", "f-15ex", "f-15", "ج-۱۰", "j-10", "gripen", "ف-۱۵"),
+    "gen4": ("f-16", "f16", "میگ-۲۹", "میگ۲۹", "mig-29", "su-30", "su-27", "f/a-18", "f-18", "میراژ-۲۰۰۰", "mirage-2000", "f-14", "f14", "tomcat", "j-11", "su-24", "tornado", "تورنادو", "f-2"),
+    "legacy": ("mig-21", "میگ-۲۱", "میگ21", "mig-23", "f-4", "f4 ", "فانتوم", "f-5", "f5", "f-7", "su-22", "su-7", "mirage-f1", "میراژ-اف۱", "a-4", "jf-17", "alpha jet", "l-39", "mb-339", "attacker"),
+}
+# احتمال انهدام پلتفرم مهاجم برابر تناسب پدافند فعال (فقط جنگنده/بالگرد)
+EXPOSURE_LOSS_RATES = {
+    "modern_long": {"stealth5": 0.00, "gen45": 0.04, "gen4": 0.07, "legacy": 0.16},
+    "legacy_long": {"stealth5": 0.00, "gen45": 0.02, "gen4": 0.05, "legacy": 0.11},
+    "mid":         {"stealth5": 0.00, "gen45": 0.02, "gen4": 0.04, "legacy": 0.09},
+    "aaa":         {"stealth5": 0.00, "gen45": 0.00, "gen4": 0.01, "legacy": 0.03},
+}
+# سهم رهگیری مهمات پرشی/پهپاد بر اساس بهترین کلاس پدافندِ فعال مدافع
+INTERCEPT_RATES = {
+    "modern_long": {"hypersonic": 0.15, "ballistic": 0.40, "supersonic_cruise": 0.45, "cruise": 0.60, "drone_loitering": 0.55, "drone": 0.60},
+    "legacy_long": {"hypersonic": 0.00, "ballistic": 0.10, "supersonic_cruise": 0.20, "cruise": 0.25, "drone_loitering": 0.25, "drone": 0.30},
+    "mid":         {"hypersonic": 0.00, "ballistic": 0.08, "supersonic_cruise": 0.15, "cruise": 0.20, "drone_loitering": 0.25, "drone": 0.30},
+    "aaa":         {"hypersonic": 0.00, "ballistic": 0.00, "supersonic_cruise": 0.05, "cruise": 0.10, "drone_loitering": 0.30, "drone": 0.35},
+    "none":        {"hypersonic": 0.00, "ballistic": 0.00, "supersonic_cruise": 0.00, "cruise": 0.00, "drone_loitering": 0.00, "drone": 0.00},
+}
+# کیفیت مهمات — سهم اصابت مؤثر پس از رهگیری و فریب
+MUNITION_PRECISION = {"hypersonic": 0.85, "ballistic": 0.55, "supersonic_cruise": 0.75, "cruise": 0.80, "drone_loitering": 0.70, "drone": 0.55, "aircraft_cas": 0.65}
+DECOY_ABSORB_SHARE = 1 / 3        # داکتورین: فریب‌ها ~⅓ از اهداف ورودی را می‌بلعند
+DEFENSE_PLAN_PENETRATION_PENALTY = 0.05  # اثر «محدود» طرح دفاعی ثبت‌شده
+AUTO_ATTACK_MAX_KIA = 150         # سقف داکتورین کشته در هر عملیات
+AUTO_ATTACK_CIV_CAP = 50
+
 MISSILE_LAUNCH_CHIPS = {
     "cruise": 15,       # کروز / بالستیک / ضدکشتی
     "ballistic": 15,

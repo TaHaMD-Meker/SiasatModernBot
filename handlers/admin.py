@@ -226,6 +226,7 @@ async def _war_submenu(query):
     counts = _admin_pending_counts()
     rows = [
         [InlineKeyboardButton(f"📥 رول‌های دریافتی ({counts['roles']})", callback_data="admin:roleplays_hub")],
+        [InlineKeyboardButton("🛡 رول‌های دفاعی ثبت‌شده", callback_data="admin:defplan:root")],
         [InlineKeyboardButton("💥 مدیریت تلفات تجهیزات", callback_data="ls:menu")],
     ]
     await _admin_submenu(
@@ -2771,6 +2772,79 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"👤 متقاضی: @{req['username']} (ID: <code>{req['player_id']}</code>)\n\n"
             "لطفاً متن دلیل رد درخواست را ارسال فرمایید تا همراه با پیام لغو برای بازیکن ارسال شود:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف", callback_data=f"admin:view_req:{req_id}")]])
+        )
+
+    elif data == "admin:defplan:root":
+        # 🌍 قاره‌ها با برچسب متنی بدون ایموجی + جستجو
+        from handlers.auto_ops import build_plain_continent_selector
+        text, kb = build_plain_continent_selector("admin:defplan")
+        kb.inline_keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:menu_war")])
+        await query.edit_message_text(
+            "🛡 *رول‌های دفاعی ثبت‌شده*\n\n" + text,
+            reply_markup=kb, parse_mode="Markdown"
+        )
+
+    elif data.startswith("admin:defplan:cont:"):
+        cont_key = data.split(":")[2]
+        cont_info = config.CONTINENTS.get(cont_key, {})
+        keys = cont_info.get("keys", [])
+        plans = {p["country_id"]: p for p in db.get_all_defense_plans()}
+        buttons = []
+        for c in db.get_all_countries():
+            if c.get("country_key") in keys and c["id"] in plans:
+                p = plans[c["id"]]
+                status = "✅" if p.get("active") else "⛔"
+                buttons.append([InlineKeyboardButton(
+                    f"{status} {c['flag']} {c['name']}",
+                    callback_data=f"admin:defplan:show:{c['id']}"
+                )])
+        if not buttons:
+            buttons.append([InlineKeyboardButton("(در این قاره طرحی ثبت نشده)", callback_data="ignore")])
+        buttons.append([InlineKeyboardButton("🔎 جستجوی تایپی", callback_data="admin:defplan:search")])
+        buttons.append([InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="admin:defplan:root")])
+        await query.edit_message_text(
+            f"🛡 *طرح‌های دفاعی — {cont_info.get('short_name', 'قاره')}*\n\nکشور مورد نظر را انتخاب کن:",
+            reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown"
+        )
+
+    elif data == "admin:defplan:search":
+        context.user_data["admin_defplan_search"] = True
+        await query.edit_message_text(
+            "🔎 *جستجوی تایپی کشور*\n\nنام کشور را بفرست:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:defplan:root")]]),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("admin:defplan:show:"):
+        cid = int(data.split(":")[3])
+        c = db.get_country_by_id(cid)
+        plan = db.get_defense_plan(cid)
+        if not c or not plan:
+            await query.edit_message_text(
+                "❌ طرح دفاعی برای این کشور ثبت نشده است.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin:defplan:root")]]),
+                parse_mode="Markdown"
+            )
+            return
+        import json as _json
+        costs = _json.loads(plan.get("items_json") or "{}")
+        status_line = "✅ *فعال*" if plan.get("active") else f"⛔ *غیرفعال* — {plan.get('deact_reason') or ''}"
+        body = (
+            f"🛡 *طرح دفاعی {c['flag']} {c['name']}*\n━━━━━━━━━━━━━━━━━━\n\n"
+            f"وضعیت: {status_line}\n"
+            f"📅 آخرین به‌روزرسانی: {str(plan.get('updated_at') or '')[:10]}\n\n"
+            f"💸 هزینه روزانه: پول {costs.get('money', 0):,} | نفت {costs.get('oil', 0):,} | "
+            f"تراشه {costs.get('microchips', 0):,} | غلات {costs.get('grain', 0):,}\n\n"
+            f"📋 *متن کامل رول دفاعی:*\n\"{plan.get('role_text')}\"\n\n"
+            "⚖️ در داوری عملیات گسترده، این متن را خودت لحاظ کن — بات در گزارش تلفات دستی دخالت نمی‌کند."
+        )
+        await query.edit_message_text(
+            body,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 لیست قاره‌ها", callback_data="admin:defplan:root"),
+                InlineKeyboardButton("⚔️ جنگ و عملیات", callback_data="admin:menu_war"),
+            ]]),
+            parse_mode="Markdown"
         )
 
     elif data in ("admin:roleplays_hub", "admin:pending_roles"):

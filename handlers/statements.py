@@ -318,6 +318,13 @@ async def process_official_statement_input(update: Update, context: ContextTypes
 
 
     # Confirm to player
+    # 🌡 بیانیه‌ی تند با نام/نام‌ریز کشور دیگر → تنش
+    try:
+        from handlers.auto_ops import tension_from_statement
+        _stmt_text = " ".join(filter(None, [update.message.caption, update.message.text]))
+        tension_from_statement(country["id"], _stmt_text)
+    except Exception:
+        pass
     conf_msg = f"✅ *بیانیه رسمی کشور {country['flag']} {country['name']} با موفقیت ثبت شد!*\n\n"
     if posted_to_channel:
         conf_msg += "📢 این بیانیه مستقیماً در کانال رسمی بازی منتشر گردید."
