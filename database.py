@@ -9500,14 +9500,43 @@ def get_payment_request_by_id(req_id: int):
     return dict(row) if row else None
 
 
-def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", faction_key: str = None, username: str = None) -> int:
+def _resolve_militia_country_key_cur(cur, player_id: int, faction_key: str | None) -> tuple:
+    """🔑 کلید کشورِ گروهکِ جدید را «قبل از هر نوشتنی» بدون برخورد با UNIQUE حل می‌کند.
+
+    • گروهک ازپیش‌تعریف‌شده اگر به بازیکن دیگری رسیده باشد → خطای تمیز فارسی
+      (نه کرش «UNIQUE constraint failed») تا ادمین فیش را رد کند.
+    • کلید id-محورِ اشغال‌شده توسط ردیف غریبه (بازواگذاری/یتیم) → نخستین پسوند آزاد.
+    خروجی: (کلید یا None، پیام خطا یا "")
+    """
+    pre = getattr(config, "PREDEFINED_MILITIA_FACTIONS", {}) or {}
+    if faction_key and faction_key in pre:
+        key = f"faction_{faction_key}"
+        row = cur.execute("SELECT player_id FROM countries WHERE country_key = ?", (key,)).fetchone()
+        if not row or (row["player_id"] or 0) == int(player_id):
+            return key, ""
+        info = pre.get(faction_key)
+        label = info.get("short_name") or info.get("name") or faction_key if isinstance(info, dict) else faction_key
+        return None, (f"گروهک «{label}» قبلاً به بازیکن دیگری واگذار شده است — "
+                      "این فیش را رد کنید یا از خریدار بخواهید گروهک دیگری انتخاب کند.")
+    base = f"faction_{player_id}"
+    row = cur.execute("SELECT player_id FROM countries WHERE country_key = ?", (base,)).fetchone()
+    if not row or (row["player_id"] or 0) == int(player_id):
+        return base, ""
+    for n in range(2, 1000):
+        cand = f"{base}_{n}"
+        if not cur.execute("SELECT 1 FROM countries WHERE country_key = ?", (cand,)).fetchone():
+            return cand, ""
+    return None, "کلید یکتای گروهک تخصیص نیافت — با پشتیبانی تماس بگیرید."
+
+
+def _create_custom_militia_with_cur(cur, player_id: int, name: str, flag: str = "🏴‍☠️", hq_desc: str = "", doctrine: str = "", faction_key: str = None, username: str = None, forced_key: str = None) -> int:
     """ساخت گروه غیردولتی.
 
     نکته: مجوز گروه، اشتراک VIP نمی‌دهد. قبلاً هر گروه با is_vip = 1 ساخته می‌شد و
     خریدار با یک پرداخت ۱۰۰ هزار تومانی، برای همیشه تخفیف نگهداری ارتش و سقف
     مانور بالاتر می‌گرفت؛ این مزیت حذف شد. اشتراک VIP فقط از مسیر خودش خریداری می‌شود.
     """
-    c_key = f"faction_{faction_key}" if faction_key and faction_key in getattr(config, "PREDEFINED_MILITIA_FACTIONS", {}) else f"faction_{player_id}"
+    c_key = forced_key or (f"faction_{faction_key}" if faction_key and faction_key in getattr(config, "PREDEFINED_MILITIA_FACTIONS", {}) else f"faction_{player_id}")
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     cur.execute("""
@@ -9751,14 +9780,21 @@ def _apply_purchase_with_cur(cur, item_type: str, c_id, player_id: int, p: dict,
         f_hq = payload.get("hq") or ""
         f_doc = payload.get("doctrine") or ""
         f_key = payload.get("faction_key")
-        
+
+        # 🔑 اول کلید را حل کن: گروهکِ بازیکن دیگری حذف/دزدیده نمی‌شود و
+        # تاییدِ فیشِ تکراری با پیام تمیز رد می‌شود (باگ «UNIQUE constraint failed»)
+        c_key_resolved, key_err = _resolve_militia_country_key_cur(cur, player_id, f_key)
+        if key_err:
+            return False, key_err
+
         # اگر قبلاً گروه شبه‌نظامی داشت، گروه قبلی را پاک کن تا کشور اصلی حفظ شود
         cur.execute("SELECT id FROM countries WHERE player_id = ? AND country_key LIKE 'faction_%'", (player_id,))
         old_m = cur.fetchone()
         if old_m:
             delete_country_by_id(old_m["id"])
 
-        c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc, f_key)
+        c_id = _create_custom_militia_with_cur(cur, player_id, f_name, f_flag, f_hq, f_doc, f_key,
+                                               forced_key=c_key_resolved)
         p["created_country_id"] = c_id
         p["final_faction_name"] = f_name
     return True, ""
