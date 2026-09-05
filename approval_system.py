@@ -36,13 +36,14 @@ def calculate_country_requirements(c: dict):
     ind_elec_need = 0
     if cid:
         try:
-            equipment = db.get_equipment(cid)
-            ind_elec_need += equipment.get("small_factory", 0) * 1
-            ind_elec_need += equipment.get("medium_factory", 0) * 2
-            ind_elec_need += equipment.get("large_factory", 0) * 3
-            ind_elec_need += equipment.get("industrial_complex", 0) * 5
-            ind_elec_need += equipment.get("oil_refinery", 0) * 4
-            ind_elec_need += equipment.get("gold_mine", 0) * 3
+            # تک‌منبع حقیقت: همان POWER_CONSUMERS که موتور خاموشی برق
+            # (internal_affairs.power_status) استفاده می‌کند — وگرنه دو موتور
+            # با دو عدد متفاوت به بازیکن گزارش می‌دادند (باگ «مصرف بالا نمی‌رود»).
+            # get_equipment_active: واحدِ خاموشِ نگهداری برق نمی‌خواهد.
+            import internal_affairs as ia  # وارد کردن تنبل (اجتناب از وابستگی حلقوی)
+            equipment = db.get_equipment_active(cid)
+            for _key, _elec in ia.POWER_CONSUMERS.items():
+                ind_elec_need += int(equipment.get(_key, 0) or 0) * _elec
         except Exception:
             pass
     elec_need = 100 + ind_elec_need
@@ -373,12 +374,14 @@ def build_daily_country_report_message(c: dict, app_res: dict, today_str: str, p
     else:
         lines.append(f"• *تامین غلات:* کسری غذایی و گرسنگی (نیاز روزانه: {grain_need:,} تن)\n")
 
-    # Elec
+    # Elec — «تراز» یعنی تولید منهای نیاز؛ تولید خالص را به‌عنوان درصد گمراه‌کننده نشان نده
     current_elec = c.get("electricity", 100)
+    balance = int(current_elec) - int(elec_need)
+    balance_str = f"+{balance}" if balance >= 0 else f"{balance}"
     if app_res["elec_ok"]:
-        lines.append(f"• *تراز انرژی:* {current_elec}٪ (تامین کامل نیاز {elec_need}٪)\n")
+        lines.append(f"• *تراز انرژی:* {balance_str} واحد (تولید: {current_elec} | مصرف: {elec_need}) — تامین کامل\n")
     else:
-        lines.append(f"• *تراز انرژی:* کسری برق (موجودی: {current_elec}٪ | نیاز: {elec_need}٪)\n")
+        lines.append(f"• *تراز انرژی:* {balance_str} واحد (تولید: {current_elec} | مصرف: {elec_need}) — ⚠️ کسری برق\n")
 
     # Change in approval
     net_chg = app_res["net_change"]
