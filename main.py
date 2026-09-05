@@ -185,6 +185,22 @@ async def upkeep_why_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.exception("upkeep_why_callback send failed for country %s", cid)
 
 
+_MD_STRIP = str.maketrans("", "", "*_`[]")
+
+
+async def _send_player_dm(context, chat_id, text, reply_markup=None):
+    """📨 ضامن رسیدن DM: اگر ارسال Markdown بشکند (کاراکترهای متغیر مثل نام کشور)،
+    بدون parse_mode و با حذف کاراکترهای مارک‌داون دوباره می‌رود — پیام واریز
+    هرگز به‌خاطر خطای پارس حذف نمی‌شود (باگ «پیام واریز نمی‌آید»)."""
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=text,
+                                       reply_markup=reply_markup, parse_mode="Markdown")
+    except Exception:
+        await context.bot.send_message(chat_id=chat_id,
+                                       text=str(text).translate(_MD_STRIP),
+                                       reply_markup=reply_markup)
+
+
 async def _payout_one_country(c, context, now, force):
     """پرداخت و چرخه یک کشور — از حلقه روزانه جدا شده برای حصار خطا."""
     today = now.date().isoformat()
@@ -486,7 +502,7 @@ async def _payout_one_country(c, context, now, force):
                 ]])
             else:
                 _rm = get_main_keyboard(p_id)
-            await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=_rm, parse_mode="Markdown")
+            await _send_player_dm(context, p_id, report_msg, reply_markup=_rm)
         except Exception as e:
             logger.warning(f"Could not send daily report to player {p_id}: {e}")
 
@@ -517,7 +533,20 @@ def military_fuel_step(c: dict):
                  f"رضایت −۴ و آمادگی رزمی −۵")
 
 
-async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
+async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False) -> int:
+    """⚖️ تک‌نمونه: اگر اجرای قبلی هنوز تمام نشده باشد این تیک رد می‌شود؛
+    نوبتِ باز (_payout_due) در تیک بعدی — یک دقیقه بعد — جبران می‌شود."""
+    if getattr(_daily_income_job_inner, "_busy", False):
+        logger.warning("daily_income_job skipped — previous run still in progress")
+        return 0
+    _daily_income_job_inner._busy = True
+    try:
+        return await _daily_income_job_inner(context, force=force)
+    finally:
+        _daily_income_job_inner._busy = False
+
+
+async def _daily_income_job_inner(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
     """پرداخت درآمد به‌صورت تقسیط‌شده: هر ۶ ساعت یک‌چهارم درآمد.
 
     چرخه‌ی مصرف/رضایت/مهاجرت و هزینه‌ی محاصره‌های دریایی فقط در اولین پرداختِ
@@ -1251,10 +1280,18 @@ def main():
     # جاب‌ها: درآمد روزانه، پشتیبان‌گیری دوره‌ای و بررسی فعالیت نیمه‌شب (۰۰:۰۰)
     job_queue = app.job_queue
     if job_queue:
-        job_queue.run_repeating(daily_income_job, interval=900, first=10)  # چک هر ۱۵ دقیقه؛ پرداخت هر ۶ ساعت
+        job_queue.run_repeating(daily_income_job, interval=60, first=10,
+                                job_kwargs={"max_instances": 1})  # چک هر دقیقه → واریز ~سر ساعت (۰۳/۰۹/۱۵/۲۱ تهران)
         job_queue.run_repeating(tournament_snapshot_job, interval=900, first=180)  # محاسبه‌ی دوره‌ای؛ خود ماژول فاصله‌ی ۶ ساعته را enforce می‌کند
         job_queue.run_repeating(auto_backup_job, interval=14400, first=120)  # پشتیبان‌گیری خودکار هر ۴ ساعت
         job_queue.run_repeating(check_daily_inactivity_job, interval=300, first=30)
+    else:
+        # 🚨 بدون JobQueue هیچ پرداخت خودکار، بکاپ یا چک فعالیت اجرا نمی‌شود —
+        # «پیام واریز اصلا نمی‌آید» دقیقاً همین حالت است؛ باید پکیج
+        # python-telegram-bot[job-queue] نصب باشد (الزام requirements).
+        logger.critical(
+            "JobQueue is NOT available! No automatic payouts/backups will run. "
+            "Install the job-queue extra: pip install 'python-telegram-bot[job-queue]==21.6'")
         # صف کشور حذف شد؛ خلع = آزاد فوری در استخر واگذاری
 
     logger.info("بات در حال اجراست...")
