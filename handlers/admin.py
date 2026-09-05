@@ -4085,6 +4085,60 @@ async def admin_input_text_handler(update: Update, context: ContextTypes.DEFAULT
         await handle_losses_input(update, context, user_id, input_state)
         return
 
+    if input_type == "add_inventory":
+        context.user_data["admin_awaiting_input"] = None
+        cid = int(input_state.get("country_id") or 0)
+        c = db.get_country_by_id(cid)
+        if not c:
+            await update.message.reply_text("❌ کشور یافت نشد.")
+            return
+        catalog = db.get_equipment_catalog_for(c.get("country_key"))
+        if not catalog:
+            catalog = config.DEFAULT_COUNTRY_EQUIPMENT
+        result = parse_inventory_grant_text(text, catalog)
+        items, res, unmatched = result["items"], result["resources"], result["unmatched"]
+        if not items and not res:
+            await update.message.reply_text(
+                "❌ هیچ قلم یا منبع قابل فهمی پیدا نشد.\n"
+                "فرمت: «نام تجهیز: تعداد» و خط منابع مثل «💵 15 میلیون دلار | 🌾 15٬000 تن غلات»")
+            return
+        context.user_data["addinv_draft"] = {"country_id": cid, "items": items, "resources": res}
+        res_labels = {"treasury": "💵 پول", "gold": "🪙 طلا", "grain": "🌾 غلات", "oil_reserves": "🛢 نفت",
+                      "microchips": "💻 تراشه", "iron_ore": "⛏ آهن", "uranium_ore": "☢ کیک زرد",
+                      "nuclear_fuel": "🧪 سوخت غنی‌شده"}
+        in_cat = [it for it in items if not it["key"].startswith("cx_")]
+        custom = [it for it in items if it["key"].startswith("cx_")]
+        lines = [
+            f"📋 *پیش‌نمایش افزودن به {c['flag']} {c['name']}*",
+            "━━━━━━━━━━━━━━━━━━",
+            f"🧩 تطبیق با کاتالوگ ({len(in_cat)}):",
+        ]
+        for it in in_cat[:15]:
+            lines.append(f"• {it['name']}: {it['qty']:+,}")
+        if custom:
+            lines.append(f"🆕 ساخت ردیف اختصاصی ({len(custom)}):")
+            for it in custom[:15]:
+                lines.append(f"• {it['name']}: {it['qty']:+,} ({it['category']})")
+        if len(items) > 30:
+            lines.append(f"• … و {len(items) - 30} قلم دیگر")
+        if res:
+            lines.append("")
+            lines.append("💰 منابع: " + " | ".join(f"{res_labels.get(k, k)} {v:+,}" for k, v in res.items()))
+        if unmatched:
+            lines.append("")
+            lines.append(f"⚠️ بی‌نتیجه ({len(unmatched)}): " + "؛ ".join(unmatched[:4]))
+        lines.append("")
+        lines.append("اعمال کنم؟")
+        await update.message.reply_text(
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ تایید و اعمال", callback_data=f"admin:addinv:do:{cid}"),
+                InlineKeyboardButton("❌ انصراف", callback_data="admin:menu_war"),
+            ]]),
+            parse_mode="Markdown"
+        )
+        return
+
     if input_type == "admin_search_country":
         context.user_data["admin_awaiting_input"] = None
         user_query = text.strip()

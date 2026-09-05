@@ -166,3 +166,47 @@ def test_continent_selector_accepts_extra_rows(monkeypatch):
     assert last[0].callback_data == "admin:menu_war"
     # دکمه‌های قاره سالم مانده باشند
     assert any(":cont:" in r[0].callback_data for r in kb.inline_keyboard)
+
+
+def test_add_inventory_input_branch_replies_with_preview(monkeypatch, tmp_path):
+    """متن پیست‌شده به «افزودن تجهیزات» باید پیش‌نمایش برگرداند — نه سکوت.
+
+    رگرسیون واقعی: شاخه‌ی input_type == 'add_inventory' در فایل ذخیره نشده
+    بود؛ ادمین متن می‌فرستاد و بات هیچ جوابی نمی‌داد.
+    """
+    import asyncio
+    import types
+    _fresh(monkeypatch, tmp_path, "branch.db")
+    cid = _mk("کانادا", "🇨🇦", "canada")
+    monkeypatch.setattr(config, "ADMIN_IDS", [4242], raising=False)
+
+    from handlers import admin as admin_mod
+
+    replied = []
+
+    class _Msg:
+        text = CANADA_TEXT
+
+        async def reply_text(self, t, **k):
+            replied.append(t)
+
+    update = types.SimpleNamespace(
+        effective_user=types.SimpleNamespace(id=4242),
+        message=_Msg(),
+    )
+    user_data = {"admin_awaiting_input": {"type": "add_inventory", "country_id": cid}}
+    context = types.SimpleNamespace(user_data=user_data, bot=None)
+
+    asyncio.run(admin_mod.admin_input_text_handler(update, context))
+
+    assert replied, "باید پاسخ پیش‌نمایش بدهد — سکوت ممنوع"
+    assert "پیش‌نمایش" in replied[0]
+    draft = user_data.get("addinv_draft")
+    assert draft and draft["country_id"] == cid
+    by_key = {it["key"]: it for it in draft["items"]}
+    # کاتالوگ واقعی کانادا: باید به کلیدهای واقعی بخورد (نه cx_)
+    assert by_key.get("cf188_hornet_ca", {}).get("qty") == 30
+    assert by_key.get("f35a_lightning_ca", {}).get("qty") == 15
+    assert sum(it["qty"] for it in draft["items"] if "adats" in it["key"]) == 17, "دو خط ADATS جمع = ۱۷"
+    assert draft["resources"].get("treasury") == 15_000_000
+    assert user_data.get("admin_awaiting_input") is None, "حالت ورودی بسته شود"
