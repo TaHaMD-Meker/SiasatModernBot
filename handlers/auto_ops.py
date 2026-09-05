@@ -308,11 +308,30 @@ def _execute_auto(attacker, target, text, role_id, committed, targets, bot=None)
         d_ok, d_rid, d_err = db.create_loss_report(dfn_id, defender_items, op_name, f"دفاع در برابر {attacker['name']}")
 
     db.add_tension(att_id, dfn_id, config.TENSION_AUTO_ATTACK_DELTA, f"حمله‌ی محدود {attacker['name']}")
+
+    # ⚔️ جبهه‌ی جنگ فعال: آغاز یا پیشروی
+    war_opened = False
+    try:
+        war, war_opened = db.get_or_create_war(att_id, dfn_id)
+        if war_opened:
+            db.add_tension(att_id, dfn_id, 20, "آغاز جنگ فعال")
+        # دلتای جبهه: نفوذ مؤثر + نسبت تلفات (پیشروی برنده، توقف در setbacks)
+        d_loses = sum(q for (_k, q) in resolution["defender_asset_losses"])
+        a_air = sum(resolution["attacker_aircraft_losses"].values())
+        delta = 3 + int(round(6 * resolution["penetration"]))
+        if a_air > 0 and d_loses == 0:
+            delta = -4  # موج شکست‌خورده — جبهه عقب می‌نشیند
+        db.advance_war_front(war["id"], delta)
+    except Exception:
+        pass
+
     _set_role(role_id, "auto_executed")
 
     units_lost = sum(q for (_, q) in resolution["defender_asset_losses"])
     _notify_players(attacker, target, resolution, units_lost, bot)
     _post_news(attacker, target, resolution, bot)
+    if war_opened:
+        _announce_war(attacker, target, bot)
 
     return {
         "verdict": "auto",
@@ -323,6 +342,38 @@ def _execute_auto(attacker, target, text, role_id, committed, targets, bot=None)
         "loss_report_id": rid,
         "defender_report_id": d_rid,
     }
+
+
+async def _announce_war_async(bot, attacker, target):
+    from news_engine import post_breaking_news
+    await post_breaking_news(
+        bot,
+        f"جنگ فعال میان {attacker['name']} و {target['name']} آغاز شد",
+        f"با اجرای عملیات محدود {attacker['flag']}، جبهه‌ی جنگ میان دو کشور رسماً گشوده شد. "
+        "ناظران نظامی از ادامه‌ی درگیری‌ها در ساعات آینده سخن می‌گویند.")
+    for c in (attacker, target):
+        if c.get("player_id"):
+            try:
+                await bot.send_message(
+                    chat_id=c["player_id"],
+                    text=(f"⚔️ *جنگ فعال با {target['flag']} {target['name']} آغاز شد.*\n"
+                          "از این‌به‌بعد: تنش سرد نمی‌شود، فرسودگی روزانه دارید، و با جبهه‌ی ≥۵۰ "
+                          "می‌توانید غرامت مطالبه کنید. از بخش «⚔️ جنگ‌های من» مدیریت کنید."),
+                    parse_mode="Markdown")
+            except Exception:
+                pass
+
+
+def _announce_war(attacker, target, bot):
+    """خبر + DM آغاز جنگ فعال — هم داخل loop کار می‌کند هم بیرون آن (تست)."""
+    if not bot:
+        return
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_announce_war_async(bot, attacker, target))
+    except RuntimeError:
+        asyncio.run(_announce_war_async(bot, attacker, target))
 
 
 def _notify_players(attacker, target, resolution, units_lost, bot):

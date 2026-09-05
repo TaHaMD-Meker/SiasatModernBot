@@ -66,7 +66,8 @@ def test_a_crisis_is_touched_once_per_slot(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path, "slot_once.db")
     cid = _country()
     _new_crisis(cid, "epidemic", "light")
-    moment = ia._now()
+    # لحظه‌ی قطعی وسط بازه (۱۰:۰۰ تهران) — لحظه‌ی واقعی نزدیک مرز ۶ساعته flaky است
+    moment = datetime.datetime(2026, 9, 5, 6, 30, tzinfo=datetime.timezone.utc)
 
     first = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), moment)
     again = ia.run_crisis_slot_cycle(db.get_country_by_id(cid), moment + datetime.timedelta(minutes=20))

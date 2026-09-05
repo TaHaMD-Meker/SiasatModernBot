@@ -515,6 +515,25 @@ def init_db():
     )
     """)
 
+    # ⚔️ جنگ‌های فعال (فاز ۱) — جبهه امضادار نسبت به مهاجم اصلی
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS active_wars (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        attacker_id INTEGER NOT NULL,
+        defender_id INTEGER NOT NULL,
+        front INTEGER DEFAULT 0,
+        warscore INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        ceasefire_requested_by INTEGER DEFAULT 0,
+        started_at TEXT,
+        ended_at TEXT,
+        end_note TEXT DEFAULT '',
+        UNIQUE(attacker_id, defender_id),
+        FOREIGN KEY(attacker_id) REFERENCES countries(id) ON DELETE CASCADE,
+        FOREIGN KEY(defender_id) REFERENCES countries(id) ON DELETE CASCADE
+    )
+    """)
+
     # تراکنش‌ها
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
@@ -7270,6 +7289,256 @@ def calculate_country_maintenance_cost(country_id: int) -> dict:
 
 # ---------- سیستم ثبت و بررسی رول‌های نظامی (Roleplay System) ----------
 
+# ==================== ⚔️ جنگ فعال ====================
+
+
+def _war_pair(a_id: int, b_id: int):
+    """(attacker, defender) کانونیکی — اولین کشورِ جنگ‌آغازگر حفظ می‌شود."""
+    return (a_id, b_id)
+
+
+def get_active_war(c1_id: int, c2_id: int):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM active_wars
+            WHERE status = 'active'
+              AND ((attacker_id = ? AND defender_id = ?) OR (attacker_id = ? AND defender_id = ?))
+        """, (c1_id, c2_id, c2_id, c1_id))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_or_create_war(a_id: int, d_id: int) -> tuple[dict, bool]:
+    """جنگ فعال جفت را برمی‌گرداند؛ نبود → ساخت. خروجی: (war, تازه‌ساخت؟)"""
+    war = get_active_war(a_id, d_id)
+    if war:
+        return war, False
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT OR IGNORE INTO active_wars (attacker_id, defender_id, front, warscore, status, started_at)
+                VALUES (?, ?, 0, 0, 'active', ?)
+            """, (a_id, d_id, datetime.datetime.now(datetime.timezone.utc).isoformat()))
+        return get_active_war(a_id, d_id), True
+    finally:
+        conn.close()
+
+
+def advance_war_front(war_id: int, delta: int, warscore_delta: int = None):
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("""
+                UPDATE active_wars SET
+                  front = MAX(-?, MIN(?, front + ?)),
+                  warscore = MAX(0, warscore + ?)
+                WHERE id = ?
+            """, (config.WAR_FRONT_MAX, config.WAR_FRONT_MAX, int(delta),
+                  int(warscore_delta if warscore_delta is not None else delta), war_id))
+    finally:
+        conn.close()
+
+
+def set_war_front(war_id: int, front: int, warscore: int = None):
+    conn = get_connection()
+    try:
+        with conn:
+            if warscore is None:
+                conn.execute("UPDATE active_wars SET front = ? WHERE id = ?", (int(front), war_id))
+            else:
+                conn.execute("UPDATE active_wars SET front = ?, warscore = ? WHERE id = ?", (int(front), int(warscore), war_id))
+    finally:
+        conn.close()
+
+
+def list_active_wars(country_id: int = None) -> list:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if country_id:
+            cur.execute("""
+                SELECT * FROM active_wars WHERE status = 'active'
+                  AND (attacker_id = ? OR defender_id = ?) ORDER BY id
+            """, (country_id, country_id))
+        else:
+            cur.execute("SELECT * FROM active_wars WHERE status = 'active' ORDER BY id")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_war_by_id(war_id: int):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM active_wars WHERE id = ?", (war_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def _finish_war(war_id: int, note: str, reset_tension_to: int) -> bool:
+    war = get_war_by_id(war_id)
+    if not war or war["status"] != "active":
+        return False
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("""
+                UPDATE active_wars SET status = 'ended', ended_at = ?, end_note = ?, ceasefire_requested_by = 0
+                WHERE id = ?
+            """, (datetime.datetime.now(datetime.timezone.utc).isoformat(), note or "", war_id))
+            if reset_tension_to is not None:
+                _a, _b = _tension_pair(war["attacker_id"], war["defender_id"])
+                conn.execute("""
+                    INSERT INTO country_tensions (c1_id, c2_id, value, reason, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(c1_id, c2_id) DO UPDATE SET
+                    value = excluded.value, reason = excluded.reason, updated_at = excluded.updated_at
+                """, (_a, _b, int(reset_tension_to), "پایان جنگ", datetime.datetime.now(datetime.timezone.utc).isoformat()))
+        return True
+    finally:
+        conn.close()
+
+
+def request_ceasefire(war_id: int, by_country_id: int) -> tuple[bool, str]:
+    war = get_war_by_id(war_id)
+    if not war or war["status"] != "active":
+        return False, "جنگ فعال نیست."
+    if by_country_id not in (war["attacker_id"], war["defender_id"]):
+        return False, "این جنگ متعلق به کشور شما نیست."
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE active_wars SET ceasefire_requested_by = ? WHERE id = ?", (by_country_id, war_id))
+        return True, "🕊 درخواست آتش‌بس ارسال شد — تا پذیرش طرف مقابل، جنگ برقرار است."
+    finally:
+        conn.close()
+
+
+def accept_ceasefire(war_id: int, by_country_id: int) -> tuple[bool, str]:
+    war = get_war_by_id(war_id)
+    if not war or war["status"] != "active":
+        return False, "جنگ فعال نیست."
+    if war.get("ceasefire_requested_by") not in (war["attacker_id"], war["defender_id"]):
+        return False, "درخواست آتش‌بسی در جریان نیست."
+    if by_country_id == war.get("ceasefire_requested_by"):
+        return False, "طرف مقابل باید آتش‌بس را بپذیرد."
+    if by_country_id not in (war["attacker_id"], war["defender_id"]):
+        return False, "این جنگ متعلق به کشور شما نیست."
+    ok = _finish_war(war_id, "آتش‌بس توافقی", config.WAR_CEASEFIRE_TENSION_RESET)
+    return (True, "🕊 آتش‌بس نهایی شد.") if ok else (False, "خطا در نهایی‌سازی.")
+
+
+def decline_ceasefire(war_id: int, by_country_id: int) -> tuple[bool, str]:
+    war = get_war_by_id(war_id)
+    if not war or war["status"] != "active":
+        return False, "جنگ فعال نیست."
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE active_wars SET ceasefire_requested_by = 0 WHERE id = ?", (war_id,))
+        return True, "درخواست آتش‌بس رد شد."
+    finally:
+        conn.close()
+
+
+def withdraw_from_war(war_id: int, country_id: int) -> tuple[bool, str]:
+    war = get_war_by_id(war_id)
+    if not war or war["status"] != "active":
+        return False, "جنگ فعال نیست."
+    if country_id not in (war["attacker_id"], war["defender_id"]):
+        return False, "این جنگ متعلق به کشور شما نیست."
+    ok = _finish_war(war_id, "خروج یک‌طرفه", config.WAR_CEASEFIRE_TENSION_RESET)
+    if not ok:
+        return False, "خطا در پایان جنگ."
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE countries SET approval_rating = MAX(0, approval_rating - ?) WHERE id = ?",
+                (config.WAR_WITHDRAW_APPROVAL_COST, country_id),
+            )
+    finally:
+        conn.close()
+    return True, "🏳 از جنگ خارج شدید — هزینه‌ی آبرو پرداخت شد."
+
+
+def end_war_with_reparations(war_id: int, winner_id: int, loser_id: int) -> tuple[bool, str]:
+    war = get_war_by_id(war_id)
+    if not war or war["status"] != "active":
+        return False, "جنگ فعال نیست."
+    if war["front"] < config.WAR_PEACE_FRONT_THRESHOLD:
+        return False, f"جبهه هنوز به آستانه‌ی صلح غرامتی نرسیده ({war['front']}/{config.WAR_PEACE_FRONT_THRESHOLD})."
+    loser = get_country_by_id(loser_id)
+    winner = get_country_by_id(winner_id)
+    if not loser or not winner:
+        return False, "کشور یافت نشد."
+    amount = int((loser["treasury"] or 0) * config.WAR_REPARATIONS_SHARE)
+    ok = _finish_war(war_id, f"صلح با غرامت {amount:,} دلار از {loser['name']}", config.WAR_CEASEFIRE_TENSION_RESET)
+    if not ok:
+        return False, "خطا در پایان جنگ."
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE countries SET treasury = MAX(0, treasury - ?) WHERE id = ?", (amount, loser_id))
+            conn.execute("UPDATE countries SET treasury = treasury + ? WHERE id = ?", (amount, winner_id))
+    finally:
+        conn.close()
+    return True, f"💰 صلح امضا شد — {amount:,} دلار غرامت پرداخت شد."
+
+
+def apply_war_weariness() -> int:
+    """فرسودگی روزانه‌ی همه‌ی جنگ‌های فعال — یک‌بار در روز. تعداد جنگ‌ها."""
+    today = datetime.date.today().isoformat()
+    if get_setting("war_weariness_date") == today:
+        return 0
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM active_wars WHERE status = 'active'")
+        wars = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    charged = 0
+    for w in wars:
+        conn = get_connection()
+        try:
+            with conn:
+                for cid in (w["attacker_id"], w["defender_id"]):
+                    conn.execute("""
+                        UPDATE countries SET
+                          treasury = MAX(0, treasury - ?),
+                          oil_reserves = MAX(0, oil_reserves - ?),
+                          approval_rating = MAX(0, approval_rating - ?)
+                        WHERE id = ?
+                    """, (config.WAR_DAILY_MONEY_COST, config.WAR_DAILY_OIL_COST,
+                          config.WAR_WEARINESS_APPROVAL, cid))
+        finally:
+            conn.close()
+        charged += 1
+    if charged:
+        set_setting("war_weariness_date", today)
+    return charged
+
+
+def get_war_pairs() -> list:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT attacker_id, defender_id FROM active_wars WHERE status = 'active'")
+        return [(r["attacker_id"], r["defender_id"]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 # ==================== 🌡 تنش دوسویه ====================
 
 
@@ -7311,10 +7580,25 @@ def add_tension(c1_id: int, c2_id: int, delta: int, reason: str = "") -> int:
 
 
 def decay_all_tensions(amount: int = 5):
+    """سردشدن روزانه — جفت‌هایی که در جنگ فعال‌اند سرد نمی‌شوند (جنگ می‌سوزد)."""
+    war_pairs = set()
+    try:
+        for (a, b) in get_war_pairs():
+            p = _tension_pair(a, b)
+            war_pairs.add(p)
+    except Exception:
+        pass
     conn = get_connection()
     try:
         with conn:
-            conn.execute("UPDATE country_tensions SET value = MAX(0, value - ?)", (int(amount),))
+            cur = conn.cursor()
+            cur.execute("SELECT c1_id, c2_id, value FROM country_tensions")
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                if (r["c1_id"], r["c2_id"]) in war_pairs:
+                    continue
+                conn.execute("UPDATE country_tensions SET value = MAX(0, value - ?) WHERE c1_id = ? AND c2_id = ?",
+                             (int(amount), r["c1_id"], r["c2_id"]))
     finally:
         conn.close()
 

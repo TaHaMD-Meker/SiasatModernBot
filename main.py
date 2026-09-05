@@ -535,6 +535,12 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
         except Exception:
             logger.exception("tension decay failed")
 
+    # ⚔️ فرسودگی روزانه‌ی جنگ‌های فعال — پول+نفت+رضایت از هر دو طرف
+    try:
+        db.apply_war_weariness()
+    except Exception:
+        logger.exception("war weariness failed")
+
     # 3.5. هزینه و اجاره روزانه پایگاه‌های برون‌مرزی — فقط یک بار در هر روز تقویمی (خارج از حلقه کشورها)
     if db.get_setting("base_cost_cycle_date") != today or force:
         db.set_setting("base_cost_cycle_date", today)

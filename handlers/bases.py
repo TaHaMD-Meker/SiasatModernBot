@@ -76,6 +76,8 @@ async def military_movements_menu(update: Update, context: ContextTypes.DEFAULT_
                 [InlineKeyboardButton("☢️ برنامه راهبردی هسته‌ای (سوخت و بازدارندگی)", callback_data="nuc:menu")],
                 [InlineKeyboardButton("🏗️ ساخت پایگاه پیشروی", callback_data="mv:newbase")],
                 [InlineKeyboardButton("📍 پایگاه‌های من", callback_data="mv:mybases")],
+            [InlineKeyboardButton("🎖 اعزام یگان به پایگاه", callback_data="mv:depmenu")],
+            [InlineKeyboardButton("🛬 بازگشت یگان", callback_data="mv:ret")],
                 [InlineKeyboardButton("🗺️ پایگاه‌های روی خاک من", callback_data="mv:hostbases")],
                 [InlineKeyboardButton("🔙 بستن", callback_data="mv:close")],
             ]),
@@ -496,6 +498,96 @@ async def mv_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
 
+    elif data == "mv:depmenu":
+        bases = db.get_bases(owner_id=country["id"])
+        if not bases:
+            await _send(context.bot, user_id, "هنوز پایگاه پیشروی نداری — اول با 🏗️ ساخت پایگاه پیشروی یک پایگاه بساز.")
+            return
+        buttons = []
+        for b in bases:
+            host = db.get_country_by_id(b["host_id"])
+            hname = f"{host['flag']} {host['name']}" if host else "داخل خاک"
+            cap_used = sum(int(r["amount"]) for r in (db.get_base_assets(b["id"]) or []))
+            buttons.append([InlineKeyboardButton(
+                f"📍 {b['name']} ({hname}) — {cap_used}/{b.get('capacity', 20)}",
+                callback_data=f"mv:dep2:{b['id']}")])
+        buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="mv:menu")])
+        await _send(context.bot, user_id,
+                    "🎖 *اعزام یگان — انتخاب پایگاه مقصد*\n\n"
+                    "✈️ جنگنده/پهپاد/آواکس: پرواز مستقیم (~۶ ساعت)\n"
+                    "⚓ شناور: مسیر دریایی و تنگه‌ها (~۳ روز)\n"
+                    "📦 تجهیزات دیگر: با لجستیک",
+                    InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("mv:dep2:"):
+        base_id = int(data.split(":")[2])
+        b = next((x for x in db.get_bases(owner_id=country["id"]) if x["id"] == base_id), None)
+        if not b:
+            await query.answer("پایگاه یافت نشد!", show_alert=True)
+            return
+        assets = [a for a in db.get_country_assets(country["id"]) if int(a.get("amount") or 0) > 0]
+        assets = sorted(assets, key=lambda x: -(int(x["amount"] or 0)))[:30]
+        buttons = []
+        for a in assets:
+            buttons.append([InlineKeyboardButton(
+                f"{a['equipment_name']} ({a['amount']:,})",
+                callback_data=f"mv:dep3:{base_id}:{a['equipment_key']}")])
+        buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="mv:depmenu")])
+        await _send(context.bot, user_id,
+                    f"🎖 *اعزام به {b['name']}*\n\nکدام یگان؟ (بعد از انتخاب، تعداد را بفرست)",
+                    InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("mv:dep3:"):
+        _t, _m, base_id_s, ekey = data.split(":")
+        base_id = int(base_id_s)
+        a = next((x for x in db.get_country_assets(country["id"]) if x["equipment_key"] == ekey), None)
+        if not a:
+            await query.answer("تجهیز یافت نشد!", show_alert=True)
+            return
+        context.user_data["deploy_draft"] = {"base_id": base_id, "equipment_key": ekey}
+        context.user_data["mv_input"] = {"type": "deploy_qty"}
+        await _send(context.bot, user_id,
+                    f"🎖 اعزام «{a['equipment_name']}» (موجودی: {a['amount']:,})\n\nتعداد را بفرست:")
+
+    elif data == "mv:ret":
+        bases = db.get_bases(owner_id=country["id"])
+        buttons = []
+        for b in bases:
+            ba = db.get_base_assets(b["id"]) or []
+            total = sum(int(r["amount"]) for r in ba)
+            if total > 0:
+                buttons.append([InlineKeyboardButton(
+                    f"📍 {b['name']} ({total} یگان)", callback_data=f"mv:ret2:{b['id']}")])
+        if not buttons:
+            await _send(context.bot, user_id, "یگانی در پایگاه‌هایت مستقر نیست.")
+            return
+        buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="mv:menu")])
+        await _send(context.bot, user_id, "🛬 *بازگشت یگان — کدام پایگاه؟*",
+                    InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("mv:ret2:"):
+        base_id = int(data.split(":")[2])
+        b = next((x for x in db.get_bases(owner_id=country["id"]) if x["id"] == base_id), None)
+        if not b:
+            await query.answer("پایگاه یافت نشد!", show_alert=True)
+            return
+        buttons = []
+        for r in (db.get_base_assets(base_id) or []):
+            if int(r["amount"] or 0) > 0:
+                buttons.append([InlineKeyboardButton(
+                    f"{r['equipment_name']} ({r['amount']:,})",
+                    callback_data=f"mv:ret3:{base_id}:{r['equipment_key']}")])
+        buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="mv:ret")])
+        await _send(context.bot, user_id, f"🛬 بازگشت از {b['name']} — کدام یگان؟ (تعداد را بعداً می‌فرستی)",
+                    InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("mv:ret3:"):
+        _t, _m, base_id_s, ekey = data.split(":")
+        context.user_data["return_draft"] = {"base_id": int(base_id_s), "equipment_key": ekey}
+        context.user_data["mv_input"] = {"type": "return_qty"}
+        await _send(context.bot, user_id, "🛬 تعداد یگان بازگشتی را بفرست:")
+
+
 def _base_info_text(b):
     items = db.get_base_assets(b["id"])
     used = len(items)
@@ -755,6 +847,62 @@ def deploy_units(owner_country: dict, base_id: int, units: list, bot=None) -> tu
            f"🛢 سوخت: {oil_cost:,} بشکه | 💵 لجستیک: {money_cost:,} دلار\n"
            "⚠️ یگان اعزامی تا بازگشت، از عملیات داخلی مبدأ حذف است.")
     return True, msg, {"hours": hours, "oil": oil_cost, "money": money_cost, "moved": moved}
+
+
+def return_units(owner_country, base_id: int, units: list, bot=None) -> tuple[bool, str, dict]:
+    """بازگشت یگان از پایگاه به انبار مبدأ — هزینه = نصف اعزام."""
+    owner_id = owner_country["id"] if isinstance(owner_country, dict) else owner_country
+    conn = db.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM foreign_bases WHERE id = ?", (base_id,))
+        brow = cur.fetchone()
+    finally:
+        conn.close()
+    if not brow:
+        return False, "پایگاه یافت نشد.", {}
+    base = dict(brow)
+    if base["owner_id"] != owner_id:
+        return False, "این پایگاه متعلق به شما نیست.", {}
+
+    moved, oil_cost, money_cost = [], 0, 0
+    ba = {r["equipment_key"]: r for r in (db.get_base_assets(base_id) or [])}
+    for (key, qty) in units:
+        row = ba.get(key)
+        if not row or (row["amount"] or 0) < int(qty) or int(qty) <= 0:
+            return False, f"این تعداد «{row['equipment_name'] if row else key}» در پایگاه مستقر نیست.", {}
+        import combat_model as _cm
+        mob = _cm.classify_mobility(row.get("equipment_name"), key)
+        if mob == "flyaway":
+            oil_cost += DEPLOY_FLYAWAY_OIL_PER_UNIT * int(qty) // 2
+            money_cost += DEPLOY_FLYAWAY_MONEY_PER_UNIT * int(qty) // 2
+        else:
+            oil_cost += DEPLOY_SEAGOING_OIL_PER_UNIT * int(qty) // 2
+            money_cost += DEPLOY_SEAGOING_MONEY_PER_UNIT * int(qty) // 2
+        moved.append((key, row["equipment_name"], int(qty)))
+
+    c = db.get_country_by_id(owner_id)
+    if (c["oil_reserves"] or 0) < oil_cost or (c["treasury"] or 0) < money_cost:
+        return False, "⛔ نفت یا پول بازگشت کافی نیست.", {}
+
+    con = db.get_connection()
+    try:
+        with con:
+            for (key, _name, qty) in moved:
+                con.execute("UPDATE base_assets SET amount = MAX(0, amount - ?) WHERE base_id=? AND equipment_key=?", (qty, base_id, key))
+                con.execute("""
+                    INSERT INTO country_assets (country_id, country_key, category, equipment_name, equipment_key, amount, buy_price, maintenance_cost, producible)
+                    SELECT ?, country_key, category, equipment_name, ?, ?, 0, 0, 0 FROM country_assets WHERE country_id=? AND equipment_key=?
+                    ON CONFLICT(country_id, equipment_key) DO UPDATE SET amount = amount + excluded.amount
+                """, (owner_id, key, qty, owner_id, key))
+            con.execute("UPDATE countries SET oil_reserves = MAX(0, oil_reserves - ?), treasury = MAX(0, treasury - ?) WHERE id = ?",
+                        (oil_cost, money_cost, owner_id))
+    finally:
+        con.close()
+
+    summary = "، ".join(f"{name} ×{q}" for (_k, name, q) in moved)
+    return True, (f"🛬 *بازگشت یگان آغاز شد.*\n\n{summary}\n📍 از {base['name']} به خاک وطن\n"
+                  f"🛢 سوخت: {oil_cost:,} | 💵 لجستیک: {money_cost:,}"), {"moved": moved}
 
 
 def on_host_under_attack(host_id: int, attacker_id: int, bot=None) -> list:

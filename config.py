@@ -5938,6 +5938,17 @@ ENRICHMENT_FACILITY_GOLD = 150
 # مصرف تراشه به‌ازای هر شلیک/پرواز عملیاتی. کسری هرگز عملیات را رد نمی‌کند؛
 # فقط سقف تعداد تا سقف تراشه موجود است (MAX(0,...) در consume_launch_chips).
 # ─────────────── 🌡 سیستم تنش و عملیات خودکار (لایه‌ی منطق رول‌ها) ───────────────
+# ─────────────── ⚔️ جبهه‌ی جنگ فعال (فاز ۱) ───────────────
+WAR_FRONT_MAX = 100               # عمق جبهه (±۱۰۰)
+WAR_PEACE_FRONT_THRESHOLD = 50    # جبهه ≥ این = حق مطالبه‌ی غرامت
+WAR_REPARATIONS_SHARE = 0.25      # سهم خزانه‌ی بازنده در صلح غرامتی
+WAR_CEASEFIRE_TENSION_RESET = 30  # تنش پس از آتش‌بس/صلح
+WAR_WITHDRAW_WARSCORE_PENALTY = 25
+WAR_WITHDRAW_APPROVAL_COST = 3
+WAR_DAILY_MONEY_COST = 3_000_000  # فرسودگی روزانه‌ی هر طرف
+WAR_DAILY_OIL_COST = 20_000
+WAR_WEARINESS_APPROVAL = 1        # افت رضایت روزانه‌ی هر طرف
+
 TENSION_ATTACK_THRESHOLD = 40      # حداقل تنش برای پذیرش رول حمله
 TENSION_DAILY_DECAY = 5            # سردشدن روزانه‌ی همه‌ی جفت‌تنش‌ها
 TENSION_STATEMENT_DELTA = 10       # بیانیه‌ی تند/اولتیماتوم

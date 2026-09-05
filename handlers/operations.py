@@ -99,6 +99,7 @@ async def operations_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 ثبت رول تهاجمی (حمله)", callback_data="op:submit:attack"), InlineKeyboardButton("🛡️ ثبت رول پدافندی (دفاع)", callback_data="op:submit:defense")],
         [InlineKeyboardButton("🌡 وضعیت تنش من", callback_data="op:tension"), InlineKeyboardButton("📋 رول‌های ثبت‌شده من", callback_data="op:my_roles")],
         [InlineKeyboardButton("📖 راهنمای عملیات", callback_data="op:guide")],
+        [InlineKeyboardButton("⚔️ جنگ‌های من", callback_data="op:wars")],
     ]
 
     if update.message:
@@ -251,6 +252,110 @@ async def operations_callback_handler(update: Update, context: ContextTypes.DEFA
             db.sync_and_check_all_challenges(country["id"])
         except Exception:
             pass
+
+    elif data == "op:wars":
+        wars = db.list_active_wars(country["id"])
+        if not wars:
+            await query.edit_message_text(
+                "🕊 *جنگ فعالی نداری.*\n\nجنگ با اولین عملیات محدودِ پذیرفته‌شده باز می‌شود.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="op:menu")]]),
+                parse_mode="Markdown")
+            return
+        lines = ["⚔️ *جنگ‌های فعال تو*\n━━━━━━━━━━━━━━━━━━"]
+        buttons = []
+        for w in wars:
+            other_id = w["defender_id"] if w["attacker_id"] == country["id"] else w["attacker_id"]
+            other = db.get_country_by_id(other_id)
+            oname = f"{other['flag']} {other['name']}" if other else "؟"
+            front = w["front"] if w["attacker_id"] == country["id"] else -w["front"]
+            bar = "▓" * (abs(front) // 10) + "░" * (10 - abs(front) // 10)
+            side = "پیشروی ✅" if front > 0 else ("عقب‌نشینی ⚠️" if front < 0 else "خط مقدم ثابت")
+            lines.append(f"🔥 {oname} — جبهه: `{bar}` ({front:+d}) {side}")
+            lines.append(f"   امتیاز جنگ: {w['warscore']}")
+            if w.get("ceasefire_requested_by") and w["ceasefire_requested_by"] == other_id:
+                lines.append("   🕊 طرف مقابل آتش‌بس خواسته — تصمیم تو:")
+                buttons.append([
+                    InlineKeyboardButton(f"🕊 پذیرش ({other['name']})", callback_data=f"op:cfacc:{w['id']}"),
+                    InlineKeyboardButton("❌ رد", callback_data=f"op:cfdec:{w['id']}"),
+                ])
+            elif front >= config.WAR_PEACE_FRONT_THRESHOLD and w["attacker_id"] == country["id"]:
+                lines.append(f"   💰 حق مطالبه‌ی غرامت داری (جبهه ≥ {config.WAR_PEACE_FRONT_THRESHOLD})")
+                buttons.append([InlineKeyboardButton(f"💰 صلح با غرامت از {other['name']}", callback_data=f"op:rep:{w['id']}")])
+            if not (w.get("ceasefire_requested_by") and w["ceasefire_requested_by"] != country["id"]):
+                buttons.append([
+                    InlineKeyboardButton(f"🕊 درخواست آتش‌بس ({other['name']})", callback_data=f"op:cfreq:{w['id']}"),
+                    InlineKeyboardButton("🏳 خروج یک‌طرفه", callback_data=f"op:wdraw:{w['id']}"),
+                ])
+            lines.append("")
+        buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="op:menu")])
+        await query.edit_message_text("\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+    elif data.startswith("op:cfreq:"):
+        war = db.get_war_by_id(int(data.split(":")[2]))
+        if not war or country["id"] not in (war["attacker_id"], war["defender_id"]):
+            await query.answer("یافت نشد!", show_alert=True)
+            return
+        other_id = war["defender_id"] if war["attacker_id"] == country["id"] else war["attacker_id"]
+        ok, msg = db.request_ceasefire(war["id"], country["id"])
+        other = db.get_country_by_id(other_id)
+        if ok and other and other.get("player_id"):
+            try:
+                kb = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(f"🕊 پذیرش آتش‌بس ({country['name']})", callback_data=f"op:cfacc:{war['id']}"),
+                    InlineKeyboardButton("❌ ادامه‌ی جنگ", callback_data=f"op:cfdec:{war['id']}"),
+                ]])
+                await context.bot.send_message(chat_id=other["player_id"],
+                    text=f"🕊 *{country['flag']} {country['name']} پیشنهاد آتش‌بس داده.*\nپذیرش یا ادامه‌ی جنگ؟",
+                    reply_markup=kb, parse_mode="Markdown")
+            except Exception:
+                pass
+        await query.answer(msg, show_alert=True)
+        await operations_menu(update, context)
+
+    elif data.startswith("op:cfacc:"):
+        war = db.get_war_by_id(int(data.split(":")[2]))
+        if not war or country["id"] not in (war["attacker_id"], war["defender_id"]):
+            await query.answer("یافت نشد!", show_alert=True)
+            return
+        ok, msg = db.accept_ceasefire(war["id"], country["id"])
+        await query.answer(msg, show_alert=True)
+        await operations_menu(update, context)
+
+    elif data.startswith("op:cfdec:"):
+        war = db.get_war_by_id(int(data.split(":")[2]))
+        if not war or country["id"] not in (war["attacker_id"], war["defender_id"]):
+            await query.answer("یافت نشد!", show_alert=True)
+            return
+        ok, msg = db.decline_ceasefire(war["id"], country["id"])
+        await query.answer("جنگ ادامه دارد.", show_alert=True)
+        await operations_menu(update, context)
+
+    elif data.startswith("op:rep:"):
+        war = db.get_war_by_id(int(data.split(":")[2]))
+        if not war or war["status"] != "active":
+            await query.answer("یافت نشد!", show_alert=True)
+            return
+        loser_id = war["defender_id"] if war["attacker_id"] == country["id"] else war["attacker_id"]
+        ok, msg = db.end_war_with_reparations(war["id"], winner_id=country["id"], loser_id=loser_id)
+        loser = db.get_country_by_id(loser_id)
+        if ok and loser and loser.get("player_id"):
+            try:
+                await context.bot.send_message(chat_id=loser["player_id"],
+                    text=f"💰 *صلح غرامتی امضا شد.*\n{msg}", parse_mode="Markdown")
+            except Exception:
+                pass
+        await query.answer(msg, show_alert=True)
+        await operations_menu(update, context)
+
+    elif data.startswith("op:wdraw:"):
+        war = db.get_war_by_id(int(data.split(":")[2]))
+        if not war or country["id"] not in (war["attacker_id"], war["defender_id"]):
+            await query.answer("یافت نشد!", show_alert=True)
+            return
+        ok, msg = db.withdraw_from_war(war["id"], country_id=country["id"])
+        await query.answer(msg, show_alert=True)
+        await operations_menu(update, context)
 
     elif data == "op:guide":
         guide = (

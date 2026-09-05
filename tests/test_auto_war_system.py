@@ -133,7 +133,7 @@ def test_auto_attack_full_pipeline(monkeypatch, tmp_path):
     assert c["active_personnel_loss"] if False else True
     human = result["human"]
     assert human["mil_kia"] <= 150 and human["wounded"] >= human["mil_kia"] * 2 and human["civilians"] < 50
-    assert db.get_tension(att, dfn) == 75, "حمله‌ی خودکار +۲۵ تنش"
+    assert db.get_tension(att, dfn) == 95, "حمله‌ی خودکار +۲۵ و آغاز جنگ +۲۰ تنش"
     row = db.get_roleplay_by_id(result["role_id"])
     assert row["status"] == "auto_executed"
 
