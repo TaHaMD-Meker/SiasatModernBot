@@ -12,7 +12,7 @@ import logging
 from zoneinfo import ZoneInfo
 import telegram.error
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -153,6 +153,36 @@ async def _publish_crisis_news(context, items: list):
     for item in items:
         if await _send(item["title"], item["body"]):
             internal_affairs.mark_news_sent(item["crisis_id"], item["flag"])
+
+
+async def upkeep_why_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «🏭 چرا سازه‌ها خاموش شدند؟» — نمای کامل آخرین چرخه‌ی نگهداری."""
+    query = update.callback_query
+    try:
+        cid = int(query.data.split(":")[1])
+    except (IndexError, ValueError):
+        await query.answer("❌ درخواست نامعتبر است.", show_alert=True)
+        return
+    c = db.get_country_by_id(cid)
+    if not c:
+        await query.answer("❌ این کشور دیگر وجود ندارد.", show_alert=True)
+        return
+    uid = query.from_user.id
+    if uid != (c.get("player_id") or 0) and uid not in config.ADMIN_IDS:
+        await query.answer("⛔ فقط رهبر همین کشور یا ادمین می‌تواند این گزارش را ببیند.", show_alert=True)
+        return
+    rep = db.get_saved_upkeep_report(cid)
+    if not rep:
+        await query.answer("🏭 اخیراً هیچ خاموشی/روشن‌شدنی برای سازه‌های این کشور ثبت نشده است.", show_alert=True)
+        return
+    await query.answer()
+    try:
+        await context.bot.send_message(
+            chat_id=uid,
+            text=db.format_upkeep_details(rep),
+            parse_mode="Markdown")
+    except Exception:
+        logger.exception("upkeep_why_callback send failed for country %s", cid)
 
 
 async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = False):
@@ -453,7 +483,15 @@ async def daily_income_job(context: ContextTypes.DEFAULT_TYPE, force: bool = Fal
                         f"_درآمدها در {INCOME_PARTS} پرداختِ روزانه (۰۹:۰۰، ۱۵:۰۰، ۲۱:۰۰، ۰۳:۰۰ به وقت ایران) واریز می‌شوند._"
                         f"{stmt_status_section}"
                     )
-                await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=get_main_keyboard(p_id), parse_mode="Markdown")
+                _upk = (cycle.get("upkeep") or {}) if cycle else {}
+                if _upk.get("shut_down") or _upk.get("reactivated"):
+                    _rm = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🏭 چرا سازه‌ها خاموش شدند؟",
+                                             callback_data=f"upkeep_why:{c['id']}")
+                    ]])
+                else:
+                    _rm = get_main_keyboard(p_id)
+                await context.bot.send_message(chat_id=p_id, text=report_msg, reply_markup=_rm, parse_mode="Markdown")
             except Exception as e:
                 logger.warning(f"Could not send daily report to player {p_id}: {e}")
 
@@ -852,6 +890,7 @@ def main():
     app.add_handler(CommandHandler("army", army))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(country_callback_handler, pattern=r"^country:"))
+    app.add_handler(CallbackQueryHandler(upkeep_why_callback, pattern=r"^upkeep_why:"))
 
     # دکمه‌های ثابت پایین صفحه (Reply Keyboard Text Handlers)
     app.add_handler(MessageHandler(filters.Regex("^🌐 وضعیت کشور$"), country_profile))

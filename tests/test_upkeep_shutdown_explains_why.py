@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-"""درخواست مالک: گزارش روزانه باید «چرایی» خاموشی سازه‌ها را توضیح بدهد.
+"""درخواست مالک: به‌جای متن بلند در گزارش روزانه، یک «دکمه» جزئیات خاموشی را باز کند.
 
-قبلاً فقط می‌گفت «کمبود منابع — N سازه از کار افتاد»؛ الان باید بگوید:
-• چرا این سازه؟ (کم‌بازده‌ترین مصرف‌کننده‌ی منبع کسری — اول او خاموش می‌شود)
-• این سازه روزانه چقدر از چه منابعی می‌خورد؟
-• انبار چقدر بود و کل نیاز روزانه چقدر؟
-• برای روشن‌ماندن همه دقیقاً چقدر منبع بیشتر لازم است؟
-و چون این بلوک داخل پیامِ Markdown گزارش روزانه تزریق می‌شود، خروجی باید
-Markdown باشد — نه تگ‌های HTML خام (<b>) که عیناً نمایش داده می‌شدند.
+طرح نهایی:
+• متن گزارش روزانه کوتاه می‌ماند (کسری + خاموش‌ها + دوز نجات) و Markdown است.
+• زیر گزارش روزانه، دکمه‌ی «🏭 چرا سازه‌ها خاموش شدند؟» می‌آید (callback upkeep_why:).
+• کلیک روی دکمه → پیام جزئیات کامل: چرا این سازه (کم‌بازده‌ترین)، مصرف روزانه‌ی
+  هر واحدش، انبار در برابر نیاز روزانه و دقیقاً چقدر منبع بیشتر لازم است.
+• نتیجه‌ی آخرین چرخه در DB ذخیره می‌شود؛ فقط رهبر همان کشور یا ادمین می‌بیند.
 """
+import asyncio
+import json
+import types
+
 import config
 import database as db
 
 
-def _fresh(monkeypatch, tmp_path, name="upkeep_why.db"):
+def _fresh(monkeypatch, tmp_path, name="upkeep_btn.db"):
     monkeypatch.setattr(config, "DB_PATH", str(tmp_path / name))
     db.init_db()
     cid = db.create_country(7001, "مالزی", "🇲🇾", country_key="malaysia")
@@ -27,37 +30,113 @@ def _fresh(monkeypatch, tmp_path, name="upkeep_why.db"):
     return cid
 
 
-def test_shutdown_report_explains_why_in_markdown(monkeypatch, tmp_path):
+def test_short_report_stays_compact_but_markdown(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     res = db.apply_building_upkeep(db.get_country_by_player(7001)["id"])
-    assert res["shut_down"], "با آهن ۱۰ واحدی باید سازه خاموش می‌شد"
+    assert res["shut_down"]
 
     text = db.format_upkeep_report(res)
-
-    # ۱) بدون تگ HTML خام — بلوک داخل پیام Markdown می‌رود
-    assert "<b>" not in text and "</b>" not in text and "<i>" not in text, \
-        "تگ‌های HTML خام در پیام Markdown عیناً نمایش داده می‌شوند"
-    assert "**" in text or "*" in text, "تأکید باید Markdown باشد"
-
-    # ۲) چرایی: علت، انتخاب کم‌بازده، مصرف روزانه‌ی سازه
-    assert "چرا" in text, "باید بخش «چرا؟» داشته باشد"
-    assert "کم‌بازده" in text, "باید بگوید چرا این سازه انتخاب شد"
-    assert "مصرف روزانه" in text, "باید مصرف روزانه‌ی سازه‌ی خاموش‌شده را بگوید"
-    assert "روشن بمانند" in text, "منطق قاعده باید توضیح داده شود"
-
-    # ۳) انبار/نیاز + دقیقاً چقدر بیشتر لازم است
-    assert "نیاز روزانه" in text, "باید نیاز روزانه‌ی کل سازه‌ها را نشان بدهد"
-    assert "برای روشن‌ماندن همه" in text, "باید دوز لازم برای رفع کسری را بگوید"
-
-    # ۴) داده‌های خام هم برای متن بالا موجودند
-    sd = res["shut_down"][0]
-    assert sd.get("consumption"), "مصرف روزانه‌ی هر واحد باید در نتیجه باشد"
-    assert sd.get("consumption").get("iron_ore", 0) > 0
-    assert res.get("supply_line", {}).get("iron_ore", {}).get("need", 0) > 0
+    assert "<b>" not in text and "</b>" not in text, "تگ HTML خام در پیام Markdown می‌شکند"
+    assert "کمبود منابع" in text and "خاموش" in text
+    # جزئیات «چرا» دیگر داخل متن نیست — پشت دکمه است
+    assert "چرا؟" not in text and "مصرف روزانه‌ی هر واحدش" not in text
 
 
-def test_reason_names_scarce_resource(monkeypatch, tmp_path):
-    _fresh(monkeypatch, tmp_path, "upkeep_why2.db")
-    res = db.apply_building_upkeep(db.get_country_by_player(7001)["id"])
-    text = db.format_upkeep_report(res)
-    assert "آهن و فولاد" in text, "نام منبع کسری باید صریح بیاید"
+def test_result_is_persisted_for_the_button(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    cid = db.get_country_by_player(7001)["id"]
+    db.apply_building_upkeep(cid)
+
+    saved = db.get_saved_upkeep_report(cid)
+    assert saved, "نتیجه‌ی چرخه باید برای دکمه ذخیره شود"
+    assert saved["shut_down"], "خاموشی ذخیره‌شده باید در دسترس باشد"
+    assert saved["shut_down"][0]["consumption"].get("iron_ore", 0) > 0
+    assert saved["supply_line"]["iron_ore"]["need"] > 0
+
+
+def test_details_view_explains_why(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    cid = db.get_country_by_player(7001)["id"]
+    db.apply_building_upkeep(cid)
+    saved = db.get_saved_upkeep_report(cid)
+
+    text = db.format_upkeep_details(saved)
+
+    assert "<b>" not in text
+    assert "چرا؟" in text and "کم‌بازده" in text
+    assert "مصرف روزانه" in text
+    assert "انبار" in text and "نیاز روزانه" in text
+    assert "برای روشن‌ماندن همه" in text
+    assert "آهن و فولاد" in text
+
+
+def test_daily_report_has_the_details_button(monkeypatch, tmp_path):
+    src = open("main.py", encoding="utf-8").read()
+    assert 'callback_data=f"upkeep_why:{c[\'id\']}"' in src or "upkeep_why:" in src, \
+        "گزارش روزانه باید دکمه‌ی جزئیات خاموشی داشته باشد"
+    assert 'pattern=r"^upkeep_why:"' in src, "هندلر دکمه باید ثبت شود"
+
+
+def test_button_callback_owner_only_and_renders(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    cid = db.get_country_by_player(7001)["id"]
+    db.apply_building_upkeep(cid)
+
+    from main import upkeep_why_callback
+
+    class _Bot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, **k):
+            self.sent.append((chat_id, text))
+
+    async def _click(uid):
+        q = types.SimpleNamespace(
+            from_user=types.SimpleNamespace(id=uid),
+            data=f"upkeep_why:{cid}",
+            alerts=[])
+        async def _answer(*a, **k):
+            q.alerts.append(a[0] if a else k.get("text") or "")
+        q.answer = _answer
+        update = types.SimpleNamespace(callback_query=q)
+        ctx = types.SimpleNamespace(bot=_Bot())
+        await upkeep_why_callback(update, ctx)
+        return q, ctx
+
+    # رهبر کشور: جزئیات برایش ارسال می‌شود
+    q1, ctx1 = asyncio.run(_click(7001))
+    assert ctx1.bot.sent, "رهبر باید پیام جزئیات بگیرد"
+    assert "چرا؟" in ctx1.bot.sent[0][1]
+
+    # غریبه: پیام نمی‌گیرد
+    q2, ctx2 = asyncio.run(_click(999999))
+    assert not ctx2.bot.sent, "غریبه نباید جزئیات را ببیند"
+
+    # کشور بدون رویداد: پیام «چیزی ثبت نشده»
+    cid2 = db.create_country(7002, "عمان", "🇴🇲", country_key="oman")
+    q3, ctx3 = _click_click_alt(cid2)
+
+    assert not ctx3.bot.sent
+
+
+def _click_click_alt(cid):
+    from main import upkeep_why_callback
+
+    async def _go():
+        q = types.SimpleNamespace(
+            from_user=types.SimpleNamespace(id=7002),
+            data=f"upkeep_why:{cid}", alerts=[])
+        async def _answer(*a, **k):
+            q.alerts.append(a[0] if a else k.get("text") or "")
+        q.answer = _answer
+        update = types.SimpleNamespace(callback_query=q)
+        ctx = types.SimpleNamespace(bot=types.SimpleNamespace(send_message=_no_send, sent=[]))
+        await upkeep_why_callback(update, ctx)
+        return q, ctx
+
+    return asyncio.run(_go())
+
+
+async def _no_send(*a, **k):
+    raise AssertionError("برای کشور بدون رویداد نباید پیام جزئیات برود")

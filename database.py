@@ -3379,7 +3379,7 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
             supply_line = {res: {"stock": int(stock.get(res, 0)), "need": int(full_need.get(res, 0))}
                            for res in shortages if res in stock and res in full_need}
 
-            return {
+            result = {
                 "ok": not shortages,
                 "shortages": {k: (round(v, 2) if k == "elec" else int(v)) for k, v in shortages.items()},
                 "shut_down": shut_down,
@@ -3389,6 +3389,20 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
                 "ramp": ramp,
                 "supply_line": supply_line,
             }
+            # ذخیره برای دکمه‌ی «چرا سازه‌ها خاموش شدند؟» در گزارش روزانه —
+            # روی همین اتصال می‌نویسیم (set_setting اتصال جدید باز می‌کند و
+            # روی تراکنش باز قفل می‌خورد)
+            if result.get("shut_down") or result.get("reactivated"):
+                try:
+                    import json as _json
+                    cur.execute(
+                        "INSERT INTO settings (key, value) VALUES (?, ?)"
+                        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (f"upkeep_report_json:{country_id}",
+                         _json.dumps(result, ensure_ascii=False)))
+                except Exception as _e:
+                    print(f"[upkeep-report] inline save failed for {country_id}: {_e}")
+            return result
     except Exception as e:
         print(f"[building-upkeep] error for country {country_id}: {e}")
         return empty
@@ -3397,52 +3411,26 @@ def apply_building_upkeep(country_id: int, today_str: str | None = None) -> dict
 
 
 def format_upkeep_report(result: dict) -> str:
-    """متن هشدار نگهداری برای گزارش روزانه. اگر چیزی برای گفتن نبود، رشته‌ی خالی.
+    """خلاصه‌ی کوتاه نگهداری برای داخل گزارش روزانه (Markdown).
 
-    خروجی Markdown است (این بلوک داخل پیام Markdown گزارش روزانه تزریق می‌شود —
-    تگ HTML اینجا عیناً نمایش داده می‌شد). هر خاموشی «چرا» را هم توضیح می‌دهد:
-    علت کسری، انتخاب کم‌بازده‌ترین، مصرف روزانه‌ی سازه و دوز لازم برای رفع کسری.
+    جزئیات «چرا» عمداً اینجا نمی‌آید — پشت دکمه‌ی «چرا سازه‌ها خاموش شدند؟»
+    در گزارش روزانه است (upkeep_why) تا گزارش روزانه شلوغ نشود.
     """
     if not result:
         return ""
     lines = []
     labels, units = config.UPKEEP_RESOURCE_LABELS, config.UPKEEP_RESOURCE_UNITS
 
-    def _res_label(res):
-        return labels.get(res, res)
-
-    def _res_unit(res):
-        return units.get(res, "")
-
-    def _amt(res, amount):
-        return f"{amount:,}" if res != "elec" else f"{amount:g}"
-
-    def _cons_part(cons):
-        parts = []
-        for res, amount in (cons or {}).items():
-            parts.append(f"{_amt(res, amount)} {_res_unit(res)} {_res_label(res)}")
-        return " + ".join(parts)
-
     if result.get("shut_down"):
         total = sum(s["qty"] for s in result["shut_down"])
         lines.append(f"⚠️ *کمبود منابع — {total} سازه از کار افتاد*")
         for res, amount in result.get("shortages", {}).items():
-            base = f"\n{_res_label(res)} کسری: *{_amt(res, amount)} {_res_unit(res)}*"
-            sl = (result.get("supply_line") or {}).get(res) or {}
-            if sl:
-                base += f" — انبار: {sl['stock']:,} | نیاز روزانه‌ی سازه‌ها: {sl['need']:,}"
-            lines.append(base)
-        lines.append("")
+            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
+            lines.append(f"\n{labels.get(res, res)} کسری: *{amt} {units.get(res, '')}*")
         for s in result["shut_down"]:
             lines.append(f"   🔴 {s['qty']} × {s['name']} — خاموش")
-            lines.append("      ↳ *چرا؟* " + _why_line(s, labels))
-            cons_txt = _cons_part(s.get("consumption"))
-            if cons_txt:
-                lines.append(f"      ↳ مصرف روزانه‌ی هر واحدش: {cons_txt}")
         if result.get("income_lost"):
             lines.append(f"   💸 درآمد از‌دست‌رفته: *{result['income_lost']:,}* دلار/روز")
-        for res, amount in result.get("shortages", {}).items():
-            lines.append(f"   💡 برای روشن‌ماندن همه: روزانه *{_amt(res, amount)} {_res_unit(res)}* {_res_label(res)} بیشتر لازم است.")
         lines.append("\n💡 با تأمین کسری، سازه‌ها در چرخه‌ی بعد خودکار روشن می‌شوند.")
 
     if result.get("reactivated"):
@@ -3461,18 +3449,80 @@ def format_upkeep_report(result: dict) -> str:
     return "\n".join(lines)
 
 
-def _why_line(s: dict, labels: dict) -> str:
-    """توضیح یک‌خطی دلیل خاموشی یک سازه برای format_upkeep_report."""
-    scarce = s.get("scarce") or []
-    if not scarce:
-        return "منابع ورودی این سازه تمام شده بود."
-    names = " و ".join(labels.get(r, r) for r in scarce)
-    why = f"انبار {names} کفاف نمی‌داد"
-    if s.get("least_eff"):
-        why += " و این سازه کم‌بازده‌ترین مصرف‌کننده بود — قانون: کم‌بازده‌ترین اول خاموش می‌شود تا بقیه روشن بمانند"
-    else:
-        why += "؛ خاموشی تا تأمین منابع ادامه دارد"
-    return why
+def format_upkeep_details(result: dict) -> str:
+    """نمای کامل «چرا سازه‌ها خاموش شدند؟» — پشت دکمه‌ی گزارش روزانه (Markdown)."""
+    if not result:
+        return "🏭 در آخرین چرخه رویدادی برای سازه‌ها ثبت نشده است."
+    labels, units = config.UPKEEP_RESOURCE_LABELS, config.UPKEEP_RESOURCE_UNITS
+    lines = ["🏭 *گزارش کامل خاموشی/روشن‌شدن سازه‌ها*", "━━━━━━━━━━━━━━━━━━"]
+
+    if result.get("shortages"):
+        lines.append("*📊 وضعیت منابع در آخرین چرخه:*")
+        for res, amount in result.get("shortages", {}).items():
+            sl = (result.get("supply_line") or {}).get(res) or {}
+            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
+            line = f"   {labels.get(res, res)}: کسری *{amt} {units.get(res, '')}*"
+            if sl:
+                line += f" — انبار: *{sl['stock']:,}* | نیاز روزانه‌ی همه‌ی سازه‌ها: *{sl['need']:,}*"
+            lines.append(line)
+        lines.append("")
+
+    if result.get("shut_down"):
+        lines.append("*🔴 خاموش‌شده‌ها — چرا؟*")
+        for s in result["shut_down"]:
+            lines.append(f"   • {s['qty']} × {s['name']}")
+            scarce = s.get("scarce") or []
+            if scarce:
+                names = " و ".join(labels.get(r, r) for r in scarce)
+                why = f"      ↳ انبار {names} کفاف مصرف نمی‌داد"
+                if s.get("least_eff"):
+                    why += "؛ این سازه *کم‌بازده‌ترین* مصرف‌کننده بود — قانون: کم‌بازده‌ترین اول خاموش می‌شود تا بقیه روشن بمانند"
+                else:
+                    why += "؛ خاموشی تا تأمین منابع ادامه دارد"
+                lines.append(why)
+            cons = []
+            for res, amount in (s.get("consumption") or {}).items():
+                cons.append(f"{amount:,} {units.get(res, '')} {labels.get(res, res)}")
+            if cons:
+                lines.append("      ↳ مصرف روزانه‌ی هر واحدش: " + " + ".join(cons))
+        if result.get("income_lost"):
+            lines.append(f"   💸 جمع درآمد از‌دست‌رفته: *{result['income_lost']:,}* دلار/روز")
+        for res, amount in result.get("shortages", {}).items():
+            amt = f"{amount:,}" if res != "elec" else f"{amount:g}"
+            lines.append(f"   💡 برای روشن‌ماندن همه: روزانه *{amt} {units.get(res, '')}* {labels.get(res, res)} بیشتر لازم است.")
+
+    if result.get("reactivated"):
+        lines.append("")
+        lines.append("*🟢 دوباره وارد مدار شده‌ها:*")
+        for s in result["reactivated"]:
+            lines.append(f"   • {s['qty']} × {s['name']}")
+        gained = sum(s["qty"] * s["income"] for s in result["reactivated"])
+        if gained:
+            lines.append(f"   💰 درآمد بازگشته: *+{gained:,}* دلار/روز")
+
+    lines.append("")
+    lines.append("_💡 با تأمین کسری، سازه‌ها در چرخه‌ی بعد خودکار روشن می‌شوند._")
+    return "\n".join(lines)
+
+
+def save_upkeep_report(country_id: int, result: dict):
+    """آخرین نتیجه‌ی چرخه‌ی نگهداری را برای دکمه‌ی «چرا؟» ذخیره می‌کند."""
+    if not result or not (result.get("shut_down") or result.get("reactivated")):
+        return
+    try:
+        import json as _json
+        set_setting(f"upkeep_report_json:{country_id}", _json.dumps(result, ensure_ascii=False))
+    except Exception as e:
+        print(f"[upkeep-report] save failed for {country_id}: {e}")
+
+
+def get_saved_upkeep_report(country_id: int):
+    try:
+        import json as _json
+        raw = get_setting(f"upkeep_report_json:{country_id}")
+        return _json.loads(raw) if raw else None
+    except Exception:
+        return None
 
 
 def recalc_country_civ_effects(country_id: int) -> dict:
