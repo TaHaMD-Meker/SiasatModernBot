@@ -1824,9 +1824,21 @@ def create_loss_report(country_id: int, items: list, operation_name: str = "", n
                 row = cur.fetchone()
                 have = (row["amount"] or 0) if row else 0
                 it["qty"] = min(int(it["qty"]), max(0, have))
+            # 🔥 اقتصاد تراشه — «نرخ آتش»: هر موشک/پهپادِ مصرفیِ گزارش (یعنی شلیک‌شده)
+            # به اندازه‌ی نرخ خودش تراشه می‌سوزاند. کسری رد نمی‌شود؛ MAX(0,...) —
+            # سینک رویدادمحور، بدون فشار بر کشور غیرجنگی (تعهد بالانس مالک).
             for it in valid_items:
                 if int(it.get("qty", 0) or 0) <= 0:
                     continue
+                if not it.get("special"):
+                    _ltype = classify_launch_type(it.get("name") or "")
+                    if _ltype:
+                        _rate = launch_chip_rate(_ltype)
+                        if _rate > 0:
+                            cur.execute(
+                                "UPDATE countries SET microchips = MAX(0, microchips - ?) WHERE id = ?",
+                                (_rate * int(it["qty"]), country_id),
+                            )
                 if it.get("special") == "building":
                     cur.execute("UPDATE equipment SET quantity = MAX(0, quantity - ?) WHERE country_id = ? AND item_key = ?",
                                 (int(it["qty"]), country_id, it["key"]))
@@ -2604,6 +2616,90 @@ def adjust_uranium_ore(country_id: int, delta: int):
     conn.commit()
     conn.close()
 
+
+
+# ---------- اقتصاد تراشه: نرخ آتش (شلیک موشک/پهپاد) ----------
+
+_MISSILE_TYPE_PATTERNS = [
+    # (نوع، کلیدواژه‌ها) — ترتیب مهم است: هایپرسونیک قبل از کروز/ضدکشتی
+    ("hypersonic", ("هایپرسونیک", "hypersonic", "kinzhal", "کینژال", "zircon", "زیرکون",
+                     "avangard", "آوانگارد", "sarmat", "شرمات")),
+    ("cruise", ("کروز", "cruise", "kalibr", "کالیبر", "tomahawk", "تاماهاوک", "kh-101",
+                 "kh101", "jassm", "storm shadow", "استورم", "scalp", "تaurus", "تاوروس",
+                 "delilah", "دلیله", "noor", "نور", "قادر", "سومار", "paveh", "پاوه")),
+    ("ballistic", ("بالستیک", "ballistic", "اسکندر", "iskander", "ATACMS", "اتکمس",
+                    "توشک", "tochka", "فاتح", "شهید حاج قاسم", "خیبر", "SCUD", "اسکاد")),
+    ("anti_ship", ("ضدکشتی", "anti-ship", "antiship", "oniks", "اونیکس", "بستیون",
+                    "bastion", "neptune", "نپتون", "harpoon", "هارپون", "خ-32", "kh-32")),
+]
+
+_DRONE_TYPE_PATTERNS = [
+    ("drone_combat", ("انتحاری", "kamikaze", "combat", "رزمی", "استrike", "شاهید",
+                       "گران", "geran", "لانس", "lancet", "kub", "شاهد-۱۳۶", "shahed")),
+    ("drone_recon", ("شناسایی", "recon", "orlan", "اورلان", "bayraktar", "بایرکتار",
+                      "tracker", "leleka", "forpost", "fpv")),
+]
+
+
+def classify_launch_type(equipment_name: str):
+    """نوع شلیک (برای مصرف تراشه) از نام تجهیز؛ None یعنی بدون مصرف تراشه."""
+    t = (equipment_name or "").lower()
+    if not t:
+        return None
+    if "پهپاد" in t or "drone" in t or "uav" in t or "fpv" in t:
+        for kind, keys in _DRONE_TYPE_PATTERNS:
+            if any(k.lower() in t for k in keys):
+                return kind
+        return "drone_recon"
+    for kind, keys in _MISSILE_TYPE_PATTERNS:
+        if any(k.lower() in t for k in keys):
+            return kind
+    if "موشک" in t or "missile" in t:
+        # تسلیحات تاکتیکی سبک (ضدتانک/دوش‌پرتاب/موشک‌انداز سبک) تراشه‌بر نیستند
+        light = ("ضدتانک", "ضدزره", "هدایت سیمی", "دوش‌پرتاب", "دوش پرتاب", "راکتی",
+                  "راکت‌انداز", "خمپاره", "atgm", "javelin", "nlaw", "rpg", "مانپورت")
+        if not any(k in t for k in light):
+            return "cruise"  # موشک نامشخص → نرخ پایه
+    return None
+
+
+def launch_chip_rate(launch_type: str) -> int:
+    rates = {}
+    rates.update(getattr(config, "MISSILE_LAUNCH_CHIPS", {}))
+    rates.update(getattr(config, "DRONE_LAUNCH_CHIPS", {}))
+    return int(rates.get(launch_type, 0))
+
+
+def max_launchable(launch_type: str, chips_available: int):
+    """حداکثر تعداد قابل شلیک با این تراشه؛ None یعنی محدودیتی ندارد."""
+    rate = launch_chip_rate(launch_type)
+    if rate <= 0:
+        return None
+    return int(max(0, chips_available)) // rate
+
+
+def consume_launch_chips(country_id: int, launch_type: str, quantity: int) -> tuple[bool, str]:
+    """کسر تراشه‌ی شلیک — اتمیک، با کف صفر؛ کسر ناکام هرگز اجرا نمی‌شود."""
+    rate = launch_chip_rate(launch_type)
+    if rate <= 0 or quantity <= 0:
+        return True, ""
+    need = rate * int(quantity)
+    conn = get_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("SELECT microchips FROM countries WHERE id = ?", (country_id,))
+            row = cur.fetchone()
+            have = int((row["microchips"] if row else 0) or 0)
+            if have < need:
+                return False, (f"💻 تراشه پردازشی کافی نیست — برای {quantity:,} فروند "
+                               f"{need:,} تراشه لازم است (موجودی: {have:,}). "
+                               "تعداد کمتری شلیک کن یا تراشه تأمین کن.")
+            cur.execute("UPDATE countries SET microchips = microchips - ? WHERE id = ?",
+                        (need, country_id))
+        return True, ""
+    finally:
+        conn.close()
 
 
 def adjust_medical_isotopes(country_id: int, delta: int):

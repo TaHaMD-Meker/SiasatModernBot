@@ -5934,6 +5934,20 @@ RESOURCE_DEFICIT_PENALTY = {
 # ===== 🔬 سطوح و دکترین‌های برنامه غنی‌سازی و چرخه سوخت =====
 ENRICHMENT_FACILITY_PRICE = 60_000_000
 ENRICHMENT_FACILITY_GOLD = 150
+# ─── اقتصاد تراشه: «نرخ آتش» — سینک رویدادمحور (بدون مالیات روزانه جدید) ───
+# مصرف تراشه به‌ازای هر شلیک/پرواز عملیاتی. کسری هرگز عملیات را رد نمی‌کند؛
+# فقط سقف تعداد تا سقف تراشه موجود است (MAX(0,...) در consume_launch_chips).
+MISSILE_LAUNCH_CHIPS = {
+    "cruise": 15,       # کروز / بالستیک / ضدکشتی
+    "ballistic": 15,
+    "anti_ship": 15,
+    "hypersonic": 30,   # هایپرسونیک دوبرابر
+}
+DRONE_LAUNCH_CHIPS = {
+    "drone_combat": 3,  # انتحاری / رزمی
+    "drone_recon": 1,   # شناسایی
+}
+
 ENRICHMENT_FACILITY_CHIPS = 250
 ENRICHMENT_FACILITY_TECH_REQ = 3
 
